@@ -1,23 +1,25 @@
 import React from 'react';
-import { LayoutGrid, Network, BrainCircuit, BarChart3, GitBranch, FileText } from 'lucide-react';
+import { LayoutGrid, BrainCircuit, FileText, Stethoscope, CheckSquare, Activity } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { cn } from '../utils/cn';
+import { useSystemState } from '../context/SystemStateContext';
+import { ProjectSwitcher } from './ProjectSwitcher';
 
 const items = [
   { id: 'overview', icon: LayoutGrid, label: 'Overview' },
-  { id: 'pipeline', icon: GitBranch, label: 'Pipeline' },
-  { id: 'fleet', icon: Network, label: 'Agent Fleet' },
+  { id: 'operations', icon: Activity, label: 'Fleet Operations' },
+  { id: 'review', icon: CheckSquare, label: 'Review Room' },
   { id: 'reports', icon: FileText, label: 'Monthly Reports' },
-  { id: 'memory', icon: BrainCircuit, label: 'Memory Core' },
-  { id: 'intelligence', icon: BarChart3, label: 'Intelligence' },
+  { id: 'intelligence', icon: BrainCircuit, label: 'Intelligence' },
 ];
 
 export function NavRail({ activeId, onNavigate }) {
+  const { doctorModeOpen, setDoctorModeOpen } = useSystemState();
+
   return (
     <nav className="w-16 fixed left-0 top-0 bottom-0 bg-canvas/80 backdrop-blur border-r border-border flex flex-col justify-between py-6 z-50">
       <div className="flex flex-col gap-4 items-center w-full">
-        <div className="w-8 h-8 flex items-center justify-center font-bold text-lg text-white mb-4">
-          N
-        </div>
+        <ProjectSwitcher />
         
         {items.map((item) => (
           <button
@@ -46,16 +48,20 @@ export function NavRail({ activeId, onNavigate }) {
         ))}
       </div>
       
-      <div className="flex items-center justify-center mb-4">
-        <div className="relative flex items-center justify-center group cursor-pointer w-10 h-10">
-          <div className="absolute w-4 h-4 bg-aurora-teal rounded-full opacity-20" />
-          <div className="absolute w-4 h-4 bg-aurora-teal rounded-full animate-ping opacity-40" />
-          <div className="w-2 h-2 bg-aurora-teal rounded-full z-10" />
-          
+      <div className="mt-auto flex flex-col gap-2 items-center">
+        {/* Medic (Doctor Mode) — sole bottom nav item */}
+        <button
+          onClick={() => setDoctorModeOpen(!doctorModeOpen)}
+          className={cn(
+            "p-3 rounded-xl transition-all duration-300 relative group cursor-pointer",
+            doctorModeOpen ? "bg-aurora-teal/20 text-[#00FF41] shadow-glow" : "text-text-muted hover:bg-white/5"
+          )}
+        >
+          <Stethoscope className="w-5 h-5 pointer-events-none" />
           <div className="absolute left-full ml-4 px-2.5 py-1.5 bg-surface text-text-primary text-xs font-medium rounded-md whitespace-nowrap opacity-0 -translate-x-4 pointer-events-none transition-all duration-200 group-hover:opacity-100 group-hover:translate-x-0 border border-border">
-            System Online
+            Medic
           </div>
-        </div>
+        </button>
       </div>
     </nav>
   );

@@ -1,9 +1,47 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { agents } from '../utils/mockData';
 import { AgentVitalCard } from '../components/AgentVitalCard';
 import { container, item } from '../utils/variants';
-import { ActivityFeed } from '../components/ActivityFeed';
+import Globe from 'react-globe.gl';
+
+const MapWidget = () => {
+  const [arcsData, setArcsData] = useState([]);
+  useEffect(() => {
+    const N = 24;
+    setArcsData([...Array(N).keys()].map(() => ({
+      startLat: (Math.random() - 0.5) * 180,
+      startLng: (Math.random() - 0.5) * 360,
+      endLat: (Math.random() - 0.5) * 180,
+      endLng: (Math.random() - 0.5) * 360,
+      color: ['#00D9C8', '#a78bfa', '#60a5fa'][Math.floor(Math.random() * 3)]
+    })));
+  }, []);
+
+  return (
+    <div className="col-span-12 spatial-panel relative overflow-hidden h-[340px] flex items-center justify-center border-aurora-teal/20 shadow-glow-teal group">
+      <div className="absolute top-6 left-6 z-10 pointer-events-none">
+        <h3 className="text-xl font-bold text-text-primary tracking-wide">Global Protocol Trajectory</h3>
+        <p className="text-sm font-mono text-aurora-teal mt-1">24 Active Satellite Downlinks</p>
+      </div>
+      <div className="absolute inset-0 -top-16 z-0 opacity-90 cursor-move mix-blend-screen scale-110 origin-center transition-transform duration-1000 group-hover:scale-125">
+        <Globe
+          width={1200}
+          height={480}
+          globeImageUrl="//unpkg.com/three-globe/example/img/earth-dark.jpg"
+          arcsData={arcsData}
+          arcColor="color"
+          arcDashLength={0.4}
+          arcDashGap={2}
+          arcDashAnimateTime={1500}
+          backgroundColor="rgba(0,0,0,0)"
+          atmosphereColor="#00D9C8"
+          atmosphereAltitude={0.15}
+        />
+      </div>
+    </div>
+  );
+};
 
 export function FleetView({ onOpenDetail }) {
   return (
@@ -14,42 +52,26 @@ export function FleetView({ onOpenDetail }) {
           <p className="text-sm text-text-muted">Monitor and control your deployed AI workforce.</p>
         </div>
         <div className="spatial-panel px-4 py-2 text-sm font-mono text-aurora-teal">
-          {agents.length} Nodes Active
+          {agents.length} Active Workforce
         </div>
       </div>
 
-      <div className="grid grid-cols-12 gap-5 h-[320px] mb-8">
-        <div className="col-span-12 spatial-panel p-6 flex flex-col items-center justify-center border-aurora-violet/20 shadow-glow-violet">
-           <h3 className="text-lg font-semibold text-aurora-violet mb-2">Swarm Intellect Aggregate</h3>
-           <p className="text-text-body text-center max-w-lg mb-6">The collective is operating at optimal latency with zero OOM faults detected in the last hour.</p>
-           <div className="flex gap-16">
-             <div className="text-center">
-               <div className="text-[10px] uppercase text-text-muted tracking-widest mb-1">Avg Latency</div>
-               <div className="text-xl font-mono text-aurora-green">214ms</div>
-             </div>
-             <div className="text-center">
-               <div className="text-[10px] uppercase text-text-muted tracking-widest mb-1">Compute Spike</div>
-               <div className="text-xl font-mono text-aurora-amber">42%</div>
-             </div>
-             <div className="text-center">
-               <div className="text-[10px] uppercase text-text-muted tracking-widest mb-1">Network Out</div>
-               <div className="text-xl font-mono text-aurora-blue">84 MB/s</div>
-             </div>
-           </div>
-        </div>
+      <div className="grid grid-cols-12 gap-5 mb-8">
+        <MapWidget />
       </div>
 
-      <motion.div variants={container} initial="hidden" animate="show" className="grid grid-cols-12 gap-5">
-        <div className="col-span-12">
-          <h3 className="text-sm font-bold text-text-muted uppercase tracking-wider mb-4">Live Instances</h3>
+      <motion.div variants={container} initial="hidden" animate="show" className="flex flex-col gap-4">
+        <h3 className="text-sm font-bold text-text-muted uppercase tracking-wider">Live Instances</h3>
+        {/* -mx-8 px-8 matches App.jsx content padding to prevent hover scale clipping */}
+        <div className="grid grid-cols-12 gap-5 -mx-8 px-8 pb-4 pt-2 overflow-visible">
+          <AnimatePresence mode="popLayout">
+            {agents.map(a => (
+              <motion.div key={a.id} variants={item} layout layoutId={`fleet-${a.id}`} className="col-span-4 h-64 relative z-10 hover:z-50">
+                <AgentVitalCard agent={a} onLogClick={() => onOpenDetail(a.id)} />
+              </motion.div>
+            ))}
+          </AnimatePresence>
         </div>
-        <AnimatePresence mode="popLayout">
-          {agents.map(a => (
-            <motion.div key={a.id} variants={item} layout layoutId={`fleet-${a.id}`} className="col-span-4 h-64">
-              <AgentVitalCard agent={a} onLogClick={() => onOpenDetail(a.id)} />
-            </motion.div>
-          ))}
-        </AnimatePresence>
       </motion.div>
     </div>
   );

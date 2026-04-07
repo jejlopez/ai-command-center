@@ -7,7 +7,7 @@ export default {
   theme: {
     extend: {
       colors: {
-        canvas:  '#080808',
+        canvas:  'var(--color-canvas)',
         surface: { DEFAULT: '#111111', raised: '#161616', input: '#1c1c1c' },
         text: {
           primary:  '#e8e8ed',
@@ -21,12 +21,12 @@ export default {
           strong:  'rgba(255,255,255,0.14)',
         },
         aurora: {
-          teal:   '#00D9C8',   // AI activity / processing / healthy
-          violet: '#a78bfa',   // memory / intelligence
-          rose:   '#fb7185',   // errors / critical
-          amber:  '#fbbf24',   // warnings / degraded
-          blue:   '#60a5fa',   // pipeline / tasks / network
-          green:  '#34d399',   // success
+          teal:   'var(--color-aurora-teal)',
+          violet: 'var(--color-aurora-violet)',
+          rose:   'var(--color-aurora-rose)',
+          amber:  'var(--color-aurora-amber)',
+          blue:   'var(--color-aurora-blue)',
+          green:  'var(--color-aurora-green)',
         },
       },
       boxShadow: {

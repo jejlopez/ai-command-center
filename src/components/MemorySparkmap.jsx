@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { memoryChunks } from '../utils/mockData';
 import { motion, AnimatePresence } from 'framer-motion';
+import { WidgetActions } from './WidgetActions';
 
 export function MemorySparkmap() {
   const [hoveredChunk, setHoveredChunk] = useState(null);
@@ -15,7 +16,8 @@ export function MemorySparkmap() {
   };
 
   return (
-    <div className="spatial-panel p-6 h-full flex flex-col items-center justify-center relative">
+    <div className="spatial-panel p-6 h-full flex flex-col items-center justify-center relative group">
+      <WidgetActions onExpand={() => {}} onConfigure={() => {}} onRemove={() => {}} />
       <div className="text-[10px] uppercase tracking-[0.15em] text-text-muted mb-4 font-semibold w-full text-center">
         Memory Core
       </div>

@@ -1,62 +1,103 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronDown, FolderDot, LayoutGrid } from 'lucide-react';
-import { PROJECTS } from '../utils/mockData';
+import { Plus, Check } from 'lucide-react';
+import { cn } from '../utils/cn';
 
-export function ProjectSwitcher({ activeProject, onChange }) {
-  const [isOpen, setIsOpen] = useState(false);
-  const current = PROJECTS.find(p => p.id === activeProject) || PROJECTS[0];
+const projects = [
+  { id: 'nexus', name: 'Nexus Command', agents: 7, color: 'bg-aurora-teal' },
+  { id: 'atlas', name: 'Project Atlas', agents: 3, color: 'bg-aurora-violet' },
+  { id: 'sentinel', name: 'Sentinel Ops', agents: 12, color: 'bg-aurora-amber' },
+  { id: 'research', name: 'Research Lab', agents: 2, color: 'bg-aurora-green' },
+];
+
+export function ProjectSwitcher() {
+  const [activeProject, setActiveProject] = useState('nexus');
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+
+  const current = projects.find((p) => p.id === activeProject);
+
+  useEffect(() => {
+    function handleClick(e) {
+      if (ref.current && !ref.current.contains(e.target)) {
+        setOpen(false);
+      }
+    }
+    if (open) {
+      document.addEventListener('mousedown', handleClick);
+      return () => document.removeEventListener('mousedown', handleClick);
+    }
+  }, [open]);
 
   return (
-    <div className="relative z-50">
-      {/* The Floating Pill */}
-      <button 
-        onClick={() => setIsOpen(!isOpen)}
-        className="spatial-pill py-2 px-4 rounded-full flex items-center gap-3 hover:bg-modern-panel transition-all group"
+    <div ref={ref} className="relative mb-4">
+      {/* Trigger */}
+      <button
+        onClick={() => setOpen(!open)}
+        className={cn(
+          'w-9 h-9 rounded-xl flex items-center justify-center font-bold text-sm transition-all duration-200 border',
+          open
+            ? 'bg-aurora-teal/20 border-aurora-teal/50 text-white'
+            : 'bg-white/[0.04] border-transparent text-white hover:bg-white/[0.08] hover:border-aurora-teal/30'
+        )}
       >
-        <FolderDot className="w-4 h-4 text-modern-muted group-hover:text-modern-primary transition-colors" />
-        <span className="font-sans text-sm font-medium text-modern-primary">{current.name}</span>
-        <span className="text-[10px] uppercase font-mono text-modern-muted bg-white/5 px-2 py-0.5 rounded-full">
-          {current.environment}
-        </span>
-        <ChevronDown className={`w-4 h-4 text-modern-muted transition-transform duration-300 ${isOpen ? 'rotate-180' : ''}`} />
+        {current?.name.charAt(0) || 'N'}
       </button>
 
-      {/* The Dropdown Menu */}
+      {/* Popover */}
       <AnimatePresence>
-        {isOpen && (
+        {open && (
           <motion.div
-            initial={{ opacity: 0, y: -10, scale: 0.95 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -10, scale: 0.95 }}
-            transition={{ duration: 0.2 }}
-            className="absolute top-full mt-3 left-1/2 -translate-x-1/2 w-64 spatial-panel rounded-xl overflow-hidden py-2"
+            initial={{ opacity: 0, x: -8, scale: 0.95 }}
+            animate={{ opacity: 1, x: 0, scale: 1 }}
+            exit={{ opacity: 0, x: -8, scale: 0.95 }}
+            transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+            className="absolute left-full top-0 ml-3 w-[260px] bg-surface border border-border rounded-xl shadow-lg z-[60] overflow-hidden"
           >
-            <div className="px-4 py-2 border-b border-modern-border mb-2 flex items-center gap-2">
-              <LayoutGrid className="w-3 h-3 text-modern-muted" />
-              <span className="text-xs font-mono uppercase text-modern-muted tracking-widest">Workspaces</span>
+            <div className="px-4 pt-3 pb-2">
+              <span className="text-[10px] uppercase tracking-wider text-text-muted font-medium">
+                Workspaces
+              </span>
             </div>
-            
-            {PROJECTS.map(proj => (
-              <button
-                key={proj.id}
-                onClick={() => {
-                  onChange(proj.id);
-                  setIsOpen(false);
-                }}
-                className={`w-full text-left px-4 py-2.5 flex items-center justify-between hover:bg-white/5 transition-colors ${activeProject === proj.id ? 'bg-white/5' : ''}`}
-              >
-                <div className="flex flex-col">
-                  <span className={`text-sm font-sans ${activeProject === proj.id ? 'text-white' : 'text-modern-accent'}`}>
-                    {proj.name}
-                  </span>
-                  <span className="text-[10px] text-modern-muted uppercase font-mono mt-0.5">{proj.environment}</span>
-                </div>
-                {activeProject === proj.id && (
-                  <div className="w-1.5 h-1.5 rounded-full bg-modern-primary"></div>
-                )}
+
+            <div className="flex flex-col px-1.5 pb-1.5">
+              {projects.map((project) => {
+                const isActive = project.id === activeProject;
+                return (
+                  <button
+                    key={project.id}
+                    onClick={() => {
+                      setActiveProject(project.id);
+                      setOpen(false);
+                    }}
+                    className={cn(
+                      'flex items-center gap-3 px-3 py-2.5 rounded-lg text-left transition-colors w-full',
+                      isActive ? 'bg-white/[0.06]' : 'hover:bg-white/[0.04]'
+                    )}
+                  >
+                    <div className={cn('w-2 h-2 rounded-full shrink-0', project.color)} />
+                    <div className="flex-1 min-w-0">
+                      <p className={cn('text-sm font-medium truncate', isActive ? 'text-text-primary' : 'text-text-body')}>
+                        {project.name}
+                      </p>
+                      <p className="text-[11px] text-text-muted">
+                        {project.agents} agents
+                      </p>
+                    </div>
+                    {isActive && <Check className="w-4 h-4 text-aurora-teal shrink-0" />}
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="h-px bg-border mx-3" />
+
+            <div className="px-1.5 py-1.5">
+              <button className="flex items-center gap-3 px-3 py-2 rounded-lg text-left transition-colors w-full hover:bg-white/[0.04] text-text-muted hover:text-text-primary">
+                <Plus className="w-4 h-4" />
+                <span className="text-sm">Create workspace</span>
               </button>
-            ))}
+            </div>
           </motion.div>
         )}
       </AnimatePresence>
