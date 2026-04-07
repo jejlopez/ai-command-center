@@ -7,28 +7,39 @@ export default {
   theme: {
     extend: {
       colors: {
-        modern: {
-          bg: "#080808", // matte black background
-          panel: "#121212", // slightly lighter panel
-          border: "#262626", // subtle border
-          accent: "#D4D4D4", // text accent
-          primary: "#FFFFFF", // primary text
-          muted: "#737373", // muted text
-          alert: "#EF4444", 
-          warning: "#F59E0B",
-          success: "#10B981",
-          highlight: "#8B5CF6", // subtle purple accent for spatial UI
-        }
+        canvas:  '#080808',
+        surface: { DEFAULT: '#111111', raised: '#161616', input: '#1c1c1c' },
+        text: {
+          primary:  '#e8e8ed',
+          body:     '#a1a1aa',
+          muted:    '#71717a',
+          disabled: '#3f3f46',
+        },
+        border: {
+          subtle:  'rgba(255,255,255,0.05)',
+          DEFAULT: 'rgba(255,255,255,0.08)',
+          strong:  'rgba(255,255,255,0.14)',
+        },
+        aurora: {
+          teal:   '#00D9C8',   // AI activity / processing / healthy
+          violet: '#a78bfa',   // memory / intelligence
+          rose:   '#fb7185',   // errors / critical
+          amber:  '#fbbf24',   // warnings / degraded
+          blue:   '#60a5fa',   // pipeline / tasks / network
+          green:  '#34d399',   // success
+        },
+      },
+      boxShadow: {
+        'glow-teal':   '0 0 0 1px rgba(0,217,200,0.25),   0 0 20px rgba(0,217,200,0.1)',
+        'glow-violet': '0 0 0 1px rgba(167,139,250,0.25),  0 0 20px rgba(167,139,250,0.1)',
+        'glow-rose':   '0 0 0 1px rgba(251,113,133,0.25),  0 0 20px rgba(251,113,133,0.08)',
+        'card':        'inset 0 1px 0 rgba(255,255,255,0.06), 0 4px 8px rgba(0,0,0,0.35)',
       },
       fontFamily: {
         sans: ['Inter', 'system-ui', 'sans-serif'],
         mono: ['JetBrains Mono', 'monospace'],
         display: ['Inter', 'system-ui', 'sans-serif'],
       },
-      backgroundImage: {
-        'gradient-radial': 'radial-gradient(var(--tw-gradient-stops))',
-        'mesh': 'radial-gradient(at 40% 20%, rgba(139, 92, 246, 0.15) 0px, transparent 50%), radial-gradient(at 80% 0%, rgba(59, 130, 246, 0.1) 0px, transparent 50%), radial-gradient(at 0% 50%, rgba(139, 92, 246, 0.1) 0px, transparent 50%)',
-      }
     },
   },
   plugins: [],

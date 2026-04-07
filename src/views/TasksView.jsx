@@ -1,92 +1,122 @@
 import React from 'react';
-import { motion } from 'framer-motion';
-import { PlayCircle, Clock, CheckCircle2, Circle } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { tasks, mockSpans } from '../utils/mockData';
+import { cn } from '../utils/cn';
+import { container, item } from '../utils/variants';
+import { TaskDAG } from '../components/TaskDAG';
+import { TraceWaterfall } from '../components/TraceWaterfall';
+import { GitBranch, Activity, Zap, CheckCircle2 } from 'lucide-react';
 
-export function TasksView({ context }) {
-  const tasks = context.tasks || [];
+const statusStyles = {
+  success: 'row-success text-aurora-green border-aurora-green/20',
+  completed: 'row-success text-aurora-green border-aurora-green/20',
+  error: 'row-error text-aurora-rose border-aurora-rose/20',
+  running: 'row-running text-aurora-amber border-aurora-amber/20',
+  idle: 'row-idle text-text-muted border-white/5',
+  pending: 'row-idle text-text-muted border-white/5'
+};
 
+export function TasksView({ onOpenDetail }) {
   return (
-    <div className="flex flex-col gap-6 h-full pb-8">
-      
-      {/* Top Header */}
-      <div className="flex justify-between items-center">
-        <h2 className="text-xl font-medium text-white tracking-tight">Pipeline Control</h2>
-        <button className="spatial-button px-4 py-2 text-sm bg-white text-black hover:bg-white/90">
-          + New Routine
-        </button>
+    <div className="flex flex-col h-full overflow-y-auto no-scrollbar pb-12">
+      <div className="mb-6 flex justify-between items-end">
+        <div>
+          <h2 className="text-2xl font-bold text-text-primary mb-1">Pipeline Orchestration</h2>
+          <p className="text-sm text-text-muted">High-fidelity tracing and structural node visualization.</p>
+        </div>
+        <div className="flex gap-4">
+          <div className="flex items-center gap-2 px-4 py-2 spatial-panel">
+            <CheckCircle2 className="w-4 h-4 text-aurora-green" />
+            <span className="text-sm font-mono text-text-primary">98.4% SNR</span>
+          </div>
+          <div className="flex items-center gap-2 px-4 py-2 spatial-panel">
+            <Zap className="w-4 h-4 text-aurora-amber" />
+            <span className="text-sm font-mono text-text-primary">2,404 ops/sec</span>
+          </div>
+        </div>
       </div>
 
-      {/* Board Layout */}
-      <div className="grid grid-cols-3 gap-6 flex-1 min-h-[500px]">
+      <motion.div variants={container} initial="hidden" animate="show" className="flex flex-col gap-6">
         
-        {/* Column: Pending */}
-        <div className="spatial-panel rounded-3xl p-6 flex flex-col">
-          <div className="flex items-center justify-between mb-6">
-            <h3 className="font-medium text-white flex items-center gap-2">
-              <Circle className="w-4 h-4 text-modern-muted" /> Queued
+        {/* Tier 1: Neural Task DAG */}
+        <motion.div variants={item} className="grid grid-cols-12 gap-6 h-72">
+          <div className="col-span-8 spatial-panel p-6 flex flex-col relative group">
+            <h3 className="text-xs uppercase tracking-widest text-text-muted mb-4 absolute top-6 left-6 z-10 flex items-center gap-2">
+              <GitBranch className="w-4 h-4" /> Neural Execution Graph
             </h3>
-            <span className="text-xs font-mono text-modern-muted">0</span>
+            <div className="absolute inset-0 bg-gradient-to-b from-aurora-blue/5 to-transparent pointer-events-none" />
+            <div className="flex-1 w-full h-full relative -mx-4 -mb-4 pt-8">
+              <TaskDAG />
+            </div>
           </div>
-          <div className="flex-1 flex items-center justify-center text-sm text-modern-muted text-center border-2 border-dashed border-modern-border/50 rounded-2xl">
-            Drop sequence here
-          </div>
-        </div>
 
-        {/* Column: In Progress */}
-        <div className="spatial-panel rounded-3xl p-6 flex flex-col bg-white/[0.02]">
-          <div className="flex items-center justify-between mb-6">
-            <h3 className="font-medium text-white flex items-center gap-2">
-              <PlayCircle className="w-4 h-4 text-modern-highlight" /> Executing
-            </h3>
-            <span className="text-xs font-mono text-modern-muted">{tasks.filter(t => t.status === 'in-progress').length}</span>
+          <div className="col-span-4 spatial-panel p-6 flex flex-col justify-between group overflow-hidden relative">
+            <div className="absolute -right-12 -bottom-12 w-48 h-48 bg-aurora-blue/10 rounded-full blur-3xl pointer-events-none" />
+            <div>
+               <h3 className="text-xs uppercase tracking-widest text-text-muted mb-2">Live Throughput</h3>
+               <div className="text-4xl font-mono text-aurora-blue mt-2 font-bold tracking-tight">419.2</div>
+               <p className="text-xs text-text-body mt-2">Tokens resolved per compute cycle.</p>
+            </div>
+            
+            <div className="mt-auto">
+               <div className="flex justify-between items-center text-xs mb-2">
+                 <span className="text-text-muted font-medium">Pipeline Saturation</span>
+                 <span className="text-aurora-blue font-mono">62%</span>
+               </div>
+               <div className="w-full h-1.5 bg-surface-raised rounded-full overflow-hidden border border-white/5">
+                 <motion.div initial={{ width: 0 }} animate={{ width: '62%' }} transition={{ duration: 1.5, delay: 0.2 }} className="h-full bg-aurora-blue shadow-glow-blue" />
+               </div>
+            </div>
           </div>
-          
-          <div className="flex-1 space-y-4">
-            {tasks.filter(t => t.status === 'in-progress').map(t => (
-              <motion.div 
-                key={t.id}
-                layoutId={`task-${t.id}`}
-                className="bg-modern-bg border border-modern-border rounded-2xl p-5 hover:border-modern-accent transition-colors cursor-grab"
+        </motion.div>
+
+        {/* Removed Thread Waterfall to unclutter the top of the Pipeline */}
+
+        {/* Tier 3: High-Density Run Matrix */}
+        <motion.div variants={item}>
+          <h3 className="text-sm font-bold text-text-muted uppercase tracking-wider mb-4 border-b border-border pb-2 mt-4">Node Operations Matrix</h3>
+          <AnimatePresence mode="popLayout">
+            {tasks.map((run, i) => (
+              <motion.div
+                key={run.id}
+                variants={item}
+                layout
+                whileHover={{ x: 4, backgroundColor: 'rgba(255,255,255,0.03)' }}
+                onClick={() => onOpenDetail(run.id)}
+                className={cn(
+                  "spatial-panel p-4 flex items-center justify-between cursor-pointer mb-2 border hover:shadow-card transition-all",
+                  statusStyles[run.status] || "row-idle"
+                )}
               >
-                <div className="flex justify-between items-start mb-4">
-                  <span className="text-[10px] font-mono uppercase bg-modern-panel px-2 py-1 rounded text-modern-muted border border-modern-border">{t.agent}</span>
-                  <Clock className="w-3 h-3 text-modern-muted" />
+                <div className="flex items-center gap-6">
+                  <span className="font-mono text-xs text-text-disabled w-16 opacity-50">10:0{4 + i}:22</span>
+                  <span className="font-medium text-sm text-text-primary w-32 truncate tracking-wide">{run.agentName}</span>
+                  <span className="px-3 py-1 text-[10px] font-mono text-text-muted bg-canvas border border-white/5 rounded">
+                    claude-opus-4-6
+                  </span>
+                  <span className="text-sm font-medium w-64 text-text-primary truncate">{run.name}</span>
                 </div>
-                <h4 className="text-sm text-white font-medium mb-4">{t.text}</h4>
-                <div className="w-full h-1 bg-modern-panel rounded-full overflow-hidden">
-                  <div className="h-full bg-modern-highlight rounded-full transition-all" style={{width: `${t.progress}%`}}></div>
+                
+                <div className="flex items-center gap-8">
+                  <span className={cn("text-xs font-bold uppercase tracking-wider w-24 text-right", statusStyles[run.status]?.split(' ')[1])}>
+                    {run.status}
+                  </span>
+                  <span className="font-mono text-xs text-text-muted tabular-nums w-12 text-right opacity-70">
+                    1.2s
+                  </span>
+                  <span className="font-mono text-[11px] text-text-muted w-16 text-right">
+                    420 tok
+                  </span>
+                  <span className="font-mono text-[11px] text-text-muted w-16 text-right opacity-50">
+                    $0.023
+                  </span>
                 </div>
               </motion.div>
             ))}
-          </div>
-        </div>
+          </AnimatePresence>
+        </motion.div>
 
-        {/* Column: Done */}
-        <div className="spatial-panel rounded-3xl p-6 flex flex-col">
-          <div className="flex items-center justify-between mb-6">
-            <h3 className="font-medium text-white flex items-center gap-2">
-              <CheckCircle2 className="w-4 h-4 text-modern-success" /> Completed
-            </h3>
-            <span className="text-xs font-mono text-modern-muted">{tasks.filter(t => t.status === 'completed').length}</span>
-          </div>
-          
-          <div className="flex-1 space-y-4 opacity-60">
-            {tasks.filter(t => t.status === 'completed').map(t => (
-              <motion.div 
-                key={t.id}
-                layoutId={`task-${t.id}`}
-                className="bg-modern-bg border border-modern-border/50 rounded-2xl p-5"
-              >
-                <div className="flex justify-between items-start mb-2">
-                  <span className="text-[10px] font-mono text-modern-muted">{t.agent}</span>
-                </div>
-                <h4 className="text-sm text-modern-muted strike-through">{t.text}</h4>
-              </motion.div>
-            ))}
-          </div>
-        </div>
-
-      </div>
+      </motion.div>
     </div>
   );
 }

@@ -1,41 +1,91 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;700&display=swap');
-
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-@layer base {
-  body {
-    @apply bg-modern-bg text-modern-primary antialiased;
-  }
+@property --ax1 { syntax: '<percentage>'; inherits: false; initial-value: 20%; }
+@property --ay1 { syntax: '<percentage>'; inherits: false; initial-value: 30%; }
+@property --ax2 { syntax: '<percentage>'; inherits: false; initial-value: 75%; }
+@property --ay2 { syntax: '<percentage>'; inherits: false; initial-value: 65%; }
+
+@keyframes aurora-drift {
+  0%   { --ax1: 20%; --ay1: 30%; --ax2: 75%; --ay2: 65%; }
+  33%  { --ax1: 55%; --ay1: 15%; --ax2: 30%; --ay2: 75%; }
+  66%  { --ax1: 80%; --ay1: 60%; --ax2: 60%; --ay2: 20%; }
+  100% { --ax1: 20%; --ay1: 30%; --ax2: 75%; --ay2: 65%; }
 }
 
-@layer utilities {
-  .spatial-panel {
-    @apply bg-modern-panel/70 backdrop-blur-2xl border border-modern-border/60 shadow-[0_8px_30px_rgba(0,0,0,0.4)];
-  }
-  
-  .spatial-pill {
-    @apply bg-modern-panel/80 backdrop-blur-xl border border-white/10 shadow-[0_0_20px_rgba(0,0,0,0.5)];
-  }
-
-  .spatial-button {
-    @apply bg-white/5 border border-white/10 text-modern-accent hover:bg-white/10 hover:text-white transition-all duration-300 rounded-lg;
-  }
-
-  .glow-text {
-    text-shadow: 0 0 20px rgba(255,255,255,0.3);
-  }
+body {
+  background-color: #080808;
+  background-image:
+    radial-gradient(ellipse 70% 50% at var(--ax1) var(--ay1), rgba(167,139,250,0.08) 0%, transparent 60%),
+    radial-gradient(ellipse 60% 40% at var(--ax2) var(--ay2), rgba(0,217,200,0.06) 0%, transparent 60%),
+    radial-gradient(ellipse 50% 60% at 50% 90%, rgba(96,165,250,0.05) 0%, transparent 50%);
+  animation: aurora-drift 40s ease-in-out infinite;
+  color: #e8e8ed;
 }
 
-/* Custom Scrollbar */
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+body::after {
+  content: '';
+  position: fixed; inset: 0; pointer-events: none; z-index: 0; opacity: 0.03;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
 }
-::-webkit-scrollbar-track {
-  background: transparent;
+
+@keyframes shimmer {
+  0%   { background-position: 200% center; }
+  100% { background-position: -200% center; }
 }
-::-webkit-scrollbar-thumb {
-  @apply bg-modern-border rounded-full hover:bg-modern-muted transition-colors;
+@keyframes dash-flow { to { stroke-dashoffset: -28; } }
+@keyframes cell-pulse { 0%, 100% { opacity: 0.4; } 50% { opacity: 1; } }
+
+@property --border-angle { syntax: '<angle>'; inherits: false; initial-value: 0deg; }
+@keyframes rotate-border { to { --border-angle: 360deg; } }
+
+.spatial-panel {
+  background: rgba(255,255,255,0.03);
+  backdrop-filter: blur(20px) saturate(180%);
+  border: 1px solid rgba(255,255,255,0.07);
+  border-radius: 1rem;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.05), 0 4px 8px rgba(0,0,0,0.35);
+}
+
+/* Rotating conic border — use on active agent cards */
+.agent-card-active {
+  background: linear-gradient(#111111, #111111) padding-box,
+    conic-gradient(from var(--border-angle), #00D9C8, #a78bfa, #60a5fa, #00D9C8) border-box;
+  border: 1px solid transparent;
+  animation: rotate-border 4s linear infinite;
+  border-radius: 1rem;
+}
+
+/* Gradient border via ::before mask — use on featured cards */
+.gradient-border { position: relative; }
+.gradient-border::before {
+  content: '';
+  position: absolute; inset: 0; border-radius: inherit; padding: 1px;
+  background: linear-gradient(135deg, rgba(167,139,250,0.5), rgba(0,217,200,0.2), rgba(255,255,255,0.04));
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  pointer-events: none;
+}
+
+.shimmer {
+  background: linear-gradient(90deg, rgba(255,255,255,0) 0%, rgba(255,255,255,0.04) 50%, rgba(255,255,255,0) 100%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+}
+
+.font-tabular { font-variant-numeric: tabular-nums; }
+
+/* Run table row status borders */
+.row-success { border-left: 3px solid #34d399; }
+.row-error   { border-left: 3px solid #fb7185; }
+.row-running { border-left: 3px solid #fbbf24; }
+.row-idle    { border-left: 3px solid rgba(255,255,255,0.08); }
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;  /* IE and Edge */
+  scrollbar-width: none;  /* Firefox */
 }
