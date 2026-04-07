@@ -5,6 +5,7 @@ import { cn } from '../utils/cn';
 import { container, item as itemVariant } from '../utils/variants';
 import { AgentVitalCard } from '../components/AgentVitalCard';
 import { TaskDAG } from '../components/TaskDAG';
+import Globe from 'react-globe.gl';
 import { GitBranch, Zap, CheckCircle2, Edit2, RotateCcw, Trash2, AlertTriangle, ChevronDown, Save } from 'lucide-react';
 import { WidgetActions } from '../components/WidgetActions';
 
@@ -110,17 +111,39 @@ export function FleetOperationsView({ onOpenDetail }) {
           <h2 className="text-2xl font-bold text-text-primary mb-1">Fleet Operations</h2>
           <p className="text-sm text-text-muted">Master overview of active agents, neural pipelines, and live tasks.</p>
         </div>
-        <div className="flex gap-4">
-          <div className="flex items-center gap-2 px-4 py-2 spatial-panel">
-            <CheckCircle2 className="w-4 h-4 text-aurora-green" />
-            <span className="text-sm font-mono text-text-primary">98.4% SNR</span>
-          </div>
-          <div className="flex items-center gap-2 px-4 py-2 spatial-panel">
-            <Zap className="w-4 h-4 text-aurora-amber" />
-            <span className="text-sm font-mono text-text-primary">2,404 ops/sec</span>
-          </div>
+        <div className="flex gap-3">
+          {/* Fleet health summary — dynamically derived from agents data */}
+          {(() => {
+            const active  = agents.filter(a => a.status === 'processing').length;
+            const idle    = agents.filter(a => a.status === 'idle').length;
+            const errored = agents.filter(a => a.status === 'error').length;
+            return (
+              <>
+                <div className="flex items-center gap-2 px-4 py-2 spatial-panel">
+                  <span className="relative flex h-2 w-2">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-aurora-teal opacity-75" />
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-aurora-teal" />
+                  </span>
+                  <span className="text-sm font-mono text-aurora-teal">{active} Active</span>
+                </div>
+                <div className="flex items-center gap-2 px-4 py-2 spatial-panel">
+                  <span className="w-2 h-2 rounded-full bg-text-muted" />
+                  <span className="text-sm font-mono text-text-muted">{idle} Idle</span>
+                </div>
+                {errored > 0 && (
+                  <div className="flex items-center gap-2 px-4 py-2 spatial-panel border border-aurora-rose/30 shadow-[0_0_12px_rgba(251,113,133,0.1)]">
+                    <span className="relative flex h-2 w-2">
+                      <span className="animate-pulse absolute inline-flex h-full w-full rounded-full bg-aurora-rose opacity-75" />
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-aurora-rose" />
+                    </span>
+                    <span className="text-sm font-mono text-aurora-rose font-semibold">{errored} Error</span>
+                  </div>
+                )}
+              </>
+            );
+          })()}
           <div className="flex items-center gap-2 px-4 py-2 border border-aurora-teal/30 bg-aurora-teal/10 rounded-xl shadow-glow-teal">
-            <span className="text-sm font-mono font-bold text-aurora-teal">{agents.length} Active Workforce</span>
+            <span className="text-sm font-mono font-bold text-aurora-teal">{agents.length} Total</span>
           </div>
         </div>
       </div>

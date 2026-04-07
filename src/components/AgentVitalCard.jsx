@@ -1,10 +1,10 @@
 import React from 'react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { LineChart, Line, ResponsiveContainer } from 'recharts';
 import { cn } from '../utils/cn';
 import { useAnimatedCounter } from '../utils/useAnimatedCounter';
-import { Crown, ArrowUpRight, Heart } from 'lucide-react';
-import { agents as allAgents } from '../utils/mockData';
+import { Crown, ArrowUpRight, Heart, AlertTriangle, RotateCcw, Square } from 'lucide-react';
+import { agents as allAgents, activityLog } from '../utils/mockData';
 
 function getThresholdColor(val) {
   if (val < 60) return '#00D9C8';
@@ -61,9 +61,15 @@ function SegmentedArc({ completion, tokenBurnRate, baseColor }) {
 
 export function AgentVitalCard({ agent, onLogClick }) {
   const isProcessing = agent.status === 'processing';
+  const isError = agent.status === 'error';
   const isCommander = agent.role === 'commander';
   const progressAnim = useAnimatedCounter(agent.taskCompletion);
   const parentAgent = agent.parentId ? allAgents.find(a => a.id === agent.parentId) : null;
+
+  // Get last error log for error-state agents
+  const lastErrorLog = isError
+    ? activityLog.filter(l => l.agentId === agent.id && l.type === 'ERR').pop()
+    : null;
 
   const formattedData = agent.tokenBurn.map((v, i) => ({ val: v, i }));
   const latestBurn = formattedData.length > 0 ? formattedData[formattedData.length - 1].val : 0;
@@ -82,7 +88,9 @@ export function AgentVitalCard({ agent, onLogClick }) {
       onClick={onLogClick}
       className={cn(
         "relative p-5 h-full flex flex-col justify-between group cursor-pointer",
-        "agent-card-active shadow-[0_0_15px_rgba(96,165,250,0.1)] hover:shadow-[0_0_30px_rgba(167,139,250,0.3)] transition-all duration-300"
+        isError
+          ? "spatial-panel border-aurora-rose/30 shadow-[0_0_20px_rgba(251,113,133,0.15)] hover:shadow-[0_0_30px_rgba(251,113,133,0.25)] transition-all duration-300"
+          : "agent-card-active shadow-[0_0_15px_rgba(96,165,250,0.1)] hover:shadow-[0_0_30px_rgba(167,139,250,0.3)] transition-all duration-300"
       )}
     >
       {/* Header */}
@@ -94,6 +102,9 @@ export function AgentVitalCard({ agent, onLogClick }) {
             <div className="relative flex items-center justify-center shrink-0">
               {isProcessing && (
                 <div className="absolute w-2.5 h-2.5 rounded-full animate-ping" style={{ backgroundColor: agent.color }} />
+              )}
+              {isError && (
+                <div className="absolute w-2.5 h-2.5 rounded-full animate-pulse bg-aurora-rose/50" />
               )}
               <div className="w-1.5 h-1.5 rounded-full z-10" style={{ backgroundColor: agent.color }} />
             </div>
@@ -120,6 +131,30 @@ export function AgentVitalCard({ agent, onLogClick }) {
           </div>
         </div>
       </div>
+
+      {/* Error context banner — shown when agent is in error state */}
+      <AnimatePresence>
+        {isError && lastErrorLog && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            className="mb-2 px-2.5 py-2 bg-aurora-rose/8 border border-aurora-rose/15 rounded-lg overflow-hidden"
+          >
+            <div className="flex items-start gap-1.5">
+              <AlertTriangle className="w-3 h-3 text-aurora-rose shrink-0 mt-0.5" />
+              <div className="min-w-0">
+                <p className="text-[10px] font-mono text-aurora-rose leading-relaxed truncate">
+                  {lastErrorLog.message}
+                </p>
+                <p className="text-[9px] font-mono text-text-disabled mt-0.5">
+                  {lastErrorLog.timestamp}
+                </p>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Segmented Arc + Value */}
       <div className="flex items-center justify-center py-2 relative">
@@ -170,11 +205,28 @@ export function AgentVitalCard({ agent, onLogClick }) {
         </span>
       </div>
 
-      {/* Hover overlay */}
+      {/* Hover overlay — different for error vs healthy agents */}
       <div className="absolute bottom-0 inset-x-0 p-3 bg-gradient-to-t from-[#111111] via-[#111111]/80 to-transparent flex justify-center gap-4 opacity-0 group-hover:opacity-100 transition-opacity rounded-b-[1rem]">
-        <span className="text-aurora-teal text-xs font-semibold drop-shadow-[0_0_5px_rgba(0,217,200,0.8)] tracking-wider uppercase">
-          Open Telemetry View
-        </span>
+        {isError ? (
+          <>
+            <button
+              onClick={(e) => { e.stopPropagation(); }}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-aurora-amber/15 border border-aurora-amber/30 rounded-lg text-aurora-amber text-[10px] font-semibold uppercase tracking-wider hover:bg-aurora-amber/25 transition-colors"
+            >
+              <RotateCcw className="w-3 h-3" /> Restart
+            </button>
+            <button
+              onClick={(e) => { e.stopPropagation(); }}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-aurora-rose/15 border border-aurora-rose/30 rounded-lg text-aurora-rose text-[10px] font-semibold uppercase tracking-wider hover:bg-aurora-rose/25 transition-colors"
+            >
+              <Square className="w-3 h-3" /> Terminate
+            </button>
+          </>
+        ) : (
+          <span className="text-aurora-teal text-xs font-semibold drop-shadow-[0_0_5px_rgba(0,217,200,0.8)] tracking-wider uppercase">
+            Open Telemetry View 
+          </span>
+        )}
       </div>
     </motion.div>
   );

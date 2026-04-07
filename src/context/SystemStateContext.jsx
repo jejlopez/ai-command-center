@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useCallback } from 'react';
+import { pendingReviews } from '../utils/mockData';
 
 const SystemStateContext = createContext();
 
@@ -7,6 +8,9 @@ export function SystemStateProvider({ children }) {
   const [notificationsOpen, setNotificationsRaw] = useState(false);
   const [settingsOpen, setSettingsRaw] = useState(false);
   const [profileOpen, setProfileRaw] = useState(false);
+
+  // Pending approval count — initialized from mockData, kept in sync by ReviewRoomView
+  const [pendingCount, setPendingCount] = useState(pendingReviews.length);
 
   const closeAll = useCallback(() => {
     setDoctorModeRaw(false);
@@ -26,6 +30,7 @@ export function SystemStateProvider({ children }) {
       notificationsOpen, setNotificationsOpen,
       settingsOpen, setSettingsOpen,
       profileOpen, setProfileOpen,
+      pendingCount, setPendingCount,
     }}>
       {children}
     </SystemStateContext.Provider>

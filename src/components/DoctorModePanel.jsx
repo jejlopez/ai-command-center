@@ -1,7 +1,8 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Terminal, Activity, ScanLine, Stethoscope, RotateCcw, History, X, Pause, Play, Download, AlertTriangle } from 'lucide-react';
 import { useSystemState } from '../context/SystemStateContext';
+import { agents, activityLog } from '../utils/mockData';
 import { cn } from '../utils/cn';
 
 export function DoctorModePanel() {
@@ -12,10 +13,25 @@ export function DoctorModePanel() {
 
   const [isPaused, setIsPaused] = useState(false);
   const [activeFilter, setActiveFilter] = useState('all');
-  const [logicLoops, setLogicLoops] = useState([
-    { id: 'agent-4', name: 'Agent 4: Scraper', time: '2m ago' },
-    { id: 'worker-2', name: 'Worker 2: UI', time: '12s ago' }
-  ]);
+  // Derive logic loops from real agents with error status
+  const errorAgents = useMemo(() =>
+    agents
+      .filter(a => a.status === 'error')
+      .map(a => {
+        const lastErr = activityLog
+          .filter(l => l.agentId === a.id && l.type === 'ERR')
+          .pop();
+        return {
+          id: a.id,
+          name: a.name,
+          model: a.model,
+          message: lastErr?.message ?? 'Unknown error',
+          time: lastErr?.timestamp ? `at ${lastErr.timestamp}` : 'recently',
+        };
+      }),
+    []
+  );
+  const [logicLoops, setLogicLoops] = useState(errorAgents);
 
   const logsEndRef = useRef(null);
 
@@ -38,11 +54,12 @@ export function DoctorModePanel() {
     if (autopilotOn && !isPaused) {
       setLogs((prev) => [...prev, { type: 'autopilot', text: `[${new Date().toLocaleTimeString()}] 🟢 Autopilot Medic ACTIVE. Scanning for logic loops...` }]);
       const medicInterval = setInterval(() => {
+        const agentNames = agents.map(a => a.name);
         const interventions = [
-            'Agent 4 logic loop detected. Executing micro-restart...',
-            'Memory fragmentation on Agent 12 healed.',
-            'Telemetry spike normalized via Autopilot.',
-            'Stalled Subtask (id: a9x4) purged and redelegated.'
+          `${agentNames[Math.floor(Math.random() * agentNames.length)]} logic loop detected. Executing micro-restart...`,
+          `Memory fragmentation on ${agentNames[Math.floor(Math.random() * agentNames.length)]} healed.`,
+          'Telemetry spike normalized via Autopilot.',
+          `Stalled subtask purged and redelegated to ${agentNames[Math.floor(Math.random() * agentNames.length)]}.`,
         ];
         const randomFix = interventions[Math.floor(Math.random() * interventions.length)];
         setLogs((prev) => [...prev, { type: 'autopilot', text: `[${new Date().toLocaleTimeString()}] [AUTOPILOT] ${randomFix} 💉` }].slice(-15));
@@ -183,14 +200,18 @@ export function DoctorModePanel() {
                       key={agent.id}
                       onClick={() => purgeTargetAgent(agent)}
                       disabled={working}
-                      className="flex items-center justify-between px-3 py-2 bg-aurora-rose/5 hover:bg-aurora-rose/10 border border-aurora-rose/10 rounded-lg text-xs transition-colors group disabled:opacity-50"
+                      className="flex flex-col gap-1.5 px-3 py-2.5 bg-aurora-rose/5 hover:bg-aurora-rose/10 border border-aurora-rose/10 rounded-lg text-xs transition-colors group disabled:opacity-50 text-left w-full"
                     >
-                      <div className="flex items-center gap-2 text-aurora-rose">
-                        <AlertTriangle className="w-3 h-3" />
-                        {agent.name}
+                      <div className="flex items-center justify-between w-full">
+                        <div className="flex items-center gap-2 text-aurora-rose">
+                          <AlertTriangle className="w-3 h-3 shrink-0" />
+                          <span className="font-semibold">{agent.name}</span>
+                          <span className="text-text-disabled font-mono text-[9px]">{agent.model}</span>
+                        </div>
+                        <span className="text-text-muted text-[10px] shrink-0">{agent.time}</span>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-text-muted text-[10px]">{agent.time}</span>
+                      <div className="text-[10px] text-aurora-rose/70 font-mono pl-5 truncate">{agent.message}</div>
+                      <div className="flex items-center gap-2 pl-5">
                         <History className="w-3 h-3 text-text-muted opacity-0 group-hover:opacity-100 transition-opacity" />
                       </div>
                     </button>
