@@ -22,7 +22,7 @@ function Dashboard() {
   const [activeRoute, setActiveRoute] = useState('operations');
   const [cmdOpen, setCmdOpen] = useState(false);
   const [detailId, setDetailId] = useState(null);
-  const { notificationsOpen, setNotificationsOpen, settingsOpen, setSettingsOpen, profileOpen, setProfileOpen } = useSystemState();
+  const { notificationsOpen, setNotificationsOpen, settingsOpen, setSettingsOpen, profileOpen, setProfileOpen, setDoctorModeOpen } = useSystemState();
 
   useEffect(() => {
     const handleKeyDown = (e) => {
@@ -34,6 +34,19 @@ function Dashboard() {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
+
+  function handleAction(action) {
+    if (!action) return;
+    const { type, route, agentId, panel } = action;
+    if (type === 'navigate') setActiveRoute(route);
+    if (type === 'agent') setDetailId(agentId);
+    if (type === 'panel') {
+      if (panel === 'notifications') setNotificationsOpen(true);
+      if (panel === 'settings') setSettingsOpen(true);
+      if (panel === 'doctor') setDoctorModeOpen(true);
+      if (panel === 'profile') setProfileOpen(true);
+    }
+  }
 
   return (
     <div className="flex w-screen h-screen overflow-hidden bg-canvas text-text-primary relative">
@@ -107,9 +120,9 @@ function Dashboard() {
         </div>
       </main>
 
-      <CommandPalette isOpen={cmdOpen} onClose={() => setCmdOpen(false)} />
+      <CommandPalette isOpen={cmdOpen} onClose={() => setCmdOpen(false)} onExecute={(item) => handleAction(item?.action)} />
       
-      <NotificationsPanel notificationsOpen={notificationsOpen} setNotificationsOpen={setNotificationsOpen} />
+      <NotificationsPanel notificationsOpen={notificationsOpen} setNotificationsOpen={setNotificationsOpen} onNavigate={handleAction} />
       <SettingsPanel settingsOpen={settingsOpen} setSettingsOpen={setSettingsOpen} />
       <UserProfilePanel profileOpen={profileOpen} setProfileOpen={setProfileOpen} />
 

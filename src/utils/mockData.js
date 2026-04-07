@@ -47,6 +47,11 @@ export const agents = [
     skills: ['sk1', 'sk2', 'sk3', 'sk4', 'sk6'],
     subagents: ['a2', 'a3', 'a4', 'a5'],
     totalTokens: 24800, totalCost: 1.86, successRate: 96, taskCount: 12,
+    // Health fields
+    uptimeMs: 3_720_000, lastHeartbeat: '09:07:58', restartCount: 0,
+    errorMessage: null, errorStack: null, lastRestart: null,
+    tokenHistory24h: [820,940,1100,1020,890,760,1200,1340,1180,950,1040,1260,1380,1150,980,1070,1290,1410,1200,1050,940,1100,1320,1480],
+    latencyHistory24h: [310,325,340,330,345,360,340,320,335,350,340,355,370,345,330,340,360,380,350,340,325,340,355,370],
   },
   {
     id: 'a2', name: 'Orion', model: 'claude-sonnet-4-6', status: 'idle',
@@ -58,6 +63,10 @@ export const agents = [
     skills: ['sk1', 'sk4', 'sk5'],
     subagents: [],
     totalTokens: 8200, totalCost: 0.12, successRate: 100, taskCount: 5,
+    uptimeMs: 3_420_000, lastHeartbeat: '09:07:55', restartCount: 0,
+    errorMessage: null, errorStack: null, lastRestart: null,
+    tokenHistory24h: [320,410,380,350,290,0,0,0,420,480,510,390,340,0,0,0,360,440,470,400,350,0,0,0],
+    latencyHistory24h: [780,800,820,810,830,0,0,0,790,810,840,820,800,0,0,0,810,830,850,820,810,0,0,0],
   },
   {
     id: 'a3', name: 'Vega', model: 'gemini-3.1', status: 'processing',
@@ -69,6 +78,10 @@ export const agents = [
     skills: ['sk2', 'sk3', 'sk7', 'sk8'],
     subagents: [],
     totalTokens: 18400, totalCost: 0.37, successRate: 88, taskCount: 8,
+    uptimeMs: 2_880_000, lastHeartbeat: '09:07:56', restartCount: 1,
+    errorMessage: null, errorStack: null, lastRestart: '08:22:00',
+    tokenHistory24h: [680,720,760,810,740,690,780,830,870,750,700,760,820,860,790,730,770,840,890,810,740,690,780,850],
+    latencyHistory24h: [260,270,280,290,285,275,290,300,310,295,280,290,300,310,295,285,290,305,315,300,290,275,285,300],
   },
   {
     id: 'a4', name: 'Lyra', model: 'hermes-agent', status: 'error',
@@ -80,6 +93,12 @@ export const agents = [
     skills: ['sk1', 'sk4'],
     subagents: [],
     totalTokens: 1200, totalCost: 0.00, successRate: 40, taskCount: 5,
+    uptimeMs: 0, lastHeartbeat: '09:05:25', restartCount: 3,
+    errorMessage: 'OOMKilled — memory limit exceeded (512MB limit, 743MB peak)',
+    errorStack: 'Container lyra-agent-worker-02 killed by OOM at vector embedding batch (1204 chunks). Last healthy heartbeat 09:05:22. Recovery attempts: 3/3 exhausted.',
+    lastRestart: '09:05:25',
+    tokenHistory24h: [180,210,190,160,140,120,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+    latencyHistory24h: [1200,1800,2400,3100,3800,4200,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
   },
   {
     id: 'a5', name: 'Nova', model: 'claude-sonnet-4-6', status: 'processing',
@@ -91,6 +110,10 @@ export const agents = [
     skills: ['sk2', 'sk3', 'sk5'],
     subagents: [],
     totalTokens: 6100, totalCost: 0.09, successRate: 98, taskCount: 6,
+    uptimeMs: 3_600_000, lastHeartbeat: '09:07:57', restartCount: 0,
+    errorMessage: null, errorStack: null, lastRestart: null,
+    tokenHistory24h: [240,280,310,290,260,230,270,320,340,300,270,250,290,330,350,310,280,260,300,340,360,320,290,270],
+    latencyHistory24h: [390,400,410,405,415,420,410,395,405,415,410,420,430,415,400,410,425,435,420,410,400,405,420,430],
   },
   {
     id: 'a6', name: 'Sol', model: 'llama3:70b', status: 'idle',
@@ -102,6 +125,10 @@ export const agents = [
     skills: ['sk2', 'sk3'],
     subagents: [],
     totalTokens: 3400, totalCost: 0.00, successRate: 85, taskCount: 4,
+    uptimeMs: 1_200_000, lastHeartbeat: '09:07:50', restartCount: 0,
+    errorMessage: null, errorStack: null, lastRestart: null,
+    tokenHistory24h: [90,110,130,120,100,80,0,0,0,0,140,160,150,130,110,90,0,0,0,0,120,140,130,110],
+    latencyHistory24h: [620,640,660,650,640,630,0,0,0,0,650,670,680,660,640,630,0,0,0,0,640,660,650,640],
   },
 ];
 
@@ -168,9 +195,9 @@ export const costData = {
 
 // ── Health Metrics ──────────────────────────────────────────────
 export const healthMetrics = [
-  { label: 'CPU', value: 72, color: '#00D9C8' },
-  { label: 'MEM', value: 58, color: '#a78bfa' },
-  { label: 'API', value: 94, color: '#60a5fa' },
+  { label: 'CPU', value: 72, color: '#00D9C8', history24h: [45,48,52,58,62,65,60,55,58,63,68,72,70,68,65,62,67,71,74,72,70,68,70,72] },
+  { label: 'MEM', value: 58, color: '#a78bfa', history24h: [32,34,36,38,40,42,44,46,48,50,52,54,55,56,55,54,56,57,58,58,57,56,57,58] },
+  { label: 'API', value: 94, color: '#60a5fa', history24h: [99,98,97,96,95,94,93,92,91,90,92,94,95,96,97,98,96,95,94,93,94,95,94,94] },
 ];
 
 // ── Pending Reviews & Outputs ───────────────────────────────────
@@ -247,6 +274,43 @@ Message:
 Attachments: None
 Estimated cost: $0.00`,
   },
+  {
+    id: 'rv5', agentId: 'a3', agentName: 'Vega', urgency: 'normal',
+    title: 'Dashboard Card Component', outputType: 'code',
+    status: 'awaiting_approval', createdAt: '09:08:05', waitingMs: 45000,
+    summary: 'New reusable metric card with sparkline and trend indicator',
+    payload: `export function MetricCard({ label, value, trend, data }) {
+  const isUp = trend > 0;
+  return (
+    <div className="spatial-panel p-4">
+      <span className="text-[10px] text-text-muted uppercase">{label}</span>
+      <div className="text-2xl font-mono font-bold">{value}</div>
+      <div className={\`text-xs \${isUp ? 'text-aurora-green' : 'text-aurora-rose'}\`}>
+        {isUp ? '+' : ''}{trend}%
+      </div>
+    </div>
+  );
+}`,
+  },
+  {
+    id: 'rv6', agentId: 'a5', agentName: 'Nova', urgency: 'high',
+    title: 'Data Integrity Warning', outputType: 'error',
+    status: 'awaiting_approval', createdAt: '09:07:45', waitingMs: 120000,
+    summary: 'Nova detected 2 hallucinated URLs in Orion\'s research output that don\'t resolve',
+    payload: `QA ALERT: Hallucination Detected
+
+Agent: Orion (a2)
+Task: Market competitor research
+Severity: High
+
+Flagged items:
+  1. URL "https://api.competitor-x.com/v3/pricing" — DNS lookup failed, domain does not exist
+  2. Citation "McKinsey Digital Report Q3 2026" — no matching publication found in source database
+
+Recommendation:
+  - Reject Orion's output and re-run with stricter grounding directive
+  - Consider adding URL validation to Orion's tool chain`,
+  },
 ];
 
 export const completedOutputs = [
@@ -276,6 +340,35 @@ Costs decreased 12% from Q2 due to Sonnet migration for research tasks.
 
 ## Recommendation
 Continue routing research to Sonnet. Reserve Opus for planning and complex synthesis only.`,
+  },
+];
+
+// ── Approval Audit Trail ───────────────────────────────────────
+export const approvalAuditTrail = [
+  {
+    id: 'aud1', reviewId: 'out1', action: 'approved', decidedBy: 'user',
+    decidedAt: '09:05:18', feedback: null,
+    agentId: 'a1', agentName: 'Atlas', title: 'Broadway Show Scrape Results',
+  },
+  {
+    id: 'aud2', reviewId: 'out2', action: 'approved', decidedBy: 'user',
+    decidedAt: '09:06:05', feedback: null,
+    agentId: 'a2', agentName: 'Orion', title: 'Q3 Cost Analysis',
+  },
+  {
+    id: 'aud3', reviewId: 'rv-old1', action: 'rejected', decidedBy: 'user',
+    decidedAt: '08:55:30', feedback: 'Reduce batch size to 500 and retry with Sol instead',
+    agentId: 'a4', agentName: 'Lyra', title: 'Vector Embedding Batch',
+  },
+  {
+    id: 'aud4', reviewId: 'rv-old2', action: 'approved', decidedBy: 'auto',
+    decidedAt: '08:48:12', feedback: null,
+    agentId: 'a5', agentName: 'Nova', title: 'QA Pass — Data Pipeline Test',
+  },
+  {
+    id: 'aud5', reviewId: 'rv-old3', action: 'rejected', decidedBy: 'user',
+    decidedAt: '08:40:00', feedback: 'Output format doesn\'t match directive d3 — needs structured JSON',
+    agentId: 'a2', agentName: 'Orion', title: 'Competitor Pricing Data',
   },
 ];
 
@@ -314,15 +407,109 @@ export const systemRecommendations = [
   { id: 'rec3', type: 'directive', title: 'Duplicate instructions detected', description: 'Atlas and Orion have overlapping system prompts for JSON formatting. Extract to a shared Output Format directive.', impact: 'normal' },
 ];
 
+// ── Notifications (generated from agent/review/task state) ──────
+export function generateNotifications() {
+  const now = Date.now();
+  const mins = (m) => new Date(now - m * 60_000);
+  const hrs = (h) => new Date(now - h * 3_600_000);
+
+  const notifs = [];
+
+  // Error notifications from agents in error state
+  agents.filter(a => a.status === 'error').forEach(a => {
+    notifs.push({
+      id: `n-err-${a.id}`, category: 'error',
+      title: `${a.name} crashed`,
+      description: a.errorMessage || `Agent ${a.name} is in error state and requires intervention.`,
+      createdAt: mins(2), read: false,
+      action: { type: 'agent', agentId: a.id },
+    });
+  });
+
+  // Approval notifications from pending reviews
+  pendingReviews.forEach(rv => {
+    notifs.push({
+      id: `n-rv-${rv.id}`, category: 'approval',
+      title: `${rv.title} — awaiting approval`,
+      description: `${rv.agentName}: ${rv.summary}`,
+      createdAt: mins(Math.round(rv.waitingMs / 60_000)), read: false,
+      action: { type: 'navigate', route: 'review' },
+    });
+  });
+
+  // Success notifications from completed tasks
+  tasks.filter(t => t.status === 'completed').forEach((t, i) => {
+    notifs.push({
+      id: `n-task-${t.id}`, category: 'success',
+      title: `${t.name} completed`,
+      description: `${t.agentName} finished in ${t.durationMs}ms — $${t.costUsd.toFixed(3)}`,
+      createdAt: mins(15 + i * 8), read: true,
+      action: { type: 'agent', agentId: t.agentId },
+    });
+  });
+
+  // System notifications
+  notifs.push({
+    id: 'n-sys-rate', category: 'system',
+    title: 'Rate limit: 85% on claude-opus-4-6',
+    description: 'API rate limit approaching threshold. Consider distributing load to Sonnet.',
+    createdAt: mins(12), read: false,
+    action: { type: 'navigate', route: 'intelligence' },
+  });
+  notifs.push({
+    id: 'n-sys-cost', category: 'system',
+    title: `Session cost: $${costData.total}`,
+    description: `Burn rate $${costData.burnRate}/min. ${Math.round(costData.total / 10 * 100)}% of $10 budget ceiling.`,
+    createdAt: mins(6), read: false,
+    action: { type: 'navigate', route: 'reports' },
+  });
+  notifs.push({
+    id: 'n-sys-mem', category: 'system',
+    title: 'Memory Core at 85% capacity',
+    description: 'Long-term memory store approaching threshold. Consider archiving stale embeddings.',
+    createdAt: hrs(1), read: true,
+    action: { type: 'navigate', route: 'intelligence' },
+  });
+
+  // Agent restart notification
+  agents.filter(a => a.restartCount > 0 && a.status !== 'error').forEach(a => {
+    notifs.push({
+      id: `n-restart-${a.id}`, category: 'system',
+      title: `${a.name} restarted`,
+      description: `Agent recovered after restart ${a.restartCount}. Last restart at ${a.lastRestart}.`,
+      createdAt: hrs(1.5), read: true,
+      action: { type: 'agent', agentId: a.id },
+    });
+  });
+
+  // Sort newest first
+  return notifs.sort((a, b) => b.createdAt - a.createdAt);
+}
+
 // ── Command Palette ─────────────────────────────────────────────
 export const commandItems = [
-  { id: 'c1', group: 'Agents',     label: 'Inspect Agent Atlas',        icon: 'Cpu' },
-  { id: 'c2', group: 'Agents',     label: 'Halt all running agents',    icon: 'Square' },
-  { id: 'c3', group: 'Agents',     label: 'Re-run last failed agent',   icon: 'RefreshCw' },
-  { id: 'c4', group: 'Navigation', label: 'Go to Fleet View',           icon: 'Network' },
-  { id: 'c5', group: 'Navigation', label: 'Go to Intelligence',          icon: 'BrainCircuit' },
-  { id: 'c7', group: 'Actions',    label: 'Export logs as JSON',        icon: 'Download' },
-  { id: 'c8', group: 'Actions',    label: 'Set spend alert threshold',  icon: 'Bell' },
-  { id: 'c9', group: 'Actions',    label: 'Copy session trace ID',      icon: 'Clipboard' },
-  { id: 'c10', group: 'Actions',   label: 'Switch to Production env',   icon: 'Globe' },
+  // Navigation
+  { id: 'c1',  group: 'Navigation', label: 'Go to Overview',         icon: 'LayoutGrid',   action: { type: 'navigate', route: 'overview' } },
+  { id: 'c2',  group: 'Navigation', label: 'Go to Fleet Operations', icon: 'Activity',      action: { type: 'navigate', route: 'operations' } },
+  { id: 'c3',  group: 'Navigation', label: 'Go to Review Room',      icon: 'CheckSquare',   action: { type: 'navigate', route: 'review' } },
+  { id: 'c4',  group: 'Navigation', label: 'Go to Monthly Reports',  icon: 'FileText',      action: { type: 'navigate', route: 'reports' } },
+  { id: 'c5',  group: 'Navigation', label: 'Go to Intelligence',     icon: 'BrainCircuit',  action: { type: 'navigate', route: 'intelligence' } },
+
+  // Agents
+  { id: 'c10', group: 'Agents', label: 'Inspect Atlas',   icon: 'Crown',       action: { type: 'agent', agentId: 'a1' } },
+  { id: 'c11', group: 'Agents', label: 'Inspect Orion',   icon: 'Cpu',         action: { type: 'agent', agentId: 'a2' } },
+  { id: 'c12', group: 'Agents', label: 'Inspect Vega',    icon: 'Cpu',         action: { type: 'agent', agentId: 'a3' } },
+  { id: 'c13', group: 'Agents', label: 'Inspect Lyra',    icon: 'AlertTriangle', action: { type: 'agent', agentId: 'a4' } },
+  { id: 'c14', group: 'Agents', label: 'Inspect Nova',    icon: 'Cpu',         action: { type: 'agent', agentId: 'a5' } },
+  { id: 'c15', group: 'Agents', label: 'Inspect Sol',     icon: 'Cpu',         action: { type: 'agent', agentId: 'a6' } },
+
+  // Panels
+  { id: 'c20', group: 'Panels', label: 'Open Notifications',  icon: 'Bell',        action: { type: 'panel', panel: 'notifications' } },
+  { id: 'c21', group: 'Panels', label: 'Open Settings',       icon: 'Settings',    action: { type: 'panel', panel: 'settings' } },
+  { id: 'c22', group: 'Panels', label: 'Toggle Doctor Mode',  icon: 'Stethoscope', action: { type: 'panel', panel: 'doctor' } },
+  { id: 'c23', group: 'Panels', label: 'Open Profile',        icon: 'User',        action: { type: 'panel', panel: 'profile' } },
+
+  // Actions
+  { id: 'c30', group: 'Actions', label: 'Export logs as JSON',       icon: 'Download',  action: { type: 'action', id: 'export-logs' } },
+  { id: 'c31', group: 'Actions', label: 'Copy session trace ID',     icon: 'Clipboard', action: { type: 'action', id: 'copy-trace' } },
 ];

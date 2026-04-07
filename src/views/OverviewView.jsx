@@ -1,6 +1,6 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import { container, item } from '../utils/variants';
-import { agents, costData } from '../utils/mockData';
+import { agents, costData, healthMetrics } from '../utils/mockData';
 import { SpotlightCard } from '../components/SpotlightCard';
 import { NeuralPulse } from '../components/NeuralPulse';
 import { AgentVitalCard } from '../components/AgentVitalCard';
@@ -160,9 +160,9 @@ export function OverviewView({ onOpenDetail }) {
       <motion.div variants={item} className="col-span-2 h-[300px]">
         <div className="spatial-panel flex flex-col gap-5 justify-center items-center h-full group relative">
           <WidgetActions onExpand={() => {}} onConfigure={() => {}} onRemove={() => {}} />
-          <HealthRadial label="CPU" value={72} color="#00D9C8" />
-          <HealthRadial label="MEM" value={58} color="#a78bfa" />
-          <HealthRadial label="API" value={94} color="#60a5fa" />
+          {healthMetrics.map(m => (
+            <HealthRadial key={m.label} label={m.label} value={m.value} color={m.color} history={m.history24h} />
+          ))}
         </div>
       </motion.div>
       <motion.div variants={item} className="col-span-3 h-[300px]">

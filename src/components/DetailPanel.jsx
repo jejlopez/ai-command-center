@@ -539,21 +539,21 @@ function SkillsTab({ agent }) {
 
 // ── Metrics Tab ──────────────────────────────────────────────────
 function MetricsTab({ agent }) {
+  const uptimeHrs = agent.uptimeMs ? (agent.uptimeMs / 3_600_000).toFixed(1) : '0.0';
   const stats = [
     { label: 'Total Tokens', value: (agent.totalTokens || 0).toLocaleString(), sub: `$${(agent.totalCost || 0).toFixed(2)}` },
     { label: 'Avg Latency', value: `${agent.latencyMs}ms`, sub: `p95: ${Math.round(agent.latencyMs * 1.4)}ms` },
     { label: 'Success Rate', value: `${agent.successRate || 0}%`, sub: `${agent.taskCount || 0} tasks` },
-    { label: 'Skills Active', value: agent.skills?.length || 0, sub: `of ${skillBank.length}` },
+    { label: 'Uptime', value: `${uptimeHrs}h`, sub: `${agent.restartCount || 0} restarts` },
   ];
 
-  const tokenHistory = Array.from({ length: 24 }, (_, i) => ({
-    hour: i,
-    tokens: Math.floor(Math.random() * (agent.totalTokens || 5000) / 24 * (0.5 + Math.random())),
-  }));
+  const tokenHistory = (agent.tokenHistory24h || []).map((tokens, i) => ({ hour: i, tokens }));
 
-  const topTools = (agent.skills || []).slice(0, 4).map((sid) => {
+  // Deterministic tool call counts seeded from agent token data
+  const seedBase = agent.totalTokens || 1000;
+  const topTools = (agent.skills || []).slice(0, 4).map((sid, idx) => {
     const skill = skillBank.find(s => s.id === sid);
-    return { name: skill?.name || sid, calls: Math.floor(Math.random() * 40) + 5 };
+    return { name: skill?.name || sid, calls: Math.max(5, Math.floor(((seedBase * (idx + 7)) % 47) + 8)) };
   }).sort((a, b) => b.calls - a.calls);
 
   const maxCalls = Math.max(...topTools.map(t => t.calls), 1);
@@ -774,11 +774,27 @@ export function DetailPanel({ agentId, onClose }) {
 
           {/* Status action bar */}
           {agent.status === 'error' && (
-            <div className="px-5 py-2.5 bg-aurora-rose/5 border-b border-aurora-rose/10 flex items-center justify-between shrink-0">
-              <span className="text-[11px] text-aurora-rose font-medium">Agent requires intervention</span>
-              <button className="px-3 py-1 bg-aurora-rose/10 hover:bg-aurora-rose/20 text-aurora-rose text-[10px] font-bold rounded-md border border-aurora-rose/20 transition-colors">
-                Request Intervention
-              </button>
+            <div className="border-b border-aurora-rose/10 shrink-0">
+              <div className="px-5 py-2.5 bg-aurora-rose/5 flex items-center justify-between">
+                <div className="flex items-center gap-2 min-w-0">
+                  <AlertTriangle className="w-3.5 h-3.5 text-aurora-rose shrink-0" />
+                  <span className="text-[11px] text-aurora-rose font-medium truncate">
+                    {agent.errorMessage || 'Agent requires intervention'}
+                  </span>
+                </div>
+                <button className="px-3 py-1 bg-aurora-rose/10 hover:bg-aurora-rose/20 text-aurora-rose text-[10px] font-bold rounded-md border border-aurora-rose/20 transition-colors shrink-0 ml-3">
+                  Restart Agent
+                </button>
+              </div>
+              {agent.errorStack && (
+                <div className="px-5 py-2 bg-aurora-rose/[0.03]">
+                  <pre className="text-[10px] font-mono text-aurora-rose/70 leading-relaxed whitespace-pre-wrap">{agent.errorStack}</pre>
+                  <div className="flex items-center gap-3 mt-2 text-[9px] font-mono text-text-disabled">
+                    <span>Last heartbeat: {agent.lastHeartbeat || '—'}</span>
+                    <span>Restarts: {agent.restartCount || 0}/3</span>
+                  </div>
+                </div>
+              )}
             </div>
           )}
           {agent.status === 'idle' && (

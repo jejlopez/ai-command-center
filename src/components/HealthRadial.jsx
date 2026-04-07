@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
+import { LineChart, Line, ResponsiveContainer } from 'recharts';
 
-export function HealthRadial({ label, value, color }) {
+export function HealthRadial({ label, value, color, history }) {
   const [offset, setOffset] = useState(175.93); // Full circle stroke-dasharray roughly 2 * pi * 28
 
   useEffect(() => {
@@ -11,20 +12,22 @@ export function HealthRadial({ label, value, color }) {
     setTimeout(() => setOffset(newOffset), 100);
   }, [value]);
 
+  const sparkData = (history || []).map((v, i) => ({ val: v, i }));
+
   return (
     <div className="flex flex-col items-center">
       <div className="relative w-16 h-16">
         <svg className="w-full h-full -rotate-90" viewBox="0 0 64 64">
-          <circle 
-            cx="32" cy="32" r="28" 
-            fill="none" 
-            stroke="rgba(255,255,255,0.06)" 
-            strokeWidth="5" 
+          <circle
+            cx="32" cy="32" r="28"
+            fill="none"
+            stroke="rgba(255,255,255,0.06)"
+            strokeWidth="5"
           />
-          <motion.circle 
-            cx="32" cy="32" r="28" 
-            fill="none" 
-            stroke={color} 
+          <motion.circle
+            cx="32" cy="32" r="28"
+            fill="none"
+            stroke={color}
             strokeWidth="5"
             strokeLinecap="round"
             strokeDasharray="175.93"
@@ -38,6 +41,15 @@ export function HealthRadial({ label, value, color }) {
         </div>
       </div>
       <div className="mt-2 text-[9px] uppercase tracking-[0.15em] text-text-disabled">{label}</div>
+      {sparkData.length > 0 && (
+        <div className="w-14 h-4 mt-1 opacity-60">
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={sparkData}>
+              <Line type="monotone" dataKey="val" stroke={color} strokeWidth={1} dot={false} isAnimationActive={false} />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      )}
     </div>
   );
 }

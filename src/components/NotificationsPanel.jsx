@@ -1,7 +1,8 @@
 import React, { useState, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Bell, X, AlertCircle, CheckCircle2, Clock, Shield, BrainCircuit, Filter } from 'lucide-react';
+import { Bell, X, AlertCircle, CheckCircle2, Clock, Shield, BrainCircuit, Filter, Trash2 } from 'lucide-react';
 import { cn } from '../utils/cn';
+import { generateNotifications } from '../utils/mockData';
 
 const CATEGORIES = {
   error: {
@@ -41,98 +42,31 @@ const FILTER_TABS = [
   { id: 'system', label: 'System' },
 ];
 
-const initialNotifications = [
-  {
-    id: 1,
-    category: 'error',
-    title: 'Scraper agent failed',
-    description: 'Agent 4: Rate limit exceeded on target API. Retries exhausted after 3 attempts.',
-    time: '2m ago',
-    read: false,
-  },
-  {
-    id: 2,
-    category: 'approval',
-    title: 'PR #18 awaiting review',
-    description: 'Researcher submitted refactor of data pipeline. Queued in Review Room.',
-    time: '8m ago',
-    read: false,
-  },
-  {
-    id: 3,
-    category: 'success',
-    title: 'Research task #42 completed',
-    description: 'Researcher agent finished competitive analysis. 14 sources synthesized.',
-    time: '15m ago',
-    read: false,
-  },
-  {
-    id: 4,
-    category: 'system',
-    title: 'Memory Core at 85% capacity',
-    description: 'Long-term memory store approaching threshold. Consider archiving stale embeddings.',
-    time: '22m ago',
-    read: false,
-  },
-  {
-    id: 5,
-    category: 'error',
-    title: 'UI agent render timeout',
-    description: 'Agent 7: Component tree exceeded 5s render budget on Dashboard view.',
-    time: '1h ago',
-    read: true,
-  },
-  {
-    id: 6,
-    category: 'approval',
-    title: 'Deploy approval required',
-    description: 'Commander requesting production deploy for build v2.4.1. Manual sign-off needed.',
-    time: '1h ago',
-    read: true,
-  },
-  {
-    id: 7,
-    category: 'success',
-    title: 'QA suite passed',
-    description: 'QA agent completed 847 assertions across 12 modules. Zero regressions detected.',
-    time: '2h ago',
-    read: true,
-  },
-  {
-    id: 8,
-    category: 'system',
-    title: 'Fleet scaling event',
-    description: 'Auto-scaler provisioned 2 additional worker agents to handle task queue backlog.',
-    time: '3h ago',
-    read: true,
-  },
-  {
-    id: 9,
-    category: 'system',
-    title: 'Telemetry pipeline restored',
-    description: 'Metrics ingestion recovered after 4m interruption. No data loss confirmed.',
-    time: '4h ago',
-    read: true,
-  },
-  {
-    id: 10,
-    category: 'error',
-    title: 'Context window overflow',
-    description: 'Agent 12: Prompt exceeded 128k token limit during document summarization.',
-    time: '5h ago',
-    read: true,
-  },
-];
-
-export function getUnreadCount(notifications) {
-  return notifications.filter((n) => !n.read).length;
+// ── Relative timestamp with exact time for hover ────────────────
+function formatRelativeTime(date) {
+  if (!date) return '';
+  const now = Date.now();
+  const diff = now - date.getTime();
+  const secs = Math.floor(diff / 1000);
+  if (secs < 60) return 'Just now';
+  const mins = Math.floor(secs / 60);
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  return `${days}d ago`;
 }
 
-export function NotificationsPanel({ notificationsOpen, setNotificationsOpen }) {
-  const [notifications, setNotifications] = useState(initialNotifications);
+function formatExactTime(date) {
+  if (!date) return '';
+  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+}
+
+export function NotificationsPanel({ notificationsOpen, setNotificationsOpen, onNavigate }) {
+  const [notifications, setNotifications] = useState(() => generateNotifications());
   const [activeFilter, setActiveFilter] = useState('all');
 
-  const unreadCount = useMemo(() => getUnreadCount(notifications), [notifications]);
+  const unreadCount = useMemo(() => notifications.filter(n => !n.read).length, [notifications]);
 
   const filtered = useMemo(() => {
     if (activeFilter === 'all') return notifications;
@@ -148,6 +82,22 @@ export function NotificationsPanel({ notificationsOpen, setNotificationsOpen }) 
       prev.map((n) => (n.id === id ? { ...n, read: true } : n))
     );
   }, []);
+
+  const dismiss = useCallback((id) => {
+    setNotifications((prev) => prev.filter((n) => n.id !== id));
+  }, []);
+
+  const clearAll = useCallback(() => {
+    setNotifications([]);
+  }, []);
+
+  const handleClick = useCallback((notif) => {
+    markRead(notif.id);
+    if (notif.action && onNavigate) {
+      onNavigate(notif.action);
+      setNotificationsOpen(false);
+    }
+  }, [markRead, onNavigate, setNotificationsOpen]);
 
   return (
     <AnimatePresence>
@@ -239,7 +189,7 @@ export function NotificationsPanel({ notificationsOpen, setNotificationsOpen }) 
                     className="flex flex-col items-center justify-center h-40 text-text-muted text-sm"
                   >
                     <Filter className="w-5 h-5 mb-2 opacity-40" />
-                    No notifications in this category.
+                    {notifications.length === 0 ? 'All clear — no notifications' : 'No notifications in this category.'}
                   </motion.div>
                 ) : (
                   filtered.map((notif) => {
@@ -247,24 +197,30 @@ export function NotificationsPanel({ notificationsOpen, setNotificationsOpen }) 
                     const IconComponent = cat.Icon;
 
                     return (
-                      <motion.button
+                      <motion.div
                         key={notif.id}
                         layout
                         initial={{ opacity: 0, y: 8 }}
                         animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, x: -20 }}
+                        exit={{ opacity: 0, x: -40, transition: { duration: 0.2 } }}
                         transition={{ duration: 0.15 }}
-                        onClick={() => markRead(notif.id)}
                         className={cn(
-                          'w-full text-left px-5 py-3.5 flex gap-3 border-l-2 transition-colors',
+                          'w-full text-left px-5 py-3.5 flex gap-3 border-l-2 transition-colors group relative',
                           'hover:bg-white/[0.04]',
+                          notif.action && onNavigate ? 'cursor-pointer' : '',
                           !notif.read
                             ? cn(cat.borderClass, 'bg-white/[0.02]')
                             : 'border-l-transparent'
                         )}
                       >
+                        {/* Clickable area */}
+                        <button
+                          className="absolute inset-0 z-0"
+                          onClick={() => handleClick(notif)}
+                        />
+
                         {/* Icon + Dot */}
-                        <div className="relative mt-0.5 shrink-0">
+                        <div className="relative mt-0.5 shrink-0 z-10 pointer-events-none">
                           <IconComponent
                             className={cn(
                               'w-4 h-4',
@@ -284,7 +240,7 @@ export function NotificationsPanel({ notificationsOpen, setNotificationsOpen }) 
                         </div>
 
                         {/* Content */}
-                        <div className="flex-1 min-w-0">
+                        <div className="flex-1 min-w-0 z-10 pointer-events-none">
                           <div className="flex items-start justify-between gap-2">
                             <span
                               className={cn(
@@ -296,15 +252,27 @@ export function NotificationsPanel({ notificationsOpen, setNotificationsOpen }) 
                             >
                               {notif.title}
                             </span>
-                            <span className="text-[10px] text-text-muted whitespace-nowrap mt-0.5">
-                              {notif.time}
+                            <span
+                              className="text-[10px] text-text-muted whitespace-nowrap mt-0.5"
+                              title={formatExactTime(notif.createdAt)}
+                            >
+                              {formatRelativeTime(notif.createdAt)}
                             </span>
                           </div>
                           <p className="text-[11px] text-text-muted leading-relaxed mt-0.5 line-clamp-2">
                             {notif.description}
                           </p>
                         </div>
-                      </motion.button>
+
+                        {/* Dismiss button */}
+                        <button
+                          onClick={(e) => { e.stopPropagation(); dismiss(notif.id); }}
+                          className="relative z-10 shrink-0 mt-0.5 p-1 rounded opacity-0 group-hover:opacity-100 text-text-disabled hover:text-aurora-rose hover:bg-aurora-rose/10 transition-all"
+                          title="Dismiss"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </motion.div>
                     );
                   })
                 )}
@@ -312,10 +280,19 @@ export function NotificationsPanel({ notificationsOpen, setNotificationsOpen }) 
             </div>
 
             {/* Footer */}
-            <div className="px-5 py-3 border-t border-border">
-              <p className="text-[10px] text-text-muted text-center">
+            <div className="px-5 py-3 border-t border-border flex items-center justify-between">
+              <p className="text-[10px] text-text-muted">
                 {notifications.length} total &middot; {unreadCount} unread
               </p>
+              {notifications.length > 0 && (
+                <button
+                  onClick={clearAll}
+                  className="flex items-center gap-1 text-[10px] text-text-disabled hover:text-aurora-rose font-medium transition-colors"
+                >
+                  <Trash2 className="w-3 h-3" />
+                  Clear all
+                </button>
+              )}
             </div>
           </motion.div>
         </>
@@ -323,10 +300,5 @@ export function NotificationsPanel({ notificationsOpen, setNotificationsOpen }) 
     </AnimatePresence>
   );
 }
-
-/** Hook-friendly helper: returns the default unread count from initial data */
-NotificationsPanel.defaultUnreadCount = initialNotifications.filter(
-  (n) => !n.read
-).length;
 
 export default NotificationsPanel;

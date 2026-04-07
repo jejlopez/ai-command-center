@@ -3,7 +3,7 @@ import { motion } from 'framer-motion';
 import { LineChart, Line, ResponsiveContainer } from 'recharts';
 import { cn } from '../utils/cn';
 import { useAnimatedCounter } from '../utils/useAnimatedCounter';
-import { Crown, ArrowUpRight } from 'lucide-react';
+import { Crown, ArrowUpRight, Heart } from 'lucide-react';
 import { agents as allAgents } from '../utils/mockData';
 
 function getThresholdColor(val) {
@@ -152,10 +152,28 @@ export function AgentVitalCard({ agent, onLogClick }) {
         </ResponsiveContainer>
       </div>
 
+      {/* Heartbeat + Uptime */}
+      <div className="flex items-center justify-between mt-2 px-0.5">
+        <div className="flex items-center gap-1.5">
+          <Heart className={cn(
+            "w-3 h-3",
+            agent.status === 'error' ? "text-aurora-rose" :
+            agent.status === 'processing' ? "text-aurora-teal animate-pulse" :
+            "text-text-disabled"
+          )} />
+          <span className="text-[9px] font-mono text-text-disabled">
+            {agent.lastHeartbeat || '—'}
+          </span>
+        </div>
+        <span className="text-[9px] font-mono text-text-disabled">
+          {agent.uptimeMs > 0 ? `${(agent.uptimeMs / 3_600_000).toFixed(1)}h up` : 'DOWN'}
+        </span>
+      </div>
+
       {/* Hover overlay */}
       <div className="absolute bottom-0 inset-x-0 p-3 bg-gradient-to-t from-[#111111] via-[#111111]/80 to-transparent flex justify-center gap-4 opacity-0 group-hover:opacity-100 transition-opacity rounded-b-[1rem]">
         <span className="text-aurora-teal text-xs font-semibold drop-shadow-[0_0_5px_rgba(0,217,200,0.8)] tracking-wider uppercase">
-          Open Telemetry View 
+          Open Telemetry View
         </span>
       </div>
     </motion.div>
