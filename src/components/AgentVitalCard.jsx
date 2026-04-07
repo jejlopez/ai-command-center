@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { LineChart, Line, ResponsiveContainer } from 'recharts';
 import { cn } from '../utils/cn';
 import { useAnimatedCounter } from '../utils/useAnimatedCounter';
-import { Crown, ArrowUpRight, Heart, AlertTriangle, RotateCcw, Square } from 'lucide-react';
+import { Crown, ArrowUpRight, AlertTriangle, RotateCcw, Square } from 'lucide-react';
 import { agents as allAgents, activityLog } from '../utils/mockData';
 
 function getThresholdColor(val) {
@@ -185,24 +185,6 @@ export function AgentVitalCard({ agent, onLogClick }) {
             />
           </LineChart>
         </ResponsiveContainer>
-      </div>
-
-      {/* Heartbeat + Uptime */}
-      <div className="flex items-center justify-between mt-2 px-0.5">
-        <div className="flex items-center gap-1.5">
-          <Heart className={cn(
-            "w-3 h-3",
-            agent.status === 'error' ? "text-aurora-rose" :
-            agent.status === 'processing' ? "text-aurora-teal animate-pulse" :
-            "text-text-disabled"
-          )} />
-          <span className="text-[9px] font-mono text-text-disabled">
-            {agent.lastHeartbeat || '—'}
-          </span>
-        </div>
-        <span className="text-[9px] font-mono text-text-disabled">
-          {agent.uptimeMs > 0 ? `${(agent.uptimeMs / 3_600_000).toFixed(1)}h up` : 'DOWN'}
-        </span>
       </div>
 
       {/* Hover overlay — different for error vs healthy agents */}
