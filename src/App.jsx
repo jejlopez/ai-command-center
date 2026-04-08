@@ -129,7 +129,7 @@ function Dashboard() {
       <UserProfilePanel profileOpen={profileOpen} setProfileOpen={setProfileOpen} />
 
       <AnimatePresence>
-        <DoctorModePanel />
+        {/* <DoctorModePanel /> */}
         {detailId && <DetailPanel agentId={detailId} onClose={() => setDetailId(null)} />}
       </AnimatePresence>
     </div>

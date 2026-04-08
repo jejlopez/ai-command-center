@@ -1,12 +1,13 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { fetchAgents, fetchTasks, fetchActivityLog } from '../lib/api';
+import { useAgents, useTasks, useActivityLog } from '../utils/useSupabase';
 import { cn } from '../utils/cn';
 import { container, item as itemVariant } from '../utils/variants';
 import { AgentVitalCard } from '../components/AgentVitalCard';
+import { CreateAgentModal } from '../components/CreateAgentModal';
 import { TaskDAG } from '../components/TaskDAG';
 import Globe from 'react-globe.gl';
-import { GitBranch, Edit2, RotateCcw, Trash2 } from 'lucide-react';
+import { GitBranch, Edit2, RotateCcw, Trash2, Plus, Loader2 } from 'lucide-react';
 import { WidgetActions } from '../components/WidgetActions';
 
 const statusStyles = {
@@ -19,17 +20,16 @@ const statusStyles = {
 };
 
 const MapWidget = () => {
-  const [arcsData, setArcsData] = useState([]);
-  useEffect(() => {
+  const [arcsData] = useState(() => {
     const N = 24;
-    setArcsData([...Array(N).keys()].map(() => ({
+    return [...Array(N).keys()].map(() => ({
       startLat: (Math.random() - 0.5) * 180,
       startLng: (Math.random() - 0.5) * 360,
       endLat: (Math.random() - 0.5) * 180,
       endLng: (Math.random() - 0.5) * 360,
       color: ['#00D9C8', '#a78bfa', '#60a5fa'][Math.floor(Math.random() * 3)]
-    })));
-  }, []);
+    }));
+  });
 
   return (
     <div className="col-span-12 spatial-panel relative overflow-hidden h-[340px] flex items-center justify-center border-aurora-teal/20 shadow-glow-teal group">
@@ -57,34 +57,15 @@ const MapWidget = () => {
 };
 
 export function FleetOperationsView({ onOpenDetail }) {
-  const [agents, setAgents]     = useState([]);
-  const [tasks, setTasks]       = useState([]);
-  const [logData, setLogData]   = useState([]);
-  const [loaded, setLoaded]     = useState(false);
+  const { agents, loading: loadingAgents, usingMock, addOptimistic } = useAgents();
+  const { tasks, loading: loadingTasks } = useTasks();
+  const { logs: logData, loading: loadingLogs } = useActivityLog();
+  const [createModalOpen, setCreateModalOpen] = useState(false);
 
-  useEffect(() => {
-    let cancelled = false;
-    async function load() {
-      const [agentsData, tasksData, logEntries] = await Promise.all([
-        fetchAgents(),
-        fetchTasks(),
-        fetchActivityLog(),
-      ]);
-      if (!cancelled) {
-        setAgents(agentsData);
-        setTasks(tasksData);
-        setLogData(logEntries);
-        setLoaded(true);
-      }
-    }
-    load();
-    return () => { cancelled = true; };
-  }, []);
-
-  if (!loaded) {
+  if (loadingAgents || loadingTasks || loadingLogs) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="w-5 h-5 border-2 border-aurora-teal/30 border-t-aurora-teal rounded-full animate-spin" />
+        <Loader2 className="w-5 h-5 text-aurora-teal animate-spin" />
       </div>
     );
   }
@@ -94,10 +75,26 @@ export function FleetOperationsView({ onOpenDetail }) {
       <div className="mb-6 flex justify-between items-end">
         <div>
           <h2 className="text-2xl font-bold text-text-primary mb-1">Fleet Operations</h2>
-          <p className="text-sm text-text-muted">Master overview of active agents, neural pipelines, and live tasks.</p>
+          <div className="flex items-center gap-2">
+            <p className="text-sm text-text-muted">Master overview of active agents, neural pipelines, and live tasks.</p>
+            {usingMock && (
+              <span className="text-[9px] px-1.5 py-0.5 rounded bg-aurora-amber/10 text-aurora-amber border border-aurora-amber/20 font-mono">
+                MOCK DATA
+              </span>
+            )}
+          </div>
         </div>
         <div className="flex gap-3">
-          {/* Fleet health summary — dynamically derived from agents data */}
+          <motion.button
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+            onClick={() => setCreateModalOpen(true)}
+            className="flex items-center gap-2 px-4 py-2 bg-aurora-teal text-black rounded-xl text-sm font-semibold hover:bg-aurora-teal/90 transition-colors shadow-glow-teal"
+          >
+            <Plus className="w-4 h-4" />
+            Deploy Agent
+          </motion.button>
+
           {(() => {
             const active  = agents.filter(a => a.status === 'processing').length;
             const idle    = agents.filter(a => a.status === 'idle').length;
@@ -135,10 +132,8 @@ export function FleetOperationsView({ onOpenDetail }) {
 
       <motion.div variants={container} initial="hidden" animate="show" className="flex flex-col gap-8">
         
-        {/* Tier 1: Agent Fleet Grid */}
         <motion.div variants={itemVariant} className="flex flex-col gap-4">
           <h3 className="text-sm font-bold text-text-muted uppercase tracking-wider border-b border-border pb-2">Active Workforce</h3>
-          {/* -mx-8 px-8 matches App.jsx content padding to prevent hover scale clipping */}
           <div className="grid grid-cols-12 gap-5 px-8 -mx-8 pb-6 pt-2 overflow-visible">
             <AnimatePresence mode="popLayout">
                 {agents.map(a => (
@@ -150,7 +145,6 @@ export function FleetOperationsView({ onOpenDetail }) {
           </div>
         </motion.div>
 
-        {/* Tier 2: Neural Task DAG */}
         <motion.div variants={itemVariant} className="grid grid-cols-12 gap-6 min-h-[380px]">
           <div className="col-span-8 spatial-panel p-6 flex flex-col relative group">
             <WidgetActions onExpand={() => {}} onConfigure={() => {}} onRemove={() => {}} />
@@ -184,7 +178,6 @@ export function FleetOperationsView({ onOpenDetail }) {
           </div>
         </motion.div>
 
-        {/* Tier 3: High-Density Run Matrix */}
         <motion.div variants={itemVariant}>
           <h3 className="text-sm font-bold text-text-muted uppercase tracking-wider mb-4 border-b border-border pb-2 mt-4">Live Tasks</h3>
           <AnimatePresence mode="popLayout">
@@ -223,7 +216,6 @@ export function FleetOperationsView({ onOpenDetail }) {
                     ${run.costUsd.toFixed(3)}
                   </span>
 
-                  {/* Action Widgets */}
                   <div className="flex items-center gap-2 border-l border-white/10 pl-4 ml-4 opacity-0 group-hover:opacity-100 transition-opacity">
                     <button onClick={(e) => { e.stopPropagation(); }} className="p-1.5 text-text-muted hover:text-[#a78bfa] hover:bg-white/5 rounded transition-all" title="Edit Task Config"><Edit2 className="w-3.5 h-3.5" /></button>
                     <button onClick={(e) => { e.stopPropagation(); }} className="p-1.5 text-text-muted hover:text-aurora-amber hover:bg-white/5 rounded transition-all" title="Force Restart"><RotateCcw className="w-3.5 h-3.5" /></button>
@@ -236,6 +228,14 @@ export function FleetOperationsView({ onOpenDetail }) {
         </motion.div>
 
       </motion.div>
+
+      <CreateAgentModal
+        isOpen={createModalOpen}
+        onClose={() => setCreateModalOpen(false)}
+        onCreated={(optimisticAgent) => {
+          addOptimistic(optimisticAgent);
+        }}
+      />
     </div>
   );
 }

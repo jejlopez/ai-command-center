@@ -1,7 +1,6 @@
-import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { container, item } from '../utils/variants';
-import { fetchAgents, fetchTasks, fetchActivityLog, fetchCostData, fetchHealthMetrics } from '../lib/api';
+import { useAgents, useTasks, useActivityLog, useCostData, useHealthMetrics } from '../utils/useSupabase';
 import { SpotlightCard } from '../components/SpotlightCard';
 import { NeuralPulse } from '../components/NeuralPulse';
 import { AgentVitalCard } from '../components/AgentVitalCard';
@@ -25,7 +24,6 @@ function DelegationWidget({ agents }) {
         Delegation Tree
       </div>
 
-      {/* Commander */}
       {commander && (
         <div className="flex items-center gap-3 mb-4 pb-3 border-b border-white/[0.05]">
           <Crown className="w-4 h-4 text-aurora-amber shrink-0" />
@@ -40,7 +38,6 @@ function DelegationWidget({ agents }) {
         </div>
       )}
 
-      {/* Sub-agents */}
       <div className="flex-1 space-y-2 overflow-y-auto no-scrollbar">
         {subagents.map(agent => {
           const statusColor = {
@@ -105,37 +102,13 @@ function QuickStats({ agents, costTotal }) {
 }
 
 export function OverviewView({ onOpenDetail }) {
-  const [agents, setAgents]     = useState([]);
-  const [tasks, setTasks]       = useState([]);
-  const [logData, setLogData]   = useState([]);
-  const [cost, setCost]         = useState(null);
-  const [health, setHealth]     = useState([]);
-  const [loading, setLoading]   = useState(true);
+  const { agents, loading: loadingAgents } = useAgents();
+  const { tasks, loading: loadingTasks } = useTasks();
+  const { logs: logData, loading: loadingLogs } = useActivityLog();
+  const { data: costData } = useCostData();
+  const { data: healthData } = useHealthMetrics();
 
-  useEffect(() => {
-    let cancelled = false;
-    async function load() {
-      const [agentsData, tasksData, logEntries, costData, healthData] = await Promise.all([
-        fetchAgents(),
-        fetchTasks(),
-        fetchActivityLog(),
-        fetchCostData(),
-        fetchHealthMetrics(),
-      ]);
-      if (!cancelled) {
-        setAgents(agentsData);
-        setTasks(tasksData);
-        setLogData(logEntries);
-        setCost(costData);
-        setHealth(healthData);
-        setLoading(false);
-      }
-    }
-    load();
-    return () => { cancelled = true; };
-  }, []);
-
-  if (loading) {
+  if (loadingAgents || loadingTasks || loadingLogs) {
     return (
       <div className="flex items-center justify-center h-64">
         <Loader2 className="w-5 h-5 text-aurora-teal animate-spin" />
@@ -198,7 +171,7 @@ export function OverviewView({ onOpenDetail }) {
       <motion.div variants={item} className="col-span-2 h-[300px]">
         <div className="spatial-panel flex flex-col gap-5 justify-center items-center h-full group relative">
           <WidgetActions onExpand={() => {}} onConfigure={() => {}} onRemove={() => {}} />
-          {health.map(m => (
+          {healthData.map(m => (
             <HealthRadial key={m.label} label={m.label} value={m.value} color={m.color} history={m.history24h} />
           ))}
         </div>
@@ -207,7 +180,7 @@ export function OverviewView({ onOpenDetail }) {
         <DelegationWidget agents={agents} />
       </motion.div>
       <motion.div variants={item} className="col-span-3 h-[300px]">
-        <QuickStats agents={agents} costTotal={cost?.total ?? 0} />
+        <QuickStats agents={agents} costTotal={costData?.total ?? 0} />
       </motion.div>
     </motion.div>
   );
