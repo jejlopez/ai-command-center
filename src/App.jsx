@@ -13,9 +13,11 @@ import { FleetOperationsView } from './views/FleetOperationsView';
 import { ReviewRoomView } from './views/ReviewRoomView';
 import { ReportsView } from './views/ReportsView';
 import { IntelligenceView } from './views/IntelligenceView';
+import { LoginView } from './views/LoginView';
 import { TimeRangeProvider } from './utils/useTimeRange';
 import { useSystemState } from './context/SystemStateContext';
-import { Bell, Settings, User } from 'lucide-react';
+import { AuthProvider, useAuth } from './context/AuthContext';
+import { Bell, Settings, User, Loader2 } from 'lucide-react';
 import { cn } from './utils/cn';
 
 function Dashboard() {
@@ -134,11 +136,33 @@ function Dashboard() {
   );
 }
 
-function App() {
+function AuthGate() {
+  const { user, loading } = useAuth();
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-canvas flex items-center justify-center">
+        <Loader2 className="w-6 h-6 text-aurora-teal animate-spin" />
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <LoginView />;
+  }
+
   return (
     <TimeRangeProvider>
       <Dashboard />
     </TimeRangeProvider>
+  );
+}
+
+function App() {
+  return (
+    <AuthProvider>
+      <AuthGate />
+    </AuthProvider>
   );
 }
 

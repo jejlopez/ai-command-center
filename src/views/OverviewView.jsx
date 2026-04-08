@@ -1,6 +1,7 @@
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { container, item } from '../utils/variants';
-import { agents, costData, healthMetrics } from '../utils/mockData';
+import { fetchAgents, fetchTasks, fetchActivityLog, fetchCostData, fetchHealthMetrics } from '../lib/api';
 import { SpotlightCard } from '../components/SpotlightCard';
 import { NeuralPulse } from '../components/NeuralPulse';
 import { AgentVitalCard } from '../components/AgentVitalCard';
@@ -9,11 +10,11 @@ import { ActivityFeed } from '../components/ActivityFeed';
 import { TaskDAG } from '../components/TaskDAG';
 import { MemorySparkmap } from '../components/MemorySparkmap';
 import { HealthRadial } from '../components/HealthRadial';
-import { Crown, ArrowUpRight, Zap, AlertTriangle } from 'lucide-react';
+import { Crown, ArrowUpRight, Zap, AlertTriangle, Loader2 } from 'lucide-react';
 import { WidgetActions } from '../components/WidgetActions';
 
 // Commander's delegation tree for overview
-function DelegationWidget() {
+function DelegationWidget({ agents }) {
   const commander = agents.find(a => a.role === 'commander');
   const subagents = agents.filter(a => a.parentId === commander?.id);
 
@@ -71,7 +72,7 @@ function DelegationWidget() {
 }
 
 // Quick stats summary
-function QuickStats() {
+function QuickStats({ agents, costTotal }) {
   const activeCount = agents.filter(a => a.status === 'processing').length;
   const errorCount = agents.filter(a => a.status === 'error').length;
   const totalTokens = agents.reduce((sum, a) => sum + (a.totalTokens || 0), 0);
@@ -80,7 +81,7 @@ function QuickStats() {
     { label: 'Active', value: activeCount, icon: Zap, color: 'text-aurora-teal' },
     { label: 'Errors', value: errorCount, icon: AlertTriangle, color: errorCount > 0 ? 'text-aurora-rose' : 'text-text-muted' },
     { label: 'Tokens', value: `${(totalTokens / 1000).toFixed(1)}k`, icon: null, color: 'text-text-primary' },
-    { label: 'Cost', value: `$${costData.total}`, icon: null, color: 'text-aurora-amber' },
+    { label: 'Cost', value: `$${costTotal}`, icon: null, color: 'text-aurora-amber' },
   ];
 
   return (
@@ -104,6 +105,44 @@ function QuickStats() {
 }
 
 export function OverviewView({ onOpenDetail }) {
+  const [agents, setAgents]     = useState([]);
+  const [tasks, setTasks]       = useState([]);
+  const [logData, setLogData]   = useState([]);
+  const [cost, setCost]         = useState(null);
+  const [health, setHealth]     = useState([]);
+  const [loading, setLoading]   = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      const [agentsData, tasksData, logEntries, costData, healthData] = await Promise.all([
+        fetchAgents(),
+        fetchTasks(),
+        fetchActivityLog(),
+        fetchCostData(),
+        fetchHealthMetrics(),
+      ]);
+      if (!cancelled) {
+        setAgents(agentsData);
+        setTasks(tasksData);
+        setLogData(logEntries);
+        setCost(costData);
+        setHealth(healthData);
+        setLoading(false);
+      }
+    }
+    load();
+    return () => { cancelled = true; };
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader2 className="w-5 h-5 text-aurora-teal animate-spin" />
+      </div>
+    );
+  }
+
   const activeAgents = agents.filter(a => a.status === 'processing').length;
 
   return (
@@ -121,13 +160,12 @@ export function OverviewView({ onOpenDetail }) {
       </motion.div>
 
       {/* Row 2: Agent cards */}
-      {/* -mx-8 px-8 matches App.jsx content padding to prevent hover scale clipping */}
       <motion.div variants={item} className="col-span-12 -mx-8 px-8 overflow-visible">
         <div className="grid grid-cols-12 gap-5">
           <AnimatePresence mode="popLayout">
             {agents.map(a => (
               <motion.div key={a.id} variants={item} layout layoutId={a.id} className="col-span-2 relative z-10 hover:z-50">
-                <AgentVitalCard agent={a} onLogClick={() => onOpenDetail(a.id)} />
+                <AgentVitalCard agent={a} onLogClick={() => onOpenDetail(a.id)} allAgents={agents} activityLog={logData} />
               </motion.div>
             ))}
           </AnimatePresence>
@@ -147,7 +185,7 @@ export function OverviewView({ onOpenDetail }) {
       </motion.div>
       <motion.div variants={item} className="col-span-4 h-80">
         <SpotlightCard className="h-full">
-          <TaskDAG onNodeClick={onOpenDetail} />
+          <TaskDAG onNodeClick={onOpenDetail} tasks={tasks} />
         </SpotlightCard>
       </motion.div>
 
@@ -160,16 +198,16 @@ export function OverviewView({ onOpenDetail }) {
       <motion.div variants={item} className="col-span-2 h-[300px]">
         <div className="spatial-panel flex flex-col gap-5 justify-center items-center h-full group relative">
           <WidgetActions onExpand={() => {}} onConfigure={() => {}} onRemove={() => {}} />
-          {healthMetrics.map(m => (
+          {health.map(m => (
             <HealthRadial key={m.label} label={m.label} value={m.value} color={m.color} history={m.history24h} />
           ))}
         </div>
       </motion.div>
       <motion.div variants={item} className="col-span-3 h-[300px]">
-        <DelegationWidget />
+        <DelegationWidget agents={agents} />
       </motion.div>
       <motion.div variants={item} className="col-span-3 h-[300px]">
-        <QuickStats />
+        <QuickStats agents={agents} costTotal={cost?.total ?? 0} />
       </motion.div>
     </motion.div>
   );

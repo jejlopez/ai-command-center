@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { tasks } from '../utils/mockData';
+import { tasks as defaultTasks } from '../utils/mockData';
 
 const statusColors = {
   completed: '#00D9C8',
@@ -301,9 +301,10 @@ function formatDuration(ms) {
   return `${(ms / 1000).toFixed(1)}s`;
 }
 
-export function TaskDAG({ onNodeClick }) {
+export function TaskDAG({ onNodeClick, tasks }) {
+  const taskList = tasks || defaultTasks;
   const [hoveredId, setHoveredId] = useState(null);
-  const { nodes, edges } = useMemo(() => computeLayout(tasks), []);
+  const { nodes, edges } = useMemo(() => computeLayout(taskList), [taskList]);
 
   return (
     <div className="w-full h-full flex justify-center items-center overflow-visible relative">

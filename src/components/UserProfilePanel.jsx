@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { User, X, Mail, Lock, Eye, EyeOff, Copy, Activity, Download, LogOut, UserPlus, ChevronRight } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
 
 function GithubIcon({ className }) {
   return (
@@ -162,9 +163,9 @@ function AuthForm({ onSignIn }) {
 /*  Logged-in profile view                                             */
 /* ------------------------------------------------------------------ */
 
-function ProfileView({ onSignOut }) {
+function ProfileView({ onSignOut, userEmail }) {
   const [copied, setCopied] = useState(false);
-  const user = MOCK_USER;
+  const user = { ...MOCK_USER, ...(userEmail ? { email: userEmail } : {}) };
   const usagePercent = Math.round((user.tokenUsage / user.tokenLimit) * 100);
 
   const handleCopyApiKey = () => {
@@ -271,7 +272,12 @@ function ProfileView({ onSignOut }) {
 /* ------------------------------------------------------------------ */
 
 export function UserProfilePanel({ profileOpen, setProfileOpen }) {
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const { user, signOut } = useAuth();
+
+  async function handleSignOut() {
+    await signOut();
+    setProfileOpen(false);
+  }
 
   return (
     <AnimatePresence>
@@ -302,7 +308,7 @@ export function UserProfilePanel({ profileOpen, setProfileOpen }) {
               <div className="flex items-center gap-2.5">
                 <User className="w-5 h-5 text-aurora-teal" />
                 <h2 className="text-sm font-semibold text-text-primary tracking-wide">
-                  {isLoggedIn ? 'Profile' : 'Sign In'}
+                  Profile
                 </h2>
               </div>
               <button
@@ -316,12 +322,8 @@ export function UserProfilePanel({ profileOpen, setProfileOpen }) {
             {/* Divider */}
             <div className="h-px bg-border mx-5" />
 
-            {/* Content */}
-            {isLoggedIn ? (
-              <ProfileView onSignOut={() => setIsLoggedIn(false)} />
-            ) : (
-              <AuthForm onSignIn={() => setIsLoggedIn(true)} />
-            )}
+            {/* Content — always show profile since auth gate handles login */}
+            <ProfileView onSignOut={handleSignOut} userEmail={user?.email} />
           </motion.div>
         </>
       )}

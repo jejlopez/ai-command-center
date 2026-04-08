@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { tasks, agents, mockSpans } from '../utils/mockData';
+import { fetchAgents, fetchTasks, fetchActivityLog } from '../lib/api';
 import { cn } from '../utils/cn';
 import { container, item as itemVariant } from '../utils/variants';
 import { AgentVitalCard } from '../components/AgentVitalCard';
@@ -57,6 +57,38 @@ const MapWidget = () => {
 };
 
 export function FleetOperationsView({ onOpenDetail }) {
+  const [agents, setAgents]     = useState([]);
+  const [tasks, setTasks]       = useState([]);
+  const [logData, setLogData]   = useState([]);
+  const [loaded, setLoaded]     = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      const [agentsData, tasksData, logEntries] = await Promise.all([
+        fetchAgents(),
+        fetchTasks(),
+        fetchActivityLog(),
+      ]);
+      if (!cancelled) {
+        setAgents(agentsData);
+        setTasks(tasksData);
+        setLogData(logEntries);
+        setLoaded(true);
+      }
+    }
+    load();
+    return () => { cancelled = true; };
+  }, []);
+
+  if (!loaded) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="w-5 h-5 border-2 border-aurora-teal/30 border-t-aurora-teal rounded-full animate-spin" />
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col h-full overflow-y-auto no-scrollbar pb-12">
       <div className="mb-6 flex justify-between items-end">
@@ -111,7 +143,7 @@ export function FleetOperationsView({ onOpenDetail }) {
             <AnimatePresence mode="popLayout">
                 {agents.map(a => (
                 <motion.div key={a.id} variants={itemVariant} layout layoutId={`fleet-${a.id}`} className="col-span-4 h-64 relative z-10 hover:z-50">
-                    <AgentVitalCard agent={a} onLogClick={() => onOpenDetail(a.id)} />
+                    <AgentVitalCard agent={a} onLogClick={() => onOpenDetail(a.id)} allAgents={agents} activityLog={logData} />
                 </motion.div>
                 ))}
             </AnimatePresence>
@@ -127,7 +159,7 @@ export function FleetOperationsView({ onOpenDetail }) {
             </h3>
             <div className="absolute inset-0 bg-gradient-to-b from-aurora-blue/5 to-transparent pointer-events-none" />
             <div className="flex-1 w-full h-full relative -mx-4 -mb-4 pt-8">
-              <TaskDAG onNodeClick={(id) => onOpenDetail(id)} />
+              <TaskDAG onNodeClick={(id) => onOpenDetail(id)} tasks={tasks} />
             </div>
           </div>
 

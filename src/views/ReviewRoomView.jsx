@@ -6,7 +6,10 @@ import {
   RotateCcw, Filter,
 } from 'lucide-react';
 import { cn } from '../utils/cn';
-import { pendingReviews, completedOutputs } from '../utils/mockData';
+import {
+  fetchPendingReviews, fetchCompletedOutputs, fetchRevisions,
+  approveReview, rejectReview, subscribeToPendingReviews,
+} from '../lib/api';
 import { useSystemState } from '../context/SystemStateContext';
 
 // ── Style maps ──────────────────────────────────────────────────
@@ -121,12 +124,50 @@ export function ReviewRoomView() {
   const { setPendingCount } = useSystemState();
 
   const [activeTab, setActiveTab]           = useState('approvals');
-  const [selectedId, setSelectedId]         = useState(pendingReviews[0]?.id);
+  const [selectedId, setSelectedId]         = useState(null);
   const [feedback, setFeedback]             = useState('');
   const [showReviseForm, setShowReviseForm] = useState(false);
-  const [approvals, setApprovals]           = useState(pendingReviews);
-  const [outputs, setOutputs]               = useState(completedOutputs);
+  const [approvals, setApprovals]           = useState([]);
+  const [outputs, setOutputs]               = useState([]);
   const [revisions, setRevisions]           = useState([]);
+  const [loaded, setLoaded]                 = useState(false);
+  const [actionError, setActionError]       = useState(null); // inline error for approve/reject failures
+
+  // ── Full reload helper (used on mount + realtime events) ──────
+  const reload = useCallback(async () => {
+    const [reviews, completed, revs] = await Promise.all([
+      fetchPendingReviews(),
+      fetchCompletedOutputs(),
+      fetchRevisions(),
+    ]);
+    setApprovals(reviews);
+    setOutputs(completed);
+    setRevisions(revs);
+    return reviews;
+  }, []);
+
+  // Seed from api.js on mount
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      const reviews = await reload();
+      if (!cancelled) {
+        setSelectedId(reviews[0]?.id ?? null);
+        setLoaded(true);
+      }
+    }
+    load();
+    return () => { cancelled = true; };
+  }, [reload]);
+
+  // ── Realtime subscription ─────────────────────────────────────
+  useEffect(() => {
+    const unsub = subscribeToPendingReviews(() => {
+      // Any insert/update/delete on pending_reviews → full re-sort
+      reload();
+    });
+    return unsub;
+  }, [reload]);
 
   // Filters
   const [urgencyFilter, setUrgencyFilter]   = useState('all');
@@ -178,19 +219,36 @@ export function ReviewRoomView() {
     setFeedback('');
   }, []);
 
-  const handleApprove = useCallback(() => {
+  const handleApprove = useCallback(async () => {
     if (!selected) return;
+    setActionError(null);
+
+    // Optimistic: move to outputs immediately
+    const snapshot = approvals;
     setOutputs(prev => [{ ...selected, completedAt: new Date().toLocaleTimeString(), urgency: undefined, waitingMs: undefined, status: 'approved' }, ...prev]);
     setApprovals(prev => prev.filter(i => i.id !== selected.id));
     setShowReviseForm(false);
     setFeedback('');
-  }, [selected]);
 
-  const handleReject = useCallback(() => {
+    try {
+      await approveReview(selected.id);
+    } catch (err) {
+      // Rollback optimistic update
+      setApprovals(snapshot);
+      setOutputs(prev => prev.filter(i => i.id !== selected.id));
+      setActionError(`Approve failed: ${err.message}`);
+    }
+  }, [selected, approvals]);
+
+  const handleReject = useCallback(async () => {
     if (!selected || !feedback.trim()) return;
+    setActionError(null);
+
+    const fb = feedback.trim();
+    const snapshot = approvals;
     setRevisions(prev => [{
       ...selected,
-      feedback: feedback.trim(),
+      feedback: fb,
       rejectedAt: new Date().toLocaleTimeString(),
       status: 'revision_requested',
     }, ...prev]);
@@ -198,7 +256,18 @@ export function ReviewRoomView() {
     setFeedback('');
     setShowReviseForm(false);
     if (activeTab !== 'approvals') setActiveTab('approvals');
-  }, [selected, feedback, activeTab]);
+
+    try {
+      await rejectReview(selected.id, fb);
+    } catch (err) {
+      // Rollback
+      setApprovals(snapshot);
+      setRevisions(prev => prev.filter(i => i.id !== selected.id));
+      setActionError(`Reject failed: ${err.message}`);
+    }
+  }, [selected, feedback, activeTab, approvals]);
+
+  const dismissError = useCallback(() => setActionError(null), []);
 
   // ── Keyboard shortcuts ────────────────────────────────────────
   useEffect(() => {
@@ -252,6 +321,14 @@ export function ReviewRoomView() {
   ];
 
   // ── Render ────────────────────────────────────────────────────
+  if (!loaded) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="w-5 h-5 border-2 border-aurora-teal/30 border-t-aurora-teal rounded-full animate-spin" />
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col h-full overflow-hidden pb-12">
       {/* Header */}
@@ -442,6 +519,22 @@ export function ReviewRoomView() {
             <div className="flex-1 overflow-auto p-6">
               <OutputRenderer item={selected} />
             </div>
+
+            {/* Error banner */}
+            {actionError && (
+              <div className="shrink-0 px-5 py-2.5 bg-aurora-rose/5 border-t border-aurora-rose/10 flex items-center justify-between">
+                <div className="flex items-center gap-2 min-w-0">
+                  <AlertTriangle className="w-3.5 h-3.5 text-aurora-rose shrink-0" />
+                  <span className="text-[11px] text-aurora-rose font-medium truncate">{actionError}</span>
+                </div>
+                <button
+                  onClick={dismissError}
+                  className="px-2 py-1 text-[10px] text-aurora-rose font-bold hover:bg-aurora-rose/10 rounded transition-colors shrink-0 ml-2"
+                >
+                  Dismiss
+                </button>
+              </div>
+            )}
 
             {/* Action bar — approvals only */}
             {activeTab === 'approvals' && (

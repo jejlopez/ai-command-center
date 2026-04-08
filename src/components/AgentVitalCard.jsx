@@ -4,7 +4,7 @@ import { LineChart, Line, ResponsiveContainer } from 'recharts';
 import { cn } from '../utils/cn';
 import { useAnimatedCounter } from '../utils/useAnimatedCounter';
 import { Crown, ArrowUpRight, AlertTriangle, RotateCcw, Square } from 'lucide-react';
-import { agents as allAgents, activityLog } from '../utils/mockData';
+import { agents as defaultAgents, activityLog as defaultLog } from '../utils/mockData';
 
 function getThresholdColor(val) {
   if (val < 60) return '#00D9C8';
@@ -59,16 +59,19 @@ function SegmentedArc({ completion, tokenBurnRate, baseColor }) {
   );
 }
 
-export function AgentVitalCard({ agent, onLogClick }) {
+export function AgentVitalCard({ agent, onLogClick, allAgents, activityLog }) {
+  const agentList = allAgents || defaultAgents;
+  const logList = activityLog || defaultLog;
+
   const isProcessing = agent.status === 'processing';
   const isError = agent.status === 'error';
   const isCommander = agent.role === 'commander';
   const progressAnim = useAnimatedCounter(agent.taskCompletion);
-  const parentAgent = agent.parentId ? allAgents.find(a => a.id === agent.parentId) : null;
+  const parentAgent = agent.parentId ? agentList.find(a => a.id === agent.parentId) : null;
 
   // Get last error log for error-state agents
   const lastErrorLog = isError
-    ? activityLog.filter(l => l.agentId === agent.id && l.type === 'ERR').pop()
+    ? logList.filter(l => l.agentId === agent.id && l.type === 'ERR').pop()
     : null;
 
   const formattedData = agent.tokenBurn.map((v, i) => ({ val: v, i }));
