@@ -71,12 +71,18 @@ ALTER TABLE pending_reviews ENABLE ROW LEVEL SECURITY;
 ALTER TABLE approval_audit  ENABLE ROW LEVEL SECURITY;
 
 -- Users see/modify only their own rows
-CREATE POLICY pending_reviews_user_policy ON pending_reviews
-  FOR ALL
-  USING (auth.uid() = user_id)
-  WITH CHECK (auth.uid() = user_id);
+DO $$ BEGIN
+  CREATE POLICY pending_reviews_user_policy ON pending_reviews
+    FOR ALL
+    USING (auth.uid() = user_id)
+    WITH CHECK (auth.uid() = user_id);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
-CREATE POLICY approval_audit_user_policy ON approval_audit
-  FOR ALL
-  USING (auth.uid() = user_id)
-  WITH CHECK (auth.uid() = user_id);
+DO $$ BEGIN
+  CREATE POLICY approval_audit_user_policy ON approval_audit
+    FOR ALL
+    USING (auth.uid() = user_id)
+    WITH CHECK (auth.uid() = user_id);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
