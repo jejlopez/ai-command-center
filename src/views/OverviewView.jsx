@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { container, item } from '../utils/variants';
-import { useCostData, useHealthMetrics } from '../utils/useSupabase';
+import { useHealthMetrics } from '../utils/useSupabase';
 import { SpotlightCard } from '../components/SpotlightCard';
 import { NeuralPulse } from '../components/NeuralPulse';
 import { AgentVitalCard } from '../components/AgentVitalCard';
@@ -24,8 +24,7 @@ const statusStyles = {
   pending: 'row-idle text-text-muted border-white/5',
 };
 
-export function OverviewView({ agents, tasks, logData, loading, usingMock, addOptimistic, onOpenDetail, onQuickDispatch }) {
-  const { data: costData } = useCostData();
+export function OverviewView({ agents, tasks, loading, addOptimistic, onOpenDetail, onQuickDispatch }) {
   const { data: healthData } = useHealthMetrics();
   const [createModalOpen, setCreateModalOpen] = useState(false);
 
@@ -78,11 +77,6 @@ export function OverviewView({ agents, tasks, logData, loading, usingMock, addOp
           <div className="px-3 py-1.5 border border-aurora-teal/30 bg-aurora-teal/10 rounded-xl">
             <span className="text-xs font-mono font-bold text-aurora-teal">{agents.length} Total</span>
           </div>
-          {usingMock && (
-            <span className="text-[9px] px-1.5 py-0.5 rounded bg-aurora-amber/10 text-aurora-amber border border-aurora-amber/20 font-mono">
-              MOCK DATA
-            </span>
-          )}
         </div>
         <motion.button
           whileHover={{ scale: 1.02 }}

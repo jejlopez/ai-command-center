@@ -1,8 +1,9 @@
 import { motion } from 'framer-motion';
 import { AreaChart, Area, ResponsiveContainer } from 'recharts';
-import { skillBank } from '../../utils/mockData';
+import { useSkillBank } from '../../utils/useSupabase';
 
 export function MetricsTab({ agent }) {
+  const { skills: skillBank } = useSkillBank();
   const uptimeHrs = agent.uptimeMs ? (agent.uptimeMs / 3_600_000).toFixed(1) : '0.0';
   const stats = [
     { label: 'Total Tokens', value: (agent.totalTokens || 0).toLocaleString(), sub: `$${(agent.totalCost || 0).toFixed(2)}` },

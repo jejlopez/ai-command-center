@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Settings, X, Monitor, Cpu, Plug, Info, ChevronRight, ToggleLeft, ToggleRight, Eye, EyeOff, Check } from 'lucide-react';
 import { cn } from '../utils/cn';
 import { supabase } from '../lib/supabaseClient';
+import { useModelBank } from '../utils/useSupabase';
 
 /* ------------------------------------------------------------------ */
 /*  Reusable primitives                                                */
@@ -161,38 +162,37 @@ function GeneralTab() {
 /* ------------------------------------------------------------------ */
 
 function FleetTab() {
-  const [defaultModel, setDefaultModel] = useState('claude-opus-4-6');
+  const { models } = useModelBank();
+  const [defaultModel, setDefaultModel] = useState('');
   const [maxConcurrent, setMaxConcurrent] = useState(8);
   const [autoRestart, setAutoRestart] = useState(true);
   const [tokenBudget, setTokenBudget] = useState('500000');
-
-  const models = [
-    { value: 'claude-opus-4-6', label: 'Claude Opus 4' },
-    { value: 'claude-3-sonnet', label: 'Claude 3 Sonnet' },
-    { value: 'gpt-4o', label: 'GPT-4o' },
-    { value: 'gemini-1.5', label: 'Gemini 1.5 Pro' },
-  ];
 
   return (
     <div>
       <SectionLabel>Defaults</SectionLabel>
       <SettingRow label="Default agent model">
-        <select
-          value={defaultModel}
-          onChange={(e) => setDefaultModel(e.target.value)}
-          className="bg-surface-input border border-border rounded-lg px-3 py-1.5 text-sm text-text-primary outline-none focus:border-aurora-teal/50 transition-colors cursor-pointer appearance-none pr-8"
-          style={{
-            backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2371717a' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")`,
-            backgroundRepeat: 'no-repeat',
-            backgroundPosition: 'right 8px center',
-          }}
-        >
-          {models.map((m) => (
-            <option key={m.value} value={m.value}>
-              {m.label}
-            </option>
-          ))}
-        </select>
+        {models.length > 0 ? (
+          <select
+            value={defaultModel}
+            onChange={(e) => setDefaultModel(e.target.value)}
+            className="bg-surface-input border border-border rounded-lg px-3 py-1.5 text-sm text-text-primary outline-none focus:border-aurora-teal/50 transition-colors cursor-pointer appearance-none pr-8"
+            style={{
+              backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2371717a' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")`,
+              backgroundRepeat: 'no-repeat',
+              backgroundPosition: 'right 8px center',
+            }}
+          >
+            <option value="">Select model</option>
+            {models.map((model) => (
+              <option key={model.id} value={model.modelKey}>
+                {model.label}
+              </option>
+            ))}
+          </select>
+        ) : (
+          <span className="text-xs text-text-muted">No models in your bank yet.</span>
+        )}
       </SettingRow>
 
       <SectionLabel>Concurrency</SectionLabel>

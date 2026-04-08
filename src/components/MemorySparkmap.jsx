@@ -1,11 +1,20 @@
-import React, { useState } from 'react';
-// TODO: Replace with Supabase query when a memory_chunks table exists
-import { memoryChunks } from '../utils/mockData';
+import React, { useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { WidgetActions } from './WidgetActions';
+import { useActivityLog } from '../utils/useSupabase';
 
 export function MemorySparkmap() {
+  const { logs } = useActivityLog();
   const [hoveredChunk, setHoveredChunk] = useState(null);
+  const memoryChunks = useMemo(() => {
+    const source = logs.slice(-36);
+    return source.map((entry, index) => ({
+      key: `mem_${String(index + 1).padStart(2, '0')}`,
+      recency: index >= source.length - 12 ? 'recent' : index >= source.length - 24 ? 'medium' : 'old',
+      lastAccessed: entry.timestamp || new Date().toISOString(),
+      animationDelay: `${(index % 6) * 0.35}s`,
+    }));
+  }, [logs]);
 
   const getCellColor = (recency) => {
     switch(recency) {
@@ -24,19 +33,24 @@ export function MemorySparkmap() {
       </div>
       
       <div className="grid grid-cols-6 gap-0.5 relative">
-        {memoryChunks.map((chunk, i) => (
+        {memoryChunks.map((chunk) => (
           <div
             key={chunk.key}
             className="w-[10px] h-[10px] rounded-[2px]"
             style={{ 
               backgroundColor: getCellColor(chunk.recency),
               animation: 'cell-pulse 3s ease-in-out infinite',
-              animationDelay: `${Math.random() * 3}s`
+              animationDelay: chunk.animationDelay,
             }}
             onMouseEnter={() => setHoveredChunk(chunk)}
             onMouseLeave={() => setHoveredChunk(null)}
           />
         ))}
+        {memoryChunks.length === 0 && (
+          <div className="col-span-6 py-4 text-center text-[10px] text-text-muted">
+            No memory activity yet.
+          </div>
+        )}
 
         <AnimatePresence>
           {hoveredChunk && (

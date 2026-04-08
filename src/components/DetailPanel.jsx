@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import { ActivityFeed } from './ActivityFeed';
 import { TraceWaterfall } from './TraceWaterfall';
-import { mockSpans, pendingReviews } from '../utils/mockData';
+import { fetchPendingReviews, fetchSpans } from '../lib/api';
 import { cn } from '../utils/cn';
 import { ConfigTab } from './detail/ConfigTab';
 import { SkillsTab } from './detail/SkillsTab';
@@ -25,11 +25,27 @@ const urgencyStyles = {
 };
 
 function AgentApprovals({ agent }) {
-  const agentReviews = pendingReviews.filter((rv) => rv.agentId === agent.id);
+  const [agentReviews, setAgentReviews] = useState([]);
   const [dismissed, setDismissed] = useState(new Set());
 
   useEffect(() => {
     setDismissed(new Set());
+  }, [agent.id]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadReviews() {
+      const reviews = await fetchPendingReviews();
+      if (!cancelled) {
+        setAgentReviews(reviews.filter((rv) => rv.agentId === agent.id));
+      }
+    }
+
+    loadReviews();
+    return () => {
+      cancelled = true;
+    };
   }, [agent.id]);
 
   const visible = agentReviews.filter((rv) => !dismissed.has(rv.id));
@@ -153,7 +169,7 @@ function KebabMenu({ onClose }) {
   );
 }
 
-export function DetailPanel({ agent, tasks = [], logs = [], initialMode = 'config', onClose }) {
+export function DetailPanel({ agent, initialMode = 'config', onClose }) {
   const tabModes = ['config', 'skills', 'metrics', 'logs'];
   const resolveInitialTab = () => {
     if (tabModes.includes(initialMode)) return initialMode;
@@ -163,6 +179,7 @@ export function DetailPanel({ agent, tasks = [], logs = [], initialMode = 'confi
   const [showKebab, setShowKebab] = useState(false);
   const [logView, setLogView] = useState('stream');
   const [composeOpen, setComposeOpen] = useState(initialMode === 'dispatch');
+  const [traceSpans, setTraceSpans] = useState([]);
 
   useEffect(() => {
     if (tabModes.includes(initialMode)) {
@@ -199,6 +216,20 @@ export function DetailPanel({ agent, tasks = [], logs = [], initialMode = 'confi
     setTimeout(() => document.addEventListener('click', handler), 0);
     return () => document.removeEventListener('click', handler);
   }, [showKebab]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadSpans() {
+      const spans = await fetchSpans();
+      if (!cancelled) setTraceSpans(spans);
+    }
+
+    loadSpans();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const isProcessing = agent.status === 'processing';
   const tabs = useMemo(() => [
@@ -428,7 +459,7 @@ export function DetailPanel({ agent, tasks = [], logs = [], initialMode = 'confi
                       </button>
                     </div>
                     <div className="flex-1 overflow-hidden">
-                      {logView === 'stream' ? <ActivityFeed agentFilter={agent.id} /> : <TraceWaterfall spans={mockSpans} />}
+                      {logView === 'stream' ? <ActivityFeed agentFilter={agent.id} /> : <TraceWaterfall spans={traceSpans} />}
                     </div>
                   </div>
                 )}

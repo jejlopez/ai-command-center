@@ -1,5 +1,5 @@
 import { useRef, useState, useEffect, useMemo, useCallback } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { AnimatePresence, motion } from 'framer-motion';
 import { useAgents, useActivityLog } from '../utils/useSupabase';
 import { ArrowDown, Search, Copy, Pin, Minimize2, Maximize2, DollarSign, AlertCircle } from 'lucide-react';
 import { WidgetActions } from './WidgetActions';
@@ -22,18 +22,11 @@ export function ActivityFeed({ agentFilter = null }) {
 
   const scrollRef = useRef(null);
   const [isUserScrolled, setIsUserScrolled] = useState(false);
-  const [entries, setEntries] = useState([]);
-
-  // Sync entries when live data arrives
-  useEffect(() => {
-    if (logs && logs.length > 0) setEntries(logs);
-  }, [logs]);
   const [isHovered, setIsHovered] = useState(false);
-  const [pendingEntries, setPendingEntries] = useState(0);
-
   const [searchTerm, setSearchTerm] = useState('');
   const [activeTypes, setActiveTypes] = useState(new Set(['OK', 'ERR', 'NET', 'SYS']));
   const [expandedRow, setExpandedRow] = useState(null);
+  const entries = logs ?? [];
 
   const depthMap = useMemo(() => {
     const map = new Map();
@@ -47,37 +40,6 @@ export function ActivityFeed({ agentFilter = null }) {
     return map;
   }, [entries]);
 
-  // Simulate incoming logs
-  useEffect(() => {
-    const messages = [
-      'Background optimization pass completed',
-      'Vector index compaction finished',
-      'Health check — all systems nominal',
-      'Token budget recalculated',
-      'Cache invalidation sweep done',
-    ];
-    const interval = setInterval(() => {
-      const typeOptions = ['OK', 'SYS', 'NET'];
-      const agentIds = ['a1', 'a2', 'a3', 'a5'];
-      const newEntry = {
-        id: Date.now(),
-        timestamp: new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' }),
-        type: typeOptions[Math.floor(Math.random() * typeOptions.length)],
-        message: messages[Math.floor(Math.random() * messages.length)],
-        agentId: agentIds[Math.floor(Math.random() * agentIds.length)],
-        parentLogId: null,
-        tokens: Math.floor(Math.random() * 50),
-        durationMs: Math.floor(Math.random() * 300),
-      };
-
-      if (isHovered || isUserScrolled) {
-        setPendingEntries(p => p + 1);
-      }
-      setEntries(prev => [...prev, newEntry]);
-    }, 12000);
-    return () => clearInterval(interval);
-  }, [isHovered, isUserScrolled]);
-
   const handleScroll = () => {
     if (!scrollRef.current) return;
     const { scrollTop, clientHeight, scrollHeight } = scrollRef.current;
@@ -85,14 +47,12 @@ export function ActivityFeed({ agentFilter = null }) {
       setIsUserScrolled(true);
     } else {
       setIsUserScrolled(false);
-      setPendingEntries(0);
     }
   };
 
   useEffect(() => {
     if (!isUserScrolled && !isHovered && scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-      setPendingEntries(0);
     }
   }, [entries, isUserScrolled, isHovered]);
 
@@ -120,6 +80,8 @@ export function ActivityFeed({ agentFilter = null }) {
       return true;
     });
   }, [entries, agentFilter, activeTypes, searchTerm]);
+  const totalTokens = entries.reduce((sum, entry) => sum + Number(entry.tokens || 0), 0);
+  const errorCount = entries.filter((entry) => entry.type === 'ERR').length;
 
   return (
     <div
@@ -134,17 +96,12 @@ export function ActivityFeed({ agentFilter = null }) {
         <div className="flex justify-between items-center px-4 py-2 bg-canvas/80 backdrop-blur-sm text-xs font-mono border-b border-white/[0.03]">
           <div className="flex gap-3">
             <span className="flex items-center gap-1.5 text-text-primary px-2 py-0.5 bg-white/[0.03] rounded border border-white/[0.05]">
-              <DollarSign className="w-3 h-3 text-aurora-teal" /> $4.83
+              <DollarSign className="w-3 h-3 text-aurora-teal" /> {totalTokens.toLocaleString()} tok
             </span>
             <span className="flex items-center gap-1.5 text-text-primary px-2 py-0.5 bg-white/[0.03] rounded border border-white/[0.05]">
-              <AlertCircle className="w-3 h-3 text-aurora-rose" /> 0.2/min
+              <AlertCircle className="w-3 h-3 text-aurora-rose" /> {errorCount} errors
             </span>
           </div>
-          {pendingEntries > 0 && (
-            <span className="text-aurora-amber font-bold animate-pulse px-2 py-0.5 bg-aurora-amber/10 rounded text-[10px]">
-              {pendingEntries} new
-            </span>
-          )}
         </div>
 
         {/* Filter bar */}
@@ -187,6 +144,11 @@ export function ActivityFeed({ agentFilter = null }) {
         onScroll={handleScroll}
         className="flex-1 overflow-y-auto no-scrollbar"
       >
+        {filteredEntries.length === 0 && (
+          <div className="flex h-full items-center justify-center px-6 text-center text-xs text-text-muted">
+            No activity has been recorded for this account yet.
+          </div>
+        )}
         <div className="py-1">
           {filteredEntries.map(entry => {
             const depth = depthMap.get(entry.id) || 0;
@@ -283,12 +245,11 @@ export function ActivityFeed({ agentFilter = null }) {
             <button
               onClick={() => {
                 setIsUserScrolled(false);
-                setPendingEntries(0);
                 if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
               }}
               className="flex items-center gap-1.5 px-3 py-1.5 bg-aurora-teal text-[#000] text-[10px] font-bold rounded-full shadow-lg shadow-aurora-teal/20"
             >
-              <ArrowDown className="w-3 h-3" /> {pendingEntries > 0 ? `${pendingEntries} new` : 'Latest'}
+              <ArrowDown className="w-3 h-3" /> Latest
             </button>
           </motion.div>
         )}

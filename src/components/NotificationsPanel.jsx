@@ -121,16 +121,21 @@ export function NotificationsPanel({ notificationsOpen, setNotificationsOpen, on
   const { pendingCount } = useSystemState();
 
   const [notifications, setNotifications] = useState([]);
-  const [seeded, setSeeded] = useState(false);
   const [activeFilter, setActiveFilter] = useState('all');
 
-  // Rebuild notifications when live data changes (only seed once to preserve read/dismiss state)
   React.useEffect(() => {
-    if (!seeded && agents.length > 0) {
-      setNotifications(buildNotifications(agents, tasks, pendingCount ?? 0));
-      setSeeded(true);
-    }
-  }, [agents, tasks, pendingCount, seeded]);
+    setNotifications((prev) => {
+      const next = buildNotifications(agents, tasks, pendingCount ?? 0);
+      const prevById = new Map(prev.map((notification) => [notification.id, notification]));
+
+      return next.map((notification) => {
+        const existing = prevById.get(notification.id);
+        return existing
+          ? { ...notification, read: existing.read }
+          : notification;
+      });
+    });
+  }, [agents, tasks, pendingCount]);
 
   const unreadCount = useMemo(() => notifications.filter(n => !n.read).length, [notifications]);
 

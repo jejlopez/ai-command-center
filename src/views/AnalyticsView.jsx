@@ -1,12 +1,17 @@
 import React from 'react';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, BarChart, Bar, Cell } from 'recharts';
-// TODO: This view is not routed — migrate to Supabase analytics queries when activated
-import { TREND_DATA, MOCK_PROJECT_DATA } from '../utils/mockData';
 import { Filter, Download } from 'lucide-react';
+import { useCostData, useTasks } from '../utils/useSupabase';
 
 export function AnalyticsView({ context }) {
-  const cTokens = context.intel?.tokens || 0;
-  const cCost = context.intel?.cost || 0;
+  const { data: costData } = useCostData();
+  const { tasks } = useTasks();
+  const cTokens = tasks.reduce((sum, task) => sum + Number(task.durationMs || 0), 0);
+  const cCost = costData.total || 0;
+  const trendData = costData.models.map((model, index) => ({
+    day: String(index + 1).padStart(2, '0'),
+    usage: Number(model.cost.toFixed(2)),
+  }));
 
   return (
     <div className="flex flex-col gap-6 h-full pb-8">
@@ -37,8 +42,8 @@ export function AnalyticsView({ context }) {
         <div className="spatial-panel p-6 rounded-2xl flex flex-col justify-between">
           <span className="text-xs font-mono uppercase text-modern-muted">Token Consumption</span>
           <div className="mt-4 flex items-baseline gap-2">
-            <h3 className="text-4xl font-light text-white">{cTokens}M</h3>
-            <span className="text-sm text-modern-muted">tokens</span>
+            <h3 className="text-4xl font-light text-white">{cTokens}</h3>
+            <span className="text-sm text-modern-muted">ms tracked</span>
           </div>
         </div>
         
@@ -61,24 +66,30 @@ export function AnalyticsView({ context }) {
         </div>
         
         <div className="flex-1 w-full h-full relative">
-          <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={TREND_DATA}>
-              <defs>
-                <linearGradient id="colorUsage" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#FFFFFF" stopOpacity={0.2}/>
-                  <stop offset="95%" stopColor="#FFFFFF" stopOpacity={0}/>
-                </linearGradient>
-              </defs>
-              <XAxis dataKey="day" axisLine={false} tickLine={false} tick={{ fill: '#737373', fontSize: 12, fontFamily: 'Inter' }} dy={10} />
-              <YAxis axisLine={false} tickLine={false} tick={{ fill: '#737373', fontSize: 12, fontFamily: 'Inter' }} dx={-10} />
-              <Tooltip 
-                contentStyle={{ backgroundColor: '#121212', borderRadius: '12px', border: '1px solid #262626', color: '#fff' }}
-                itemStyle={{ color: '#fff' }}
-                cursor={{ stroke: '#262626', strokeWidth: 1, strokeDasharray: '4 4' }}
-              />
-              <Area type="monotone" dataKey="usage" stroke="#ffffff" strokeWidth={2} fillOpacity={1} fill="url(#colorUsage)" />
-            </AreaChart>
-          </ResponsiveContainer>
+          {trendData.length > 0 ? (
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={trendData}>
+                <defs>
+                  <linearGradient id="colorUsage" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#FFFFFF" stopOpacity={0.2}/>
+                    <stop offset="95%" stopColor="#FFFFFF" stopOpacity={0}/>
+                  </linearGradient>
+                </defs>
+                <XAxis dataKey="day" axisLine={false} tickLine={false} tick={{ fill: '#737373', fontSize: 12, fontFamily: 'Inter' }} dy={10} />
+                <YAxis axisLine={false} tickLine={false} tick={{ fill: '#737373', fontSize: 12, fontFamily: 'Inter' }} dx={-10} />
+                <Tooltip 
+                  contentStyle={{ backgroundColor: '#121212', borderRadius: '12px', border: '1px solid #262626', color: '#fff' }}
+                  itemStyle={{ color: '#fff' }}
+                  cursor={{ stroke: '#262626', strokeWidth: 1, strokeDasharray: '4 4' }}
+                />
+                <Area type="monotone" dataKey="usage" stroke="#ffffff" strokeWidth={2} fillOpacity={1} fill="url(#colorUsage)" />
+              </AreaChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="flex h-full items-center justify-center text-sm text-modern-muted">
+              No analytics data for this account yet.
+            </div>
+          )}
         </div>
       </div>
 
