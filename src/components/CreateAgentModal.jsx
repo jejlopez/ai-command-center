@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Plus, Sparkles } from 'lucide-react';
 import { createAgent } from '../utils/useSupabase';
+// TODO: Replace with Supabase model_registry table when it exists
 import { modelRegistry } from '../utils/mockData';
 import { cn } from '../utils/cn';
 

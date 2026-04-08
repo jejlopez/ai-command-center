@@ -1,6 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Search, Terminal } from 'lucide-react';
+// TODO: Replace with Supabase activity_log query scoped to specific agent
 import { AGENT_LOGS } from '../utils/mockData';
 
 export function AgentLogDrawer({ agentName, onClose }) {

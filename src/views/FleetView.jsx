@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+// TODO: This view is not routed — migrate to useAgents() hook when activated
 import { agents } from '../utils/mockData';
 import { AgentVitalCard } from '../components/AgentVitalCard';
 import { container, item } from '../utils/variants';

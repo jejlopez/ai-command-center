@@ -8,7 +8,10 @@ import {
 } from 'lucide-react';
 import { ActivityFeed } from './ActivityFeed';
 import { TraceWaterfall } from './TraceWaterfall';
-import { mockSpans, agents, modelRegistry, skillBank, mcpServers } from '../utils/mockData';
+// TODO: modelRegistry, skillBank, mcpServers are static config — migrate to a config table when needed
+// TODO: mockSpans should come from an execution_spans table when trace data is persisted
+import { mockSpans, modelRegistry, skillBank, mcpServers } from '../utils/mockData';
+import { useAgents } from '../utils/useSupabase';
 import { cn } from '../utils/cn';
 import { AreaChart, Area, ResponsiveContainer } from 'recharts';
 
@@ -56,7 +59,7 @@ function Toggle({ value, onChange }) {
 }
 
 // ── Config Tab ───────────────────────────────────────────────────
-function ConfigTab({ agent }) {
+function ConfigTab({ agent, agents }) {
   const defaults = {
     model: agent.model,
     temp: agent.temperature ?? 0.7,
@@ -664,6 +667,7 @@ function KebabMenu({ onClose }) {
 
 // ── Main Detail Panel ────────────────────────────────────────────
 export function DetailPanel({ agentId, onClose }) {
+  const { agents } = useAgents();
   const [activeTab, setActiveTab] = useState('config');
   const [showKebab, setShowKebab] = useState(false);
   const [logView, setLogView] = useState('stream');
@@ -817,7 +821,7 @@ export function DetailPanel({ agentId, onClose }) {
                 transition={{ duration: 0.15 }}
                 className="absolute inset-0"
               >
-                {activeTab === 'config' && <ConfigTab agent={agent} />}
+                {activeTab === 'config' && <ConfigTab agent={agent} agents={agents} />}
                 {activeTab === 'skills' && <SkillsTab agent={agent} />}
                 {activeTab === 'metrics' && <MetricsTab agent={agent} />}
                 {activeTab === 'logs' && (

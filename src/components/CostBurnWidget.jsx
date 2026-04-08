@@ -1,6 +1,6 @@
 import React from 'react';
 import { motion } from 'framer-motion';
-import { costData } from '../utils/mockData';
+import { useCostData } from '../utils/useSupabase';
 import { useAnimatedCounter } from '../utils/useAnimatedCounter';
 import { WidgetActions } from './WidgetActions';
 
@@ -10,7 +10,11 @@ const colors = {
   'Gemini': '#fbbf24'
 };
 
+// TODO: useCostData() currently returns static mock data inside the hook.
+// Replace with a real Supabase query when a cost_summary table or
+// aggregation view is created.
 export function CostBurnWidget() {
+  const { data: costData } = useCostData();
   const displayTotal = useAnimatedCounter(costData.total, { decimals: 2 });
 
   return (

@@ -1,5 +1,6 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+// TODO: This view is not routed — migrate to useSupabase hooks when activated
 import { tasks, mockSpans } from '../utils/mockData';
 import { cn } from '../utils/cn';
 import { container, item } from '../utils/variants';

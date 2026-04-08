@@ -1,6 +1,6 @@
-import { useRef, useState, useEffect, useMemo } from 'react';
+import { useRef, useState, useEffect, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { activityLog, agents } from '../utils/mockData';
+import { useAgents, useActivityLog } from '../utils/useSupabase';
 import { ArrowDown, Search, Copy, Pin, Minimize2, Maximize2, DollarSign, AlertCircle } from 'lucide-react';
 import { WidgetActions } from './WidgetActions';
 
@@ -11,15 +11,23 @@ const tagStyles = {
   SYS: { color: '#a1a1aa', label: 'SYS' },
 };
 
-function getAgentInfo(agentId) {
-  if (!agentId) return { name: 'System', color: '#52525b' };
-  return agents.find(x => x.id === agentId) || { name: 'Unknown', color: '#52525b' };
-}
-
 export function ActivityFeed({ agentFilter = null }) {
+  const { agents } = useAgents();
+  const { logs } = useActivityLog(agentFilter);
+
+  const getAgentInfo = useCallback((agentId) => {
+    if (!agentId) return { name: 'System', color: '#52525b' };
+    return agents.find(x => x.id === agentId) || { name: 'Unknown', color: '#52525b' };
+  }, [agents]);
+
   const scrollRef = useRef(null);
   const [isUserScrolled, setIsUserScrolled] = useState(false);
-  const [entries, setEntries] = useState(activityLog);
+  const [entries, setEntries] = useState([]);
+
+  // Sync entries when live data arrives
+  useEffect(() => {
+    if (logs && logs.length > 0) setEntries(logs);
+  }, [logs]);
   const [isHovered, setIsHovered] = useState(false);
   const [pendingEntries, setPendingEntries] = useState(0);
 
