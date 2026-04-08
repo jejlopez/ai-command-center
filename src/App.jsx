@@ -126,7 +126,7 @@ function Dashboard() {
       
       <NotificationsPanel notificationsOpen={notificationsOpen} setNotificationsOpen={setNotificationsOpen} onNavigate={handleAction} />
       <SettingsPanel settingsOpen={settingsOpen} setSettingsOpen={setSettingsOpen} />
-      <UserProfilePanel profileOpen={profileOpen} setProfileOpen={setProfileOpen} />
+      <UserProfilePanel profileOpen={profileOpen} setProfileOpen={setProfileOpen} onAction={handleAction} />
 
       <AnimatePresence>
         {/* <DoctorModePanel /> */}
