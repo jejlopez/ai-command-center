@@ -302,10 +302,13 @@ async function seedCommander(userId) {
 /**
  * Insert a new agent into Supabase.
  */
-export async function createAgent(agentData, userId) {
+export async function createAgent(agentData) {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('Not authenticated');
   const row = {
     ...mapAgentToDb(agentData),
-    user_id: userId
+    user_id: user.id,
+    id: crypto.randomUUID(),
   };
   const { data, error } = await supabase.from('agents').insert([row]).select().single();
   if (error) throw error;

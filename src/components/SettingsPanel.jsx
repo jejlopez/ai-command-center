@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Settings, X, Monitor, Cpu, Plug, Info, ChevronRight, ToggleLeft, ToggleRight } from 'lucide-react';
+import { Settings, X, Monitor, Cpu, Plug, Info, ChevronRight, ToggleLeft, ToggleRight, Eye, EyeOff, Check } from 'lucide-react';
 import { cn } from '../utils/cn';
+import { supabase } from '../lib/supabaseClient';
 
 /* ------------------------------------------------------------------ */
 /*  Reusable primitives                                                */
@@ -246,6 +247,86 @@ const integrationsList = [
   { id: 'linear', name: 'Linear', desc: 'Project management', defaultOn: false },
 ];
 
+function ApiKeyInput({ label, description, storageKey }) {
+  const [value, setValue] = useState('');
+  const [visible, setVisible] = useState(false);
+  const [saveStatus, setSaveStatus] = useState('idle'); // 'idle' | 'saving' | 'saved' | 'error'
+
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (!user) return;
+      supabase
+        .from('user_settings')
+        .select(storageKey)
+        .eq('user_id', user.id)
+        .single()
+        .then(({ data }) => {
+          if (data?.[storageKey]) setValue(data[storageKey]);
+        });
+    });
+  }, [storageKey]);
+
+  const handleSave = async () => {
+    setSaveStatus('saving');
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('Not authenticated');
+      const { error } = await supabase
+        .from('user_settings')
+        .upsert({ user_id: user.id, [storageKey]: value.trim() }, { onConflict: 'user_id' });
+      if (error) throw error;
+      setSaveStatus('saved');
+      setTimeout(() => setSaveStatus('idle'), 2000);
+    } catch {
+      setSaveStatus('error');
+      setTimeout(() => setSaveStatus('idle'), 3000);
+    }
+  };
+
+  return (
+    <div className="mt-3">
+      <p className="text-sm text-text-primary font-medium mb-1">{label}</p>
+      {description && <p className="text-xs text-text-muted mb-2">{description}</p>}
+      <div className="flex gap-2">
+        <div className="relative flex-1">
+          <input
+            type={visible ? 'text' : 'password'}
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            placeholder="sk-ant-..."
+            className="w-full bg-white/[0.03] border border-white/[0.08] rounded-lg px-3 py-2 text-xs font-mono text-text-primary placeholder:text-text-disabled focus:outline-none focus:border-aurora-teal/50 transition-colors pr-8"
+          />
+          <button
+            type="button"
+            onClick={() => setVisible((v) => !v)}
+            className="absolute right-2 top-1/2 -translate-y-1/2 text-text-disabled hover:text-text-muted transition-colors"
+          >
+            {visible ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+          </button>
+        </div>
+        <button
+          onClick={handleSave}
+          disabled={!value.trim() || saveStatus === 'saving'}
+          className={cn(
+            'px-3 py-2 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 shrink-0',
+            saveStatus === 'saved'
+              ? 'bg-aurora-green/20 border border-aurora-green/30 text-aurora-green'
+              : saveStatus === 'error'
+              ? 'bg-aurora-rose/20 border border-aurora-rose/30 text-aurora-rose'
+              : value.trim()
+              ? 'bg-aurora-teal/10 border border-aurora-teal/30 text-aurora-teal hover:bg-aurora-teal/20'
+              : 'bg-white/[0.03] border border-white/[0.06] text-text-disabled cursor-not-allowed'
+          )}
+        >
+          {saveStatus === 'saved' ? <><Check className="w-3 h-3" /> Saved</> :
+           saveStatus === 'saving' ? 'Saving…' :
+           saveStatus === 'error' ? 'Error' : 'Save'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function IntegrationsTab() {
   const [connections, setConnections] = useState(() =>
     Object.fromEntries(integrationsList.map((i) => [i.id, i.defaultOn])),
@@ -256,6 +337,15 @@ function IntegrationsTab() {
 
   return (
     <div>
+      <SectionLabel>API Keys</SectionLabel>
+      <div className="p-3 rounded-xl bg-white/[0.02] border border-border">
+        <ApiKeyInput
+          label="Anthropic"
+          description="Used to run Claude agents. Get yours at console.anthropic.com"
+          storageKey="anthropic_api_key"
+        />
+      </div>
+
       <SectionLabel>Connected Services</SectionLabel>
       <div className="flex flex-col gap-2">
         {integrationsList.map((item) => {
@@ -287,10 +377,6 @@ function IntegrationsTab() {
           );
         })}
       </div>
-
-      <p className="text-xs text-text-muted mt-6">
-        Integration credentials are stored in your Supabase vault. Manage API keys in your project dashboard.
-      </p>
     </div>
   );
 }

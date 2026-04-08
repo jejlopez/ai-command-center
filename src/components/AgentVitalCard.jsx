@@ -1,10 +1,11 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { LineChart, Line, ResponsiveContainer } from 'recharts';
 import { cn } from '../utils/cn';
 import { useAnimatedCounter } from '../utils/useAnimatedCounter';
-import { Crown, ArrowUpRight, AlertTriangle, RotateCcw, Square } from 'lucide-react';
+import { Crown, ArrowUpRight, AlertTriangle, RotateCcw, Square, Play } from 'lucide-react';
 import { agents as defaultAgents, activityLog as defaultLog } from '../utils/mockData';
+import { DispatchTaskModal } from './DispatchTaskModal';
 
 function getThresholdColor(val) {
   if (val < 60) return '#00D9C8';
@@ -62,9 +63,12 @@ function SegmentedArc({ completion, tokenBurnRate, baseColor }) {
 export function AgentVitalCard({ agent, onLogClick, allAgents, activityLog }) {
   const agentList = allAgents || defaultAgents;
   const logList = activityLog || defaultLog;
+  const [dispatchOpen, setDispatchOpen] = useState(false);
+  const [localStatus, setLocalStatus] = useState(null);
 
-  const isProcessing = agent.status === 'processing';
-  const isError = agent.status === 'error';
+  const effectiveStatus = localStatus ?? agent.status;
+  const isProcessing = effectiveStatus === 'processing';
+  const isError = effectiveStatus === 'error';
   const isCommander = agent.role === 'commander';
   const progressAnim = useAnimatedCounter(agent.taskCompletion);
   const parentAgent = agent.parentId ? agentList.find(a => a.id === agent.parentId) : null;
@@ -82,10 +86,11 @@ export function AgentVitalCard({ agent, onLogClick, allAgents, activityLog }) {
   if (agent.latencyMs > 2000) latencyColor = 'text-aurora-rose';
   else if (agent.latencyMs > 500) latencyColor = 'text-aurora-amber';
 
-  const statusLabel = { processing: 'Active', idle: 'Idle', error: 'Error' }[agent.status] || agent.status;
-  const statusColor = { processing: 'text-aurora-teal', idle: 'text-text-muted', error: 'text-aurora-rose' }[agent.status];
+  const statusLabel = { processing: 'Active', idle: 'Idle', error: 'Error' }[effectiveStatus] || effectiveStatus;
+  const statusColor = { processing: 'text-aurora-teal', idle: 'text-text-muted', error: 'text-aurora-rose' }[effectiveStatus];
 
   return (
+    <>
     <motion.div
       whileHover={{ scale: 1.03, y: -4, transition: { duration: 0.2 } }}
       onClick={onLogClick}
@@ -208,11 +213,27 @@ export function AgentVitalCard({ agent, onLogClick, allAgents, activityLog }) {
             </button>
           </>
         ) : (
-          <span className="text-aurora-teal text-xs font-semibold drop-shadow-[0_0_5px_rgba(0,217,200,0.8)] tracking-wider uppercase">
-            Open Telemetry View 
-          </span>
+          <div className="flex items-center gap-3">
+            <span className="text-aurora-teal text-xs font-semibold drop-shadow-[0_0_5px_rgba(0,217,200,0.8)] tracking-wider uppercase">
+              Open Telemetry View
+            </span>
+            <button
+              onClick={(e) => { e.stopPropagation(); setLocalStatus('processing'); setDispatchOpen(true); }}
+              className="p-1.5 rounded-lg bg-white/[0.05] hover:bg-aurora-teal/20 border border-white/[0.08] hover:border-aurora-teal/30 transition-all"
+              title="Dispatch Task"
+            >
+              <Play className="w-3 h-3 text-text-muted group-hover:text-aurora-teal" />
+            </button>
+          </div>
         )}
       </div>
     </motion.div>
+
+    <DispatchTaskModal
+      isOpen={dispatchOpen}
+      agent={agent}
+      onClose={() => { setDispatchOpen(false); setLocalStatus(null); }}
+    />
+  </>
   );
 }
