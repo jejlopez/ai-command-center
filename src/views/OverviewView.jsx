@@ -1,6 +1,7 @@
+import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { container, item } from '../utils/variants';
-import { useAgents, useTasks, useActivityLog, useCostData, useHealthMetrics } from '../utils/useSupabase';
+import { useCostData, useHealthMetrics } from '../utils/useSupabase';
 import { SpotlightCard } from '../components/SpotlightCard';
 import { NeuralPulse } from '../components/NeuralPulse';
 import { AgentVitalCard } from '../components/AgentVitalCard';
@@ -9,106 +10,26 @@ import { ActivityFeed } from '../components/ActivityFeed';
 import { TaskDAG } from '../components/TaskDAG';
 import { MemorySparkmap } from '../components/MemorySparkmap';
 import { HealthRadial } from '../components/HealthRadial';
-import { Crown, ArrowUpRight, Zap, AlertTriangle, Loader2 } from 'lucide-react';
+import { CreateAgentModal } from '../components/CreateAgentModal';
+import { Plus, GitBranch, Edit2, RotateCcw, Trash2, Loader2 } from 'lucide-react';
 import { WidgetActions } from '../components/WidgetActions';
+import { cn } from '../utils/cn';
 
-// Commander's delegation tree for overview
-function DelegationWidget({ agents }) {
-  const commander = agents.find(a => a.role === 'commander');
-  const subagents = agents.filter(a => a.parentId === commander?.id);
+const statusStyles = {
+  success: 'row-success text-aurora-green border-aurora-green/20',
+  completed: 'row-success text-aurora-green border-aurora-green/20',
+  error: 'row-error text-aurora-rose border-aurora-rose/20',
+  running: 'row-running text-aurora-amber border-aurora-amber/20',
+  idle: 'row-idle text-text-muted border-white/5',
+  pending: 'row-idle text-text-muted border-white/5',
+};
 
-  return (
-    <div className="spatial-panel p-5 h-full flex flex-col group relative">
-      <WidgetActions onExpand={() => {}} onConfigure={() => {}} onRemove={() => {}} />
-      <div className="text-[10px] uppercase tracking-[0.15em] text-text-muted mb-4 font-semibold">
-        Delegation Tree
-      </div>
-
-      {commander && (
-        <div className="flex items-center gap-3 mb-4 pb-3 border-b border-white/[0.05]">
-          <Crown className="w-4 h-4 text-aurora-amber shrink-0" />
-          <div className="flex-1 min-w-0">
-            <div className="text-sm font-semibold text-text-primary">{commander.name}</div>
-            <div className="text-[10px] font-mono text-text-disabled">{commander.model}</div>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <div className="w-2 h-2 rounded-full bg-aurora-teal animate-pulse" />
-            <span className="text-[10px] font-mono text-aurora-teal">Active</span>
-          </div>
-        </div>
-      )}
-
-      <div className="flex-1 space-y-2 overflow-y-auto no-scrollbar">
-        {subagents.map(agent => {
-          const statusColor = {
-            processing: 'bg-aurora-teal',
-            idle: 'bg-text-muted',
-            error: 'bg-aurora-rose',
-          }[agent.status] || 'bg-text-muted';
-
-          return (
-            <div key={agent.id} className="flex items-center gap-3 px-3 py-2 bg-white/[0.02] rounded-lg border border-white/[0.04] hover:border-white/[0.08] transition-colors">
-              <ArrowUpRight className="w-3 h-3 text-text-disabled shrink-0" />
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-medium text-text-primary">{agent.name}</span>
-                  <span className="text-[9px] font-mono text-text-disabled uppercase">{agent.role}</span>
-                </div>
-                <div className="text-[10px] font-mono text-text-disabled mt-0.5">{agent.model}</div>
-              </div>
-              <div className="flex items-center gap-2 shrink-0">
-                <span className="text-[10px] font-mono text-text-disabled">{agent.taskCompletion}%</span>
-                <div className={`w-1.5 h-1.5 rounded-full ${statusColor} ${agent.status === 'processing' ? 'animate-pulse' : ''}`} />
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-// Quick stats summary
-function QuickStats({ agents, costTotal }) {
-  const activeCount = agents.filter(a => a.status === 'processing').length;
-  const errorCount = agents.filter(a => a.status === 'error').length;
-  const totalTokens = agents.reduce((sum, a) => sum + (a.totalTokens || 0), 0);
-
-  const stats = [
-    { label: 'Active', value: activeCount, icon: Zap, color: 'text-aurora-teal' },
-    { label: 'Errors', value: errorCount, icon: AlertTriangle, color: errorCount > 0 ? 'text-aurora-rose' : 'text-text-muted' },
-    { label: 'Tokens', value: `${(totalTokens / 1000).toFixed(1)}k`, icon: null, color: 'text-text-primary' },
-    { label: 'Cost', value: `$${costTotal}`, icon: null, color: 'text-aurora-amber' },
-  ];
-
-  return (
-    <div className="spatial-panel p-5 h-full flex flex-col justify-between group relative">
-      <WidgetActions onExpand={() => {}} onConfigure={() => {}} onRemove={() => {}} />
-      <div className="text-[10px] uppercase tracking-[0.15em] text-text-muted mb-4 font-semibold">
-        Session Stats
-      </div>
-      <div className="grid grid-cols-2 gap-4 flex-1">
-        {stats.map(s => (
-          <div key={s.label} className="flex flex-col justify-center">
-            <div className="text-[10px] text-text-disabled uppercase tracking-wider mb-1">{s.label}</div>
-            <div className={`text-2xl font-mono font-semibold font-tabular ${s.color}`}>
-              {s.value}
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-export function OverviewView({ onOpenDetail }) {
-  const { agents, loading: loadingAgents } = useAgents();
-  const { tasks, loading: loadingTasks } = useTasks();
-  const { logs: logData, loading: loadingLogs } = useActivityLog();
+export function OverviewView({ agents, tasks, logData, loading, usingMock, addOptimistic, onOpenDetail, onQuickDispatch }) {
   const { data: costData } = useCostData();
   const { data: healthData } = useHealthMetrics();
+  const [createModalOpen, setCreateModalOpen] = useState(false);
 
-  if (loadingAgents || loadingTasks || loadingLogs) {
+  if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
         <Loader2 className="w-5 h-5 text-aurora-teal animate-spin" />
@@ -117,6 +38,8 @@ export function OverviewView({ onOpenDetail }) {
   }
 
   const activeAgents = agents.filter(a => a.status === 'processing').length;
+  const idleAgents = agents.filter(a => a.status === 'idle').length;
+  const errorAgents = agents.filter(a => a.status === 'error').length;
 
   return (
     <motion.div
@@ -132,43 +55,111 @@ export function OverviewView({ onOpenDetail }) {
         </SpotlightCard>
       </motion.div>
 
-      {/* Row 2: Agent cards */}
-      <motion.div variants={item} className="col-span-12 -mx-8 px-8 overflow-visible">
+      {/* Fleet status bar */}
+      <motion.div variants={item} className="col-span-12 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 px-3 py-1.5 spatial-panel">
+            <span className="relative flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-aurora-teal opacity-75" />
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-aurora-teal" />
+            </span>
+            <span className="text-xs font-mono text-aurora-teal">{activeAgents} Active</span>
+          </div>
+          <div className="flex items-center gap-2 px-3 py-1.5 spatial-panel">
+            <span className="w-2 h-2 rounded-full bg-text-muted" />
+            <span className="text-xs font-mono text-text-muted">{idleAgents} Idle</span>
+          </div>
+          {errorAgents > 0 && (
+            <div className="flex items-center gap-2 px-3 py-1.5 spatial-panel border border-aurora-rose/30">
+              <span className="w-2 h-2 rounded-full bg-aurora-rose animate-pulse" />
+              <span className="text-xs font-mono text-aurora-rose font-semibold">{errorAgents} Error</span>
+            </div>
+          )}
+          <div className="px-3 py-1.5 border border-aurora-teal/30 bg-aurora-teal/10 rounded-xl">
+            <span className="text-xs font-mono font-bold text-aurora-teal">{agents.length} Total</span>
+          </div>
+          {usingMock && (
+            <span className="text-[9px] px-1.5 py-0.5 rounded bg-aurora-amber/10 text-aurora-amber border border-aurora-amber/20 font-mono">
+              MOCK DATA
+            </span>
+          )}
+        </div>
+        <motion.button
+          whileHover={{ scale: 1.02 }}
+          whileTap={{ scale: 0.98 }}
+          onClick={() => setCreateModalOpen(true)}
+          className="flex items-center gap-2 px-4 py-2 bg-aurora-teal text-black rounded-xl text-sm font-semibold hover:bg-aurora-teal/90 transition-colors shadow-glow-teal"
+        >
+          <Plus className="w-4 h-4" />
+          Deploy Agent
+        </motion.button>
+      </motion.div>
+
+      {/* Row 2: Agent cards — AoE unit-selection grid */}
+      <motion.div variants={item} className="col-span-12 overflow-visible">
         <div className="grid grid-cols-12 gap-5">
           <AnimatePresence mode="popLayout">
             {agents.map(a => (
-              <motion.div key={a.id} variants={item} layout layoutId={a.id} className="col-span-2 relative z-10 hover:z-50">
-                <AgentVitalCard agent={a} onLogClick={() => onOpenDetail(a.id)} allAgents={agents} activityLog={logData} />
+              <motion.div key={a.id} variants={item} layout layoutId={a.id} className="col-span-4 relative z-10 hover:z-50 overflow-visible">
+                <AgentVitalCard
+                  agent={a}
+                  onOpenDetail={() => onOpenDetail(a.id)}
+                  onQuickDispatch={() => onQuickDispatch(a.id)}
+                  onViewLogs={() => onOpenDetail(a.id, { mode: 'logs' })}
+                  onTuneAgent={() => onOpenDetail(a.id, { mode: 'config' })}
+                />
               </motion.div>
             ))}
           </AnimatePresence>
         </div>
       </motion.div>
 
-      {/* Row 3: Cost, Activity, Task DAG */}
-      <motion.div variants={item} className="col-span-4 h-80">
+      {/* Row 3: DAG + Throughput */}
+      <motion.div variants={item} className="col-span-8 h-[380px]">
+        <div className="spatial-panel p-6 h-full flex flex-col relative group">
+          <WidgetActions onExpand={() => {}} onConfigure={() => {}} onRemove={() => {}} />
+          <h3 className="text-xs uppercase tracking-widest text-text-muted mb-4 absolute top-6 left-6 z-10 flex items-center gap-2">
+            <GitBranch className="w-4 h-4" /> Neural Execution Graph
+          </h3>
+          <div className="absolute inset-0 bg-gradient-to-b from-aurora-blue/5 to-transparent pointer-events-none rounded-2xl" />
+          <div className="flex-1 w-full h-full relative -mx-4 -mb-4 pt-8">
+            <TaskDAG onNodeClick={(id) => onOpenDetail(id)} tasks={tasks} />
+          </div>
+        </div>
+      </motion.div>
+      <motion.div variants={item} className="col-span-4 h-[380px]">
+        <div className="spatial-panel p-6 h-full flex flex-col justify-between group overflow-hidden relative">
+          <WidgetActions onExpand={() => {}} onConfigure={() => {}} onRemove={() => {}} />
+          <div className="absolute -right-12 -bottom-12 w-48 h-48 bg-aurora-blue/10 rounded-full blur-3xl pointer-events-none" />
+          <div>
+            <h3 className="text-xs uppercase tracking-widest text-text-muted mb-2">Live Throughput</h3>
+            <div className="text-4xl font-mono text-aurora-blue mt-2 font-bold tracking-tight">419.2</div>
+            <p className="text-xs text-text-body mt-2">Tokens resolved per compute cycle.</p>
+          </div>
+          <div className="mt-auto">
+            <div className="flex justify-between items-center text-xs mb-2">
+              <span className="text-text-muted font-medium">Pipeline Saturation</span>
+              <span className="text-aurora-blue font-mono">62%</span>
+            </div>
+            <div className="w-full h-1.5 bg-surface-raised rounded-full overflow-hidden border border-white/5">
+              <motion.div initial={{ width: 0 }} animate={{ width: '62%' }} transition={{ duration: 1.5, delay: 0.2 }} className="h-full bg-aurora-blue shadow-glow-blue" />
+            </div>
+          </div>
+        </div>
+      </motion.div>
+
+      {/* Row 4: Cost, Activity, Health */}
+      <motion.div variants={item} className="col-span-4 h-72">
         <SpotlightCard className="h-full">
           <CostBurnWidget />
         </SpotlightCard>
       </motion.div>
-      <motion.div variants={item} className="col-span-4 h-80">
+      <motion.div variants={item} className="col-span-4 h-72">
         <SpotlightCard className="h-full">
           <ActivityFeed />
         </SpotlightCard>
       </motion.div>
-      <motion.div variants={item} className="col-span-4 h-80">
-        <SpotlightCard className="h-full">
-          <TaskDAG onNodeClick={onOpenDetail} tasks={tasks} />
-        </SpotlightCard>
-      </motion.div>
-
-      {/* Row 4: Memory, Health, Delegation, Stats */}
-      <motion.div variants={item} className="col-span-4 h-[300px]">
-        <SpotlightCard className="h-full">
-          <MemorySparkmap />
-        </SpotlightCard>
-      </motion.div>
-      <motion.div variants={item} className="col-span-2 h-[300px]">
+      <motion.div variants={item} className="col-span-4 h-72">
         <div className="spatial-panel flex flex-col gap-5 justify-center items-center h-full group relative">
           <WidgetActions onExpand={() => {}} onConfigure={() => {}} onRemove={() => {}} />
           {healthData.map(m => (
@@ -176,12 +167,60 @@ export function OverviewView({ onOpenDetail }) {
           ))}
         </div>
       </motion.div>
-      <motion.div variants={item} className="col-span-3 h-[300px]">
-        <DelegationWidget agents={agents} />
+
+      {/* Row 5: Live Tasks */}
+      <motion.div variants={item} className="col-span-12">
+        <h3 className="text-sm font-bold text-text-muted uppercase tracking-wider mb-4 border-b border-border pb-2">Live Tasks</h3>
+        <AnimatePresence mode="popLayout">
+          {tasks.map((run, i) => (
+            <motion.div
+              key={run.id}
+              variants={item}
+              layout
+              whileHover={{ x: 4, backgroundColor: 'rgba(255,255,255,0.03)' }}
+              onClick={() => run.agentId && onOpenDetail(run.agentId)}
+              className={cn(
+                'spatial-panel p-4 flex items-center justify-between group mb-2 border hover:shadow-card transition-all cursor-pointer',
+                statusStyles[run.status] || 'row-idle'
+              )}
+            >
+              <div className="flex items-center gap-6 flex-1">
+                <span className="font-mono text-xs text-text-disabled w-16 opacity-50">{`10:${String(4 + i).padStart(2, '0')}:22`}</span>
+                <span className="font-medium text-sm text-text-primary w-32 truncate tracking-wide">{run.agentName}</span>
+                <span className="px-3 py-1 text-[10px] font-mono text-text-muted bg-canvas border border-white/5 rounded">
+                  {run.model || 'claude-opus-4-6'}
+                </span>
+                <span className="text-sm font-medium w-64 text-text-primary truncate">{run.name}</span>
+              </div>
+              <div className="flex items-center gap-8">
+                <span className={cn('text-xs font-bold uppercase tracking-wider w-24 text-right', statusStyles[run.status]?.split(' ')[1])}>
+                  {run.status}
+                </span>
+                <span className="font-mono text-xs text-text-muted tabular-nums w-12 text-right opacity-70">
+                  {run.durationMs < 1000 ? `${run.durationMs}ms` : `${(run.durationMs / 1000).toFixed(1)}s`}
+                </span>
+                <span className="font-mono text-[11px] text-text-muted w-16 text-right">
+                  420 tok
+                </span>
+                <span className="font-mono text-[11px] text-text-muted w-16 text-right opacity-50">
+                  ${run.costUsd.toFixed(3)}
+                </span>
+                <div className="flex items-center gap-2 border-l border-white/10 pl-4 ml-4 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <button onClick={(e) => e.stopPropagation()} className="p-1.5 text-text-muted hover:text-[#a78bfa] hover:bg-white/5 rounded transition-all" title="Edit Task Config"><Edit2 className="w-3.5 h-3.5" /></button>
+                  <button onClick={(e) => e.stopPropagation()} className="p-1.5 text-text-muted hover:text-aurora-amber hover:bg-white/5 rounded transition-all" title="Force Restart"><RotateCcw className="w-3.5 h-3.5" /></button>
+                  <button onClick={(e) => e.stopPropagation()} className="p-1.5 text-text-muted hover:text-aurora-rose hover:bg-white/5 rounded transition-all" title="Terminate"><Trash2 className="w-3.5 h-3.5" /></button>
+                </div>
+              </div>
+            </motion.div>
+          ))}
+        </AnimatePresence>
       </motion.div>
-      <motion.div variants={item} className="col-span-3 h-[300px]">
-        <QuickStats agents={agents} costTotal={costData?.total ?? 0} />
-      </motion.div>
+
+      <CreateAgentModal
+        isOpen={createModalOpen}
+        onClose={() => setCreateModalOpen(false)}
+        onCreated={(optimisticAgent) => addOptimistic?.(optimisticAgent)}
+      />
     </motion.div>
   );
 }

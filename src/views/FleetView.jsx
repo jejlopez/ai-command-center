@@ -63,12 +63,15 @@ export function FleetView({ onOpenDetail }) {
 
       <motion.div variants={container} initial="hidden" animate="show" className="flex flex-col gap-4">
         <h3 className="text-sm font-bold text-text-muted uppercase tracking-wider">Live Instances</h3>
-        {/* -mx-8 px-8 matches App.jsx content padding to prevent hover scale clipping */}
-        <div className="grid grid-cols-12 gap-5 -mx-8 px-8 pb-4 pt-2 overflow-visible">
+        <div className="grid grid-cols-12 gap-5 pb-4 pl-14 pr-6 pt-3 overflow-visible">
           <AnimatePresence mode="popLayout">
             {agents.map(a => (
-              <motion.div key={a.id} variants={item} layout layoutId={`fleet-${a.id}`} className="col-span-4 h-64 relative z-10 hover:z-50">
-                <AgentVitalCard agent={a} onLogClick={() => onOpenDetail(a.id)} />
+              <motion.div key={a.id} variants={item} layout layoutId={`fleet-${a.id}`} className="col-span-4 h-64 relative z-10 hover:z-50 overflow-visible">
+                <AgentVitalCard
+                  agent={a}
+                  onOpenDetail={() => onOpenDetail(a.id)}
+                  onQuickDispatch={() => onOpenDetail(a.id)}
+                />
               </motion.div>
             ))}
           </AnimatePresence>

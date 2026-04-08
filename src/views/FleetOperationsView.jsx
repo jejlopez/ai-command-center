@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useAgents, useTasks, useActivityLog } from '../utils/useSupabase';
 import { cn } from '../utils/cn';
 import { container, item as itemVariant } from '../utils/variants';
 import { AgentVitalCard } from '../components/AgentVitalCard';
@@ -56,13 +55,10 @@ const MapWidget = () => {
   );
 };
 
-export function FleetOperationsView({ onOpenDetail }) {
-  const { agents, loading: loadingAgents, usingMock, addOptimistic } = useAgents();
-  const { tasks, loading: loadingTasks } = useTasks();
-  const { logs: logData, loading: loadingLogs } = useActivityLog();
+export function FleetOperationsView({ agents, tasks, logData, loading, usingMock, addOptimistic, onOpenDetail, onQuickDispatch }) {
   const [createModalOpen, setCreateModalOpen] = useState(false);
 
-  if (loadingAgents || loadingTasks || loadingLogs) {
+  if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
         <Loader2 className="w-5 h-5 text-aurora-teal animate-spin" />
@@ -134,11 +130,17 @@ export function FleetOperationsView({ onOpenDetail }) {
         
         <motion.div variants={itemVariant} className="flex flex-col gap-4">
           <h3 className="text-sm font-bold text-text-muted uppercase tracking-wider border-b border-border pb-2">Active Workforce</h3>
-          <div className="grid grid-cols-12 gap-5 px-8 -mx-8 pb-6 pt-2 overflow-visible">
+          <div className="grid grid-cols-12 gap-5 pb-6 pl-14 pr-6 pt-3 overflow-visible">
             <AnimatePresence mode="popLayout">
                 {agents.map(a => (
-                <motion.div key={a.id} variants={itemVariant} layout layoutId={`fleet-${a.id}`} className="col-span-4 h-64 relative z-10 hover:z-50">
-                    <AgentVitalCard agent={a} onLogClick={() => onOpenDetail(a.id)} allAgents={agents} activityLog={logData} />
+                <motion.div key={a.id} variants={itemVariant} layout layoutId={`fleet-${a.id}`} className="col-span-4 h-64 relative z-10 hover:z-50 overflow-visible">
+                    <AgentVitalCard
+                      agent={a}
+                      onOpenDetail={() => onOpenDetail(a.id)}
+                      onQuickDispatch={() => onQuickDispatch(a.id)}
+                      allAgents={agents}
+                      activityLog={logData}
+                    />
                 </motion.div>
                 ))}
             </AnimatePresence>

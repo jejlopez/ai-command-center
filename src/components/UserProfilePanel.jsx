@@ -225,7 +225,7 @@ function CommanderView({ onSignOut, onSignOutAll, onAction, user, pendingCount, 
         <ActionRow
           icon={Activity}
           label="View activity log"
-          onClick={() => nav('operations')}
+          onClick={() => nav('overview')}
         />
         <ActionRow
           icon={Bell}

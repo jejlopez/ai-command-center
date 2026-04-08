@@ -1,625 +1,113 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  X, RefreshCw, Pause, Play, MoreVertical, Info,
-  Crown, ArrowUpRight, ChevronDown, Plus, Search,
-  Globe, Terminal, FolderOpen, Zap, Database, MessageSquare, Monitor, BarChart3,
-  Trash2, ExternalLink, Server, AlertTriangle,
+  X, RefreshCw, Pause, Play, MoreVertical,
+  Crown, AlertTriangle, Sparkles, Send, CheckCircle2,
 } from 'lucide-react';
 import { ActivityFeed } from './ActivityFeed';
 import { TraceWaterfall } from './TraceWaterfall';
-// TODO: modelRegistry, skillBank, mcpServers are static config — migrate to a config table when needed
-// TODO: mockSpans should come from an execution_spans table when trace data is persisted
-import { mockSpans, modelRegistry, skillBank, mcpServers } from '../utils/mockData';
-import { useAgents } from '../utils/useSupabase';
+import { mockSpans, pendingReviews } from '../utils/mockData';
 import { cn } from '../utils/cn';
-import { AreaChart, Area, ResponsiveContainer } from 'recharts';
+import { ConfigTab } from './detail/ConfigTab';
+import { SkillsTab } from './detail/SkillsTab';
+import { MetricsTab } from './detail/MetricsTab';
+import { DispatchComposer } from './detail/DispatchComposer';
 
-// ── Icon map for skills ─────────────────────────────────────────
-const iconMap = { Globe, Terminal, FolderOpen, Zap, Database, MessageSquare, Monitor, BarChart3 };
-
-// ── Info Tooltip ─────────────────────────────────────────────────
-function InfoBubble({ text }) {
-  const [show, setShow] = useState(false);
-  return (
-    <div className="relative inline-flex">
-      <button
-        onMouseEnter={() => setShow(true)}
-        onMouseLeave={() => setShow(false)}
-        className="text-text-disabled hover:text-text-muted transition-colors"
-      >
-        <Info className="w-3.5 h-3.5" />
-      </button>
-      <AnimatePresence>
-        {show && (
-          <motion.div
-            initial={{ opacity: 0, y: 4 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 4 }}
-            className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-56 p-3 bg-surface border border-white/10 rounded-lg shadow-2xl z-50 text-[11px] text-text-body leading-relaxed pointer-events-none"
-          >
-            {text}
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </div>
-  );
+function getInitialTab(agent) {
+  if (agent.status === 'error') return 'logs';
+  return 'config';
 }
 
-// ── Toggle Switch ────────────────────────────────────────────────
-function Toggle({ value, onChange }) {
+const urgencyStyles = {
+  critical: 'border-aurora-rose/20 bg-aurora-rose/10 text-aurora-rose',
+  high: 'border-aurora-amber/20 bg-aurora-amber/10 text-aurora-amber',
+  normal: 'border-white/10 bg-white/[0.04] text-text-muted',
+};
+
+function AgentApprovals({ agent }) {
+  const agentReviews = pendingReviews.filter((rv) => rv.agentId === agent.id);
+  const [dismissed, setDismissed] = useState(new Set());
+
+  useEffect(() => {
+    setDismissed(new Set());
+  }, [agent.id]);
+
+  const visible = agentReviews.filter((rv) => !dismissed.has(rv.id));
+  if (visible.length === 0) return null;
+
   return (
-    <button
-      onClick={() => onChange(!value)}
-      className={cn("w-9 h-5 rounded-full transition-colors relative", value ? "bg-aurora-teal" : "bg-white/10")}
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: 0.06, duration: 0.22 }}
+      className="shrink-0 border-b border-white/[0.06] px-5 py-4"
     >
-      <div className={cn("w-3.5 h-3.5 rounded-full bg-white absolute top-[3px] transition-transform", value ? "translate-x-[18px]" : "translate-x-[3px]")} />
-    </button>
-  );
-}
-
-// ── Config Tab ───────────────────────────────────────────────────
-function ConfigTab({ agent, agents }) {
-  const defaults = {
-    model: agent.model,
-    temp: agent.temperature ?? 0.7,
-    respLength: agent.responseLength ?? 'medium',
-    sysPrompt: agent.systemPrompt ?? '',
-    spawnPattern: agent.spawnPattern ?? 'sequential',
-    canSpawn: agent.canSpawn ?? false,
-    parallelCalls: true,
-  };
-
-  const [model, setModel] = useState(defaults.model);
-  const [temp, setTemp] = useState(defaults.temp);
-  const [respLength, setRespLength] = useState(defaults.respLength);
-  const [sysPrompt, setSysPrompt] = useState(defaults.sysPrompt);
-  const [spawnPattern, setSpawnPattern] = useState(defaults.spawnPattern);
-  const [canSpawn, setCanSpawn] = useState(defaults.canSpawn);
-  const [parallelCalls, setParallelCalls] = useState(defaults.parallelCalls);
-  const [showModelDropdown, setShowModelDropdown] = useState(false);
-  const [customTemp, setCustomTemp] = useState('');
-  const [dirty, setDirty] = useState(false);
-
-  const handleDiscard = () => {
-    setModel(defaults.model);
-    setTemp(defaults.temp);
-    setRespLength(defaults.respLength);
-    setSysPrompt(defaults.sysPrompt);
-    setSpawnPattern(defaults.spawnPattern);
-    setCanSpawn(defaults.canSpawn);
-    setParallelCalls(defaults.parallelCalls);
-    setCustomTemp('');
-    setDirty(false);
-  };
-
-  const parentAgent = agent.parentId ? agents.find(a => a.id === agent.parentId) : null;
-
-  const tempPresets = [
-    { label: 'Precise', value: 0.1 },
-    { label: 'Balanced', value: 0.7 },
-    { label: 'Creative', value: 1.2 },
-  ];
-
-  const lengthPresets = ['short', 'medium', 'long', 'unlimited'];
-
-  const spawnPatterns = [
-    { id: 'fan-out', label: 'Fan-out / Fan-in', desc: 'Spawn multiple agents in parallel, collect all results before continuing.' },
-    { id: 'sequential', label: 'Sequential', desc: 'Run one agent at a time in order, passing results along the chain.' },
-    { id: 'persistent', label: 'Persistent', desc: 'Agent stays alive between tasks, maintaining context and state.' },
-  ];
-
-  const allModels = [
-    { group: 'Cloud', items: modelRegistry.cloud },
-    { group: 'Local (Ollama)', items: modelRegistry.local },
-    { group: 'Agents', items: modelRegistry.agents },
-  ];
-
-  const markDirty = () => setDirty(true);
-
-  return (
-    <div className="flex flex-col h-full">
-      <div className="flex-1 overflow-y-auto no-scrollbar p-6 space-y-6">
-
-        {/* Agent Identity */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            {agent.role === 'commander' && <Crown className="w-4 h-4 text-aurora-amber" />}
-            <div>
-              <h3 className="text-text-primary font-semibold text-base">{agent.name}</h3>
-              <div className="flex items-center gap-2 mt-0.5">
-                <span className="text-[10px] font-mono text-text-disabled uppercase tracking-wider">{agent.role}</span>
-                {parentAgent && (
-                  <span className="flex items-center gap-1 text-[10px] text-text-disabled font-mono">
-                    <ArrowUpRight className="w-2.5 h-2.5" /> {parentAgent.name}
-                  </span>
-                )}
-              </div>
-            </div>
-          </div>
-          <div className={cn(
-            "px-2.5 py-1 rounded-full text-[10px] font-bold font-mono uppercase tracking-wider",
-            agent.status === 'processing' ? 'bg-aurora-teal/10 text-aurora-teal' :
-            agent.status === 'error' ? 'bg-aurora-rose/10 text-aurora-rose' :
-            'bg-white/5 text-text-muted'
-          )}>
-            {agent.status}
-          </div>
-        </div>
-
-        {/* Model Selector */}
-        <div>
-          <label className="text-[10px] uppercase tracking-[0.15em] text-text-muted font-semibold mb-2 block">Model</label>
-          <div className="relative">
-            <button
-              onClick={() => setShowModelDropdown(!showModelDropdown)}
-              className="w-full flex items-center justify-between px-3 py-2.5 bg-white/[0.03] border border-white/[0.07] rounded-lg text-sm text-text-primary hover:border-white/[0.14] transition-colors"
+      <div className="mb-3 flex items-center gap-2">
+        <CheckCircle2 className="h-3.5 w-3.5 text-aurora-amber" />
+        <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-aurora-amber">
+          Pending Approvals ({visible.length})
+        </span>
+      </div>
+      <div className="space-y-2">
+        <AnimatePresence mode="popLayout">
+          {visible.map((rv) => (
+            <motion.div
+              key={rv.id}
+              layout
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, x: -12, transition: { duration: 0.18 } }}
+              className={cn('rounded-xl border p-3.5', urgencyStyles[rv.urgency] || urgencyStyles.normal)}
             >
-              <span className="font-mono text-sm">{model}</span>
-              <ChevronDown className={cn("w-4 h-4 text-text-muted transition-transform", showModelDropdown && "rotate-180")} />
-            </button>
-            <AnimatePresence>
-              {showModelDropdown && (
-                <motion.div
-                  initial={{ opacity: 0, y: -4 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -4 }}
-                  className="absolute top-full left-0 right-0 mt-1 bg-surface border border-white/10 rounded-lg shadow-2xl z-50 max-h-64 overflow-y-auto no-scrollbar"
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-semibold text-text-primary">{rv.title}</span>
+                    <span
+                      className={cn(
+                        'rounded-full px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.16em]',
+                        urgencyStyles[rv.urgency] || urgencyStyles.normal,
+                      )}
+                    >
+                      {rv.urgency}
+                    </span>
+                  </div>
+                  <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-text-muted">{rv.summary}</p>
+                  <div className="mt-2 flex items-center gap-3 text-[10px] font-mono text-text-disabled">
+                    <span>{rv.outputType}</span>
+                    <span>{rv.createdAt}</span>
+                    <span>{Math.round(rv.waitingMs / 60000)}m waiting</span>
+                  </div>
+                </div>
+              </div>
+              <div className="mt-3 flex items-center gap-2">
+                <motion.button
+                  whileHover={{ scale: 1.03 }}
+                  whileTap={{ scale: 0.97 }}
+                  onClick={() => setDismissed((prev) => new Set([...prev, rv.id]))}
+                  className="rounded-lg bg-aurora-teal px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.14em] text-black transition-colors hover:bg-[#12e8da]"
                 >
-                  {allModels.map(group => (
-                    <div key={group.group}>
-                      <div className="px-3 py-1.5 text-[9px] uppercase tracking-[0.2em] text-text-disabled font-bold bg-canvas/50">
-                        {group.group}
-                      </div>
-                      {group.items.map(m => (
-                        <button
-                          key={m.id}
-                          onClick={() => { setModel(m.id); setShowModelDropdown(false); markDirty(); }}
-                          className={cn(
-                            "w-full px-3 py-2 flex items-center justify-between text-left hover:bg-white/[0.05] transition-colors",
-                            model === m.id && "bg-aurora-teal/5"
-                          )}
-                        >
-                          <span className="text-xs text-text-primary font-mono">{m.label}</span>
-                          {m.costPer1k > 0 ? (
-                            <span className="text-[10px] text-text-disabled font-mono">${m.costPer1k}/1k</span>
-                          ) : (
-                            <span className="text-[10px] text-aurora-green font-mono">Free</span>
-                          )}
-                        </button>
-                      ))}
-                    </div>
-                  ))}
-                  <button className="w-full px-3 py-2.5 flex items-center gap-2 text-xs text-aurora-teal hover:bg-white/[0.05] transition-colors border-t border-white/5">
-                    <Plus className="w-3.5 h-3.5" /> Add Custom Endpoint
-                  </button>
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
-        </div>
-
-        {/* Temperature */}
-        <div>
-          <div className="flex items-center gap-2 mb-2">
-            <label className="text-[10px] uppercase tracking-[0.15em] text-text-muted font-semibold">Temperature</label>
-            <InfoBubble text="Controls how creative vs deterministic the agent's responses are. Lower = more precise and reliable. Higher = more creative and varied." />
-          </div>
-          <div className="flex items-center gap-2">
-            {tempPresets.map(p => (
-              <button
-                key={p.label}
-                onClick={() => { setTemp(p.value); setCustomTemp(''); markDirty(); }}
-                className={cn(
-                  "px-3 py-1.5 rounded-lg text-xs font-medium border transition-all",
-                  temp === p.value
-                    ? "border-aurora-teal/40 bg-aurora-teal/10 text-aurora-teal"
-                    : "border-white/[0.07] bg-white/[0.03] text-text-muted hover:border-white/[0.14]"
-                )}
-              >
-                {p.label}
-              </button>
-            ))}
-            <input
-              type="number"
-              min="0" max="2" step="0.05"
-              placeholder="Custom"
-              value={customTemp}
-              onChange={e => { setCustomTemp(e.target.value); setTemp(parseFloat(e.target.value) || 0); markDirty(); }}
-              className="w-20 px-2 py-1.5 bg-white/[0.03] border border-white/[0.07] rounded-lg text-xs font-mono text-text-primary text-center focus:border-aurora-teal/40 outline-none transition-colors"
-            />
-          </div>
-        </div>
-
-        {/* Response Length */}
-        <div>
-          <div className="flex items-center gap-2 mb-2">
-            <label className="text-[10px] uppercase tracking-[0.15em] text-text-muted font-semibold">Response Length</label>
-            <InfoBubble text="Controls the maximum length of agent responses. Maps to token limits under the hood." />
-          </div>
-          <div className="flex items-center gap-2">
-            {lengthPresets.map(l => (
-              <button
-                key={l}
-                onClick={() => { setRespLength(l); markDirty(); }}
-                className={cn(
-                  "px-3 py-1.5 rounded-lg text-xs font-medium border capitalize transition-all",
-                  respLength === l
-                    ? "border-aurora-teal/40 bg-aurora-teal/10 text-aurora-teal"
-                    : "border-white/[0.07] bg-white/[0.03] text-text-muted hover:border-white/[0.14]"
-                )}
-              >
-                {l}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* System Prompt */}
-        <div>
-          <label className="text-[10px] uppercase tracking-[0.15em] text-text-muted font-semibold mb-2 block">System Prompt</label>
-          <textarea
-            value={sysPrompt}
-            onChange={e => { setSysPrompt(e.target.value); markDirty(); }}
-            rows={5}
-            className="w-full bg-white/[0.03] border border-white/[0.07] rounded-lg px-3 py-2.5 text-xs font-mono text-text-primary resize-none focus:border-aurora-teal/40 outline-none transition-colors leading-relaxed"
-          />
-          <div className="flex justify-between mt-1.5 text-[10px] text-text-disabled font-mono">
-            <span>{sysPrompt.length} chars</span>
-            <span>~{Math.ceil(sysPrompt.length / 4)} tokens</span>
-          </div>
-        </div>
-
-        {/* Orchestration Settings */}
-        <div>
-          <label className="text-[10px] uppercase tracking-[0.15em] text-text-muted font-semibold mb-3 block">Orchestration</label>
-          <div className="space-y-3">
-            <div>
-              <div className="flex items-center gap-2 mb-2">
-                <span className="text-xs text-text-body">Spawn Pattern</span>
-                <InfoBubble text="Determines how this agent creates and manages sub-agents. Fan-out runs them in parallel. Sequential runs one at a time. Persistent keeps them alive between tasks." />
+                  Approve
+                </motion.button>
+                <motion.button
+                  whileHover={{ scale: 1.03 }}
+                  whileTap={{ scale: 0.97 }}
+                  onClick={() => setDismissed((prev) => new Set([...prev, rv.id]))}
+                  className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-text-muted transition-colors hover:border-white/[0.18] hover:text-text-primary"
+                >
+                  Reject
+                </motion.button>
               </div>
-              <div className="space-y-1.5">
-                {spawnPatterns.map(p => (
-                  <button
-                    key={p.id}
-                    onClick={() => { setSpawnPattern(p.id); markDirty(); }}
-                    className={cn(
-                      "w-full flex items-start gap-3 px-3 py-2.5 rounded-lg border text-left transition-all",
-                      spawnPattern === p.id
-                        ? "border-aurora-teal/30 bg-aurora-teal/5"
-                        : "border-white/[0.05] bg-white/[0.02] hover:border-white/[0.1]"
-                    )}
-                  >
-                    <div className={cn(
-                      "w-3 h-3 rounded-full border-2 mt-0.5 shrink-0 transition-colors",
-                      spawnPattern === p.id ? "border-aurora-teal bg-aurora-teal" : "border-white/20"
-                    )} />
-                    <div>
-                      <div className="text-xs font-medium text-text-primary">{p.label}</div>
-                      <div className="text-[10px] text-text-disabled mt-0.5">{p.desc}</div>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="flex items-center justify-between py-2">
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-text-body">Can Spawn Sub-agents</span>
-                <InfoBubble text="Whether this agent is allowed to create child agents to delegate work to." />
-              </div>
-              <Toggle value={canSpawn} onChange={v => { setCanSpawn(v); markDirty(); }} />
-            </div>
-
-            <div className="flex items-center justify-between py-2">
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-text-body">Parallel Tool Calls</span>
-                <InfoBubble text="When enabled, the agent can execute multiple tools at the same time (e.g., scrape 3 websites simultaneously instead of one by one). Faster but uses more resources." />
-              </div>
-              <Toggle value={parallelCalls} onChange={v => { setParallelCalls(v); markDirty(); }} />
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Sticky Footer */}
-      <div className="border-t border-white/[0.07] p-4 bg-canvas/80 backdrop-blur shrink-0">
-        <div className="flex gap-2">
-          <button
-            disabled={!dirty}
-            className={cn(
-              "flex-1 py-2.5 rounded-lg text-xs font-bold font-mono uppercase tracking-wider transition-all",
-              dirty ? "bg-aurora-teal text-[#000] hover:bg-aurora-teal/90" : "bg-white/5 text-text-disabled cursor-not-allowed"
-            )}
-          >
-            Save Changes
-          </button>
-          <button
-            disabled={!dirty}
-            onClick={handleDiscard}
-            className="px-4 py-2.5 rounded-lg text-xs font-medium text-text-muted border border-white/[0.07] hover:border-white/[0.14] transition-colors"
-          >
-            Discard
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ── Skills Tab ───────────────────────────────────────────────────
-function SkillsTab({ agent }) {
-  const [searchInput, setSearchInput] = useState('');
-  const [showMcp, setShowMcp] = useState(false);
-  const [showAddServer, setShowAddServer] = useState(false);
-  const [serverUrl, setServerUrl] = useState('');
-
-  const agentSkills = skillBank.filter(s => agent.skills?.includes(s.id));
-  const availableSkills = skillBank.filter(s => !agent.skills?.includes(s.id));
-
-  const isPath = searchInput.startsWith('/') || searchInput.startsWith('~');
-  const isGithub = searchInput.includes('github.com');
-
-  const filteredAvailable = searchInput && !isPath && !isGithub
-    ? availableSkills.filter(s =>
-        s.name.toLowerCase().includes(searchInput.toLowerCase()) ||
-        s.description.toLowerCase().includes(searchInput.toLowerCase())
-      )
-    : [];
-
-  return (
-    <div className="flex flex-col h-full">
-      <div className="flex-1 overflow-y-auto no-scrollbar p-6 space-y-6">
-
-        {/* Add Skill Input */}
-        <div>
-          <label className="text-[10px] uppercase tracking-[0.15em] text-text-muted font-semibold mb-2 block">Add Skill</label>
-          <div className="relative">
-            <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
-            <input
-              type="text"
-              value={searchInput}
-              onChange={e => setSearchInput(e.target.value)}
-              placeholder="Search skills, paste path, or GitHub URL..."
-              className="w-full pl-9 pr-3 py-2.5 bg-white/[0.03] border border-white/[0.07] rounded-lg text-xs font-mono text-text-primary placeholder-text-disabled focus:border-aurora-teal/40 outline-none transition-colors"
-            />
-          </div>
-
-          {isPath && (
-            <div className="mt-2 p-3 bg-aurora-teal/5 border border-aurora-teal/20 rounded-lg flex items-center justify-between">
-              <div>
-                <div className="text-[10px] text-aurora-teal font-bold uppercase">Local Path Detected</div>
-                <div className="text-[11px] text-text-muted font-mono mt-0.5 truncate max-w-[360px]">{searchInput}</div>
-              </div>
-              <button className="px-3 py-1.5 bg-aurora-teal text-[#000] text-[10px] font-bold rounded-md shrink-0">Install</button>
-            </div>
-          )}
-          {isGithub && (
-            <div className="mt-2 p-3 bg-aurora-violet/5 border border-aurora-violet/20 rounded-lg flex items-center justify-between">
-              <div>
-                <div className="text-[10px] text-aurora-violet font-bold uppercase">GitHub Repo Detected</div>
-                <div className="text-[11px] text-text-muted font-mono mt-0.5 truncate max-w-[360px]">{searchInput}</div>
-              </div>
-              <button className="px-3 py-1.5 bg-aurora-violet text-white text-[10px] font-bold rounded-md shrink-0">Install</button>
-            </div>
-          )}
-
-          {filteredAvailable.length > 0 && (
-            <div className="mt-2 border border-white/[0.07] rounded-lg overflow-hidden">
-              {filteredAvailable.map(skill => {
-                const Icon = iconMap[skill.icon] || Zap;
-                return (
-                  <div key={skill.id} className="flex items-center justify-between px-3 py-2.5 hover:bg-white/[0.03] transition-colors border-b border-white/[0.03] last:border-0">
-                    <div className="flex items-center gap-2.5 min-w-0">
-                      <Icon className="w-3.5 h-3.5 text-text-muted shrink-0" />
-                      <div className="min-w-0">
-                        <div className="text-xs text-text-primary font-medium">{skill.name}</div>
-                        <div className="text-[10px] text-text-disabled truncate">{skill.description}</div>
-                      </div>
-                    </div>
-                    <button className="px-2 py-1 text-[10px] font-bold text-aurora-teal hover:bg-aurora-teal/10 rounded transition-colors shrink-0 ml-2">
-                      + Add
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-
-        {/* Installed Skills */}
-        <div>
-          <label className="text-[10px] uppercase tracking-[0.15em] text-text-muted font-semibold mb-3 block">
-            Installed ({agentSkills.length})
-          </label>
-          <div className="space-y-1">
-            {agentSkills.map(skill => {
-              const Icon = iconMap[skill.icon] || Zap;
-              return (
-                <div key={skill.id} className="flex items-center justify-between px-3 py-2.5 bg-white/[0.02] rounded-lg border border-white/[0.05] group">
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <Icon className="w-3.5 h-3.5 text-text-muted shrink-0" />
-                    <div className="min-w-0">
-                      <div className="text-xs text-text-primary font-medium">{skill.name}</div>
-                      <div className="text-[10px] text-text-disabled truncate">{skill.description}</div>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0 ml-2">
-                    <span className="text-[9px] font-mono text-text-disabled px-1.5 py-0.5 bg-white/[0.03] rounded">{skill.source}</span>
-                    <button className="opacity-0 group-hover:opacity-100 transition-opacity text-text-disabled hover:text-aurora-rose">
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Skill Bank */}
-        <div>
-          <label className="text-[10px] uppercase tracking-[0.15em] text-text-muted font-semibold mb-2 block">
-            Skill Bank
-            <span className="ml-2 text-text-disabled normal-case tracking-normal">Shared across all agents</span>
-          </label>
-          <div className="space-y-1">
-            {availableSkills.map(skill => {
-              const Icon = iconMap[skill.icon] || Zap;
-              return (
-                <div key={skill.id} className="flex items-center justify-between px-3 py-2 bg-white/[0.01] rounded-lg border border-white/[0.03] hover:border-white/[0.07] transition-colors">
-                  <div className="flex items-center gap-2.5">
-                    <Icon className="w-3.5 h-3.5 text-text-disabled" />
-                    <span className="text-xs text-text-muted">{skill.name}</span>
-                  </div>
-                  <button className="text-[10px] font-bold text-aurora-teal hover:bg-aurora-teal/10 px-2 py-1 rounded transition-colors">
-                    + Add
-                  </button>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* MCP Servers */}
-        <div>
-          <button
-            onClick={() => setShowMcp(!showMcp)}
-            className="flex items-center gap-2 text-[10px] uppercase tracking-[0.15em] text-text-muted font-semibold mb-3 w-full"
-          >
-            <ChevronDown className={cn("w-3 h-3 transition-transform", showMcp && "rotate-180")} />
-            MCP Servers
-            <InfoBubble text="MCP (Model Context Protocol) servers expose tools your agents can use. Connect a server by pasting its URL. The server advertises available tools automatically." />
-          </button>
-
-          <AnimatePresence>
-            {showMcp && (
-              <motion.div
-                initial={{ height: 0, opacity: 0 }}
-                animate={{ height: 'auto', opacity: 1 }}
-                exit={{ height: 0, opacity: 0 }}
-                className="overflow-hidden space-y-2"
-              >
-                {mcpServers.map(s => (
-                  <div key={s.id} className="flex items-center justify-between px-3 py-2.5 bg-white/[0.02] rounded-lg border border-white/[0.05]">
-                    <div className="flex items-center gap-2.5">
-                      <div className={cn("w-2 h-2 rounded-full", s.status === 'connected' ? "bg-aurora-green" : "bg-aurora-rose")} />
-                      <div>
-                        <div className="text-xs text-text-primary font-mono">{s.url}</div>
-                        <div className="text-[10px] text-text-disabled">{s.name} · {s.tools} tools</div>
-                      </div>
-                    </div>
-                    <ExternalLink className="w-3.5 h-3.5 text-text-disabled" />
-                  </div>
-                ))}
-                {showAddServer ? (
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
-                      value={serverUrl}
-                      onChange={e => setServerUrl(e.target.value)}
-                      placeholder="Server URL (e.g., localhost:3001)"
-                      className="flex-1 px-3 py-2 bg-white/[0.03] border border-white/[0.07] rounded-lg text-xs font-mono text-text-primary focus:border-aurora-teal/40 outline-none"
-                    />
-                    <button className="px-3 py-2 bg-aurora-teal text-[#000] text-[10px] font-bold rounded-lg shrink-0">Connect</button>
-                  </div>
-                ) : (
-                  <button
-                    onClick={() => setShowAddServer(true)}
-                    className="w-full flex items-center justify-center gap-1.5 py-2.5 border border-dashed border-white/10 rounded-lg text-[10px] text-text-muted hover:border-aurora-teal/30 hover:text-aurora-teal transition-colors"
-                  >
-                    <Server className="w-3 h-3" /> Connect MCP Server
-                  </button>
-                )}
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ── Metrics Tab ──────────────────────────────────────────────────
-function MetricsTab({ agent }) {
-  const uptimeHrs = agent.uptimeMs ? (agent.uptimeMs / 3_600_000).toFixed(1) : '0.0';
-  const stats = [
-    { label: 'Total Tokens', value: (agent.totalTokens || 0).toLocaleString(), sub: `$${(agent.totalCost || 0).toFixed(2)}` },
-    { label: 'Avg Latency', value: `${agent.latencyMs}ms`, sub: `p95: ${Math.round(agent.latencyMs * 1.4)}ms` },
-    { label: 'Success Rate', value: `${agent.successRate || 0}%`, sub: `${agent.taskCount || 0} tasks` },
-    { label: 'Uptime', value: `${uptimeHrs}h`, sub: `${agent.restartCount || 0} restarts` },
-  ];
-
-  const tokenHistory = (agent.tokenHistory24h || []).map((tokens, i) => ({ hour: i, tokens }));
-
-  // Deterministic tool call counts seeded from agent token data
-  const seedBase = agent.totalTokens || 1000;
-  const topTools = (agent.skills || []).slice(0, 4).map((sid, idx) => {
-    const skill = skillBank.find(s => s.id === sid);
-    return { name: skill?.name || sid, calls: Math.max(5, Math.floor(((seedBase * (idx + 7)) % 47) + 8)) };
-  }).sort((a, b) => b.calls - a.calls);
-
-  const maxCalls = Math.max(...topTools.map(t => t.calls), 1);
-
-  return (
-    <div className="p-6 space-y-6 overflow-y-auto no-scrollbar h-full">
-      <div className="grid grid-cols-2 gap-3">
-        {stats.map(s => (
-          <div key={s.label} className="bg-white/[0.02] border border-white/[0.05] rounded-lg p-3.5">
-            <div className="text-[10px] uppercase tracking-[0.15em] text-text-disabled font-semibold mb-1">{s.label}</div>
-            <div className="text-xl font-mono font-semibold text-text-primary font-tabular">{s.value}</div>
-            <div className="text-[10px] font-mono text-text-disabled mt-0.5">{s.sub}</div>
-          </div>
-        ))}
-      </div>
-
-      <div>
-        <label className="text-[10px] uppercase tracking-[0.15em] text-text-muted font-semibold mb-3 block">Token Usage (24h)</label>
-        <div className="h-24 bg-white/[0.02] border border-white/[0.05] rounded-lg p-2">
-          <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={tokenHistory}>
-              <defs>
-                <linearGradient id={`tokenGrad-${agent.id}`} x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor={agent.color} stopOpacity={0.3} />
-                  <stop offset="100%" stopColor={agent.color} stopOpacity={0} />
-                </linearGradient>
-              </defs>
-              <Area type="monotone" dataKey="tokens" stroke={agent.color} strokeWidth={1.5} fill={`url(#tokenGrad-${agent.id})`} dot={false} isAnimationActive={true} />
-            </AreaChart>
-          </ResponsiveContainer>
-        </div>
-      </div>
-
-      <div>
-        <label className="text-[10px] uppercase tracking-[0.15em] text-text-muted font-semibold mb-3 block">Top Tool Calls</label>
-        <div className="space-y-2.5">
-          {topTools.map(t => (
-            <div key={t.name}>
-              <div className="flex justify-between text-xs mb-1">
-                <span className="text-text-primary">{t.name}</span>
-                <span className="font-mono text-text-disabled">{t.calls}</span>
-              </div>
-              <div className="h-1.5 rounded-full bg-white/[0.05] overflow-hidden">
-                <motion.div
-                  className="h-full rounded-full"
-                  style={{ backgroundColor: agent.color }}
-                  initial={{ width: 0 }}
-                  animate={{ width: `${(t.calls / maxCalls) * 100}%` }}
-                  transition={{ duration: 0.8, ease: 'easeOut' }}
-                />
-              </div>
-            </div>
+            </motion.div>
           ))}
-        </div>
+        </AnimatePresence>
       </div>
-    </div>
+    </motion.div>
   );
 }
 
-// ── Kebab Menu ───────────────────────────────────────────────────
 function KebabMenu({ onClose }) {
   const [showTerminate, setShowTerminate] = useState(false);
-
   const items = [
     { label: 'Clone Agent' },
     { label: 'Promote Priority' },
@@ -633,30 +121,30 @@ function KebabMenu({ onClose }) {
       initial={{ opacity: 0, scale: 0.95, y: -4 }}
       animate={{ opacity: 1, scale: 1, y: 0 }}
       exit={{ opacity: 0, scale: 0.95, y: -4 }}
-      className="absolute top-full right-0 mt-1 w-48 bg-surface border border-white/10 rounded-lg shadow-2xl z-50 overflow-hidden"
+      className="absolute right-0 top-full z-50 mt-1 w-48 overflow-hidden rounded-lg border border-white/10 bg-surface shadow-2xl"
     >
-      {items.map(item => (
+      {items.map((item) => (
         <button
           key={item.label}
           onClick={onClose}
-          className="w-full px-3 py-2 text-xs text-text-primary text-left hover:bg-white/[0.05] transition-colors"
+          className="w-full px-3 py-2 text-left text-xs text-text-primary transition-colors hover:bg-white/[0.05]"
         >
           {item.label}
         </button>
       ))}
       <div className="border-t border-white/[0.07]">
         {showTerminate ? (
-          <div className="p-3 space-y-2">
-            <div className="flex items-center gap-1.5 text-aurora-rose text-[10px] font-bold">
-              <AlertTriangle className="w-3 h-3" /> This will permanently stop the agent
+          <div className="space-y-2 p-3">
+            <div className="flex items-center gap-1.5 text-[10px] font-bold text-aurora-rose">
+              <AlertTriangle className="h-3 w-3" /> This will permanently stop the agent
             </div>
             <div className="flex gap-2">
-              <button onClick={onClose} className="flex-1 py-1.5 bg-aurora-rose text-white text-[10px] font-bold rounded-md">Confirm</button>
-              <button onClick={() => setShowTerminate(false)} className="flex-1 py-1.5 border border-white/10 text-text-muted text-[10px] rounded-md">Cancel</button>
+              <button onClick={onClose} className="flex-1 rounded-md bg-aurora-rose py-1.5 text-[10px] font-bold text-white">Confirm</button>
+              <button onClick={() => setShowTerminate(false)} className="flex-1 rounded-md border border-white/10 py-1.5 text-[10px] text-text-muted">Cancel</button>
             </div>
           </div>
         ) : (
-          <button onClick={() => setShowTerminate(true)} className="w-full px-3 py-2 text-xs text-aurora-rose text-left hover:bg-aurora-rose/5 transition-colors">
+          <button onClick={() => setShowTerminate(true)} className="w-full px-3 py-2 text-left text-xs text-aurora-rose transition-colors hover:bg-aurora-rose/5">
             Terminate Agent
           </button>
         )}
@@ -665,39 +153,66 @@ function KebabMenu({ onClose }) {
   );
 }
 
-// ── Main Detail Panel ────────────────────────────────────────────
-export function DetailPanel({ agentId, onClose }) {
-  const { agents } = useAgents();
-  const [activeTab, setActiveTab] = useState('config');
+export function DetailPanel({ agent, tasks = [], logs = [], initialMode = 'config', onClose }) {
+  const tabModes = ['config', 'skills', 'metrics', 'logs'];
+  const resolveInitialTab = () => {
+    if (tabModes.includes(initialMode)) return initialMode;
+    return getInitialTab(agent);
+  };
+  const [activeTab, setActiveTab] = useState(resolveInitialTab);
   const [showKebab, setShowKebab] = useState(false);
   const [logView, setLogView] = useState('stream');
-
-  const agent = agents.find(a => a.id === agentId);
+  const [composeOpen, setComposeOpen] = useState(initialMode === 'dispatch');
 
   useEffect(() => {
-    const handleEsc = (e) => { if (e.key === 'Escape') onClose(); };
+    if (tabModes.includes(initialMode)) {
+      setActiveTab(initialMode);
+      setComposeOpen(false);
+    } else if (initialMode === 'dispatch') {
+      setActiveTab(getInitialTab(agent));
+      setComposeOpen(true);
+    } else {
+      setActiveTab(getInitialTab(agent));
+      setComposeOpen(false);
+    }
+    setLogView('stream');
+  }, [agent, initialMode]);
+
+  useEffect(() => {
+    const handleEsc = (e) => {
+      if (e.key === 'Escape') {
+        if (composeOpen) {
+          setComposeOpen(false);
+        } else {
+          onClose();
+        }
+      }
+    };
+
     window.addEventListener('keydown', handleEsc);
     return () => window.removeEventListener('keydown', handleEsc);
-  }, [onClose]);
+  }, [composeOpen, onClose]);
 
   useEffect(() => {
-    if (showKebab) {
-      const handler = () => setShowKebab(false);
-      setTimeout(() => document.addEventListener('click', handler), 0);
-      return () => document.removeEventListener('click', handler);
-    }
+    if (!showKebab) return undefined;
+    const handler = () => setShowKebab(false);
+    setTimeout(() => document.addEventListener('click', handler), 0);
+    return () => document.removeEventListener('click', handler);
   }, [showKebab]);
 
-  if (!agent) return null;
-
   const isProcessing = agent.status === 'processing';
-
-  const tabs = [
+  const tabs = useMemo(() => [
     { id: 'config', label: 'Config' },
     { id: 'skills', label: 'Skills' },
     { id: 'metrics', label: 'Metrics' },
     { id: 'logs', label: 'Logs' },
-  ];
+  ], []);
+
+  const contentVariants = {
+    hidden: { opacity: 0, y: 10 },
+    visible: { opacity: 1, y: 0 },
+    exit: { opacity: 0, y: -8 },
+  };
 
   return (
     <>
@@ -707,131 +222,197 @@ export function DetailPanel({ agentId, onClose }) {
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
         onClick={onClose}
-        className="fixed inset-0 bg-black/40 backdrop-blur-sm z-40"
+        className="fixed inset-0 z-40 bg-black/42 backdrop-blur-sm"
       />
+
+      <motion.aside
+        initial={{ x: 28, opacity: 0 }}
+        animate={{ x: 0, opacity: 1 }}
+        exit={{ x: 20, opacity: 0 }}
+        transition={{ type: 'spring', stiffness: 220, damping: 28, mass: 0.95 }}
+        className="fixed bottom-0 right-0 top-0 z-50 flex w-[620px] flex-col border-l border-border bg-surface shadow-[-14px_0_40px_rgba(0,0,0,0.48)]"
+      >
         <motion.div
-          initial={{ x: '100%' }}
-          animate={{ x: '0%' }}
-          exit={{ x: '100%' }}
-          transition={{ type: 'spring', stiffness: 300, damping: 35 }}
-          className="fixed top-0 right-0 bottom-0 w-[560px] bg-surface border-l border-border z-50 flex flex-col shadow-[-10px_0_30px_rgba(0,0,0,0.5)]"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ delay: 0.05, duration: 0.18, ease: 'easeOut' }}
+          className="shrink-0 border-b border-border bg-[radial-gradient(circle_at_top_left,rgba(0,217,200,0.14),transparent_32%),linear-gradient(180deg,rgba(255,255,255,0.04),rgba(255,255,255,0.02))]"
         >
-          {/* Header */}
-          <div className="p-5 border-b border-border flex justify-between items-start bg-canvas/30 backdrop-blur shrink-0">
-            <div>
-              <div className="flex items-center gap-3 mb-1">
-                <h2 className="text-lg font-semibold text-text-primary">{agent.name}</h2>
-                <div className="spatial-panel px-2 py-0.5 text-[10px] font-mono text-text-muted bg-white/[0.02]">{agent.id}</div>
+          <motion.div
+            initial={{ opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.08, duration: 0.18, ease: 'easeOut' }}
+            className="flex items-start justify-between gap-4 px-5 py-5"
+          >
+            <div className="min-w-0">
+              <div className="mb-2 flex items-center gap-3">
+                <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-black/20 px-2.5 py-1 font-mono text-[10px] text-text-muted">
+                  <span className={cn('h-2 w-2 rounded-full', isProcessing ? 'bg-aurora-teal animate-pulse' : agent.status === 'error' ? 'bg-aurora-rose' : 'bg-text-muted')} />
+                  {agent.id}
+                </div>
+                <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-black/20 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-text-disabled">
+                  <span className="h-2 w-2 rounded-full" style={{ backgroundColor: agent.color }} />
+                  {agent.status}
+                </div>
               </div>
-              <div className="flex items-center gap-2 text-xs font-medium">
-                <div className={cn(
-                  "w-2 h-2 rounded-full",
-                  isProcessing ? "bg-aurora-teal animate-pulse" : agent.status === 'error' ? "bg-aurora-rose" : "bg-text-muted"
-                )} />
-                <span className={cn(
-                  isProcessing ? "text-aurora-teal" : agent.status === 'error' ? "text-aurora-rose" : "text-text-muted"
-                )}>
-                  {isProcessing ? 'Active' : agent.status === 'error' ? 'Error' : 'Idle'}
-                </span>
+              <div className="flex items-center gap-3">
+                {agent.role === 'commander' && <Crown className="h-4 w-4 shrink-0 text-aurora-amber" />}
+                <div className="min-w-0">
+                  <h2 className="truncate text-xl font-semibold text-text-primary">{agent.name}</h2>
+                  <div className="mt-1 flex items-center gap-2 text-xs text-text-muted">
+                    <span className="font-mono">{agent.model}</span>
+                    <span>•</span>
+                    <span>{agent.latencyMs}ms latency</span>
+                  </div>
+                </div>
               </div>
             </div>
+
             <div className="flex items-center gap-1.5">
-              <button className="p-2 text-text-muted hover:text-aurora-teal hover:bg-white/[0.05] rounded-lg transition-colors" title="Restart">
-                <RefreshCw className="w-4 h-4" />
+              <button
+                onClick={() => setComposeOpen(true)}
+                className="inline-flex items-center gap-2 rounded-xl bg-aurora-teal px-3.5 py-2 text-[11px] font-bold uppercase tracking-[0.16em] text-black transition-colors hover:bg-[#12e8da]"
+              >
+                <Send className="h-3.5 w-3.5" />
+                Dispatch
               </button>
-              <button className="p-2 text-text-muted hover:text-aurora-amber hover:bg-white/[0.05] rounded-lg transition-colors" title={isProcessing ? 'Pause' : 'Resume'}>
-                {isProcessing ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
+              <button className="rounded-lg p-2 text-text-muted transition-colors hover:bg-white/[0.05] hover:text-aurora-teal" title="Restart">
+                <RefreshCw className="h-4 w-4" />
+              </button>
+              <button className="rounded-lg p-2 text-text-muted transition-colors hover:bg-white/[0.05] hover:text-aurora-amber" title={isProcessing ? 'Pause' : 'Resume'}>
+                {isProcessing ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
               </button>
               <div className="relative">
                 <button
                   onClick={(e) => { e.stopPropagation(); setShowKebab(!showKebab); }}
-                  className="p-2 text-text-muted hover:text-text-primary hover:bg-white/[0.05] rounded-lg transition-colors"
+                  className="rounded-lg p-2 text-text-muted transition-colors hover:bg-white/[0.05] hover:text-text-primary"
                 >
-                  <MoreVertical className="w-4 h-4" />
+                  <MoreVertical className="h-4 w-4" />
                 </button>
                 <AnimatePresence>
                   {showKebab && <KebabMenu onClose={() => setShowKebab(false)} />}
                 </AnimatePresence>
               </div>
-              <div className="w-[1px] h-4 bg-border mx-1" />
-              <button onClick={onClose} className="p-2 text-text-muted hover:text-white hover:bg-white/[0.05] rounded-lg transition-colors">
-                <X className="w-5 h-5" />
+              <div className="mx-1 h-4 w-px bg-border" />
+              <button onClick={onClose} className="rounded-lg p-2 text-text-muted transition-colors hover:bg-white/[0.05] hover:text-white">
+                <X className="h-5 w-5" />
               </button>
             </div>
-          </div>
+          </motion.div>
 
-          {/* Tabs */}
-          <div className="flex border-b border-border px-5 shrink-0">
-            {tabs.map(tab => (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className={cn(
-                  "px-4 py-3 text-sm font-medium border-b-2 transition-colors",
-                  activeTab === tab.id ? "border-aurora-teal text-aurora-teal" : "border-transparent text-text-muted hover:text-text-primary"
-                )}
-              >
-                {tab.label}
-              </button>
-            ))}
-          </div>
-
-          {/* Status action bar */}
-          {agent.status === 'error' && (
-            <div className="border-b border-aurora-rose/10 shrink-0">
-              <div className="px-5 py-2.5 bg-aurora-rose/5 flex items-center justify-between">
-                <div className="flex items-center gap-2 min-w-0">
-                  <AlertTriangle className="w-3.5 h-3.5 text-aurora-rose shrink-0" />
-                  <span className="text-[11px] text-aurora-rose font-medium truncate">
-                    {agent.errorMessage || 'Agent requires intervention'}
-                  </span>
-                </div>
-                <button className="px-3 py-1 bg-aurora-rose/10 hover:bg-aurora-rose/20 text-aurora-rose text-[10px] font-bold rounded-md border border-aurora-rose/20 transition-colors shrink-0 ml-3">
-                  Restart Agent
-                </button>
+          {!composeOpen && (
+            <motion.div
+              initial={{ opacity: 0, y: 4 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.12, duration: 0.16, ease: 'easeOut' }}
+              className="flex items-center justify-between gap-4 border-t border-white/[0.05] px-5 py-3"
+            >
+              <div className="inline-flex items-center gap-2 text-[11px] text-text-muted">
+                <Sparkles className="h-3.5 w-3.5 text-aurora-teal" />
+                {agent.status === 'processing'
+                  ? 'This workspace is live. Use logs for current execution or dispatch another task.'
+                  : agent.status === 'error'
+                    ? 'This workspace is in recovery mode. Logs are prioritized until the error is resolved.'
+                    : 'This workspace is idle and ready for a fresh task.'}
               </div>
-              {agent.errorStack && (
-                <div className="px-5 py-2 bg-aurora-rose/[0.03]">
-                  <pre className="text-[10px] font-mono text-aurora-rose/70 leading-relaxed whitespace-pre-wrap">{agent.errorStack}</pre>
-                  <div className="flex items-center gap-3 mt-2 text-[9px] font-mono text-text-disabled">
-                    <span>Last heartbeat: {agent.lastHeartbeat || '—'}</span>
-                    <span>Restarts: {agent.restartCount || 0}/3</span>
-                  </div>
-                </div>
-              )}
-            </div>
+            </motion.div>
           )}
-          {agent.status === 'idle' && (
-            <div className="px-5 py-2.5 bg-aurora-teal/5 border-b border-aurora-teal/10 flex items-center justify-between shrink-0">
-              <span className="text-[11px] text-text-muted font-medium">Agent is idle</span>
-              <button className="px-3 py-1 bg-aurora-teal/10 hover:bg-aurora-teal/20 text-aurora-teal text-[10px] font-bold rounded-md border border-aurora-teal/20 transition-colors">
-                Assign Task
+        </motion.div>
+
+        {!composeOpen && (
+          <motion.div
+            initial={{ opacity: 0, y: 4 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.15, duration: 0.16, ease: 'easeOut' }}
+            className="shrink-0 border-b border-border px-5"
+          >
+            <div className="flex">
+              {tabs.map((tab) => (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={cn(
+                    'border-b-2 px-4 py-3 text-sm font-medium transition-colors',
+                    activeTab === tab.id ? 'border-aurora-teal text-aurora-teal' : 'border-transparent text-text-muted hover:text-text-primary',
+                  )}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+          </motion.div>
+        )}
+
+        {!composeOpen && <AgentApprovals agent={agent} />}
+
+        {agent.status === 'error' && !composeOpen && (
+          <div className="shrink-0 border-b border-aurora-rose/10">
+            <div className="flex items-center justify-between bg-aurora-rose/5 px-5 py-2.5">
+              <div className="min-w-0 flex items-center gap-2">
+                <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-aurora-rose" />
+                <span className="truncate text-[11px] font-medium text-aurora-rose">
+                  {agent.errorMessage || 'Agent requires intervention'}
+                </span>
+              </div>
+              <button className="ml-3 shrink-0 rounded-md border border-aurora-rose/20 bg-aurora-rose/10 px-3 py-1 text-[10px] font-bold text-aurora-rose transition-colors hover:bg-aurora-rose/20">
+                Restart Agent
               </button>
             </div>
-          )}
+            {agent.errorStack && (
+              <div className="bg-aurora-rose/[0.03] px-5 py-2">
+                <pre className="whitespace-pre-wrap text-[10px] leading-relaxed text-aurora-rose/70">{agent.errorStack}</pre>
+                <div className="mt-2 flex items-center gap-3 font-mono text-[9px] text-text-disabled">
+                  <span>Last heartbeat: {agent.lastHeartbeat || '—'}</span>
+                  <span>Restarts: {agent.restartCount || 0}/3</span>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
-          {/* Content */}
-          <div className="flex-1 overflow-hidden relative">
-            <AnimatePresence mode="wait">
+        <div className="relative flex-1 overflow-hidden">
+          <AnimatePresence mode="wait">
+            {composeOpen ? (
               <motion.div
-                key={activeTab}
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -8 }}
-                transition={{ duration: 0.15 }}
+                key={`dispatch-${agent.id}`}
+                variants={contentVariants}
+                initial="hidden"
+                animate="visible"
+                exit="exit"
+                transition={{ duration: 0.18 }}
                 className="absolute inset-0"
               >
-                {activeTab === 'config' && <ConfigTab agent={agent} agents={agents} />}
+                <DispatchComposer
+                  agent={agent}
+                  onBack={() => setComposeOpen(false)}
+                  onSuccess={(nextTab) => {
+                    setComposeOpen(false);
+                    setActiveTab(nextTab);
+                  }}
+                />
+              </motion.div>
+            ) : (
+              <motion.div
+                key={`${agent.id}-${activeTab}`}
+                variants={contentVariants}
+                initial="hidden"
+                animate="visible"
+                exit="exit"
+                transition={{ duration: 0.18 }}
+                className="absolute inset-0"
+              >
+                {activeTab === 'config' && <ConfigTab agent={agent} />}
                 {activeTab === 'skills' && <SkillsTab agent={agent} />}
                 {activeTab === 'metrics' && <MetricsTab agent={agent} />}
                 {activeTab === 'logs' && (
-                  <div className="flex flex-col h-full">
-                    <div className="px-4 pt-3 pb-1 flex gap-1 shrink-0">
+                  <div className="flex h-full flex-col">
+                    <div className="flex gap-1 px-4 pb-1 pt-3">
                       <button
                         onClick={() => setLogView('stream')}
                         className={cn(
-                          "px-3 py-1 text-[10px] font-bold rounded transition-colors",
-                          logView === 'stream' ? 'bg-aurora-teal/10 text-aurora-teal' : 'text-text-muted hover:text-text-primary'
+                          'rounded px-3 py-1 text-[10px] font-bold transition-colors',
+                          logView === 'stream' ? 'bg-aurora-teal/10 text-aurora-teal' : 'text-text-muted hover:text-text-primary',
                         )}
                       >
                         Stream
@@ -839,22 +420,23 @@ export function DetailPanel({ agentId, onClose }) {
                       <button
                         onClick={() => setLogView('trace')}
                         className={cn(
-                          "px-3 py-1 text-[10px] font-bold rounded transition-colors",
-                          logView === 'trace' ? 'bg-aurora-teal/10 text-aurora-teal' : 'text-text-muted hover:text-text-primary'
+                          'rounded px-3 py-1 text-[10px] font-bold transition-colors',
+                          logView === 'trace' ? 'bg-aurora-teal/10 text-aurora-teal' : 'text-text-muted hover:text-text-primary',
                         )}
                       >
                         Timeline
                       </button>
                     </div>
                     <div className="flex-1 overflow-hidden">
-                      {logView === 'stream' ? <ActivityFeed agentFilter={agentId} /> : <TraceWaterfall spans={mockSpans} />}
+                      {logView === 'stream' ? <ActivityFeed agentFilter={agent.id} /> : <TraceWaterfall spans={mockSpans} />}
                     </div>
                   </div>
                 )}
               </motion.div>
-            </AnimatePresence>
-          </div>
-        </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+      </motion.aside>
     </>
   );
 }
