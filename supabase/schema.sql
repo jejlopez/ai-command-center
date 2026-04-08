@@ -3,8 +3,12 @@
 -- Run this FIRST in your Supabase SQL Editor
 -- ══════════════════════════════════════════════════════════════
 
+-- Enable uuid generation
+create extension if not exists "uuid-ossp";
+
 create table if not exists agents (
   id            uuid default gen_random_uuid() primary key,
+  user_id       uuid not null default auth.uid() references auth.users(id) on delete cascade,
   name          text not null,
   model         text not null,
   status        text not null default 'idle',
@@ -39,6 +43,7 @@ create table if not exists agents (
 
 create table if not exists tasks (
   id            uuid default gen_random_uuid() primary key,
+  user_id       uuid not null default auth.uid() references auth.users(id) on delete cascade,
   name          text not null,
   status        text not null default 'pending',
   parent_id     uuid,
@@ -50,13 +55,25 @@ create table if not exists tasks (
   updated_at    timestamptz default now()
 );
 
+-- Indexing for performance
+create index if not exists idx_agents_user on agents(user_id);
 create index if not exists idx_agents_status on agents(status);
 create index if not exists idx_agents_parent on agents(parent_id);
+create index if not exists idx_tasks_user on tasks(user_id);
 create index if not exists idx_tasks_agent on tasks(agent_id);
 create index if not exists idx_tasks_status on tasks(status);
 
+-- Enable RLS
 alter table agents enable row level security;
 alter table tasks enable row level security;
 
-create policy "agents_allow_all" on agents for all using (true) with check (true);
-create policy "tasks_allow_all" on tasks for all using (true) with check (true);
+-- Restricted Isolation Policies
+create policy "Owners can fully manage their own agents" 
+on agents for all 
+using (auth.uid() = user_id) 
+with check (auth.uid() = user_id);
+
+create policy "Owners can fully manage their own tasks" 
+on tasks for all 
+using (auth.uid() = user_id) 
+with check (auth.uid() = user_id);

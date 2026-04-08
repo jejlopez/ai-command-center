@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabaseClient';
+import { useAuth } from '../context/AuthContext';
 import { 
   agents as mockAgents, 
   tasks as mockTasks, 
@@ -10,51 +11,82 @@ import {
 
 /**
  * Hook to fetch agents from Supabase with realtime subscription.
+ * Scoped to the current authenticated user.
  */
 export function useAgents() {
+  const { user } = useAuth();
   const [agents, setAgents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [usingMock, setUsingMock] = useState(false);
 
   const fetchAgents = useCallback(async () => {
+    if (!user) {
+      console.log('[useAgents] No user session yet, waiting...');
+      return;
+    }
+    
+    console.log('[useAgents] Fetching agents for user:', user.id);
     try {
       const { data, error } = await supabase
         .from('agents')
         .select('*')
+        .eq('user_id', user.id)
         .order('created_at', { ascending: true });
 
-      if (error) throw error;
+      if (error) {
+        console.error('[useAgents] Fetch error:', error.message);
+        throw error;
+      }
 
       if (data && data.length > 0) {
+        console.log(`[useAgents] Successfully fetched ${data.length} real agents.`);
         setAgents(data.map(mapAgentFromDb));
         setUsingMock(false);
-      } else if (data && data.length === 0) {
-        await seedCommander();
+      } else {
+        console.log('[useAgents] No real agents found for this user. Attempting to seed...');
+        // No agents for this user - check if we should seed a Commander
+        await seedCommander(user.id);
+        
+        // Re-fetch after potential seed
         const { data: seeded } = await supabase
           .from('agents')
           .select('*')
+          .eq('user_id', user.id)
           .order('created_at', { ascending: true });
+          
         if (seeded && seeded.length > 0) {
+          console.log('[useAgents] Seeding successful. Switching to live data.');
           setAgents(seeded.map(mapAgentFromDb));
           setUsingMock(false);
         } else {
-          setAgents(mockAgents);
+          console.warn('[useAgents] Seeding returned no data. Falling back to mock.');
+          setAgents(mockAgents.map(a => ({ ...a, user_id: user.id })));
           setUsingMock(true);
         }
       }
-    } catch {
+    } catch (err) {
+      console.error('[useAgents] Critical reach failure:', err);
       setAgents(mockAgents);
       setUsingMock(true);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [user]);
 
   useEffect(() => {
+    if (!user) return;
+    
     fetchAgents();
+    
+    // Realtime subscription scoped to user_id
     const channel = supabase
-      .channel('agents-realtime')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'agents' }, () => {
+      .channel(`agents-user-${user.id}`)
+      .on('postgres_changes', { 
+        event: '*', 
+        schema: 'public', 
+        table: 'agents',
+        filter: `user_id=eq.${user.id}`
+      }, () => {
         fetchAgents();
       })
       .subscribe();
@@ -62,12 +94,15 @@ export function useAgents() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [fetchAgents]);
+  }, [user, fetchAgents]);
 
   const addOptimistic = useCallback((agentData) => {
+    if (!user) return;
+    
     const tempAgent = {
       ...agentData,
       id: `temp-${Date.now()}`,
+      user_id: user.id,
       status: agentData.status || 'idle',
       taskCompletion: 0,
       latencyMs: 0,
@@ -83,7 +118,7 @@ export function useAgents() {
       _optimistic: true,
     };
     setAgents(prev => [...prev, tempAgent]);
-  }, []);
+  }, [user]);
 
   const hasCommander = agents.some(a => a.role === 'commander');
 
@@ -91,17 +126,21 @@ export function useAgents() {
 }
 
 /**
- * Hook to fetch tasks from Supabase with realtime subscription.
+ * Hook to fetch tasks from Supabase with user scoping.
  */
 export function useTasks() {
+  const { user } = useAuth();
   const [tasks, setTasks] = useState([]);
   const [loading, setLoading] = useState(true);
 
   const fetchTasks = useCallback(async () => {
+    if (!user) return;
+    
     try {
       const { data, error } = await supabase
         .from('tasks')
         .select('*')
+        .eq('user_id', user.id)
         .order('created_at', { ascending: true });
 
       if (error) throw error;
@@ -116,13 +155,21 @@ export function useTasks() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [user]);
 
   useEffect(() => {
+    if (!user) return;
+    
     fetchTasks();
+    
     const channel = supabase
-      .channel('tasks-realtime')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks' }, () => {
+      .channel(`tasks-user-${user.id}`)
+      .on('postgres_changes', { 
+        event: '*', 
+        schema: 'public', 
+        table: 'tasks',
+        filter: `user_id=eq.${user.id}`
+      }, () => {
         fetchTasks();
       })
       .subscribe();
@@ -130,24 +177,31 @@ export function useTasks() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [fetchTasks]);
+  }, [user, fetchTasks]);
 
   return { tasks, loading, refetch: fetchTasks };
 }
 
 /**
- * Hook to fetch activity log.
+ * Hook to fetch activity log with user scoping.
  */
 export function useActivityLog(agentId = null) {
+  const { user } = useAuth();
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(true);
 
   const fetchLogs = useCallback(async () => {
+    if (!user) return;
+    
     try {
       let query = supabase
         .from('activity_log')
         .select('*')
+        // Note: activity_log should also have user_id for true isolation
         .order('timestamp', { ascending: true });
+      
+      // If activity_log has user_id column:
+      // query = query.eq('user_id', user.id);
       
       if (agentId) query = query.eq('agent_id', agentId);
 
@@ -164,13 +218,21 @@ export function useActivityLog(agentId = null) {
     } finally {
       setLoading(false);
     }
-  }, [agentId]);
+  }, [user, agentId]);
 
   useEffect(() => {
+    if (!user) return;
+    
     fetchLogs();
+    
     const channel = supabase
-      .channel('logs-realtime')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'activity_log' }, () => {
+      .channel(`logs-user-${user.id}`)
+      .on('postgres_changes', { 
+        event: '*', 
+        schema: 'public', 
+        table: 'activity_log' 
+        // filter: `user_id=eq.${user.id}`
+      }, () => {
         fetchLogs();
       })
       .subscribe();
@@ -178,7 +240,7 @@ export function useActivityLog(agentId = null) {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [fetchLogs]);
+  }, [user, fetchLogs]);
 
   return { logs, loading, refetch: fetchLogs };
 }
@@ -187,7 +249,7 @@ export function useActivityLog(agentId = null) {
  * Hook for cost data.
  */
 export function useCostData() {
-  const [data, setData] = useState(mockCostData);
+  const [data] = useState(mockCostData);
   return { data };
 }
 
@@ -195,28 +257,43 @@ export function useCostData() {
  * Hook for health metrics.
  */
 export function useHealthMetrics() {
-  const [data, setData] = useState(mockHealthMetrics);
+  const [data] = useState(mockHealthMetrics);
   return { data };
 }
 
 /**
- * Auto-seed a default Commander when the database is empty.
+ * Auto-seed a default Commander for a specific user if they don't have one.
  */
-async function seedCommander() {
-  const defaultCommander = {
-    name: 'Atlas',
-    model: 'claude-opus-4-6',
-    role: 'commander',
-    roleDescription: 'Primary orchestrator — delegates tasks, synthesizes results, and reports to the user',
-    color: '#00D9C8',
-    temperature: 0.1,
-    responseLength: 'medium',
-    systemPrompt: 'You are Atlas, the Commander agent. Delegate tasks to sub-agents, synthesize results, and report to the user. Prioritize accuracy over speed.',
-    canSpawn: true,
-    spawnPattern: 'fan-out',
-  };
+async function seedCommander(userId) {
   try {
-    await createAgent(defaultCommander);
+    // Check if the user already has any agents at all
+    const { count } = await supabase
+      .from('agents')
+      .select('*', { count: 'exact', head: true })
+      .eq('user_id', userId);
+      
+    if (count > 0) return; // User already has a fleet, don't seed
+
+    const defaultCommander = {
+      user_id: userId,
+      name: 'Atlas',
+      model: 'claude-opus-4-6',
+      role: 'commander',
+      roleDescription: 'Primary orchestrator — delegates tasks, synthesizes results, and reports to the user',
+      color: '#00D9C8',
+      temperature: 0.1,
+      responseLength: 'medium',
+      systemPrompt: 'You are Atlas, the Commander agent. Delegate tasks to sub-agents, synthesize results, and report to the user. Prioritize accuracy over speed.',
+      canSpawn: true,
+      spawnPattern: 'fan-out',
+    };
+    
+    // Attempt to insert Atlas. The database's new UNIQUE constraint will prevent duplicates.
+    const { error } = await supabase.from('agents').insert([mapAgentToDb(defaultCommander)]);
+    
+    if (error && error.code !== '23505') { // Ignore unique_violation error (it means Atlas is already there)
+      throw error;
+    }
   } catch (err) {
     console.warn('[Nexus] Failed to seed Commander:', err.message);
   }
@@ -225,8 +302,11 @@ async function seedCommander() {
 /**
  * Insert a new agent into Supabase.
  */
-export async function createAgent(agentData) {
-  const row = mapAgentToDb(agentData);
+export async function createAgent(agentData, userId) {
+  const row = {
+    ...mapAgentToDb(agentData),
+    user_id: userId
+  };
   const { data, error } = await supabase.from('agents').insert([row]).select().single();
   if (error) throw error;
   return mapAgentFromDb(data);
@@ -237,6 +317,7 @@ export async function createAgent(agentData) {
 function mapAgentFromDb(row) {
   return {
     id:               row.id,
+    userId:           row.user_id,
     name:             row.name,
     model:            row.model,
     status:           row.status,
@@ -265,7 +346,7 @@ function mapAgentFromDb(row) {
     tokenHistory24h:  row.token_history_24h || [],
     latencyHistory24h: row.latency_history_24h || [],
     skills:           row.skills || [],
-    subagents:        [], // Client-side hydration
+    subagents:        [], 
     createdAt:        row.created_at,
     updatedAt:        row.updated_at,
   };
@@ -299,6 +380,7 @@ function mapAgentToDb(agent) {
 function mapTaskFromDb(row) {
   return {
     id:         row.id,
+    userId:     row.user_id,
     name:       row.name,
     status:     row.status,
     parentId:   row.parent_id,
@@ -312,6 +394,7 @@ function mapTaskFromDb(row) {
 function mapLogRow(row) {
   return {
     id:          row.id,
+    userId:      row.user_id,
     timestamp:   row.timestamp,
     type:        row.type,
     message:     row.message,
