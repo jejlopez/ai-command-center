@@ -2,9 +2,17 @@ import { createClient } from '@supabase/supabase-js';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+const missingSupabaseEnv = [];
 
-if (!supabaseUrl || !supabaseAnonKey) {
-  console.warn('[Nexus] Missing Supabase credentials. Auth and real-time will not work until VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY are set in .env');
+if (!supabaseUrl) missingSupabaseEnv.push('VITE_SUPABASE_URL');
+if (!supabaseAnonKey) missingSupabaseEnv.push('VITE_SUPABASE_ANON_KEY');
+
+export const supabaseConfigError = missingSupabaseEnv.length
+  ? `Missing Supabase configuration: ${missingSupabaseEnv.join(', ')}. Add them to your local .env file and restart Vite.`
+  : null;
+
+if (supabaseConfigError) {
+  console.warn(`[Nexus] ${supabaseConfigError}`);
 }
 
 export const supabase = createClient(

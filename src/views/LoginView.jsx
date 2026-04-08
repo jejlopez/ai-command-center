@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Lock, Mail, AlertCircle, CheckCircle2, Loader2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { supabaseConfigError } from '../lib/supabaseClient';
 import { cn } from '../utils/cn';
 
 export function LoginView() {
@@ -32,7 +33,17 @@ export function LoginView() {
         await signIn(email, password);
       }
     } catch (err) {
-      setError(err.message || `${mode === 'signup' ? 'Sign up' : 'Sign in'} failed`);
+      const defaultMessage = `${mode === 'signup' ? 'Sign up' : 'Sign in'} failed`;
+      const message = err?.message || defaultMessage;
+
+      if (message === 'Failed to fetch') {
+        setError(
+          supabaseConfigError ||
+          'Unable to reach Supabase. Check your VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY values, then restart the dev server.'
+        );
+      } else {
+        setError(message);
+      }
     } finally {
       setLoading(false);
     }
@@ -78,6 +89,17 @@ export function LoginView() {
             >
               <AlertCircle className="w-4 h-4 text-aurora-rose shrink-0 mt-0.5" />
               <p className="text-xs text-aurora-rose leading-relaxed">{error}</p>
+            </motion.div>
+          )}
+
+          {!error && supabaseConfigError && (
+            <motion.div
+              initial={{ opacity: 0, y: -4 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="flex items-start gap-2.5 p-3 bg-aurora-amber/5 border border-aurora-amber/20 rounded-lg"
+            >
+              <AlertCircle className="w-4 h-4 text-aurora-amber shrink-0 mt-0.5" />
+              <p className="text-xs text-aurora-amber leading-relaxed">{supabaseConfigError}</p>
             </motion.div>
           )}
 

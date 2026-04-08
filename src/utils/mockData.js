@@ -490,7 +490,6 @@ export function generateNotifications() {
 export const commandItems = [
   // Navigation
   { id: 'c1',  group: 'Navigation', label: 'Go to Overview',         icon: 'LayoutGrid',   action: { type: 'navigate', route: 'overview' } },
-  { id: 'c2',  group: 'Navigation', label: 'Go to Fleet Operations', icon: 'Activity',      action: { type: 'navigate', route: 'operations' } },
   { id: 'c3',  group: 'Navigation', label: 'Go to Review Room',      icon: 'CheckSquare',   action: { type: 'navigate', route: 'review' } },
   { id: 'c4',  group: 'Navigation', label: 'Go to Monthly Reports',  icon: 'FileText',      action: { type: 'navigate', route: 'reports' } },
   { id: 'c5',  group: 'Navigation', label: 'Go to Intelligence',     icon: 'BrainCircuit',  action: { type: 'navigate', route: 'intelligence' } },

@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useEffect } from 'react';
-import { supabase } from '../lib/supabaseClient';
+import { supabase, supabaseConfigError } from '../lib/supabaseClient';
 
 const AuthContext = createContext(null);
 
@@ -8,6 +8,11 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    if (supabaseConfigError) {
+      setLoading(false);
+      return undefined;
+    }
+
     // Check current session on mount
     supabase.auth.getSession().then(({ data: { session } }) => {
       setUser(session?.user ?? null);
@@ -25,6 +30,8 @@ export function AuthProvider({ children }) {
   }, []);
 
   async function signIn(email, password) {
+    if (supabaseConfigError) throw new Error(supabaseConfigError);
+
     const { data, error } = await supabase.auth.signInWithPassword({
       email,
       password,
@@ -34,6 +41,8 @@ export function AuthProvider({ children }) {
   }
 
   async function signUp(email, password) {
+    if (supabaseConfigError) throw new Error(supabaseConfigError);
+
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
@@ -43,11 +52,15 @@ export function AuthProvider({ children }) {
   }
 
   async function signOut() {
+    if (supabaseConfigError) throw new Error(supabaseConfigError);
+
     const { error } = await supabase.auth.signOut();
     if (error) throw error;
   }
 
   async function signOutAll() {
+    if (supabaseConfigError) throw new Error(supabaseConfigError);
+
     const { error } = await supabase.auth.signOut({ scope: 'global' });
     if (error) throw error;
   }

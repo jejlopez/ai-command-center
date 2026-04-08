@@ -1,239 +1,125 @@
-import React, { useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { LineChart, Line, ResponsiveContainer } from 'recharts';
+import React from 'react';
+import { motion } from 'framer-motion';
 import { cn } from '../utils/cn';
-import { useAnimatedCounter } from '../utils/useAnimatedCounter';
-import { Crown, ArrowUpRight, AlertTriangle, RotateCcw, Square, Play } from 'lucide-react';
-import { agents as defaultAgents, activityLog as defaultLog } from '../utils/mockData';
-import { DispatchTaskModal } from './DispatchTaskModal';
+import { Send, Eye, Wand2, RotateCcw, AlertTriangle } from 'lucide-react';
 
-function getThresholdColor(val) {
-  if (val < 60) return '#00D9C8';
-  if (val < 85) return '#fbbf24';
-  return '#fb7185';
-}
+const statusConfig = {
+  processing: { label: 'In Flow', dot: 'bg-aurora-teal animate-pulse', badge: 'border-aurora-teal/20 bg-aurora-teal/10 text-aurora-teal' },
+  idle:       { label: 'Standing By', dot: 'bg-text-muted', badge: 'border-white/10 bg-white/[0.04] text-text-muted' },
+  error:      { label: 'Error', dot: 'bg-aurora-rose', badge: 'border-aurora-rose/20 bg-aurora-rose/10 text-aurora-rose' },
+};
 
-function SegmentedArc({ completion, tokenBurnRate, baseColor }) {
-  const SEGS = 16;
-  const ARC = 240;
-  const START = -120;
+export function AgentVitalCard({ agent, onOpenDetail, onQuickDispatch, onViewLogs, onTuneAgent }) {
+  const status = statusConfig[agent.status] || statusConfig.idle;
+  const isError = agent.status === 'error';
 
-  return (
-    <div className="relative w-[80px] h-[80px]">
-      <svg className="w-full h-full" viewBox="0 0 100 100">
-        {/* Outer track — token burn rate */}
-        {[...Array(SEGS)].map((_, i) => {
-          const angle = START + (i / (SEGS - 1)) * ARC;
-          const isFilled = (i / (SEGS - 1)) * 100 <= tokenBurnRate;
-          const color = isFilled ? getThresholdColor(tokenBurnRate) : 'rgba(255,255,255,0.06)';
-          return (
-            <line
-              key={`out-${i}`}
-              x1="50" y1="8" x2="50" y2="13"
-              stroke={color}
-              strokeWidth="2"
-              strokeLinecap="round"
-              transform={`rotate(${angle} 50 50)`}
-              style={{ transition: 'stroke 0.4s ease', filter: isFilled ? `drop-shadow(0 0 3px ${color}66)` : 'none' }}
-            />
-          );
-        })}
-        {/* Inner track — task completion */}
-        {[...Array(SEGS)].map((_, i) => {
-          const angle = START + (i / (SEGS - 1)) * ARC;
-          const isFilled = (i / (SEGS - 1)) * 100 <= completion;
-          const color = isFilled ? baseColor : 'rgba(255,255,255,0.06)';
-          return (
-            <line
-              key={`in-${i}`}
-              x1="50" y1="17" x2="50" y2="28"
-              stroke={color}
-              strokeWidth="3.5"
-              strokeLinecap="round"
-              transform={`rotate(${angle} 50 50)`}
-              style={{ transition: 'stroke 0.4s ease', filter: isFilled ? `drop-shadow(0 0 4px ${baseColor}44)` : 'none' }}
-            />
-          );
-        })}
-      </svg>
-    </div>
-  );
-}
-
-export function AgentVitalCard({ agent, onLogClick, allAgents, activityLog }) {
-  const agentList = allAgents || defaultAgents;
-  const logList = activityLog || defaultLog;
-  const [dispatchOpen, setDispatchOpen] = useState(false);
-  const [localStatus, setLocalStatus] = useState(null);
-
-  const effectiveStatus = localStatus ?? agent.status;
-  const isProcessing = effectiveStatus === 'processing';
-  const isError = effectiveStatus === 'error';
-  const isCommander = agent.role === 'commander';
-  const progressAnim = useAnimatedCounter(agent.taskCompletion);
-  const parentAgent = agent.parentId ? agentList.find(a => a.id === agent.parentId) : null;
-
-  // Get last error log for error-state agents
-  const lastErrorLog = isError
-    ? logList.filter(l => l.agentId === agent.id && l.type === 'ERR').pop()
-    : null;
-
-  const formattedData = agent.tokenBurn.map((v, i) => ({ val: v, i }));
-  const latestBurn = formattedData.length > 0 ? formattedData[formattedData.length - 1].val : 0;
-  const burnRatePercent = Math.min(100, Math.max(0, (latestBurn / 300) * 100));
-
-  let latencyColor = 'text-aurora-green';
-  if (agent.latencyMs > 2000) latencyColor = 'text-aurora-rose';
-  else if (agent.latencyMs > 500) latencyColor = 'text-aurora-amber';
-
-  const statusLabel = { processing: 'Active', idle: 'Idle', error: 'Error' }[effectiveStatus] || effectiveStatus;
-  const statusColor = { processing: 'text-aurora-teal', idle: 'text-text-muted', error: 'text-aurora-rose' }[effectiveStatus];
+  const description = agent.roleDescription
+    || agent.systemPrompt?.slice(0, 100)
+    || 'Autonomous agent ready for tasking.';
 
   return (
-    <>
     <motion.div
-      whileHover={{ scale: 1.03, y: -4, transition: { duration: 0.2 } }}
-      onClick={onLogClick}
-      className={cn(
-        "relative p-5 h-full flex flex-col justify-between group cursor-pointer",
-        isError
-          ? "spatial-panel border-aurora-rose/30 shadow-[0_0_20px_rgba(251,113,133,0.15)] hover:shadow-[0_0_30px_rgba(251,113,133,0.25)] transition-all duration-300"
-          : "agent-card-active shadow-[0_0_15px_rgba(96,165,250,0.1)] hover:shadow-[0_0_30px_rgba(167,139,250,0.3)] transition-all duration-300"
-      )}
+      whileHover={{ scale: 1.015, y: -2, transition: { duration: 0.22, ease: [0.25, 0.46, 0.45, 0.94] } }}
+      whileTap={{ scale: 0.995 }}
+      onClick={() => onOpenDetail?.()}
+      className="relative h-full cursor-pointer"
     >
-      {/* Header */}
-      <div className="flex justify-between items-start mb-2">
-        <div className="min-w-0 flex-1">
-          <div className="font-semibold text-sm text-text-primary flex items-center gap-2">
-            {isCommander && <Crown className="w-3.5 h-3.5 text-aurora-amber shrink-0" />}
-            <span className="truncate">{agent.name}</span>
-            <div className="relative flex items-center justify-center shrink-0">
-              {isProcessing && (
-                <div className="absolute w-2.5 h-2.5 rounded-full animate-ping" style={{ backgroundColor: agent.color }} />
-              )}
-              {isError && (
-                <div className="absolute w-2.5 h-2.5 rounded-full animate-pulse bg-aurora-rose/50" />
-              )}
-              <div className="w-1.5 h-1.5 rounded-full z-10" style={{ backgroundColor: agent.color }} />
+      <motion.div
+        className={cn(
+          'relative h-full overflow-hidden rounded-2xl border transition-all duration-300',
+          isError
+            ? 'border-aurora-rose/20 bg-[linear-gradient(180deg,rgba(251,113,133,0.06),rgba(17,17,17,0.98))]'
+            : 'border-white/[0.08] bg-[linear-gradient(180deg,rgba(255,255,255,0.035),rgba(17,17,17,0.98))]',
+        )}
+        style={{ boxShadow: isError ? '0 8px 32px rgba(251,113,133,0.08)' : '0 8px 32px rgba(0,0,0,0.28)' }}
+      >
+        {/* Top accent line */}
+        <div
+          className="absolute inset-x-0 top-0 h-px opacity-70"
+          style={{ background: `linear-gradient(90deg, transparent, ${agent.color}, transparent)` }}
+        />
+
+        <div className="flex h-full flex-col justify-between p-5">
+          {/* Row 1: Status badge + Token burn */}
+          <div className="flex items-start justify-between gap-3">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ delay: 0.05, duration: 0.2 }}
+              className={cn('inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.18em]', status.badge)}
+            >
+              <span className={cn('h-2 w-2 rounded-full', status.dot)} />
+              {status.label}
+            </motion.div>
+
+            <div className="rounded-xl border border-white/[0.08] bg-black/30 px-3.5 py-2.5 text-right">
+              <div className="text-[9px] font-semibold uppercase tracking-[0.2em] text-text-disabled">Token Burn</div>
+              <div className="mt-0.5 font-mono text-lg font-semibold text-text-primary leading-tight">
+                {(agent.totalTokens || 0).toLocaleString()}
+              </div>
+              <div className="text-[9px] font-mono text-text-disabled">${(agent.totalCost || 0).toFixed(2)} total</div>
             </div>
           </div>
-          <div className="flex items-center gap-2 mt-1">
-            <div className="spatial-panel inline-block px-1.5 py-0.5 font-mono text-[10px] text-text-muted border-none bg-white/[0.02]">
-              {agent.model}
-            </div>
-            {parentAgent && (
-              <span className="flex items-center gap-0.5 text-[9px] text-text-disabled font-mono">
-                <ArrowUpRight className="w-2.5 h-2.5" />
-                {parentAgent.name}
-              </span>
+
+          {/* Row 2: Name + Description */}
+          <div className="mt-4 flex-1">
+            <h3 className="text-lg font-semibold text-text-primary leading-tight">{agent.name}</h3>
+            <p className="mt-1.5 text-sm leading-relaxed text-text-muted line-clamp-2">
+              {description}
+            </p>
+
+            {/* Error banner (inline, only for error state) */}
+            {isError && agent.errorMessage && (
+              <motion.div
+                initial={{ opacity: 0, y: 4 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="mt-3 flex items-start gap-2 rounded-xl border border-aurora-rose/20 bg-aurora-rose/10 px-3 py-2.5"
+              >
+                <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-aurora-rose" />
+                <span className="text-xs leading-relaxed text-aurora-rose line-clamp-2">{agent.errorMessage}</span>
+              </motion.div>
             )}
           </div>
-        </div>
 
-        <div className="text-right shrink-0 ml-2">
-          <div className={cn("font-mono text-xs font-semibold", latencyColor)}>
-            {agent.latencyMs}ms
-          </div>
-          <div className={cn("text-[10px] font-mono font-medium mt-0.5", statusColor)}>
-            {statusLabel}
-          </div>
-        </div>
-      </div>
-
-      {/* Error context banner — shown when agent is in error state */}
-      <AnimatePresence>
-        {isError && lastErrorLog && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: 'auto' }}
-            exit={{ opacity: 0, height: 0 }}
-            className="mb-2 px-2.5 py-2 bg-aurora-rose/8 border border-aurora-rose/15 rounded-lg overflow-hidden"
-          >
-            <div className="flex items-start gap-1.5">
-              <AlertTriangle className="w-3 h-3 text-aurora-rose shrink-0 mt-0.5" />
-              <div className="min-w-0">
-                <p className="text-[10px] font-mono text-aurora-rose leading-relaxed truncate">
-                  {lastErrorLog.message}
-                </p>
-                <p className="text-[9px] font-mono text-text-disabled mt-0.5">
-                  {lastErrorLog.timestamp}
-                </p>
-              </div>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Segmented Arc + Value */}
-      <div className="flex items-center justify-center py-2 relative">
-        <SegmentedArc
-          completion={agent.taskCompletion}
-          tokenBurnRate={burnRatePercent}
-          baseColor={agent.color}
-        />
-        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-          <span className="font-mono font-semibold text-lg font-tabular text-text-primary">
-            <motion.span>{progressAnim}</motion.span>%
-          </span>
-        </div>
-      </div>
-
-      {/* Sparkline */}
-      <div className="h-8 relative w-full mt-1">
-        <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={formattedData}>
-            <Line
-              type="monotone"
-              dataKey="val"
-              stroke={agent.color}
-              strokeWidth={1.5}
-              dot={false}
-              isAnimationActive={true}
-              animationDuration={800}
-            />
-          </LineChart>
-        </ResponsiveContainer>
-      </div>
-
-      {/* Hover overlay — different for error vs healthy agents */}
-      <div className="absolute bottom-0 inset-x-0 p-3 bg-gradient-to-t from-[#111111] via-[#111111]/80 to-transparent flex justify-center gap-4 opacity-0 group-hover:opacity-100 transition-opacity rounded-b-[1rem]">
-        {isError ? (
-          <>
-            <button
-              onClick={(e) => { e.stopPropagation(); }}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-aurora-amber/15 border border-aurora-amber/30 rounded-lg text-aurora-amber text-[10px] font-semibold uppercase tracking-wider hover:bg-aurora-amber/25 transition-colors"
+          {/* Row 3: Action buttons */}
+          <div className="mt-4 flex flex-wrap items-center gap-2">
+            <motion.button
+              whileHover={{ scale: 1.03 }}
+              whileTap={{ scale: 0.97 }}
+              onClick={(e) => { e.stopPropagation(); onQuickDispatch?.(); }}
+              className={cn(
+                'inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-[10px] font-bold uppercase tracking-[0.16em] transition-all',
+                isError
+                  ? 'bg-aurora-rose text-white shadow-[0_0_18px_rgba(251,113,133,0.2)] hover:bg-aurora-rose/90'
+                  : 'bg-aurora-teal text-black shadow-[0_0_18px_rgba(0,217,200,0.2)] hover:bg-[#12e8da]'
+              )}
             >
-              <RotateCcw className="w-3 h-3" /> Restart
-            </button>
-            <button
-              onClick={(e) => { e.stopPropagation(); }}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-aurora-rose/15 border border-aurora-rose/30 rounded-lg text-aurora-rose text-[10px] font-semibold uppercase tracking-wider hover:bg-aurora-rose/25 transition-colors"
+              {isError ? <RotateCcw className="h-3.5 w-3.5" /> : <Send className="h-3.5 w-3.5" />}
+              {isError ? 'Restart' : 'Dispatch Task'}
+            </motion.button>
+
+            <motion.button
+              whileHover={{ scale: 1.03 }}
+              whileTap={{ scale: 0.97 }}
+              onClick={(e) => { e.stopPropagation(); onViewLogs?.(); }}
+              className="inline-flex items-center gap-2 rounded-xl border border-white/[0.1] bg-white/[0.03] px-3.5 py-2.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-text-muted transition-all hover:border-white/[0.18] hover:text-text-primary"
             >
-              <Square className="w-3 h-3" /> Terminate
-            </button>
-          </>
-        ) : (
-          <div className="flex items-center gap-3">
-            <span className="text-aurora-teal text-xs font-semibold drop-shadow-[0_0_5px_rgba(0,217,200,0.8)] tracking-wider uppercase">
-              Open Telemetry View
-            </span>
-            <button
-              onClick={(e) => { e.stopPropagation(); setLocalStatus('processing'); setDispatchOpen(true); }}
-              className="p-1.5 rounded-lg bg-white/[0.05] hover:bg-aurora-teal/20 border border-white/[0.08] hover:border-aurora-teal/30 transition-all"
-              title="Dispatch Task"
+              <Eye className="h-3.5 w-3.5" />
+              View Live Logs
+            </motion.button>
+
+            <motion.button
+              whileHover={{ scale: 1.03 }}
+              whileTap={{ scale: 0.97 }}
+              onClick={(e) => { e.stopPropagation(); onTuneAgent?.(); }}
+              className="inline-flex items-center gap-2 rounded-xl border border-white/[0.1] bg-white/[0.03] px-3.5 py-2.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-text-muted transition-all hover:border-white/[0.18] hover:text-text-primary"
             >
-              <Play className="w-3 h-3 text-text-muted group-hover:text-aurora-teal" />
-            </button>
+              <Wand2 className="h-3.5 w-3.5" />
+              Tune Agent
+            </motion.button>
           </div>
-        )}
-      </div>
+        </div>
+      </motion.div>
     </motion.div>
-
-    <DispatchTaskModal
-      isOpen={dispatchOpen}
-      agent={agent}
-      onClose={() => { setDispatchOpen(false); setLocalStatus(null); }}
-    />
-  </>
   );
 }

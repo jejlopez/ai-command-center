@@ -1,5 +1,5 @@
 import React from 'react';
-import { LayoutGrid, BrainCircuit, FileText, Stethoscope, CheckSquare, Activity } from 'lucide-react';
+import { LayoutGrid, BrainCircuit, FileText, Stethoscope, CheckSquare } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '../utils/cn';
 import { useSystemState } from '../context/SystemStateContext';
@@ -7,7 +7,6 @@ import { ProjectSwitcher } from './ProjectSwitcher';
 
 const items = [
   { id: 'overview', icon: LayoutGrid, label: 'Overview' },
-  { id: 'operations', icon: Activity, label: 'Fleet Operations' },
   { id: 'review', icon: CheckSquare, label: 'Review Room' },
   { id: 'reports', icon: FileText, label: 'Monthly Reports' },
   { id: 'intelligence', icon: BrainCircuit, label: 'Intelligence' },

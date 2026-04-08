@@ -9,7 +9,7 @@ import { NotificationsPanel } from './components/NotificationsPanel';
 import { SettingsPanel } from './components/SettingsPanel';
 import { UserProfilePanel } from './components/UserProfilePanel';
 import { OverviewView } from './views/OverviewView';
-import { FleetOperationsView } from './views/FleetOperationsView';
+// FleetOperationsView merged into OverviewView
 import { ReviewRoomView } from './views/ReviewRoomView';
 import { ReportsView } from './views/ReportsView';
 import { IntelligenceView } from './views/IntelligenceView';
@@ -17,14 +17,18 @@ import { LoginView } from './views/LoginView';
 import { TimeRangeProvider } from './utils/useTimeRange';
 import { useSystemState } from './context/SystemStateContext';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { useAgents, useTasks, useActivityLog } from './utils/useSupabase';
 import { Bell, Settings, User, Loader2 } from 'lucide-react';
 import { cn } from './utils/cn';
 
 function Dashboard() {
-  const [activeRoute, setActiveRoute] = useState('operations');
+  const [activeRoute, setActiveRoute] = useState('overview');
   const [cmdOpen, setCmdOpen] = useState(false);
-  const [detailId, setDetailId] = useState(null);
+  const [detailState, setDetailState] = useState(null);
   const { notificationsOpen, setNotificationsOpen, settingsOpen, setSettingsOpen, profileOpen, setProfileOpen, setDoctorModeOpen } = useSystemState();
+  const { agents, loading: loadingAgents, usingMock, addOptimistic } = useAgents();
+  const { tasks, loading: loadingTasks } = useTasks();
+  const { logs, loading: loadingLogs } = useActivityLog();
 
   useEffect(() => {
     const handleKeyDown = (e) => {
@@ -37,11 +41,19 @@ function Dashboard() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
+  function openAgentWorkspace(agentId, options = {}) {
+    if (!agentId) return;
+    setDetailState({
+      agentId,
+      mode: options.mode ?? 'config',
+    });
+  }
+
   function handleAction(action) {
     if (!action) return;
     const { type, route, agentId, panel } = action;
     if (type === 'navigate') setActiveRoute(route);
-    if (type === 'agent') setDetailId(agentId);
+    if (type === 'agent') openAgentWorkspace(agentId);
     if (type === 'panel') {
       if (panel === 'notifications') setNotificationsOpen(true);
       if (panel === 'settings') setSettingsOpen(true);
@@ -49,6 +61,16 @@ function Dashboard() {
       if (panel === 'profile') setProfileOpen(true);
     }
   }
+
+  const selectedAgent = detailState?.agentId
+    ? agents.find((agent) => agent.id === detailState.agentId) ?? null
+    : null;
+  const selectedAgentTasks = selectedAgent
+    ? tasks.filter((task) => task.agentId === selectedAgent.id)
+    : [];
+  const selectedAgentLogs = selectedAgent
+    ? logs.filter((entry) => entry.agentId === selectedAgent.id)
+    : [];
 
   return (
     <div className="flex w-screen h-screen overflow-hidden bg-canvas text-text-primary relative">
@@ -61,7 +83,7 @@ function Dashboard() {
             <span className="text-text-muted font-medium">Nexus</span>
             <span className="text-text-muted">/</span>
             <span className="text-text-primary font-semibold capitalize font-mono">
-              {activeRoute.replace('operations', 'fleet ops').replace('review', 'review room')}
+              {activeRoute.replace('review', 'review room')}
             </span>
           </div>
           
@@ -114,8 +136,18 @@ function Dashboard() {
 
         {/* Content Area */}
         <div className="flex-1 overflow-y-auto px-8 relative no-scrollbar pb-8">
-          {activeRoute === 'overview' && <OverviewView onOpenDetail={setDetailId} />}
-          {activeRoute === 'operations' && <FleetOperationsView onOpenDetail={setDetailId} />}
+          {activeRoute === 'overview' && (
+            <OverviewView
+              agents={agents}
+              tasks={tasks}
+              logData={logs}
+              loading={loadingAgents || loadingTasks || loadingLogs}
+              usingMock={usingMock}
+              addOptimistic={addOptimistic}
+              onOpenDetail={openAgentWorkspace}
+              onQuickDispatch={(agentId) => openAgentWorkspace(agentId, { mode: 'dispatch' })}
+            />
+          )}
           {activeRoute === 'review' && <ReviewRoomView />}
           {activeRoute === 'reports' && <ReportsView />}
           {activeRoute === 'intelligence' && <IntelligenceView />}
@@ -130,7 +162,15 @@ function Dashboard() {
 
       <AnimatePresence>
         {/* <DoctorModePanel /> */}
-        {detailId && <DetailPanel agentId={detailId} onClose={() => setDetailId(null)} />}
+        {selectedAgent && (
+          <DetailPanel
+            agent={selectedAgent}
+            tasks={selectedAgentTasks}
+            logs={selectedAgentLogs}
+            initialMode={detailState?.mode}
+            onClose={() => setDetailState(null)}
+          />
+        )}
       </AnimatePresence>
     </div>
   );
