@@ -10,6 +10,8 @@ import {
   Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis,
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip,
 } from 'recharts';
+// TODO: Replace with Supabase tables when model_benchmarks, knowledge_namespaces,
+// directives, and recommendations tables are created. All reference/config data.
 import {
   modelBenchmarks, knowledgeNamespaces, directiveTemplates,
   systemRecommendations, agents,

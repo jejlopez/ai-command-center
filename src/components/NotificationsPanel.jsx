@@ -2,7 +2,8 @@ import React, { useState, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Bell, X, AlertCircle, CheckCircle2, Clock, Shield, BrainCircuit, Filter, Trash2 } from 'lucide-react';
 import { cn } from '../utils/cn';
-import { generateNotifications } from '../utils/mockData';
+import { useAgents, useTasks } from '../utils/useSupabase';
+import { useSystemState } from '../context/SystemStateContext';
 
 const CATEGORIES = {
   error: {
@@ -62,9 +63,74 @@ function formatExactTime(date) {
   return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 }
 
+// Derive notifications from live agent/task data
+function buildNotifications(agents, tasks, pendingCount) {
+  const now = Date.now();
+  const mins = (m) => new Date(now - m * 60_000);
+  const hrs = (h) => new Date(now - h * 3_600_000);
+  const notifs = [];
+
+  // Errors from agents
+  agents.filter(a => a.status === 'error').forEach(a => {
+    notifs.push({
+      id: `n-err-${a.id}`, category: 'error',
+      title: `${a.name} crashed`,
+      description: a.errorMessage || `Agent ${a.name} is in error state.`,
+      createdAt: mins(2), read: false,
+      action: { type: 'agent', agentId: a.id },
+    });
+  });
+
+  // Pending approvals
+  if (pendingCount > 0) {
+    notifs.push({
+      id: 'n-approvals', category: 'approval',
+      title: `${pendingCount} approval${pendingCount > 1 ? 's' : ''} pending`,
+      description: 'Review agent outputs before they go live.',
+      createdAt: mins(3), read: false,
+      action: { type: 'navigate', route: 'review' },
+    });
+  }
+
+  // Completed tasks
+  tasks.filter(t => t.status === 'completed').forEach((t, i) => {
+    notifs.push({
+      id: `n-task-${t.id}`, category: 'success',
+      title: `${t.name} completed`,
+      description: `${t.agentName} finished in ${t.durationMs}ms — $${t.costUsd.toFixed(3)}`,
+      createdAt: mins(15 + i * 8), read: true,
+      action: { type: 'agent', agentId: t.agentId },
+    });
+  });
+
+  // System
+  notifs.push({
+    id: 'n-sys-fleet', category: 'system',
+    title: `${agents.length} agents in fleet`,
+    description: `${agents.filter(a => a.status === 'processing').length} active, ${agents.filter(a => a.status === 'error').length} in error state.`,
+    createdAt: mins(6), read: agents.filter(a => a.status === 'error').length === 0,
+    action: { type: 'navigate', route: 'operations' },
+  });
+
+  return notifs.sort((a, b) => b.createdAt - a.createdAt);
+}
+
 export function NotificationsPanel({ notificationsOpen, setNotificationsOpen, onNavigate }) {
-  const [notifications, setNotifications] = useState(() => generateNotifications());
+  const { agents } = useAgents();
+  const { tasks } = useTasks();
+  const { pendingCount } = useSystemState();
+
+  const [notifications, setNotifications] = useState([]);
+  const [seeded, setSeeded] = useState(false);
   const [activeFilter, setActiveFilter] = useState('all');
+
+  // Rebuild notifications when live data changes (only seed once to preserve read/dismiss state)
+  React.useEffect(() => {
+    if (!seeded && agents.length > 0) {
+      setNotifications(buildNotifications(agents, tasks, pendingCount ?? 0));
+      setSeeded(true);
+    }
+  }, [agents, tasks, pendingCount, seeded]);
 
   const unreadCount = useMemo(() => notifications.filter(n => !n.read).length, [notifications]);
 

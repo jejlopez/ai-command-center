@@ -1,5 +1,6 @@
 import React from 'react';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, BarChart, Bar, Cell } from 'recharts';
+// TODO: This view is not routed — migrate to Supabase analytics queries when activated
 import { TREND_DATA, MOCK_PROJECT_DATA } from '../utils/mockData';
 import { Filter, Download } from 'lucide-react';
 

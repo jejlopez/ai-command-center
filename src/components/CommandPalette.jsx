@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import * as Icons from 'lucide-react';
-import { commandItems, agents } from '../utils/mockData';
+import { commandItems } from '../utils/mockData'; // commandItems is static nav config — no table needed
+import { useAgents } from '../utils/useSupabase';
 import { cn } from '../utils/cn';
 
 const statusColors = {
@@ -11,6 +12,7 @@ const statusColors = {
 };
 
 export function CommandPalette({ isOpen, onClose, onExecute }) {
+  const { agents } = useAgents();
   const [query, setQuery] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
   const inputRef = useRef(null);

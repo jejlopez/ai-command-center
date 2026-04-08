@@ -25,14 +25,14 @@ const urgencyStyles = {
 };
 
 function AgentApprovals({ agent }) {
-  const agentReviews = pendingReviews.filter(rv => rv.agentId === agent.id);
+  const agentReviews = pendingReviews.filter((rv) => rv.agentId === agent.id);
   const [dismissed, setDismissed] = useState(new Set());
 
   useEffect(() => {
     setDismissed(new Set());
   }, [agent.id]);
 
-  const visible = agentReviews.filter(rv => !dismissed.has(rv.id));
+  const visible = agentReviews.filter((rv) => !dismissed.has(rv.id));
   if (visible.length === 0) return null;
 
   return (
@@ -50,7 +50,7 @@ function AgentApprovals({ agent }) {
       </div>
       <div className="space-y-2">
         <AnimatePresence mode="popLayout">
-          {visible.map(rv => (
+          {visible.map((rv) => (
             <motion.div
               key={rv.id}
               layout
@@ -63,14 +63,16 @@ function AgentApprovals({ agent }) {
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
                     <span className="text-sm font-semibold text-text-primary">{rv.title}</span>
-                    <span className={cn(
-                      'rounded-full px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.16em]',
-                      urgencyStyles[rv.urgency] || urgencyStyles.normal
-                    )}>
+                    <span
+                      className={cn(
+                        'rounded-full px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.16em]',
+                        urgencyStyles[rv.urgency] || urgencyStyles.normal,
+                      )}
+                    >
                       {rv.urgency}
                     </span>
                   </div>
-                  <p className="mt-1 text-xs leading-relaxed text-text-muted line-clamp-2">{rv.summary}</p>
+                  <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-text-muted">{rv.summary}</p>
                   <div className="mt-2 flex items-center gap-3 text-[10px] font-mono text-text-disabled">
                     <span>{rv.outputType}</span>
                     <span>{rv.createdAt}</span>
@@ -82,7 +84,7 @@ function AgentApprovals({ agent }) {
                 <motion.button
                   whileHover={{ scale: 1.03 }}
                   whileTap={{ scale: 0.97 }}
-                  onClick={() => setDismissed(prev => new Set([...prev, rv.id]))}
+                  onClick={() => setDismissed((prev) => new Set([...prev, rv.id]))}
                   className="rounded-lg bg-aurora-teal px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.14em] text-black transition-colors hover:bg-[#12e8da]"
                 >
                   Approve
@@ -90,7 +92,7 @@ function AgentApprovals({ agent }) {
                 <motion.button
                   whileHover={{ scale: 1.03 }}
                   whileTap={{ scale: 0.97 }}
-                  onClick={() => setDismissed(prev => new Set([...prev, rv.id]))}
+                  onClick={() => setDismissed((prev) => new Set([...prev, rv.id]))}
                   className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-text-muted transition-colors hover:border-white/[0.18] hover:text-text-primary"
                 >
                   Reject
@@ -103,7 +105,6 @@ function AgentApprovals({ agent }) {
     </motion.div>
   );
 }
-
 
 function KebabMenu({ onClose }) {
   const [showTerminate, setShowTerminate] = useState(false);
@@ -333,7 +334,7 @@ export function DetailPanel({ agent, tasks = [], logs = [], initialMode = 'confi
                   onClick={() => setActiveTab(tab.id)}
                   className={cn(
                     'border-b-2 px-4 py-3 text-sm font-medium transition-colors',
-                    activeTab === tab.id ? 'border-aurora-teal text-aurora-teal' : 'border-transparent text-text-muted hover:text-text-primary'
+                    activeTab === tab.id ? 'border-aurora-teal text-aurora-teal' : 'border-transparent text-text-muted hover:text-text-primary',
                   )}
                 >
                   {tab.label}
@@ -411,7 +412,7 @@ export function DetailPanel({ agent, tasks = [], logs = [], initialMode = 'confi
                         onClick={() => setLogView('stream')}
                         className={cn(
                           'rounded px-3 py-1 text-[10px] font-bold transition-colors',
-                          logView === 'stream' ? 'bg-aurora-teal/10 text-aurora-teal' : 'text-text-muted hover:text-text-primary'
+                          logView === 'stream' ? 'bg-aurora-teal/10 text-aurora-teal' : 'text-text-muted hover:text-text-primary',
                         )}
                       >
                         Stream
@@ -420,7 +421,7 @@ export function DetailPanel({ agent, tasks = [], logs = [], initialMode = 'confi
                         onClick={() => setLogView('trace')}
                         className={cn(
                           'rounded px-3 py-1 text-[10px] font-bold transition-colors',
-                          logView === 'trace' ? 'bg-aurora-teal/10 text-aurora-teal' : 'text-text-muted hover:text-text-primary'
+                          logView === 'trace' ? 'bg-aurora-teal/10 text-aurora-teal' : 'text-text-muted hover:text-text-primary',
                         )}
                       >
                         Timeline
