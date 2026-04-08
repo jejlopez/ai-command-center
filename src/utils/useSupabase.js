@@ -1,13 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabaseClient';
 import { useAuth } from '../context/AuthContext';
-import { 
-  agents as mockAgents, 
-  tasks as mockTasks, 
-  activityLog as mockActivityLog,
-  costData as mockCostData,
-  healthMetrics as mockHealthMetrics
-} from './mockData';
 
 function createRealtimeChannelName(prefix, userId) {
   const uniqueSuffix = typeof crypto !== 'undefined' && crypto.randomUUID
@@ -24,15 +17,14 @@ export function useAgents() {
   const { user } = useAuth();
   const [agents, setAgents] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [usingMock, setUsingMock] = useState(false);
 
   const fetchAgents = useCallback(async () => {
     if (!user) {
-      console.log('[useAgents] No user session yet, waiting...');
+      setAgents([]);
+      setLoading(false);
       return;
     }
-    
-    console.log('[useAgents] Fetching agents for user:', user.id);
+
     try {
       const { data, error } = await supabase
         .from('agents')
@@ -40,41 +32,12 @@ export function useAgents() {
         .eq('user_id', user.id)
         .order('created_at', { ascending: true });
 
-      if (error) {
-        console.error('[useAgents] Fetch error:', error.message);
-        throw error;
-      }
+      if (error) throw error;
 
-      if (data && data.length > 0) {
-        console.log(`[useAgents] Successfully fetched ${data.length} real agents.`);
-        setAgents(data.map(mapAgentFromDb));
-        setUsingMock(false);
-      } else {
-        console.log('[useAgents] No real agents found for this user. Attempting to seed...');
-        // No agents for this user - check if we should seed a Commander
-        await seedCommander(user.id);
-        
-        // Re-fetch after potential seed
-        const { data: seeded } = await supabase
-          .from('agents')
-          .select('*')
-          .eq('user_id', user.id)
-          .order('created_at', { ascending: true });
-          
-        if (seeded && seeded.length > 0) {
-          console.log('[useAgents] Seeding successful. Switching to live data.');
-          setAgents(seeded.map(mapAgentFromDb));
-          setUsingMock(false);
-        } else {
-          console.warn('[useAgents] Seeding returned no data. Falling back to mock.');
-          setAgents(mockAgents.map(a => ({ ...a, user_id: user.id })));
-          setUsingMock(true);
-        }
-      }
+      setAgents((data || []).map(mapAgentFromDb));
     } catch (err) {
-      console.error('[useAgents] Critical reach failure:', err);
-      setAgents(mockAgents);
-      setUsingMock(true);
+      console.error('[useAgents] Fetch error:', err);
+      setAgents([]);
     } finally {
       setLoading(false);
     }
@@ -129,7 +92,7 @@ export function useAgents() {
 
   const hasCommander = agents.some(a => a.role === 'commander');
 
-  return { agents, loading, usingMock, hasCommander, addOptimistic, refetch: fetchAgents };
+  return { agents, loading, hasCommander, addOptimistic, refetch: fetchAgents };
 }
 
 /**
@@ -141,7 +104,11 @@ export function useTasks() {
   const [loading, setLoading] = useState(true);
 
   const fetchTasks = useCallback(async () => {
-    if (!user) return;
+    if (!user) {
+      setTasks([]);
+      setLoading(false);
+      return;
+    }
     
     try {
       const { data, error } = await supabase
@@ -152,13 +119,10 @@ export function useTasks() {
 
       if (error) throw error;
 
-      if (data && data.length > 0) {
-        setTasks(data.map(mapTaskFromDb));
-      } else {
-        setTasks(mockTasks);
-      }
-    } catch {
-      setTasks(mockTasks);
+      setTasks((data || []).map(mapTaskFromDb));
+    } catch (err) {
+      console.error('[useTasks] Fetch error:', err);
+      setTasks([]);
     } finally {
       setLoading(false);
     }
@@ -198,30 +162,28 @@ export function useActivityLog(agentId = null) {
   const [loading, setLoading] = useState(true);
 
   const fetchLogs = useCallback(async () => {
-    if (!user) return;
+    if (!user) {
+      setLogs([]);
+      setLoading(false);
+      return;
+    }
     
     try {
       let query = supabase
         .from('activity_log')
         .select('*')
-        // Note: activity_log should also have user_id for true isolation
+        .eq('user_id', user.id)
         .order('timestamp', { ascending: true });
-      
-      // If activity_log has user_id column:
-      // query = query.eq('user_id', user.id);
       
       if (agentId) query = query.eq('agent_id', agentId);
 
       const { data, error } = await query;
       if (error) throw error;
 
-      if (data && data.length > 0) {
-        setLogs(data.map(mapLogRow));
-      } else {
-        setLogs(mockActivityLog);
-      }
-    } catch {
-      setLogs(mockActivityLog);
+      setLogs((data || []).map(mapLogRow));
+    } catch (err) {
+      console.error('[useActivityLog] Fetch error:', err);
+      setLogs([]);
     } finally {
       setLoading(false);
     }
@@ -237,8 +199,8 @@ export function useActivityLog(agentId = null) {
       .on('postgres_changes', { 
         event: '*', 
         schema: 'public', 
-        table: 'activity_log' 
-        // filter: `user_id=eq.${user.id}`
+        table: 'activity_log',
+        filter: `user_id=eq.${user.id}`
       }, () => {
         fetchLogs();
       })
@@ -256,7 +218,67 @@ export function useActivityLog(agentId = null) {
  * Hook for cost data.
  */
 export function useCostData() {
-  const [data] = useState(mockCostData);
+  const { user } = useAuth();
+  const [data, setData] = useState({ total: 0, burnRate: 0, models: [] });
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function fetchCostData() {
+      if (!user) {
+        setData({ total: 0, burnRate: 0, models: [] });
+        return;
+      }
+
+      try {
+        const [{ data: agentsData, error: agentsError }, { data: tasksData, error: tasksError }] = await Promise.all([
+          supabase.from('agents').select('id, model').eq('user_id', user.id),
+          supabase.from('tasks').select('agent_id, cost_usd, created_at').eq('user_id', user.id),
+        ]);
+
+        if (agentsError) throw agentsError;
+        if (tasksError) throw tasksError;
+
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+
+        const agentModelById = new Map((agentsData || []).map((agent) => [agent.id, agent.model]));
+        const todaysTasks = (tasksData || []).filter((task) => new Date(task.created_at) >= today);
+        const total = todaysTasks.reduce((sum, task) => sum + Number(task.cost_usd || 0), 0);
+        const byModel = new Map();
+
+        todaysTasks.forEach((task) => {
+          const model = agentModelById.get(task.agent_id) || 'Unassigned';
+          byModel.set(model, (byModel.get(model) || 0) + Number(task.cost_usd || 0));
+        });
+
+        const models = Array.from(byModel.entries())
+          .map(([name, cost]) => ({ name, cost }))
+          .sort((a, b) => b.cost - a.cost)
+          .map((entry) => ({
+            ...entry,
+            percentage: total > 0 ? Math.round((entry.cost / total) * 100) : 0,
+          }));
+
+        if (!cancelled) {
+          setData({
+            total,
+            burnRate: total / Math.max(new Date().getHours() + 1, 1),
+            models,
+          });
+        }
+      } catch (error) {
+        console.error('[useCostData] Fetch error:', error);
+        if (!cancelled) setData({ total: 0, burnRate: 0, models: [] });
+      }
+    }
+
+    fetchCostData();
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
+
   return { data };
 }
 
@@ -264,46 +286,124 @@ export function useCostData() {
  * Hook for health metrics.
  */
 export function useHealthMetrics() {
-  const [data] = useState(mockHealthMetrics);
+  const { user } = useAuth();
+  const [data, setData] = useState([]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function fetchHealthMetrics() {
+      if (!user) {
+        setData([]);
+        return;
+      }
+
+      try {
+        const { data: agentsData, error } = await supabase
+          .from('agents')
+          .select('status, success_rate, latency_ms')
+          .eq('user_id', user.id);
+
+        if (error) throw error;
+
+        const rows = agentsData || [];
+        const totalAgents = rows.length || 1;
+        const healthyAgents = rows.filter((row) => row.status !== 'error').length;
+        const avgSuccess = rows.reduce((sum, row) => sum + Number(row.success_rate || 0), 0) / totalAgents;
+        const avgLatency = rows.reduce((sum, row) => sum + Number(row.latency_ms || 0), 0) / totalAgents;
+
+        if (!cancelled) {
+          setData([
+            { label: 'Availability', value: Math.round((healthyAgents / totalAgents) * 100), color: '#00D9C8', history24h: [] },
+            { label: 'Success', value: Math.round(avgSuccess || 0), color: '#60a5fa', history24h: [] },
+            { label: 'Latency', value: Math.max(0, 100 - Math.min(100, Math.round(avgLatency / 10))), color: '#fbbf24', history24h: [] },
+          ]);
+        }
+      } catch (error) {
+        console.error('[useHealthMetrics] Fetch error:', error);
+        if (!cancelled) setData([]);
+      }
+    }
+
+    fetchHealthMetrics();
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
+
   return { data };
 }
 
-/**
- * Auto-seed a default Commander for a specific user if they don't have one.
- */
-async function seedCommander(userId) {
-  try {
-    // Check if the user already has any agents at all
-    const { count } = await supabase
-      .from('agents')
-      .select('*', { count: 'exact', head: true })
-      .eq('user_id', userId);
-      
-    if (count > 0) return; // User already has a fleet, don't seed
+export function useModelBank() {
+  const { user } = useAuth();
+  const [models, setModels] = useState([]);
+  const [loading, setLoading] = useState(true);
 
-    const defaultCommander = {
-      user_id: userId,
-      name: 'Atlas',
-      model: 'claude-opus-4-6',
-      role: 'commander',
-      roleDescription: 'Primary orchestrator — delegates tasks, synthesizes results, and reports to the user',
-      color: '#00D9C8',
-      temperature: 0.1,
-      responseLength: 'medium',
-      systemPrompt: 'You are Atlas, the Commander agent. Delegate tasks to sub-agents, synthesize results, and report to the user. Prioritize accuracy over speed.',
-      canSpawn: true,
-      spawnPattern: 'fan-out',
-    };
-    
-    // Attempt to insert Atlas. The database's new UNIQUE constraint will prevent duplicates.
-    const { error } = await supabase.from('agents').insert([mapAgentToDb(defaultCommander)]);
-    
-    if (error && error.code !== '23505') { // Ignore unique_violation error (it means Atlas is already there)
-      throw error;
+  const fetchModels = useCallback(async () => {
+    if (!user) {
+      setModels([]);
+      setLoading(false);
+      return;
     }
-  } catch (err) {
-    console.warn('[Nexus] Failed to seed Commander:', err.message);
-  }
+
+    try {
+      const { data, error } = await supabase
+        .from('model_bank')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: true });
+
+      if (error) throw error;
+      setModels((data || []).map(mapModelFromDb));
+    } catch (error) {
+      console.error('[useModelBank] Fetch error:', error);
+      setModels([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [user]);
+
+  useEffect(() => {
+    fetchModels();
+  }, [fetchModels]);
+
+  return { models, loading, refetch: fetchModels };
+}
+
+export function useSkillBank() {
+  const { user } = useAuth();
+  const [skills, setSkills] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetchSkills = useCallback(async () => {
+    if (!user) {
+      setSkills([]);
+      setLoading(false);
+      return;
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from('skill_bank')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: true });
+
+      if (error) throw error;
+      setSkills((data || []).map(mapSkillFromDb));
+    } catch (error) {
+      console.error('[useSkillBank] Fetch error:', error);
+      setSkills([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [user]);
+
+  useEffect(() => {
+    fetchSkills();
+  }, [fetchSkills]);
+
+  return { skills, loading, refetch: fetchSkills };
 }
 
 /**
@@ -318,6 +418,68 @@ export async function createAgent(agentData) {
     id: crypto.randomUUID(),
   };
   const { data, error } = await supabase.from('agents').insert([row]).select().single();
+  if (error) throw error;
+  return mapAgentFromDb(data);
+}
+
+export async function createModelBankEntry(modelData) {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('Not authenticated');
+
+  const row = {
+    user_id: user.id,
+    model_key: modelData.modelKey?.trim() || modelData.label?.trim(),
+    label: modelData.label?.trim() || modelData.modelKey?.trim(),
+    provider: modelData.provider?.trim() || 'Custom',
+    cost_per_1k: Number(modelData.costPer1k ?? 0),
+  };
+
+  if (!row.model_key || !row.label) throw new Error('Model name is required');
+
+  const { data, error } = await supabase
+    .from('model_bank')
+    .upsert(row, { onConflict: 'user_id,model_key' })
+    .select()
+    .single();
+
+  if (error) throw error;
+  return mapModelFromDb(data);
+}
+
+export async function createSkillBankEntry(skillData) {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('Not authenticated');
+
+  const row = {
+    user_id: user.id,
+    name: skillData.name?.trim(),
+    description: skillData.description?.trim() || '',
+    icon: skillData.icon || inferSkillIcon(skillData.source, skillData.reference),
+    source: skillData.source || 'custom',
+    reference: skillData.reference?.trim() || null,
+    enabled: skillData.enabled ?? true,
+  };
+
+  if (!row.name) throw new Error('Skill name is required');
+
+  const { data, error } = await supabase
+    .from('skill_bank')
+    .upsert(row, { onConflict: 'user_id,name' })
+    .select()
+    .single();
+
+  if (error) throw error;
+  return mapSkillFromDb(data);
+}
+
+export async function updateAgentSkills(agentId, skills) {
+  const { data, error } = await supabase
+    .from('agents')
+    .update({ skills })
+    .eq('id', agentId)
+    .select()
+    .single();
+
   if (error) throw error;
   return mapAgentFromDb(data);
 }
@@ -413,4 +575,35 @@ function mapLogRow(row) {
     tokens:      row.tokens || 0,
     durationMs:  row.duration_ms || 0,
   };
+}
+
+function mapModelFromDb(row) {
+  return {
+    id: row.id,
+    modelKey: row.model_key,
+    label: row.label,
+    provider: row.provider || 'Custom',
+    costPer1k: Number(row.cost_per_1k || 0),
+    createdAt: row.created_at,
+  };
+}
+
+function mapSkillFromDb(row) {
+  return {
+    id: row.id,
+    name: row.name,
+    description: row.description || '',
+    icon: row.icon || 'Zap',
+    source: row.source || 'custom',
+    reference: row.reference,
+    enabled: row.enabled ?? true,
+    createdAt: row.created_at,
+  };
+}
+
+function inferSkillIcon(source, reference) {
+  if (source === 'github') return 'Monitor';
+  if (source === 'local') return 'FolderOpen';
+  if (reference?.includes('http')) return 'Globe';
+  return 'Zap';
 }

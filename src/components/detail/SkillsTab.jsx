@@ -4,8 +4,9 @@ import {
   Info, ChevronDown, Search, Zap, Trash2, ExternalLink, Server,
   Globe, Terminal, FolderOpen, Database, MessageSquare, Monitor, BarChart3,
 } from 'lucide-react';
-import { skillBank, mcpServers } from '../../utils/mockData';
+import { mcpServers } from '../../utils/staticCatalog';
 import { cn } from '../../utils/cn';
+import { createSkillBankEntry, updateAgentSkills, useSkillBank } from '../../utils/useSupabase';
 
 const iconMap = { Globe, Terminal, FolderOpen, Zap, Database, MessageSquare, Monitor, BarChart3 };
 
@@ -37,6 +38,7 @@ function InfoBubble({ text }) {
 }
 
 export function SkillsTab({ agent }) {
+  const { skills: skillBank, refetch: refetchSkills } = useSkillBank();
   const [searchInput, setSearchInput] = useState('');
   const [showMcp, setShowMcp] = useState(false);
   const [showAddServer, setShowAddServer] = useState(false);
@@ -52,6 +54,26 @@ export function SkillsTab({ agent }) {
         skill.description.toLowerCase().includes(searchInput.toLowerCase())
       )
     : [];
+
+  const syncAgentSkills = async (nextSkills) => {
+    await updateAgentSkills(agent.id, nextSkills);
+  };
+
+  const handleCreateSkill = async () => {
+    const trimmed = searchInput.trim();
+    if (!trimmed) return;
+
+    const source = isGithub ? 'github' : isPath ? 'local' : 'custom';
+    const skill = await createSkillBankEntry({
+      name: isGithub || isPath ? trimmed.split('/').filter(Boolean).pop() || trimmed : trimmed,
+      description: source === 'custom' ? 'User-added custom skill' : `User-added ${source} skill`,
+      source,
+      reference: trimmed,
+    });
+    await refetchSkills();
+    await syncAgentSkills([...(agent.skills || []), skill.id]);
+    setSearchInput('');
+  };
 
   return (
     <div className="flex h-full flex-col">
@@ -75,7 +97,7 @@ export function SkillsTab({ agent }) {
                 <div className="text-[10px] font-bold uppercase text-aurora-teal">Local Path Detected</div>
                 <div className="mt-0.5 max-w-[360px] truncate font-mono text-[11px] text-text-muted">{searchInput}</div>
               </div>
-              <button className="shrink-0 rounded-md bg-aurora-teal px-3 py-1.5 text-[10px] font-bold text-[#000]">Install</button>
+              <button onClick={handleCreateSkill} className="shrink-0 rounded-md bg-aurora-teal px-3 py-1.5 text-[10px] font-bold text-[#000]">Save + Attach</button>
             </div>
           )}
           {isGithub && (
@@ -84,7 +106,13 @@ export function SkillsTab({ agent }) {
                 <div className="text-[10px] font-bold uppercase text-aurora-violet">GitHub Repo Detected</div>
                 <div className="mt-0.5 max-w-[360px] truncate font-mono text-[11px] text-text-muted">{searchInput}</div>
               </div>
-              <button className="shrink-0 rounded-md bg-aurora-violet px-3 py-1.5 text-[10px] font-bold text-white">Install</button>
+              <button onClick={handleCreateSkill} className="shrink-0 rounded-md bg-aurora-violet px-3 py-1.5 text-[10px] font-bold text-white">Save + Attach</button>
+            </div>
+          )}
+          {searchInput && !isPath && !isGithub && filteredAvailable.length === 0 && (
+            <div className="mt-2 flex items-center justify-between rounded-lg border border-white/[0.07] bg-white/[0.02] p-3">
+              <div className="text-[11px] text-text-muted">Create a new skill bank entry for "{searchInput}"</div>
+              <button onClick={handleCreateSkill} className="shrink-0 rounded-md bg-aurora-teal px-3 py-1.5 text-[10px] font-bold text-black">Save + Attach</button>
             </div>
           )}
 
@@ -101,7 +129,10 @@ export function SkillsTab({ agent }) {
                         <div className="truncate text-[10px] text-text-disabled">{skill.description}</div>
                       </div>
                     </div>
-                    <button className="ml-2 shrink-0 rounded px-2 py-1 text-[10px] font-bold text-aurora-teal transition-colors hover:bg-aurora-teal/10">
+                    <button
+                      onClick={() => syncAgentSkills([...(agent.skills || []), skill.id])}
+                      className="ml-2 shrink-0 rounded px-2 py-1 text-[10px] font-bold text-aurora-teal transition-colors hover:bg-aurora-teal/10"
+                    >
                       + Add
                     </button>
                   </div>
@@ -129,13 +160,21 @@ export function SkillsTab({ agent }) {
                   </div>
                   <div className="ml-2 flex shrink-0 items-center gap-2">
                     <span className="rounded bg-white/[0.03] px-1.5 py-0.5 font-mono text-[9px] text-text-disabled">{skill.source}</span>
-                    <button className="text-text-disabled opacity-0 transition-opacity group-hover:opacity-100 hover:text-aurora-rose">
+                    <button
+                      onClick={() => syncAgentSkills((agent.skills || []).filter((skillId) => skillId !== skill.id))}
+                      className="text-text-disabled opacity-0 transition-opacity group-hover:opacity-100 hover:text-aurora-rose"
+                    >
                       <Trash2 className="h-3.5 w-3.5" />
                     </button>
                   </div>
                 </div>
               );
             })}
+            {agentSkills.length === 0 && (
+              <div className="rounded-lg border border-white/[0.05] bg-white/[0.02] px-3 py-4 text-xs text-text-muted">
+                No skills attached to this agent yet.
+              </div>
+            )}
           </div>
         </div>
 
@@ -153,12 +192,20 @@ export function SkillsTab({ agent }) {
                     <Icon className="h-3.5 w-3.5 text-text-disabled" />
                     <span className="text-xs text-text-muted">{skill.name}</span>
                   </div>
-                  <button className="rounded px-2 py-1 text-[10px] font-bold text-aurora-teal transition-colors hover:bg-aurora-teal/10">
+                  <button
+                    onClick={() => syncAgentSkills([...(agent.skills || []), skill.id])}
+                    className="rounded px-2 py-1 text-[10px] font-bold text-aurora-teal transition-colors hover:bg-aurora-teal/10"
+                  >
                     + Add
                   </button>
                 </div>
               );
             })}
+            {availableSkills.length === 0 && (
+              <div className="rounded-lg border border-white/[0.03] bg-white/[0.01] px-3 py-4 text-xs text-text-muted">
+                Your skill bank is empty. Add a local path, GitHub URL, or custom skill above.
+              </div>
+            )}
           </div>
         </div>
 

@@ -1,10 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-// TODO: This view is not routed — migrate to useAgents() hook when activated
-import { agents } from '../utils/mockData';
 import { AgentVitalCard } from '../components/AgentVitalCard';
 import { container, item } from '../utils/variants';
 import Globe from 'react-globe.gl';
+import { useAgents } from '../utils/useSupabase';
 
 const MapWidget = () => {
   const [arcsData, setArcsData] = useState([]);
@@ -45,6 +44,8 @@ const MapWidget = () => {
 };
 
 export function FleetView({ onOpenDetail }) {
+  const { agents } = useAgents();
+
   return (
     <div className="flex flex-col h-full overflow-y-auto no-scrollbar pb-10">
       <div className="mb-6 flex justify-between items-end">

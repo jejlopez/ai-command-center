@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   BrainCircuit, Cpu, Database, Zap, TrendingUp, ShieldCheck,
@@ -14,9 +14,10 @@ import {
 // directives, and recommendations tables are created. All reference/config data.
 import {
   modelBenchmarks, knowledgeNamespaces, directiveTemplates,
-  systemRecommendations, agents,
-} from '../utils/mockData';
+  systemRecommendations,
+} from '../utils/staticCatalog';
 import { container, item } from '../utils/variants';
+import { useAgents, useModelBank } from '../utils/useSupabase';
 
 /* ── Sub-tab config ──────────────────────────────────────────── */
 const tabs = [
@@ -123,9 +124,31 @@ function RecommendationCard({ rec }) {
    MODEL REGISTRY TAB
    ═══════════════════════════════════════════════════════════════ */
 function ModelRegistryTab() {
+  const { agents } = useAgents();
+  const { models } = useModelBank();
+  const bankBenchmarks = models.map((model) => {
+    const known = modelBenchmarks.find((entry) => entry.model === model.label || entry.model === model.modelKey);
+    return known || {
+      model: model.label,
+      provider: model.provider || 'Custom',
+      reasoning: 75,
+      codeGen: 75,
+      extraction: 75,
+      latency: 75,
+      costEfficiency: model.costPer1k > 0 ? 60 : 100,
+      tokensPerSec: 0,
+      contextWindow: 'Custom',
+      monthlyTokens: 0,
+      monthlyCost: 0,
+    };
+  });
   const [selectedModels, setSelectedModels] = useState(
-    modelBenchmarks.filter((m) => ['Claude Opus 4.6', 'Llama 3 70B', 'Gemini 3.1'].includes(m.model))
+    bankBenchmarks.slice(0, 3)
   );
+
+  useEffect(() => {
+    setSelectedModels(bankBenchmarks.slice(0, 3));
+  }, [models.length]);
 
   const toggleModel = (model) => {
     setSelectedModels((prev) => {
@@ -140,6 +163,11 @@ function ModelRegistryTab() {
 
   return (
     <motion.div variants={container} initial="hidden" animate="show" className="flex flex-col gap-6">
+      {bankBenchmarks.length === 0 && (
+        <div className="rounded-xl border border-white/[0.05] bg-white/[0.02] p-4 text-sm text-text-muted">
+          Your model bank is empty. Add models from agent creation or config before using the registry.
+        </div>
+      )}
       {/* Top: Radar + Model selector */}
       <div className="grid grid-cols-12 gap-6">
         {/* Radar Chart */}
@@ -158,8 +186,8 @@ function ModelRegistryTab() {
                     key={m.model}
                     name={m.model}
                     dataKey={m.model}
-                    stroke={modelColors[m.model]}
-                    fill={modelColors[m.model]}
+                    stroke={modelColors[m.model] || '#00D9C8'}
+                    fill={modelColors[m.model] || '#00D9C8'}
                     fillOpacity={0.15}
                     strokeWidth={2}
                   />
@@ -170,7 +198,7 @@ function ModelRegistryTab() {
           <div className="flex flex-wrap justify-center gap-4 mt-3">
             {selectedModels.map((m) => (
               <div key={m.model} className="flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full" style={{ backgroundColor: modelColors[m.model] }} />
+                <span className="w-2 h-2 rounded-full" style={{ backgroundColor: modelColors[m.model] || '#00D9C8' }} />
                 <span className="text-[10px] text-text-muted font-mono">{m.model}</span>
               </div>
             ))}
@@ -179,9 +207,9 @@ function ModelRegistryTab() {
 
         {/* Model Cards Grid */}
         <motion.div variants={item} className="col-span-7 grid grid-cols-2 gap-3">
-          {modelBenchmarks.map((model) => {
+          {bankBenchmarks.map((model) => {
             const isSelected = selectedModels.some((m) => m.model === model.model);
-            const color = modelColors[model.model];
+            const color = modelColors[model.model] || '#00D9C8';
             const isLocal = model.provider === 'Ollama';
 
             return (
