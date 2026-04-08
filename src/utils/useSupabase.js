@@ -9,6 +9,13 @@ import {
   healthMetrics as mockHealthMetrics
 } from './mockData';
 
+function createRealtimeChannelName(prefix, userId) {
+  const uniqueSuffix = typeof crypto !== 'undefined' && crypto.randomUUID
+    ? crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  return `${prefix}-${userId}-${uniqueSuffix}`;
+}
+
 /**
  * Hook to fetch agents from Supabase with realtime subscription.
  * Scoped to the current authenticated user.
@@ -80,7 +87,7 @@ export function useAgents() {
     
     // Realtime subscription scoped to user_id
     const channel = supabase
-      .channel(`agents-user-${user.id}`)
+      .channel(createRealtimeChannelName('agents-user', user.id))
       .on('postgres_changes', { 
         event: '*', 
         schema: 'public', 
@@ -163,7 +170,7 @@ export function useTasks() {
     fetchTasks();
     
     const channel = supabase
-      .channel(`tasks-user-${user.id}`)
+      .channel(createRealtimeChannelName('tasks-user', user.id))
       .on('postgres_changes', { 
         event: '*', 
         schema: 'public', 
@@ -226,7 +233,7 @@ export function useActivityLog(agentId = null) {
     fetchLogs();
     
     const channel = supabase
-      .channel(`logs-user-${user.id}`)
+      .channel(createRealtimeChannelName('logs-user', user.id))
       .on('postgres_changes', { 
         event: '*', 
         schema: 'public', 

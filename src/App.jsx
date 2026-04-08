@@ -8,6 +8,7 @@ import { DoctorModePanel } from './components/DoctorModePanel';
 import { NotificationsPanel } from './components/NotificationsPanel';
 import { SettingsPanel } from './components/SettingsPanel';
 import { UserProfilePanel } from './components/UserProfilePanel';
+import { AppErrorBoundary } from './components/AppErrorBoundary';
 import { OverviewView } from './views/OverviewView';
 // FleetOperationsView merged into OverviewView
 import { ReviewRoomView } from './views/ReviewRoomView';
@@ -200,9 +201,11 @@ function AuthGate() {
 
 function App() {
   return (
-    <AuthProvider>
-      <AuthGate />
-    </AuthProvider>
+    <AppErrorBoundary>
+      <AuthProvider>
+        <AuthGate />
+      </AuthProvider>
+    </AppErrorBoundary>
   );
 }
 
