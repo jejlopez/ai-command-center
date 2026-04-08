@@ -4,7 +4,7 @@ import { LineChart, Line, ResponsiveContainer } from 'recharts';
 import { cn } from '../utils/cn';
 import { useAnimatedCounter } from '../utils/useAnimatedCounter';
 import { Crown, ArrowUpRight, AlertTriangle, RotateCcw, Square, Play } from 'lucide-react';
-import { agents as defaultAgents, activityLog as defaultLog } from '../utils/mockData';
+// No mockData fallback — all active parents pass allAgents and activityLog as props
 import { DispatchTaskModal } from './DispatchTaskModal';
 
 function getThresholdColor(val) {
@@ -61,8 +61,8 @@ function SegmentedArc({ completion, tokenBurnRate, baseColor }) {
 }
 
 export function AgentVitalCard({ agent, onLogClick, allAgents, activityLog }) {
-  const agentList = allAgents || defaultAgents;
-  const logList = activityLog || defaultLog;
+  const agentList = allAgents || [];
+  const logList = activityLog || [];
   const [dispatchOpen, setDispatchOpen] = useState(false);
   const [localStatus, setLocalStatus] = useState(null);
 

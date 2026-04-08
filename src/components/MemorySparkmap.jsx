@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+// TODO: Replace with Supabase query when a memory_chunks table exists
 import { memoryChunks } from '../utils/mockData';
 import { motion, AnimatePresence } from 'framer-motion';
 import { WidgetActions } from './WidgetActions';

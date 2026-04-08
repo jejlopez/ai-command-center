@@ -3,7 +3,6 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Terminal, Activity, ScanLine, Stethoscope, RotateCcw, X, Pause, Play, Download } from 'lucide-react';
 import { useSystemState } from '../context/SystemStateContext';
 import { useAgents } from '../utils/useSupabase';
-import { activityLog } from '../utils/mockData';
 import { cn } from '../utils/cn';
 
 export function DoctorModePanel() {

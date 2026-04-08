@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { tasks as defaultTasks } from '../utils/mockData';
+// No mockData fallback — all active parents pass tasks as prop
 
 const statusColors = {
   completed: '#00D9C8',
@@ -302,7 +302,7 @@ function formatDuration(ms) {
 }
 
 export function TaskDAG({ onNodeClick, tasks }) {
-  const taskList = tasks || defaultTasks;
+  const taskList = tasks || [];
   const [hoveredId, setHoveredId] = useState(null);
   const { nodes, edges } = useMemo(() => computeLayout(taskList), [taskList]);
 
