@@ -47,8 +47,13 @@ export function AuthProvider({ children }) {
     if (error) throw error;
   }
 
+  async function signOutAll() {
+    const { error } = await supabase.auth.signOut({ scope: 'global' });
+    if (error) throw error;
+  }
+
   return (
-    <AuthContext.Provider value={{ user, loading, signIn, signUp, signOut }}>
+    <AuthContext.Provider value={{ user, loading, signIn, signUp, signOut, signOutAll }}>
       {children}
     </AuthContext.Provider>
   );

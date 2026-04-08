@@ -1,281 +1,283 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { User, X, Mail, Lock, Eye, EyeOff, Copy, Activity, Download, LogOut, UserPlus, ChevronRight } from 'lucide-react';
+import {
+  X, Shield, ChevronRight, LogOut, Activity, Download,
+  Bell, ShieldCheck, Crown, AlertTriangle,
+} from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-
-function GithubIcon({ className }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="currentColor">
-      <path d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0 1 12 6.844a9.59 9.59 0 0 1 2.504.337c1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.02 10.02 0 0 0 22 12.017C22 6.484 17.522 2 12 2z" />
-    </svg>
-  );
-}
+import { useSystemState } from '../context/SystemStateContext';
 import { cn } from '../utils/cn';
 
-/* ------------------------------------------------------------------ */
-/*  Google icon (Lucide doesn't ship one)                              */
-/* ------------------------------------------------------------------ */
-
-function GoogleIcon({ className }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="currentColor">
-      <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" />
-      <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
-      <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" />
-      <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
-    </svg>
-  );
-}
-
-/* ------------------------------------------------------------------ */
-/*  Mock user data                                                     */
-/* ------------------------------------------------------------------ */
-
-const MOCK_USER = {
+// ── Placeholder data (only values not yet available from real sources) ──
+const COMMANDER_DEFAULTS = {
   name: 'J. Jarvis',
-  email: 'jarvis@nexus.ai',
   initials: 'JJ',
   role: 'Commander',
-  activeSince: 'Today, 2:15 PM',
-  agentsDeployed: 7,
+  workspace: 'Nexus Primary',
+  clearance: 'OMEGA',
   tokenUsage: 142800,
   tokenLimit: 500000,
+  currentMode: 'Operational',
+  permissionLevel: 'Full Authority',
+  approvalAuthority: 'All agents, all actions',
+  connectedProviders: [
+    { name: 'Anthropic', status: 'connected' },
+    { name: 'OpenAI', status: 'connected' },
+    { name: 'Google AI', status: 'connected' },
+    { name: 'Ollama (local)', status: 'connected' },
+  ],
+  apiAccess: 'Active',
 };
 
-/* ------------------------------------------------------------------ */
-/*  Logged-out form                                                    */
-/* ------------------------------------------------------------------ */
+// ── Helpers ──────────────────────────────────────────────────────
 
-function AuthForm({ onSignIn }) {
-  const [isSignUp, setIsSignUp] = useState(false);
-  const [showPassword, setShowPassword] = useState(false);
-  const [fullName, setFullName] = useState('');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+function formatTimestamp(isoString) {
+  if (!isoString) return '—';
+  try {
+    const d = new Date(isoString);
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+      + ' — '
+      + d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  } catch {
+    return '—';
+  }
+}
 
-  const inputClass =
-    'bg-surface-input border border-border rounded-lg px-4 py-2.5 text-sm text-text-primary outline-none focus:border-aurora-teal/50 transition-colors w-full placeholder:text-text-muted/50';
-
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    onSignIn();
+function exportSessionData({ email, agentCount, pendingCount }) {
+  const payload = {
+    exportedAt: new Date().toISOString(),
+    commander: email || 'unknown',
+    agentsDeployed: agentCount,
+    approvalsPending: pendingCount,
   };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `nexus-session-${Date.now()}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
 
+// ── Section label ─────────────────────────────────���──────────────
+function SectionLabel({ children }) {
   return (
-    <div className="flex-1 overflow-y-auto no-scrollbar px-5 py-6">
-      {/* Welcome */}
-      <div className="text-center mb-8">
-        <div className="mx-auto w-16 h-16 rounded-2xl bg-aurora-teal/10 flex items-center justify-center mb-4">
-          <User className="w-8 h-8 text-aurora-teal" />
-        </div>
-        <h3 className="text-lg font-semibold text-text-primary">Welcome to Nexus</h3>
-        <p className="text-sm text-text-muted mt-1.5 leading-relaxed">
-          Sign in to sync your settings and manage your fleet.
-        </p>
-      </div>
-
-      {/* Form */}
-      <form onSubmit={handleSubmit} className="flex flex-col gap-3">
-        {isSignUp && (
-          <div className="relative">
-            <UserPlus className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
-            <input
-              type="text"
-              placeholder="Full Name"
-              value={fullName}
-              onChange={(e) => setFullName(e.target.value)}
-              className={cn(inputClass, 'pl-10')}
-            />
-          </div>
-        )}
-
-        <div className="relative">
-          <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
-          <input
-            type="email"
-            placeholder="Email address"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            className={cn(inputClass, 'pl-10')}
-          />
-        </div>
-
-        <div className="relative">
-          <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
-          <input
-            type={showPassword ? 'text' : 'password'}
-            placeholder="Password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            className={cn(inputClass, 'pl-10 pr-10')}
-          />
-          <button
-            type="button"
-            onClick={() => setShowPassword(!showPassword)}
-            className="absolute right-3.5 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-primary transition-colors"
-          >
-            {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-          </button>
-        </div>
-
-        <button
-          type="submit"
-          className="w-full bg-aurora-teal text-canvas font-semibold rounded-lg py-2.5 text-sm hover:brightness-110 active:brightness-95 transition-all mt-1"
-        >
-          {isSignUp ? 'Create Account' : 'Sign In'}
-        </button>
-      </form>
-
-      {/* Divider */}
-      <div className="flex items-center gap-3 my-6">
-        <div className="flex-1 h-px bg-border" />
-        <span className="text-xs text-text-muted">or continue with</span>
-        <div className="flex-1 h-px bg-border" />
-      </div>
-
-      {/* OAuth buttons */}
-      <div className="flex gap-3">
-        <button className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg border border-border text-sm text-text-primary hover:bg-white/[0.04] transition-colors">
-          <GithubIcon className="w-4 h-4" />
-          GitHub
-        </button>
-        <button className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg border border-border text-sm text-text-primary hover:bg-white/[0.04] transition-colors">
-          <GoogleIcon className="w-4 h-4" />
-          Google
-        </button>
-      </div>
-
-      {/* Toggle sign in / sign up */}
-      <p className="text-center text-sm text-text-muted mt-6">
-        {isSignUp ? 'Already have an account?' : "Don't have an account?"}{' '}
-        <button
-          onClick={() => setIsSignUp(!isSignUp)}
-          className="text-aurora-teal hover:text-aurora-teal/80 font-medium transition-colors"
-        >
-          {isSignUp ? 'Sign In' : 'Sign Up'}
-        </button>
-      </p>
+    <div className="text-[9px] uppercase tracking-[0.2em] text-text-disabled font-bold mt-6 mb-3 px-0.5">
+      {children}
     </div>
   );
 }
 
-/* ------------------------------------------------------------------ */
-/*  Logged-in profile view                                             */
-/* ------------------------------------------------------------------ */
-
-function ProfileView({ onSignOut, userEmail }) {
-  const [copied, setCopied] = useState(false);
-  const user = { ...MOCK_USER, ...(userEmail ? { email: userEmail } : {}) };
-  const usagePercent = Math.round((user.tokenUsage / user.tokenLimit) * 100);
-
-  const handleCopyApiKey = () => {
-    navigator.clipboard?.writeText('nxs_sk_mock_api_key_1234567890');
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
-
+// ── Stat row ───────────────────────��─────────────────────────────
+function StatRow({ label, value, valueClass }) {
   return (
-    <div className="flex-1 overflow-y-auto no-scrollbar px-5 py-6 flex flex-col">
-      {/* User card */}
-      <div className="flex flex-col items-center text-center mb-6">
-        <div className="w-16 h-16 rounded-full bg-aurora-teal/10 flex items-center justify-center mb-3">
-          <span className="text-xl font-bold text-aurora-teal">{user.initials}</span>
-        </div>
-        <h3 className="text-lg font-semibold text-text-primary">{user.name}</h3>
-        <p className="text-sm text-text-muted mt-0.5">{user.email}</p>
-        <span className="mt-2 px-3 py-1 text-xs font-medium rounded-full bg-aurora-teal/10 text-aurora-teal">
-          {user.role}
+    <div className="flex items-center justify-between py-1.5">
+      <span className="text-[11px] text-text-muted">{label}</span>
+      <span className={cn("text-[11px] font-mono font-medium", valueClass || "text-text-primary")}>{value}</span>
+    </div>
+  );
+}
+
+// ── Action row ───────────────────────────────────────────────────
+function ActionRow({ icon: Icon, label, onClick, badge, destructive, disabled }) {
+  return (
+    <button
+      onClick={disabled ? undefined : onClick}
+      className={cn(
+        "flex items-center justify-between w-full py-2 px-2.5 -mx-2.5 rounded-lg text-[12px] transition-colors group",
+        disabled
+          ? "text-text-disabled cursor-not-allowed"
+          : destructive
+            ? "text-aurora-rose hover:bg-aurora-rose/5"
+            : "text-text-body hover:text-text-primary hover:bg-white/[0.03]"
+      )}
+    >
+      <span className="flex items-center gap-2.5">
+        <Icon className={cn("w-3.5 h-3.5 shrink-0", disabled ? "text-text-disabled" : destructive ? "text-aurora-rose" : "text-text-muted group-hover:text-text-primary transition-colors")} />
+        {label}
+      </span>
+      <span className="flex items-center gap-2">
+        {badge && (
+          <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-aurora-amber/10 text-aurora-amber">
+            {badge}
+          </span>
+        )}
+        {!disabled && <ChevronRight className="w-3.5 h-3.5 text-text-disabled group-hover:text-text-muted transition-colors" />}
+      </span>
+    </button>
+  );
+}
+
+// ── Provider dot ─────────────────────────────────────────────────
+function ProviderDot({ name, status }) {
+  return (
+    <div className="flex items-center justify-between py-1">
+      <span className="text-[11px] text-text-muted">{name}</span>
+      <div className="flex items-center gap-1.5">
+        <div className={cn("w-1.5 h-1.5 rounded-full", status === 'connected' ? "bg-aurora-green" : "bg-text-disabled")} />
+        <span className={cn("text-[9px] font-mono uppercase", status === 'connected' ? "text-aurora-green" : "text-text-disabled")}>
+          {status}
         </span>
       </div>
+    </div>
+  );
+}
 
-      {/* Divider */}
-      <div className="h-px bg-border" />
+// ── Commander content ────────────────────────────────────────────
+function CommanderView({ onSignOut, onSignOutAll, onAction, user, pendingCount, agentCount }) {
+  const data = COMMANDER_DEFAULTS;
+  const email = user?.email || null;
+  const lastSignIn = formatTimestamp(user?.last_sign_in_at);
+  const activeSince = formatTimestamp(user?.created_at);
+  const usagePercent = Math.round((data.tokenUsage / data.tokenLimit) * 100);
 
-      {/* Session section */}
-      <div className="mt-5">
-        <p className="text-xs uppercase tracking-wider text-text-muted mb-3">Session</p>
-        <div className="space-y-3">
-          <div className="flex items-center justify-between">
-            <span className="text-sm text-text-body">Active since</span>
-            <span className="text-sm text-text-primary font-medium">{user.activeSince}</span>
+  function nav(route) {
+    onAction?.({ type: 'navigate', route });
+  }
+  function panel(p) {
+    onAction?.({ type: 'panel', panel: p });
+  }
+
+  return (
+    <div className="flex-1 overflow-y-auto no-scrollbar px-5 py-5 flex flex-col">
+
+      {/* ── Commander Identity ─────────────────────────────────── */}
+      <div className="flex items-start gap-3.5">
+        <div className="w-11 h-11 rounded-xl bg-aurora-teal/10 border border-aurora-teal/20 flex items-center justify-center shrink-0">
+          <span className="text-sm font-bold text-aurora-teal font-mono">{data.initials}</span>
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <h3 className="text-sm font-semibold text-text-primary truncate">{data.name}</h3>
+            <span className="px-1.5 py-0.5 rounded text-[8px] font-mono font-bold uppercase tracking-wider bg-aurora-amber/10 text-aurora-amber border border-aurora-amber/20">
+              {data.clearance}
+            </span>
           </div>
-          <div className="flex items-center justify-between">
-            <span className="text-sm text-text-body">Agents deployed</span>
-            <span className="text-sm text-text-primary font-medium">{user.agentsDeployed}</span>
-          </div>
-          <div>
-            <div className="flex items-center justify-between mb-1.5">
-              <span className="text-sm text-text-body">Token usage</span>
-              <span className="text-sm text-text-primary font-medium">
-                {(user.tokenUsage / 1000).toFixed(1)}k / {(user.tokenLimit / 1000).toFixed(0)}k
-              </span>
-            </div>
-            <div className="w-full h-1.5 rounded-full bg-white/[0.06] overflow-hidden">
-              <motion.div
-                className="h-full rounded-full bg-aurora-teal"
-                initial={{ width: 0 }}
-                animate={{ width: `${usagePercent}%` }}
-                transition={{ duration: 0.8, ease: 'easeOut' }}
-              />
-            </div>
+          <p className={cn("text-[11px] font-mono mt-0.5 truncate", email ? "text-text-muted" : "text-text-disabled")}>
+            {email || 'No email linked'}
+          </p>
+          <div className="flex items-center gap-2 mt-1.5">
+            <span className="flex items-center gap-1 text-[9px] font-mono text-aurora-teal">
+              <Crown className="w-2.5 h-2.5" />
+              {data.role}
+            </span>
+            <span className="text-text-disabled text-[9px]">/</span>
+            <span className="text-[9px] font-mono text-text-disabled">{data.workspace}</span>
           </div>
         </div>
       </div>
 
-      {/* Quick Actions section */}
-      <div className="mt-6">
-        <p className="text-xs uppercase tracking-wider text-text-muted mb-3">Quick Actions</p>
-        <div className="flex flex-col gap-1">
-          <button
-            onClick={handleCopyApiKey}
-            className="flex items-center justify-between py-2.5 px-3 -mx-3 rounded-lg text-sm text-text-body hover:text-text-primary hover:bg-white/[0.04] transition-colors group"
-          >
-            <span className="flex items-center gap-2.5">
-              <Copy className="w-4 h-4 text-text-muted group-hover:text-text-primary transition-colors" />
-              {copied ? 'Copied!' : 'Copy API Key'}
+      {/* ── Live Status ──────────────────────────────────��────── */}
+      <SectionLabel>Live Status</SectionLabel>
+      <div className="space-y-0.5">
+        <StatRow label="Member since" value={activeSince} valueClass="text-text-disabled" />
+        <StatRow label="Agents deployed" value={agentCount} />
+        <StatRow
+          label="Approvals pending"
+          value={pendingCount}
+          valueClass={pendingCount > 0 ? "text-aurora-amber" : "text-text-primary"}
+        />
+        <StatRow label="Mode" value={data.currentMode} valueClass="text-aurora-green" />
+        <div className="pt-1.5">
+          <div className="flex items-center justify-between mb-1.5">
+            <span className="text-[11px] text-text-muted">Token budget</span>
+            <span className="text-[10px] font-mono text-text-disabled">
+              {(data.tokenUsage / 1000).toFixed(0)}k / {(data.tokenLimit / 1000).toFixed(0)}k
             </span>
-            <ChevronRight className="w-4 h-4 text-text-disabled group-hover:text-text-muted transition-colors" />
-          </button>
-          <button className="flex items-center justify-between py-2.5 px-3 -mx-3 rounded-lg text-sm text-text-body hover:text-text-primary hover:bg-white/[0.04] transition-colors group">
-            <span className="flex items-center gap-2.5">
-              <Activity className="w-4 h-4 text-text-muted group-hover:text-text-primary transition-colors" />
-              View Activity Log
-            </span>
-            <ChevronRight className="w-4 h-4 text-text-disabled group-hover:text-text-muted transition-colors" />
-          </button>
-          <button className="flex items-center justify-between py-2.5 px-3 -mx-3 rounded-lg text-sm text-text-body hover:text-text-primary hover:bg-white/[0.04] transition-colors group">
-            <span className="flex items-center gap-2.5">
-              <Download className="w-4 h-4 text-text-muted group-hover:text-text-primary transition-colors" />
-              Export Session Data
-            </span>
-            <ChevronRight className="w-4 h-4 text-text-disabled group-hover:text-text-muted transition-colors" />
-          </button>
+          </div>
+          <div className="w-full h-1 rounded-full bg-white/[0.06] overflow-hidden">
+            <motion.div
+              className="h-full rounded-full bg-aurora-teal"
+              initial={{ width: 0 }}
+              animate={{ width: `${usagePercent}%` }}
+              transition={{ duration: 0.8, ease: 'easeOut' }}
+            />
+          </div>
         </div>
       </div>
 
-      {/* Sign Out */}
-      <div className="mt-auto pt-6">
+      {/* ── Authority / Access ─────────────────────────────────�� */}
+      <SectionLabel>Authority</SectionLabel>
+      <div className="space-y-0.5">
+        <StatRow label="Permission level" value={data.permissionLevel} valueClass="text-aurora-teal" />
+        <StatRow label="Approval scope" value={data.approvalAuthority} />
+        <StatRow label="API access" value={data.apiAccess} valueClass="text-aurora-green" />
+        <StatRow label="Last sign-in" value={lastSignIn} valueClass="text-text-disabled" />
+      </div>
+
+      {/* Connected providers */}
+      <div className="mt-3 p-3 bg-white/[0.02] rounded-lg border border-white/[0.04]">
+        <div className="text-[9px] uppercase tracking-[0.15em] text-text-disabled font-bold mb-2">Connected Providers</div>
+        {data.connectedProviders.map(p => (
+          <ProviderDot key={p.name} name={p.name} status={p.status} />
+        ))}
+      </div>
+
+      {/* ── Command Actions ──────────────────────────────────��── */}
+      <SectionLabel>Command Actions</SectionLabel>
+      <div className="space-y-0.5">
+        <ActionRow
+          icon={ShieldCheck}
+          label="Review pending approvals"
+          badge={pendingCount > 0 ? pendingCount : null}
+          onClick={() => nav('review')}
+        />
+        <ActionRow
+          icon={Activity}
+          label="View activity log"
+          onClick={() => nav('operations')}
+        />
+        <ActionRow
+          icon={Bell}
+          label="Notification preferences"
+          onClick={() => panel('settings')}
+        />
+        <ActionRow
+          icon={Download}
+          label="Export session data"
+          onClick={() => exportSessionData({ email, agentCount, pendingCount })}
+        />
+      </div>
+
+      {/* ── Sign Out ──────────────────────────────────────────── */}
+      <div className="mt-auto pt-5 space-y-1.5">
         <button
           onClick={onSignOut}
-          className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg border border-aurora-rose/20 text-aurora-rose text-sm font-medium hover:bg-aurora-rose/10 transition-colors"
+          className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg border border-aurora-rose/20 text-aurora-rose text-[12px] font-medium hover:bg-aurora-rose/5 transition-colors"
         >
-          <LogOut className="w-4 h-4" />
+          <LogOut className="w-3.5 h-3.5" />
           Sign Out
+        </button>
+        <button
+          onClick={onSignOutAll}
+          className="w-full flex items-center justify-center gap-2 py-2 rounded-lg text-[10px] text-text-disabled hover:text-aurora-rose hover:bg-aurora-rose/5 transition-colors"
+        >
+          <AlertTriangle className="w-3 h-3" />
+          Sign out all sessions
         </button>
       </div>
     </div>
   );
 }
 
-/* ------------------------------------------------------------------ */
-/*  Main panel                                                         */
-/* ------------------------------------------------------------------ */
-
-export function UserProfilePanel({ profileOpen, setProfileOpen }) {
-  const { user, signOut } = useAuth();
+// ── Main panel shell ─────────────────────────────────────────────
+export function UserProfilePanel({ profileOpen, setProfileOpen, onAction }) {
+  const { user, signOut, signOutAll } = useAuth();
+  const { pendingCount } = useSystemState();
 
   async function handleSignOut() {
     await signOut();
+    setProfileOpen(false);
+  }
+
+  async function handleSignOutAll() {
+    await signOutAll();
+    setProfileOpen(false);
+  }
+
+  // Wrap onAction to also close the panel after navigating
+  function handleAction(action) {
+    onAction?.(action);
     setProfileOpen(false);
   }
 
@@ -283,9 +285,8 @@ export function UserProfilePanel({ profileOpen, setProfileOpen }) {
     <AnimatePresence>
       {profileOpen && (
         <>
-          {/* Backdrop */}
           <motion.div
-            key="profile-backdrop"
+            key="commander-backdrop"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -294,9 +295,8 @@ export function UserProfilePanel({ profileOpen, setProfileOpen }) {
             onClick={() => setProfileOpen(false)}
           />
 
-          {/* Panel */}
           <motion.div
-            key="profile-panel"
+            key="commander-panel"
             initial={{ x: 380, opacity: 0, scale: 0.98 }}
             animate={{ x: 0, opacity: 1, scale: 1 }}
             exit={{ x: 380, opacity: 0, scale: 0.98 }}
@@ -306,10 +306,8 @@ export function UserProfilePanel({ profileOpen, setProfileOpen }) {
             {/* Header */}
             <div className="flex items-center justify-between px-5 pt-5 pb-3">
               <div className="flex items-center gap-2.5">
-                <User className="w-5 h-5 text-aurora-teal" />
-                <h2 className="text-sm font-semibold text-text-primary tracking-wide">
-                  Profile
-                </h2>
+                <Shield className="w-5 h-5 text-aurora-teal" />
+                <h2 className="text-sm font-semibold text-text-primary tracking-wide">Commander</h2>
               </div>
               <button
                 onClick={() => setProfileOpen(false)}
@@ -319,11 +317,16 @@ export function UserProfilePanel({ profileOpen, setProfileOpen }) {
               </button>
             </div>
 
-            {/* Divider */}
             <div className="h-px bg-border mx-5" />
 
-            {/* Content — always show profile since auth gate handles login */}
-            <ProfileView onSignOut={handleSignOut} userEmail={user?.email} />
+            <CommanderView
+              onSignOut={handleSignOut}
+              onSignOutAll={handleSignOutAll}
+              onAction={handleAction}
+              user={user}
+              pendingCount={pendingCount ?? 0}
+              agentCount={pendingCount != null ? 6 : 0}
+            />
           </motion.div>
         </>
       )}
