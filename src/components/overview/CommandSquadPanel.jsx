@@ -87,6 +87,7 @@ function OpenSlotCard({ onAddOperator }) {
 
 export function CommandSquadPanel({ operators, providerByModel, flaggedIds, onOpenDetail, onAddOperator }) {
   const displayOpenSlots = 1;
+  const hasOperators = operators.length > 0;
 
   return (
     <div className="jarvis-console p-5">
@@ -95,7 +96,9 @@ export function CommandSquadPanel({ operators, providerByModel, flaggedIds, onOp
           <div className="text-[10px] uppercase tracking-[0.22em] text-text-disabled">Commander operators</div>
           <div className="mt-1 text-xl font-semibold text-text-primary">Command squad</div>
           <div className="mt-1 text-sm text-text-muted">
-            {operators.length} operator{operators.length === 1 ? '' : 's'} ready for orchestration.
+            {hasOperators
+              ? `${operators.length} operator${operators.length === 1 ? '' : 's'} attached to the commander.`
+              : 'Commander online. No operators attached yet.'}
           </div>
         </div>
         <button
@@ -122,6 +125,15 @@ export function CommandSquadPanel({ operators, providerByModel, flaggedIds, onOp
           <OpenSlotCard key={`open-slot-${index}`} onAddOperator={onAddOperator} />
         ))}
       </div>
+
+      {!hasOperators && (
+        <div className="mt-4 rounded-2xl border border-aurora-teal/15 bg-aurora-teal/[0.04] px-4 py-3">
+          <div className="text-[10px] uppercase tracking-[0.18em] text-aurora-teal">Commander status</div>
+          <p className="mt-2 text-sm leading-6 text-text-body">
+            Jarvis Commander is online and ready. This panel only fills up after you add specialist operators for research, execution, QA, or ops.
+          </p>
+        </div>
+      )}
     </div>
   );
 }

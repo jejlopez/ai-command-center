@@ -87,6 +87,80 @@ function mapAgentRow(row) {
   };
 }
 
+function buildSyntheticCommander(user) {
+  const commanderName = user?.user_metadata?.full_name?.trim()
+    ? `${user.user_metadata.full_name.trim()} Command`
+    : 'Jarvis Commander';
+
+  return {
+    id: 'synthetic-commander',
+    name: commanderName,
+    model: 'Claude Opus 4.6',
+    status: 'idle',
+    role: 'commander',
+    parentId: null,
+    canSpawn: true,
+    spawnPattern: 'fan-out',
+    taskCompletion: 0,
+    tokenBurn: [],
+    latencyMs: 0,
+    color: '#00D9C8',
+    temperature: 0.4,
+    responseLength: 'medium',
+    systemPrompt: '',
+    skills: [],
+    subagents: [],
+    totalTokens: 0,
+    totalCost: 0,
+    successRate: 100,
+    taskCount: 0,
+    uptimeMs: 0,
+    lastHeartbeat: null,
+    restartCount: 0,
+    errorMessage: null,
+    errorStack: null,
+    lastRestart: null,
+    tokenHistory24h: [],
+    latencyHistory24h: [],
+    isSyntheticCommander: true,
+  };
+}
+
+async function ensureCommanderAgentRow() {
+  const { data: authData, error: authError } = await supabase.auth.getUser();
+  if (authError || !authData?.user) return null;
+
+  const user = authData.user;
+  const commanderName = user.user_metadata?.full_name?.trim()
+    ? `${user.user_metadata.full_name.trim()} Command`
+    : 'Jarvis Commander';
+
+  const row = {
+    id: crypto.randomUUID(),
+    user_id: user.id,
+    name: commanderName,
+    model: 'Claude Opus 4.6',
+    status: 'idle',
+    role: 'commander',
+    color: '#00D9C8',
+    can_spawn: true,
+    spawn_pattern: 'fan-out',
+  };
+
+  const { data, error } = await supabase
+    .from('agents')
+    .insert([row])
+    .select('*')
+    .single();
+
+  if (error) {
+    console.error('[api] ensureCommanderAgentRow:', error.message);
+    return null;
+  }
+
+  return data;
+}
+
 function mapTaskRow(row) {
   return {
     id:         row.id,
@@ -143,7 +217,7 @@ function mapLogRow(row) {
 export async function fetchAgents() {
   if (!isSupabaseConfigured) return [];
 
-  const { data, error } = await supabase
+  let { data, error } = await supabase
     .from('agents')
     .select('*')
     .order('created_at', { ascending: true });
@@ -152,7 +226,28 @@ export async function fetchAgents() {
     console.error('[api] fetchAgents:', error.message);
     return [];
   }
-  return data.map(mapAgentRow);
+
+  const rows = data || [];
+  const hasCommander = rows.some((agent) => agent.role === 'commander');
+  if (!hasCommander) {
+    await ensureCommanderAgentRow();
+    ({ data, error } = await supabase
+      .from('agents')
+      .select('*')
+      .order('created_at', { ascending: true }));
+
+    if (error) {
+      console.error('[api] fetchAgents reload:', error.message);
+      const user = (await supabase.auth.getUser()).data?.user;
+      return [buildSyntheticCommander(user), ...rows.map(mapAgentRow)];
+    }
+  }
+
+  const authUser = (await supabase.auth.getUser()).data?.user;
+  const mappedAgents = (data || []).map(mapAgentRow);
+  return mappedAgents.some((agent) => agent.role === 'commander')
+    ? mappedAgents
+    : [buildSyntheticCommander(authUser), ...mappedAgents];
 }
 
 export async function fetchAgentById(id) {
@@ -312,6 +407,7 @@ export async function createMission(payload, agents = []) {
   const title = deriveMissionTitle(payload.intent);
   const selectedAgent = agents.find(agent => agent.id === payload.agentId);
   const commander = agents.find(agent => agent.role === 'commander') || selectedAgent || agents[0] || null;
+  const commanderId = commander?.isSyntheticCommander ? null : commander?.id || null;
   const estimated = estimateMissionPlan(payload);
   const priorityScore = payload.priorityScore ?? 5;
   const scheduleType = payload.repeat ? 'recurring' : 'once';
@@ -339,7 +435,7 @@ export async function createMission(payload, agents = []) {
     output_spec: payload.outputSpec || null,
     target_type: payload.targetType,
     target_identifier: payload.targetIdentifier || null,
-    created_by_commander_id: commander?.id || null,
+    created_by_commander_id: commanderId,
     estimated_cost_cents: estimated.estimatedCostCents,
     actual_cost_cents: 0,
     progress_percent: 0,
