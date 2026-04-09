@@ -29,6 +29,11 @@ import {
 } from '../lib/api';
 import { useSystemState } from '../context/SystemStateContext';
 import { MissionCreatorPanel } from '../components/mission/MissionCreatorPanel';
+import { CommandDeckHero } from '../components/command/CommandDeckHero';
+import { AnimatedNumber } from '../components/command/AnimatedNumber';
+import { CommandSectionHeader } from '../components/command/CommandSectionHeader';
+import { useLearningMemory } from '../utils/useLearningMemory';
+import { DoctrineCards } from '../components/command/DoctrineCards';
 
 // ═══════════════════════════════════════════════════════════════
 // STATIC PLANNER DATA (until schedules table exists)
@@ -104,9 +109,18 @@ const stColor = {
 const urgColors = { critical: '#fb7185', high: '#fbbf24', normal: '#00D9C8' };
 
 function Card({ children, className, onClick, selected }) {
-  return (<button onClick={onClick} className={cn("w-full text-left rounded-2xl border transition-all duration-200 relative overflow-hidden",
-    selected ? "bg-surface-raised border-aurora-teal/30 shadow-glow-teal ring-1 ring-aurora-teal/20" : "bg-surface border-border hover:bg-surface-raised hover:border-border-strong hover:-translate-y-[1px]",
-    className)}>{children}</button>);
+  return (
+    <Motion.button
+      whileHover={{ y: -2, scale: 1.005 }}
+      whileTap={{ scale: 0.995 }}
+      onClick={onClick}
+      className={cn("w-full text-left rounded-2xl border transition-all duration-200 relative overflow-hidden",
+        selected ? "bg-surface-raised border-aurora-teal/30 shadow-glow-teal ring-1 ring-aurora-teal/20" : "bg-surface border-border hover:bg-surface-raised hover:border-border-strong",
+        className)}
+    >
+      {children}
+    </Motion.button>
+  );
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -168,7 +182,12 @@ function ApprovalCard({ item, agents, onClick, onApprove, onReject }) {
   const isMissionApproval = item.status === 'needs_approval';
 
   return (
-    <div className="rounded-[24px] border border-aurora-amber/20 bg-[linear-gradient(135deg,rgba(251,191,36,0.08),rgba(255,255,255,0.02))] p-4 shadow-[0_0_24px_rgba(251,191,36,0.08)]">
+    <Motion.div
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      whileHover={{ y: -2, scale: 1.005 }}
+      className="rounded-[24px] border border-aurora-amber/20 bg-[linear-gradient(135deg,rgba(251,191,36,0.08),rgba(255,255,255,0.02))] p-4 shadow-[0_0_24px_rgba(251,191,36,0.08)]"
+    >
       <div className="flex items-center gap-3 mb-2">
         <AgentAvatar agent={agent} name={item.agentName} />
         <div className="min-w-0 flex-1">
@@ -197,7 +216,7 @@ function ApprovalCard({ item, agents, onClick, onApprove, onReject }) {
           Open
         </button>
       </div>
-    </div>
+    </Motion.div>
   );
 }
 
@@ -409,23 +428,11 @@ function Drawer({ item, agents, tasks, logs, onClose, onApprove, onReject, onRet
 // INTELLIGENCE SIDEBAR
 // ═══════════════════════════════════════════════════════════════
 
-function IntelSidebar({ tasks, approvals, completed, agents, schedules, logs }) {
-  const totalCost = tasks.reduce((s, t) => s + (t.costUsd || 0), 0);
+function IntelSidebar({ tasks, approvals, completed, agents, schedules, logs, learningMemory }) {
+  const totalCost = tasks.reduce((sum, task) => sum + Number(task.costUsd || 0), 0);
   const failedCount = tasks.filter(t => t.status === 'failed' || t.status === 'error').length;
   const runningCount = tasks.filter(t => t.status === 'running').length;
   const avgApprovalWait = approvals.length > 0 ? Math.round(approvals.reduce((s, a) => s + (a.waitingMs || 0), 0) / approvals.length / 60000) : 0;
-  const topAgent = agents.find(agent => /tony|atlas/i.test(agent.name || '')) || agents[0];
-  const dominantOutput = tasks.reduce((acc, task) => {
-    const key = task.outputType || 'summary';
-    acc[key] = (acc[key] || 0) + 1;
-    return acc;
-  }, {});
-  const learnedOutput = Object.entries(dominantOutput).sort((a, b) => b[1] - a[1])[0]?.[0] || 'summary';
-  const learningNotes = [
-    `Default output is trending toward ${learnedOutput.replace('_', ' ')} based on recent mission traffic.`,
-    avgApprovalWait > 3 ? 'Approval friction is high, so the system should bias toward clearer final artifacts before launch.' : 'Approval friction is light, so fast-launch missions are healthy right now.',
-    topAgent ? `${topAgent.name} is acting as the dominant mission branch for this command session.` : 'No dominant execution branch detected yet.',
-  ];
   const commandStream = [...logs].slice(-5).reverse();
 
   // Derive recommendations from real data
@@ -452,54 +459,54 @@ function IntelSidebar({ tasks, approvals, completed, agents, schedules, logs }) 
   ];
 
   return (<div className="flex flex-col gap-4">
-    {/* Mission Goals */}
-    <div className="p-3 rounded-2xl bg-surface border border-border">
-      <div className="flex items-center gap-2 mb-2.5"><Target className="w-3.5 h-3.5 text-aurora-teal" /><span className="text-[11px] font-bold uppercase text-text-muted tracking-wider">Mission Goals</span></div>
-      {goals.map(g => (
-        <div key={g.lb} className="mb-2.5 last:mb-0">
-          <div className="flex items-center justify-between mb-1"><span className="text-[11px] text-text-body">{g.lb}</span><span className="text-[11px] font-mono font-bold" style={{ color: g.c }}>{g.pct}%</span></div>
-          <div className="w-full h-1.5 rounded-full bg-surface-raised overflow-hidden"><div className="h-full rounded-full transition-all" style={{ width: `${g.pct}%`, backgroundColor: g.c }} /></div>
-        </div>
-      ))}
-    </div>
-
-    {/* Recommendations */}
-    {recs.length > 0 && (
-      <div className="p-3 rounded-2xl bg-surface border border-border">
-        <div className="flex items-center gap-2 mb-2.5"><Sparkles className="w-3.5 h-3.5 text-aurora-violet" /><span className="text-[11px] font-bold uppercase text-text-muted tracking-wider">AI Recommendations</span></div>
-        <div className="space-y-1.5">
-          {recs.map((r, i) => (
-            <div key={i} className={cn("p-2.5 rounded-xl border border-border border-l-[3px]",
-              r.imp === 'high' ? 'bg-aurora-rose/[0.03] border-l-aurora-rose' :
-              r.imp === 'med' ? 'bg-aurora-amber/[0.03] border-l-aurora-amber' :
-              'bg-aurora-teal/[0.03] border-l-aurora-teal'
-            )}>
-              <span className={cn("text-[9px] font-mono font-bold uppercase px-1.5 py-0.5 rounded-full mb-1.5 inline-block",
-                r.type === 'anomaly' ? 'bg-aurora-rose/10 text-aurora-rose' :
-                r.type === 'cost' ? 'bg-aurora-amber/10 text-aurora-amber' :
-                r.type === 'bottleneck' ? 'bg-aurora-violet/10 text-aurora-violet' :
-                'bg-aurora-teal/10 text-aurora-teal'
-              )}>{r.type}</span>
-              <p className="text-[11px] text-text-body leading-relaxed">{r.text}</p>
-            </div>
-          ))}
-        </div>
+    <div className="p-3.5 rounded-[24px] bg-surface border border-border">
+      <div className="flex items-center gap-2 mb-3"><Target className="w-3.5 h-3.5 text-aurora-teal" /><span className="text-[11px] font-bold uppercase text-text-muted tracking-wider">Mission Health</span></div>
+      <div className="grid grid-cols-2 gap-2 mb-3">
+        {[
+          { label: 'Live now', value: runningCount, tone: 'text-aurora-amber' },
+          { label: 'Approvals', value: approvals.length, tone: 'text-aurora-amber' },
+          { label: 'Completed', value: completed.length, tone: 'text-aurora-teal' },
+          { label: 'Failed', value: failedCount, tone: 'text-aurora-rose' },
+        ].map((item) => (
+          <div key={item.label} className="rounded-2xl border border-white/[0.06] bg-black/20 px-3 py-2.5">
+            <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">{item.label}</div>
+            <div className={cn("mt-2 text-xl font-mono font-bold", item.tone)}><AnimatedNumber value={item.value} /></div>
+          </div>
+        ))}
       </div>
-    )}
-
-    <div className="p-3 rounded-2xl bg-surface border border-border">
-      <div className="flex items-center gap-2 mb-2.5"><Brain className="w-3.5 h-3.5 text-aurora-teal" /><span className="text-[11px] font-bold uppercase text-text-muted tracking-wider">Learning Loop</span></div>
       <div className="space-y-2">
-        {learningNotes.map((note, index) => (
-          <div key={index} className="rounded-xl border border-white/[0.06] bg-white/[0.02] px-3 py-2.5">
-            <div className="text-[9px] uppercase tracking-[0.18em] text-text-muted mb-1">Pattern {index + 1}</div>
-            <p className="text-[11px] text-text-body leading-relaxed">{note}</p>
+        {goals.map(g => (
+          <div key={g.lb}>
+            <div className="flex items-center justify-between mb-1"><span className="text-[11px] text-text-body">{g.lb}</span><span className="text-[11px] font-mono font-bold" style={{ color: g.c }}>{g.pct}%</span></div>
+            <div className="w-full h-1.5 rounded-full bg-surface-raised overflow-hidden"><div className="h-full rounded-full transition-all" style={{ width: `${g.pct}%`, backgroundColor: g.c }} /></div>
           </div>
         ))}
       </div>
     </div>
 
-    <div className="p-3 rounded-2xl bg-surface border border-border">
+    {recs.length > 0 && (
+      <div className="p-3.5 rounded-[24px] bg-surface border border-border">
+        <div className="flex items-center gap-2 mb-2.5"><Sparkles className="w-3.5 h-3.5 text-aurora-violet" /><span className="text-[11px] font-bold uppercase text-text-muted tracking-wider">Commander Readback</span></div>
+        <div className={cn("rounded-2xl border border-l-[3px] p-3",
+          recs[0].imp === 'high' ? 'bg-aurora-rose/[0.03] border-aurora-rose/20 border-l-aurora-rose' :
+          recs[0].imp === 'med' ? 'bg-aurora-amber/[0.03] border-aurora-amber/20 border-l-aurora-amber' :
+          'bg-aurora-teal/[0.03] border-aurora-teal/20 border-l-aurora-teal'
+        )}>
+          <div className="flex items-center justify-between gap-2 mb-2">
+            <span className="text-[9px] font-mono font-bold uppercase px-1.5 py-0.5 rounded-full bg-white/[0.04] text-text-muted">{recs[0].type}</span>
+            <span className="text-[10px] font-mono text-text-disabled">{avgApprovalWait > 0 ? `${avgApprovalWait}m wait` : 'Live'}</span>
+          </div>
+          <p className="text-[12px] text-text-body leading-relaxed">{recs[0].text}</p>
+        </div>
+      </div>
+    )}
+
+    <div className="p-3.5 rounded-[24px] bg-surface border border-border">
+      <div className="flex items-center gap-2 mb-2.5"><Brain className="w-3.5 h-3.5 text-aurora-teal" /><span className="text-[11px] font-bold uppercase text-text-muted tracking-wider">Cross-Page Doctrine</span></div>
+      <DoctrineCards items={learningMemory.missionThree} compact columns="one" />
+    </div>
+
+    <div className="p-3.5 rounded-[24px] bg-surface border border-border">
       <div className="flex items-center gap-2 mb-2.5"><Zap className="w-3.5 h-3.5 text-aurora-blue" /><span className="text-[11px] font-bold uppercase text-text-muted tracking-wider">Command Stream</span></div>
       <div className="space-y-2">
         {commandStream.length === 0 && <p className="text-[11px] text-text-disabled">No live command traffic yet.</p>}
@@ -512,20 +519,6 @@ function IntelSidebar({ tasks, approvals, completed, agents, schedules, logs }) 
             <p className="text-[11px] text-text-body leading-relaxed">{log.message}</p>
           </div>
         ))}
-      </div>
-    </div>
-
-    {/* Daily Digest */}
-    <div className="p-3 rounded-2xl bg-surface border border-border">
-      <div className="flex items-center gap-2 mb-2.5"><TrendingUp className="w-3.5 h-3.5 text-aurora-teal" /><span className="text-[11px] font-bold uppercase text-text-muted tracking-wider">Today's Digest</span></div>
-      <div className="space-y-1.5 text-[11px] font-mono">
-        <div className="flex justify-between"><span className="text-text-muted">Agents</span><span className="text-text-primary">{agents.length}</span></div>
-        <div className="flex justify-between"><span className="text-text-muted">Running</span><span className="text-aurora-amber">{runningCount}</span></div>
-        <div className="flex justify-between"><span className="text-text-muted">Completed</span><span className="text-aurora-teal">{completed.length}</span></div>
-        <div className="flex justify-between"><span className="text-text-muted">Approvals</span><span className="text-aurora-amber">{approvals.length}</span></div>
-        <div className="flex justify-between"><span className="text-text-muted">Failed</span><span className="text-aurora-rose">{failedCount}</span></div>
-        <div className="flex justify-between"><span className="text-text-muted">Schedules</span><span className="text-aurora-blue">{schedules.filter(s => s.enabled).length}</span></div>
-        <div className="flex justify-between border-t border-border pt-1.5 mt-1.5"><span className="text-text-muted">Total cost</span><span className="text-text-primary">${totalCost.toFixed(2)}</span></div>
       </div>
     </div>
   </div>);
@@ -643,6 +636,16 @@ export function MissionControlView() {
     () => tasks.filter(task => !['done', 'completed'].includes(task.status) && task.status !== 'needs_approval'),
     [tasks]
   );
+  const totalMissionCost = useMemo(
+    () => tasks.reduce((sum, task) => sum + Number(task.costUsd || 0), 0),
+    [tasks]
+  );
+  const learningMemory = useLearningMemory({
+    tasks,
+    approvals: approvalItems,
+    logs,
+    costData: { total: totalMissionCost, models: [] },
+  });
 
   const running = tasks.filter(t => t.status === 'running' || t.status === 'queued').length;
   const failed = tasks.filter(t => ['failed', 'error', 'blocked', 'cancelled'].includes(t.status)).length;
@@ -698,61 +701,55 @@ export function MissionControlView() {
 
       {/* Header */}
       <div className="shrink-0 mb-5 relative">
-        <div className="rounded-[28px] border border-aurora-teal/15 bg-[linear-gradient(135deg,rgba(255,255,255,0.03),rgba(255,255,255,0.01))] overflow-hidden shadow-[0_20px_80px_rgba(0,0,0,0.35)]">
-          <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(0,217,200,0.12),transparent_42%),linear-gradient(180deg,rgba(96,165,250,0.08),transparent_55%)] pointer-events-none" />
-          <div className="relative px-6 py-6">
-            <div className="flex items-start justify-between gap-6">
-              <div className="min-w-0">
-                <div className="flex items-center gap-3 mb-3">
-                  <span className="px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-[0.2em] bg-aurora-teal/10 text-aurora-teal border border-aurora-teal/20">
-                    Mission Control
-                  </span>
-                  <span className="text-[11px] font-mono text-text-muted">{dateStr}</span>
-                </div>
-                <h1 className="text-3xl font-bold text-text-primary tracking-tight">{greeting}, Commander</h1>
-                <p className="text-[14px] text-text-muted mt-2 max-w-2xl">What needs your attention today? Stand up missions fast, track live execution, and keep Tony moving without leaving the deck.</p>
-
-                <div className="mt-5 flex flex-wrap gap-3">
-                  <div className="px-3.5 py-2.5 rounded-2xl bg-black/20 border border-white/10 min-w-[150px]">
-                    <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted mb-1">Primary Operator</div>
-                    <div className="flex items-center gap-2">
-                      <span className="w-2 h-2 rounded-full bg-aurora-teal animate-pulse" />
-                      <span className="text-sm font-semibold text-text-primary">{primaryAgent?.name || 'Unassigned'}</span>
-                    </div>
-                  </div>
-                  <div className="px-3.5 py-2.5 rounded-2xl bg-black/20 border border-white/10 min-w-[150px]">
-                    <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted mb-1">Execution State</div>
-                    <div className="text-sm font-semibold text-text-primary">{running} active missions, {approvalItems.length} awaiting human input</div>
-                  </div>
-                </div>
+        <CommandDeckHero
+          glow="teal"
+          eyebrow={`Mission Control  ${dateStr}`}
+          eyebrowIcon={Target}
+          title={`${greeting}, Commander`}
+          description="Launch work fast, watch live execution, and keep the deck readable under pressure."
+          badges={[
+            { label: 'primary operator', value: primaryAgent?.name || 'Unassigned', tone: 'teal' },
+            { label: 'active missions', value: running, tone: 'blue' },
+            { label: 'awaiting human input', value: approvalItems.length, tone: 'amber' },
+          ]}
+          actions={
+            <button onClick={() => setCreatorOpen(true)} className="flex items-center justify-center gap-2 rounded-2xl bg-aurora-teal px-4 py-3 text-sm font-semibold text-black transition-colors hover:bg-[#00ebd8] shadow-glow-teal">
+              <Plus className="w-4 h-4" /> Spin up a Mission
+            </button>
+          }
+          sideContent={
+            <div className="rounded-[24px] border border-white/10 bg-black/25 px-4 py-4 backdrop-blur-sm min-w-[260px]">
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Command Pulse</span>
+                <span className="text-[10px] font-mono text-aurora-teal">LIVE</span>
               </div>
-
-              <div className="w-[280px] shrink-0 rounded-[24px] border border-white/10 bg-black/25 backdrop-blur-sm px-4 py-4">
-                <div className="flex items-center justify-between mb-3">
-                  <span className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Command Pulse</span>
-                  <span className="text-[10px] font-mono text-aurora-teal">LIVE</span>
+              <div className="space-y-2.5">
+                <div className="flex items-center justify-between text-[12px]">
+                  <span className="text-text-muted">Live missions</span>
+                  <span className="text-text-primary font-semibold"><AnimatedNumber value={running} /></span>
                 </div>
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between text-[12px]">
-                    <span className="text-text-muted">Queued / Running</span>
-                    <span className="text-text-primary font-semibold">{running}</span>
-                  </div>
-                  <div className="flex items-center justify-between text-[12px]">
-                    <span className="text-text-muted">Needs approval</span>
-                    <span className="text-aurora-amber font-semibold">{approvalItems.length}</span>
-                  </div>
-                  <div className="flex items-center justify-between text-[12px]">
-                    <span className="text-text-muted">Failures / blocked</span>
-                    <span className="text-aurora-rose font-semibold">{failed}</span>
-                  </div>
+                <div className="flex items-center justify-between text-[12px]">
+                  <span className="text-text-muted">Awaiting approval</span>
+                  <span className="text-aurora-amber font-semibold"><AnimatedNumber value={approvalItems.length} /></span>
                 </div>
-                <button onClick={() => setCreatorOpen(true)} className="mt-4 w-full flex items-center justify-center gap-2 px-4 py-3 rounded-2xl bg-aurora-teal text-black text-sm font-semibold hover:bg-[#00ebd8] transition-colors shadow-glow-teal">
-                  <Plus className="w-4 h-4" /> Spin up a Mission
-                </button>
+                <div className="flex items-center justify-between text-[12px]">
+                  <span className="text-text-muted">Blocked / failed</span>
+                  <span className="text-aurora-rose font-semibold"><AnimatedNumber value={failed} /></span>
+                </div>
+                <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] px-3 py-2.5 mt-1">
+                  <div className="text-[10px] uppercase tracking-[0.14em] text-text-muted mb-1">Readback</div>
+                  <p className="text-[12px] leading-relaxed text-text-body">
+                    {approvalItems.length > 0
+                      ? 'Human gates are the only real drag right now.'
+                      : running > 0
+                        ? 'Tony is moving cleanly with no immediate choke point.'
+                        : 'The deck is calm. Good time to launch the next mission.'}
+                  </p>
+                </div>
               </div>
             </div>
-          </div>
-        </div>
+          }
+        />
 
         <div className="mt-4 flex items-center gap-1 bg-surface/90 rounded-2xl p-1.5 border border-border backdrop-blur-sm">
           {[
@@ -772,17 +769,16 @@ export function MissionControlView() {
       </div>
 
       {/* Pulse strip */}
-      <div className="grid grid-cols-4 gap-3 mb-5">
+      <div className="grid grid-cols-3 gap-3 mb-5">
         {[
-          { lb: 'Active Grid', desc: 'Queued or executing', v: running, c: 'text-aurora-amber' },
-          { lb: 'Failures', desc: 'Blocked or error state', v: failed, c: 'text-aurora-rose' },
-          { lb: 'Approvals', desc: 'Need your judgment', v: approvalItems.length, c: 'text-aurora-amber' },
-          { lb: 'Completed', desc: 'Closed successfully', v: completedItems.length, c: 'text-aurora-teal' },
+          { lb: 'Live Missions', desc: 'Queued or executing now', v: running, c: 'text-aurora-amber' },
+          { lb: 'Needs You', desc: 'Waiting on your judgment', v: approvalItems.length, c: 'text-aurora-amber' },
+          { lb: 'Closed Cleanly', desc: 'Completed without drag', v: completedItems.length, c: 'text-aurora-teal' },
         ].map(s => (
           <div key={s.lb} className="rounded-[22px] bg-surface/90 border border-border px-4 py-3.5 backdrop-blur-sm">
             <div className="flex items-center justify-between">
               <span className="text-[10px] font-medium text-text-muted uppercase tracking-[0.18em]">{s.lb}</span>
-              <span className={cn("text-2xl font-mono font-bold", s.c)}>{s.v}</span>
+              <span className={cn("text-2xl font-mono font-bold", s.c)}><AnimatedNumber value={s.v} /></span>
             </div>
             <p className="text-[11px] text-text-disabled mt-2">{s.desc}</p>
           </div>
@@ -792,15 +788,16 @@ export function MissionControlView() {
       {/* Critical lane */}
       {criticalItems.length > 0 && (
         <div className="mb-4">
-          <div className="flex items-center gap-2 mb-2"><div className="w-2 h-2 rounded-full bg-aurora-rose animate-pulse" /><span className="text-[11px] font-bold uppercase text-aurora-rose tracking-wider">Critical — Needs You Now</span></div>
+          <div className="flex items-center gap-2 mb-2"><div className="w-2 h-2 rounded-full bg-aurora-rose animate-pulse" /><span className="text-[11px] font-bold uppercase text-aurora-rose tracking-wider">Critical lane</span></div>
           <div className="grid grid-cols-3 gap-3">
             {criticalItems.map(item => (
-              <Card key={item.id} onClick={() => setSel(item.id)} className="p-4 bg-[linear-gradient(135deg,rgba(251,113,133,0.06),rgba(255,255,255,0.02))]">
+              <Card key={item.id} onClick={() => setSel(item.id)} className="p-4 bg-[linear-gradient(135deg,rgba(251,113,133,0.06),rgba(255,255,255,0.02))] min-h-[92px]">
                 <div className="absolute left-0 top-0 bottom-0 w-[3px] bg-aurora-rose rounded-l-2xl" />
                 <div className="flex items-center gap-2 mb-1">
                   <AgentAvatar agent={agents.find(a => a.id === (item.agentId || item.agent_id))} name={item.agentName} />
                   <span className="text-[12px] font-semibold text-text-primary truncate flex-1">{item.name || item.title}</span>
                 </div>
+                <p className="ml-8 text-[11px] text-text-muted line-clamp-2">{item.summary || item.description || 'Needs a commander decision before work can continue.'}</p>
               </Card>
             ))}
           </div>
@@ -809,21 +806,22 @@ export function MissionControlView() {
 
       {/* Main: content + intel sidebar */}
       <div className="flex-1 flex gap-4 overflow-hidden min-h-0">
-        <div className="flex-[3] min-w-0 overflow-hidden rounded-[28px] border border-white/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.025),rgba(255,255,255,0.01))] backdrop-blur-sm">
+        <div className="flex-[3.2] min-w-0 overflow-hidden rounded-[28px] border border-white/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.025),rgba(255,255,255,0.01))] backdrop-blur-sm">
           <div className="h-full overflow-y-auto no-scrollbar space-y-2 pr-1 px-4 py-4">
             <div className="flex items-center justify-between mb-2 px-1">
-              <div>
-                <h2 className="text-sm font-semibold text-text-primary">
-                  {tab === 'ops' ? 'Live Missions' : tab === 'plan' ? 'Automation Planner' : 'Approvals Queue'}
-                </h2>
-                <p className="text-[11px] text-text-muted mt-1">
-                  {tab === 'ops'
-                    ? 'Real-time execution rail for queued, running, and blocked missions.'
+              <CommandSectionHeader
+                eyebrow={tab === 'ops' ? 'Live Missions' : tab === 'plan' ? 'Automation Planner' : 'Approvals Queue'}
+                title={tab === 'ops' ? 'Live mission lane' : tab === 'plan' ? 'Recurring systems and dispatch timing' : 'Human gates holding execution'}
+                description={
+                  tab === 'ops'
+                    ? 'Open this lane to see what is moving, what is stuck, and what needs your attention next.'
                     : tab === 'plan'
-                      ? 'Recurring automations and dispatch timing.'
-                      : 'Mission gates that require human judgment before execution continues.'}
-                </p>
-              </div>
+                      ? 'Recurring automations, scheduling posture, and dispatch timing all live in this lane.'
+                      : 'These are the judgment calls that still need a commander before execution continues.'
+                }
+                icon={tab === 'ops' ? Radio : tab === 'plan' ? Calendar : ShieldCheck}
+                tone={tab === 'ops' ? 'teal' : tab === 'plan' ? 'blue' : 'amber'}
+              />
               {tab === 'ops' && (
                 <button onClick={() => setCreatorOpen(true)} className="flex items-center gap-2 px-3 py-2 rounded-xl border border-aurora-teal/20 bg-aurora-teal/8 text-aurora-teal text-[11px] font-semibold hover:bg-aurora-teal/12 transition-colors">
                   <Plus className="w-3.5 h-3.5" /> New Mission
@@ -831,8 +829,28 @@ export function MissionControlView() {
               )}
             </div>
 
-          {tab === 'ops' && operationalTasks.map(t => <ItemRow key={t.id} item={t} agents={agents} selected={sel === t.id} onClick={() => setSel(t.id)} />)}
-          {tab === 'ops' && operationalTasks.length === 0 && <p className="text-center text-text-disabled py-12">No active tasks.</p>}
+          {tab === 'ops' && (
+            <AnimatePresence mode="popLayout">
+              {operationalTasks.map(t => (
+                <Motion.div
+                  key={t.id}
+                  layout
+                  initial={{ opacity: 0, y: 16, scale: 0.98 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: -14, scale: 0.98 }}
+                  transition={{ duration: 0.24, ease: 'easeOut' }}
+                >
+                  <ItemRow item={t} agents={agents} selected={sel === t.id} onClick={() => setSel(t.id)} />
+                </Motion.div>
+              ))}
+            </AnimatePresence>
+          )}
+          {tab === 'ops' && operationalTasks.length === 0 && (
+            <div className="rounded-[24px] border border-white/[0.06] bg-black/15 px-6 py-10 text-center">
+              <p className="text-base font-semibold text-text-primary">No live missions right now</p>
+              <p className="text-sm text-text-muted mt-2">The deck is clear. Spin up a mission or let the scheduled systems take the next pass.</p>
+            </div>
+          )}
 
           {tab === 'plan' && <PlannerTab schedules={schedules} agents={agents} onToggle={handleToggleSchedule} onDispatch={handleDispatch} />}
 
@@ -840,17 +858,27 @@ export function MissionControlView() {
             const visible = approvalItems.filter(a => !a.snoozedUntil);
             const snoozed = approvalItems.filter(a => a.snoozedUntil);
             return (<>
-              {visible.map(a => (
-                <ApprovalCard
-                  key={a.id}
-                  item={a}
-                  agents={agents}
-                  selected={sel === a.id}
-                  onClick={() => setSel(a.id)}
-                  onApprove={handleApprove}
-                  onReject={(id) => handleReject(id, 'Rejected from approvals card')}
-                />
-              ))}
+              <AnimatePresence mode="popLayout">
+                {visible.map(a => (
+                  <Motion.div
+                    key={a.id}
+                    layout
+                    initial={{ opacity: 0, y: 16, scale: 0.98 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: -14, scale: 0.98 }}
+                    transition={{ duration: 0.24, ease: 'easeOut' }}
+                  >
+                    <ApprovalCard
+                      item={a}
+                      agents={agents}
+                      selected={sel === a.id}
+                      onClick={() => setSel(a.id)}
+                      onApprove={handleApprove}
+                      onReject={(id) => handleReject(id, 'Rejected from approvals card')}
+                    />
+                  </Motion.div>
+                ))}
+              </AnimatePresence>
               {visible.length === 0 && snoozed.length === 0 && <p className="text-center text-text-disabled py-12">No pending approvals. All clear.</p>}
               {snoozed.length > 0 && (
                 <div className="mt-4">
@@ -866,14 +894,25 @@ export function MissionControlView() {
             <div className="mt-4">
               <div className="flex items-center gap-2 mb-2"><Archive className="w-3 h-3 text-text-disabled" /><span className="text-[11px] font-bold uppercase text-text-disabled tracking-wider">Recently Completed</span></div>
               <div className="space-y-1.5 opacity-80">
-                {completedItems.map(c => (
-                  <button key={c.id} onClick={() => setSel(c.id)} className="w-full text-left px-4 py-3 rounded-2xl border bg-surface/60 border-border/60 hover:bg-surface transition-all flex items-center gap-3">
-                    <AgentAvatar agent={agents.find(a => a.id === (c.agentId || c.agent_id))} name={c.agentName} />
-                    <span className="text-[12px] text-text-body flex-1 truncate">{c.name || c.title}</span>
-                    <span className="text-[10px] font-mono text-text-disabled">{c.completedAt || c.lastRunAt || c.updatedAt}</span>
-                    <CheckCircle2 className="w-3.5 h-3.5 text-aurora-teal shrink-0" />
-                  </button>
-                ))}
+                <AnimatePresence mode="popLayout">
+                  {completedItems.map(c => (
+                    <Motion.button
+                      key={c.id}
+                      layout
+                      initial={{ opacity: 0, y: 12 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -10 }}
+                      transition={{ duration: 0.22, ease: 'easeOut' }}
+                      onClick={() => setSel(c.id)}
+                      className="w-full text-left px-4 py-3 rounded-2xl border bg-surface/60 border-border/60 hover:bg-surface transition-all flex items-center gap-3"
+                    >
+                      <AgentAvatar agent={agents.find(a => a.id === (c.agentId || c.agent_id))} name={c.agentName} />
+                      <span className="text-[12px] text-text-body flex-1 truncate">{c.name || c.title}</span>
+                      <span className="text-[10px] font-mono text-text-disabled">{c.completedAt || c.lastRunAt || c.updatedAt}</span>
+                      <CheckCircle2 className="w-3.5 h-3.5 text-aurora-teal shrink-0" />
+                    </Motion.button>
+                  ))}
+                </AnimatePresence>
               </div>
             </div>
           )}
@@ -881,8 +920,8 @@ export function MissionControlView() {
         </div>
 
         {/* Intel sidebar */}
-        <div className="w-[280px] shrink-0 overflow-y-auto no-scrollbar rounded-[28px] border border-white/8 bg-[linear-gradient(180deg,rgba(96,165,250,0.06),rgba(255,255,255,0.015))] backdrop-blur-sm p-3">
-          <IntelSidebar tasks={tasks} approvals={approvalItems} completed={completedItems} agents={agents} schedules={schedules} logs={logs} />
+        <div className="w-[320px] shrink-0 overflow-y-auto no-scrollbar rounded-[28px] border border-white/8 bg-[linear-gradient(180deg,rgba(96,165,250,0.06),rgba(255,255,255,0.015))] backdrop-blur-sm p-3">
+          <IntelSidebar tasks={tasks} approvals={approvalItems} completed={completedItems} agents={agents} schedules={schedules} logs={logs} learningMemory={learningMemory} />
         </div>
       </div>
 
@@ -894,6 +933,7 @@ export function MissionControlView() {
       <MissionCreatorPanel
         isOpen={creatorOpen}
         agents={agents}
+        learningMemory={learningMemory}
         onClose={() => setCreatorOpen(false)}
         onLaunch={handleLaunchMission}
         onPreview={previewMissionPlan}
