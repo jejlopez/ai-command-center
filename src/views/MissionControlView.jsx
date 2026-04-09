@@ -5,7 +5,7 @@
  */
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion as Motion, AnimatePresence } from 'framer-motion';
 import {
   Target, Clock, Zap, ShieldCheck, AlertTriangle, X,
   StopCircle, RotateCcw, Copy, CheckCircle2, XCircle,
@@ -19,12 +19,16 @@ import {
   fetchAgents, fetchTasks, fetchActivityLog,
   fetchPendingReviews, fetchCompletedOutputs,
   approveReview, rejectReview, retryTask, stopTask,
+  approveMissionTask, cancelMissionTask,
   subscribeToPendingReviews,
+  subscribeToTasks,
   fetchTaskNotes, createTaskNote,
   acknowledgeItem, reopenReview, snoozeReview,
   fetchSchedules, toggleSchedule, dispatchFromSchedule,
+  previewMissionPlan, createMission,
 } from '../lib/api';
 import { useSystemState } from '../context/SystemStateContext';
+import { MissionCreatorPanel } from '../components/mission/MissionCreatorPanel';
 
 // ═══════════════════════════════════════════════════════════════
 // STATIC PLANNER DATA (until schedules table exists)
@@ -64,12 +68,30 @@ function PriBadge({ v }) {
   return (<div className="flex items-center gap-1"><div className="w-8 h-1.5 rounded-full bg-surface-raised overflow-hidden"><div className="h-full rounded-full" style={{ width: `${Math.min(v*10,100)}%`, backgroundColor: c }} /></div><span className="text-[9px] font-mono font-bold" style={{ color: c }}>{v}</span></div>);
 }
 
+function formatTaskMoment(task) {
+  const base = task.startedAt || task.runAt || task.createdAt;
+  if (!base) return null;
+  const date = new Date(base);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
+
+function formatProgress(task) {
+  if (task.progressPercent == null) return null;
+  return `${Math.max(0, Math.min(100, task.progressPercent))}%`;
+}
+
 const stColor = {
+  queued:              { bg: 'bg-aurora-blue/10', tx: 'text-aurora-blue', lb: 'Queued' },
   running:             { bg: 'bg-aurora-amber/10', tx: 'text-aurora-amber', lb: 'Running' },
+  done:                { bg: 'bg-aurora-green/10', tx: 'text-aurora-green', lb: 'Done' },
   completed:           { bg: 'bg-aurora-green/10', tx: 'text-aurora-green', lb: 'Done' },
+  blocked:             { bg: 'bg-aurora-rose/10', tx: 'text-aurora-rose', lb: 'Blocked' },
+  cancelled:           { bg: 'bg-white/5', tx: 'text-text-muted', lb: 'Cancelled' },
   failed:              { bg: 'bg-aurora-rose/10', tx: 'text-aurora-rose', lb: 'Failed' },
   error:               { bg: 'bg-aurora-rose/10', tx: 'text-aurora-rose', lb: 'Failed' },
   pending:             { bg: 'bg-aurora-blue/10', tx: 'text-aurora-blue', lb: 'Queued' },
+  needs_approval:      { bg: 'bg-aurora-amber/10', tx: 'text-aurora-amber', lb: 'Approval' },
   idle:                { bg: 'bg-white/5', tx: 'text-text-muted', lb: 'Idle' },
   awaiting_approval:   { bg: 'bg-aurora-amber/10', tx: 'text-aurora-amber', lb: 'Review' },
   needs_intervention:  { bg: 'bg-aurora-rose/10', tx: 'text-aurora-rose', lb: 'Alert' },
@@ -96,6 +118,15 @@ function ItemRow({ item, agents, selected, onClick }) {
   const isRun = item.status === 'running';
   const agent = agents.find(a => a.id === (item.agentId || item.agent_id));
   const urgC = item.urgency ? urgColors[item.urgency] : null;
+  const progress = formatProgress(item);
+  const relativeTime = formatTaskMoment(item);
+  const costLabel = item.actualCostCents != null
+    ? `$${(item.actualCostCents / 100).toFixed(2)}`
+    : item.estimatedCostCents != null
+      ? `~$${(item.estimatedCostCents / 100).toFixed(2)}`
+      : item.costUsd > 0
+        ? `$${item.costUsd.toFixed(3)}`
+        : null;
 
   return (
     <Card onClick={onClick} selected={selected} className={cn("p-4", urgC && "border-l-[3px]")} style={urgC ? { borderLeftColor: urgC } : undefined}>
@@ -110,14 +141,63 @@ function ItemRow({ item, agents, selected, onClick }) {
 
       <div className="flex items-center gap-3 ml-8 flex-wrap">
         {agent?.model && <ModelChip model={agent.model} />}
+        {item.mode && <span className="px-2 py-0.5 rounded-full text-[9px] font-mono font-semibold bg-surface-raised text-text-muted border border-border uppercase">{item.mode}</span>}
         {item.durationMs > 0 && <span className="text-[10px] font-mono text-text-disabled flex items-center gap-1"><Timer className="w-3 h-3" />{item.durationMs < 1000 ? `${item.durationMs}ms` : `${(item.durationMs/1000).toFixed(1)}s`}</span>}
-        {item.costUsd > 0 && <span className="text-[10px] font-mono text-text-disabled">${item.costUsd.toFixed(3)}</span>}
+        {costLabel && <span className="text-[10px] font-mono text-text-disabled">{costLabel}</span>}
         {item.waitingMs > 0 && <span className="text-[10px] font-mono text-text-disabled flex items-center gap-1"><Clock className="w-3 h-3" />{Math.round(item.waitingMs/60000)}m waiting</span>}
+        {relativeTime && <span className="text-[10px] font-mono text-text-disabled flex items-center gap-1"><Clock className="w-3 h-3" />{relativeTime}</span>}
         {item.status === 'needs_intervention' && <span className="flex items-center gap-1 text-[10px] font-mono font-bold text-aurora-rose"><AlertTriangle className="w-3 h-3" />Needs Me</span>}
+        {item.status === 'needs_approval' && <span className="flex items-center gap-1 text-[10px] font-mono font-bold text-aurora-amber"><Lock className="w-3 h-3" />Needs Approval</span>}
       </div>
 
       {item.summary && <p className="text-[10px] text-text-muted mt-1.5 ml-8 leading-relaxed line-clamp-1">{item.summary}</p>}
+      {!item.summary && item.description && <p className="text-[10px] text-text-muted mt-1.5 ml-8 leading-relaxed line-clamp-1">{item.description}</p>}
+      {progress && (
+        <div className="ml-8 mt-2">
+          <div className="w-full h-1.5 rounded-full bg-surface-raised overflow-hidden">
+            <div className="h-full rounded-full bg-aurora-teal transition-all" style={{ width: progress }} />
+          </div>
+        </div>
+      )}
     </Card>
+  );
+}
+
+function ApprovalCard({ item, agents, onClick, onApprove, onReject }) {
+  const agent = agents.find(a => a.id === (item.agentId || item.agent_id));
+  const isMissionApproval = item.status === 'needs_approval';
+
+  return (
+    <div className="rounded-[24px] border border-aurora-amber/20 bg-[linear-gradient(135deg,rgba(251,191,36,0.08),rgba(255,255,255,0.02))] p-4 shadow-[0_0_24px_rgba(251,191,36,0.08)]">
+      <div className="flex items-center gap-3 mb-2">
+        <AgentAvatar agent={agent} name={item.agentName} />
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <span className="text-[13px] font-semibold text-text-primary truncate">{item.name || item.title}</span>
+            <span className="px-2 py-0.5 rounded-full text-[9px] font-bold uppercase bg-aurora-amber/10 text-aurora-amber border border-aurora-amber/20">Approval Gate</span>
+          </div>
+          <div className="flex items-center gap-2 mt-1 flex-wrap">
+            {agent?.model && <ModelChip model={agent.model} />}
+            {item.mode && <span className="px-2 py-0.5 rounded-full text-[9px] font-mono font-semibold bg-white/[0.04] text-text-muted border border-border uppercase">{item.mode}</span>}
+            <span className="text-[10px] font-mono text-text-disabled">{formatTaskMoment(item) || 'Awaiting review'}</span>
+          </div>
+        </div>
+      </div>
+
+      <p className="text-[12px] text-text-body leading-relaxed mb-3">{item.summary || item.description || 'Mission is paused at a decision gate and needs your call.'}</p>
+
+      <div className="flex items-center gap-2">
+        <button onClick={() => onApprove(item.id)} className="flex-1 h-10 rounded-xl bg-aurora-teal text-black text-[11px] font-bold uppercase shadow-glow-teal hover:bg-[#00ebd8] transition-colors">
+          {isMissionApproval ? 'Approve & Continue' : 'Approve'}
+        </button>
+        <button onClick={() => onReject(item.id)} className="flex-1 h-10 rounded-xl border border-aurora-rose/30 bg-aurora-rose/5 text-aurora-rose text-[11px] font-bold uppercase hover:bg-aurora-rose/10 transition-colors">
+          {isMissionApproval ? 'Cancel Mission' : 'Reject'}
+        </button>
+        <button onClick={onClick} className="px-3 h-10 rounded-xl border border-border bg-surface text-[11px] font-semibold text-text-muted hover:bg-surface-raised transition-colors">
+          Open
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -125,7 +205,7 @@ function ItemRow({ item, agents, selected, onClick }) {
 // DETAIL DRAWER
 // ═══════════════════════════════════════════════════════════════
 
-function Drawer({ item, agents, tasks, logs, onClose, onApprove, onReject, onRetry, onStop, onCopy, onAcknowledge, onReopen, onSnooze, onReload }) {
+function Drawer({ item, agents, tasks, logs, onClose, onApprove, onReject, onRetry, onStop, onCopy, onAcknowledge, onReopen, onSnooze }) {
   const [tab, setTab] = useState('timeline');
   const [feedback, setFeedback] = useState('');
   const [showRejectForm, setShowRejectForm] = useState(false);
@@ -158,8 +238,10 @@ function Drawer({ item, agents, tasks, logs, onClose, onApprove, onReject, onRet
   if (!item) return null;
   const agent = agents.find(a => a.id === (item.agentId || item.agent_id));
   const cfg = stColor[item.status] || stColor.pending;
-  const isApproval = item.urgency != null || item.outputType != null;
-  const isCompleted = item.status === 'completed' || item.status === 'approved';
+  const isMissionApproval = item.status === 'needs_approval';
+  const isReviewApproval = item.urgency != null || (item.outputType != null && !item.mode);
+  const isApproval = isMissionApproval || isReviewApproval;
+  const isCompleted = ['completed', 'approved', 'done'].includes(item.status);
   const isRunning = item.status === 'running';
   const itemLogs = logs.filter(l => l.agentId === (item.agentId || item.agent_id));
 
@@ -170,8 +252,8 @@ function Drawer({ item, agents, tasks, logs, onClose, onApprove, onReject, onRet
   }
 
   return (<>
-    <motion.div key="dbg" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 bg-black/50 backdrop-blur-sm z-40" onClick={onClose} />
-    <motion.div key="dpn" initial={{ x: '100%' }} animate={{ x: '0%' }} exit={{ x: '100%' }} transition={{ type: 'spring', stiffness: 300, damping: 35 }}
+    <Motion.div key="dbg" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 bg-black/50 backdrop-blur-sm z-40" onClick={onClose} />
+    <Motion.div key="dpn" initial={{ x: '100%' }} animate={{ x: '0%' }} exit={{ x: '100%' }} transition={{ type: 'spring', stiffness: 300, damping: 35 }}
       className="fixed top-0 right-0 bottom-0 w-[480px] bg-canvas border-l border-border z-50 flex flex-col shadow-[-10px_0_40px_rgba(0,0,0,0.6)]">
 
       <div className="p-5 border-b border-border shrink-0">
@@ -182,14 +264,16 @@ function Drawer({ item, agents, tasks, logs, onClose, onApprove, onReject, onRet
             <div className="flex items-center gap-3 mt-1">
               <span className={cn("text-xs font-mono font-bold", cfg.tx)}>{cfg.lb}</span>
               {item.durationMs > 0 && <span className="text-xs text-text-disabled font-mono flex items-center gap-1"><Clock className="w-3 h-3" />{item.durationMs < 1000 ? `${item.durationMs}ms` : `${(item.durationMs/1000).toFixed(1)}s`}</span>}
-              {item.costUsd > 0 && <span className="text-xs text-text-disabled font-mono">${item.costUsd.toFixed(3)}</span>}
+              {item.mode && <span className="text-xs text-text-disabled font-mono uppercase">{item.mode}</span>}
+              {item.actualCostCents != null && <span className="text-xs text-text-disabled font-mono">${(item.actualCostCents / 100).toFixed(2)}</span>}
+              {item.actualCostCents == null && item.costUsd > 0 && <span className="text-xs text-text-disabled font-mono">${item.costUsd.toFixed(3)}</span>}
             </div>
           </div>
           <button onClick={onClose} className="p-2 text-text-muted hover:text-white hover:bg-white/[0.05] rounded-lg"><X className="w-5 h-5" /></button>
         </div>
       </div>
 
-      {item.summary && <div className="px-5 py-3 border-b border-border bg-surface"><p className="text-[12px] text-text-body leading-relaxed">{item.summary}</p></div>}
+      {(item.summary || item.description) && <div className="px-5 py-3 border-b border-border bg-surface"><p className="text-[12px] text-text-body leading-relaxed">{item.summary || item.description}</p></div>}
 
       {actionError && <div className="px-5 py-2 border-b border-aurora-rose/10 bg-aurora-rose/5 flex items-center gap-2"><AlertTriangle className="w-3.5 h-3.5 text-aurora-rose shrink-0" /><span className="text-[11px] text-aurora-rose flex-1">{actionError}</span><button onClick={() => setActionError(null)} className="text-[10px] text-aurora-rose font-bold">Dismiss</button></div>}
 
@@ -242,8 +326,8 @@ function Drawer({ item, agents, tasks, logs, onClose, onApprove, onReject, onRet
             </div>
           );
         })()}
-        {tab === 'output' && item.payload && <div className={cn("p-4 rounded-lg text-sm font-mono leading-relaxed whitespace-pre-wrap border", item.outputType === 'error' ? "bg-aurora-rose/5 border-aurora-rose/20 text-aurora-rose/90" : item.outputType === 'code' ? "bg-black/40 border-white/5 text-text-primary" : "bg-white/[0.02] border-white/5 text-text-body")}>{item.payload}</div>}
-        {tab === 'output' && !item.payload && <p className="text-sm text-text-disabled text-center py-8">No output payload.</p>}
+        {tab === 'output' && (item.payload || item.resultText) && <div className={cn("p-4 rounded-lg text-sm font-mono leading-relaxed whitespace-pre-wrap border", item.outputType === 'error' ? "bg-aurora-rose/5 border-aurora-rose/20 text-aurora-rose/90" : item.outputType === 'code' ? "bg-black/40 border-white/5 text-text-primary" : "bg-white/[0.02] border-white/5 text-text-body")}>{item.payload || item.resultText}</div>}
+        {tab === 'output' && !item.payload && !item.resultText && <p className="text-sm text-text-disabled text-center py-8">No output payload.</p>}
         {tab === 'notes' && (
           <div className="space-y-3">
             {notes.map(n => (
@@ -293,19 +377,19 @@ function Drawer({ item, agents, tasks, logs, onClose, onApprove, onReject, onRet
           /* Approval actions */
           <AnimatePresence mode="wait">
             {!showRejectForm ? (
-              <motion.div key="btns" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex gap-2 w-full">
-                <button onClick={() => setShowRejectForm(true)} disabled={!!actionLoading} className="flex-1 h-11 flex items-center justify-center gap-2 border border-aurora-rose/30 bg-aurora-rose/5 text-aurora-rose rounded-xl font-bold uppercase text-[11px] hover:bg-aurora-rose/10"><XCircle className="w-4 h-4" />Reject</button>
-                <button onClick={() => act('Snooze', () => onSnooze(item.id))} disabled={!!actionLoading} className="h-11 px-3 flex items-center justify-center gap-1.5 border border-border bg-surface text-text-muted rounded-xl text-[11px] font-bold hover:bg-surface-raised">
+              <Motion.div key="btns" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex gap-2 w-full">
+                <button onClick={() => setShowRejectForm(true)} disabled={!!actionLoading} className="flex-1 h-11 flex items-center justify-center gap-2 border border-aurora-rose/30 bg-aurora-rose/5 text-aurora-rose rounded-xl font-bold uppercase text-[11px] hover:bg-aurora-rose/10"><XCircle className="w-4 h-4" />{isMissionApproval ? 'Cancel' : 'Reject'}</button>
+                {!isMissionApproval && <button onClick={() => act('Snooze', () => onSnooze(item.id))} disabled={!!actionLoading} className="h-11 px-3 flex items-center justify-center gap-1.5 border border-border bg-surface text-text-muted rounded-xl text-[11px] font-bold hover:bg-surface-raised">
                   {actionLoading === 'Snooze' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <AlarmClock className="w-3.5 h-3.5" />}30m
-                </button>
-                <button onClick={() => act('Approve', () => onApprove(item.id))} disabled={!!actionLoading} className="flex-[2] h-11 flex items-center justify-center gap-2 bg-aurora-teal text-black rounded-xl font-bold uppercase text-[11px] shadow-[0_0_20px_rgba(0,217,200,0.2)] hover:bg-[#00ebd8]">{actionLoading === 'Approve' ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}Approve</button>
-              </motion.div>
+                </button>}
+                <button onClick={() => act('Approve', () => onApprove(item.id))} disabled={!!actionLoading} className="flex-[2] h-11 flex items-center justify-center gap-2 bg-aurora-teal text-black rounded-xl font-bold uppercase text-[11px] shadow-[0_0_20px_rgba(0,217,200,0.2)] hover:bg-[#00ebd8]">{actionLoading === 'Approve' ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}{isMissionApproval ? 'Approve & Continue' : 'Approve'}</button>
+              </Motion.div>
             ) : (
-              <motion.div key="reject" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex gap-2 w-full">
-                <input autoFocus value={feedback} onChange={e => setFeedback(e.target.value)} placeholder="Feedback..." className="flex-1 h-11 bg-surface-input border border-aurora-rose/40 rounded-xl px-4 text-sm font-mono text-text-primary focus:outline-none placeholder:text-text-disabled" />
+              <Motion.div key="reject" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex gap-2 w-full">
+                <input autoFocus value={feedback} onChange={e => setFeedback(e.target.value)} placeholder={isMissionApproval ? 'Optional cancellation note...' : 'Feedback...'} className="flex-1 h-11 bg-surface-input border border-aurora-rose/40 rounded-xl px-4 text-sm font-mono text-text-primary focus:outline-none placeholder:text-text-disabled" />
                 <button onClick={() => { setShowRejectForm(false); setFeedback(''); }} className="h-11 px-4 border border-border rounded-xl text-text-muted text-[11px] font-semibold">Cancel</button>
-                <button onClick={() => act('Reject', () => onReject(item.id, feedback.trim()))} disabled={!feedback.trim() || !!actionLoading} className="h-11 px-5 bg-aurora-rose text-white rounded-xl font-bold uppercase text-[11px] flex items-center gap-1.5">{actionLoading === 'Reject' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}Send</button>
-              </motion.div>
+                <button onClick={() => act('Reject', () => onReject(item.id, feedback.trim()))} disabled={(!feedback.trim() && !isMissionApproval) || !!actionLoading} className="h-11 px-5 bg-aurora-rose text-white rounded-xl font-bold uppercase text-[11px] flex items-center gap-1.5">{actionLoading === 'Reject' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}{isMissionApproval ? 'Cancel Mission' : 'Send'}</button>
+              </Motion.div>
             )}
           </AnimatePresence>
         ) : (
@@ -317,7 +401,7 @@ function Drawer({ item, agents, tasks, logs, onClose, onApprove, onReject, onRet
           </>
         )}
       </div>
-    </motion.div>
+    </Motion.div>
   </>);
 }
 
@@ -325,11 +409,24 @@ function Drawer({ item, agents, tasks, logs, onClose, onApprove, onReject, onRet
 // INTELLIGENCE SIDEBAR
 // ═══════════════════════════════════════════════════════════════
 
-function IntelSidebar({ tasks, approvals, completed, agents, schedules }) {
+function IntelSidebar({ tasks, approvals, completed, agents, schedules, logs }) {
   const totalCost = tasks.reduce((s, t) => s + (t.costUsd || 0), 0);
   const failedCount = tasks.filter(t => t.status === 'failed' || t.status === 'error').length;
   const runningCount = tasks.filter(t => t.status === 'running').length;
   const avgApprovalWait = approvals.length > 0 ? Math.round(approvals.reduce((s, a) => s + (a.waitingMs || 0), 0) / approvals.length / 60000) : 0;
+  const topAgent = agents.find(agent => /tony|atlas/i.test(agent.name || '')) || agents[0];
+  const dominantOutput = tasks.reduce((acc, task) => {
+    const key = task.outputType || 'summary';
+    acc[key] = (acc[key] || 0) + 1;
+    return acc;
+  }, {});
+  const learnedOutput = Object.entries(dominantOutput).sort((a, b) => b[1] - a[1])[0]?.[0] || 'summary';
+  const learningNotes = [
+    `Default output is trending toward ${learnedOutput.replace('_', ' ')} based on recent mission traffic.`,
+    avgApprovalWait > 3 ? 'Approval friction is high, so the system should bias toward clearer final artifacts before launch.' : 'Approval friction is light, so fast-launch missions are healthy right now.',
+    topAgent ? `${topAgent.name} is acting as the dominant mission branch for this command session.` : 'No dominant execution branch detected yet.',
+  ];
+  const commandStream = [...logs].slice(-5).reverse();
 
   // Derive recommendations from real data
   const recs = [];
@@ -389,6 +486,34 @@ function IntelSidebar({ tasks, approvals, completed, agents, schedules }) {
         </div>
       </div>
     )}
+
+    <div className="p-3 rounded-2xl bg-surface border border-border">
+      <div className="flex items-center gap-2 mb-2.5"><Brain className="w-3.5 h-3.5 text-aurora-teal" /><span className="text-[11px] font-bold uppercase text-text-muted tracking-wider">Learning Loop</span></div>
+      <div className="space-y-2">
+        {learningNotes.map((note, index) => (
+          <div key={index} className="rounded-xl border border-white/[0.06] bg-white/[0.02] px-3 py-2.5">
+            <div className="text-[9px] uppercase tracking-[0.18em] text-text-muted mb-1">Pattern {index + 1}</div>
+            <p className="text-[11px] text-text-body leading-relaxed">{note}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+
+    <div className="p-3 rounded-2xl bg-surface border border-border">
+      <div className="flex items-center gap-2 mb-2.5"><Zap className="w-3.5 h-3.5 text-aurora-blue" /><span className="text-[11px] font-bold uppercase text-text-muted tracking-wider">Command Stream</span></div>
+      <div className="space-y-2">
+        {commandStream.length === 0 && <p className="text-[11px] text-text-disabled">No live command traffic yet.</p>}
+        {commandStream.map((log, index) => (
+          <div key={`${log.id || index}-stream`} className="rounded-xl border border-white/[0.06] bg-black/20 px-3 py-2.5">
+            <div className="flex items-center justify-between gap-2 mb-1">
+              <span className="text-[9px] font-mono uppercase text-text-muted">{log.type}</span>
+              <span className="text-[9px] font-mono text-text-disabled">{typeof log.timestamp === 'string' ? log.timestamp : new Date(log.timestamp).toLocaleTimeString()}</span>
+            </div>
+            <p className="text-[11px] text-text-body leading-relaxed">{log.message}</p>
+          </div>
+        ))}
+      </div>
+    </div>
 
     {/* Daily Digest */}
     <div className="p-3 rounded-2xl bg-surface border border-border">
@@ -486,30 +611,63 @@ export function MissionControlView() {
   const [approvals, setApprovals] = useState([]);
   const [completed, setCompleted] = useState([]);
   const [schedules, setSchedules] = useState([]);
-  const [loaded, setLoaded] = useState(false);
   const [tab, setTab] = useState('ops');
   const [sel, setSel] = useState(null);
+  const [creatorOpen, setCreatorOpen] = useState(false);
 
   const reload = useCallback(async () => {
     const [a, t, l, p, c, s] = await Promise.all([fetchAgents(), fetchTasks(), fetchActivityLog(), fetchPendingReviews(), fetchCompletedOutputs(), fetchSchedules()]);
     setAgents(a); setTasks(t); setLogs(l); setApprovals(p); setCompleted(c); setSchedules(s);
-    setPendingCount(p.length);
+    setPendingCount(p.length + t.filter(task => task.status === 'needs_approval').length);
   }, [setPendingCount]);
 
-  useEffect(() => { let x = false; reload().then(() => { if (!x) setLoaded(true); }); return () => { x = true; }; }, [reload]);
+  // Initial mission data load for the screen.
+  // eslint-disable-next-line react-hooks/set-state-in-effect
+  useEffect(() => { reload(); }, [reload]);
   useEffect(() => { const u = subscribeToPendingReviews(() => reload()); return u; }, [reload]);
+  useEffect(() => { const u = subscribeToTasks(() => reload()); return u; }, [reload]);
 
-  const running = tasks.filter(t => t.status === 'running').length;
-  const failed = tasks.filter(t => t.status === 'failed' || t.status === 'error').length;
+  const missionApprovals = useMemo(
+    () => tasks.filter(task => task.status === 'needs_approval' || task.lane === 'approvals'),
+    [tasks]
+  );
+  const approvalItems = useMemo(() => [...missionApprovals, ...approvals], [missionApprovals, approvals]);
+  const completedItems = useMemo(
+    () => [
+      ...tasks.filter(task => ['done', 'completed'].includes(task.status)),
+      ...completed,
+    ],
+    [tasks, completed]
+  );
+  const operationalTasks = useMemo(
+    () => tasks.filter(task => !['done', 'completed'].includes(task.status) && task.status !== 'needs_approval'),
+    [tasks]
+  );
+
+  const running = tasks.filter(t => t.status === 'running' || t.status === 'queued').length;
+  const failed = tasks.filter(t => ['failed', 'error', 'blocked', 'cancelled'].includes(t.status)).length;
 
   const criticalItems = useMemo(() => {
-    const c = []; approvals.filter(a => a.urgency === 'critical' || a.status === 'needs_intervention').forEach(a => c.push(a));
-    tasks.filter(t => t.status === 'failed' || t.status === 'error').slice(0, 2).forEach(t => c.push(t));
+    const c = [];
+    approvalItems.filter(a => a.urgency === 'critical' || a.status === 'needs_intervention' || a.priority >= 8).forEach(a => c.push(a));
+    tasks.filter(t => ['failed', 'error', 'blocked'].includes(t.status)).slice(0, 2).forEach(t => c.push(t));
     return c.slice(0, 3);
-  }, [approvals, tasks]);
+  }, [approvalItems, tasks]);
 
-  async function handleApprove(id) { await approveReview(id); setSel(null); reload(); }
-  async function handleReject(id, fb) { await rejectReview(id, fb); setSel(null); reload(); }
+  async function handleApprove(id) {
+    const missionTask = missionApprovals.find(task => task.id === id);
+    if (missionTask) await approveMissionTask(id);
+    else await approveReview(id);
+    setSel(null);
+    reload();
+  }
+  async function handleReject(id, fb) {
+    const missionTask = missionApprovals.find(task => task.id === id);
+    if (missionTask) await cancelMissionTask(id, fb);
+    else await rejectReview(id, fb);
+    setSel(null);
+    reload();
+  }
   async function handleRetry(id) { await retryTask(id); reload(); }
   async function handleStop(id) { await stopTask(id); reload(); }
   async function handleAcknowledge(table, id) { await acknowledgeItem(table, id); setSel(null); reload(); }
@@ -517,39 +675,94 @@ export function MissionControlView() {
   async function handleSnooze(id) { await snoozeReview(id, 30); setSel(null); reload(); }
   async function handleToggleSchedule(id, enabled) { await toggleSchedule(id, enabled); reload(); }
   async function handleDispatch(schedule) { await dispatchFromSchedule(schedule, agents); reload(); }
-  function handleCopy(item) { navigator.clipboard?.writeText(`${item.name || item.title}\nStatus: ${item.status}\nAgent: ${item.agentName || ''}\nCost: $${item.costUsd?.toFixed(3) || '0.000'}`); }
+  async function handleLaunchMission(payload) {
+    const priorityScore = payload.priority === 'critical' ? 9 : payload.priority === 'low' ? 2 : 5;
+    await createMission({ ...payload, priorityScore }, agents);
+    await reload();
+  }
+  function handleCopy(item) { navigator.clipboard?.writeText(`${item.name || item.title}\nStatus: ${item.status}\nAgent: ${item.agentName || ''}\nCost: ${item.actualCostCents != null ? `$${(item.actualCostCents / 100).toFixed(2)}` : `$${item.costUsd?.toFixed(3) || '0.000'}`}`); }
 
-  const selectedItem = sel ? [...tasks, ...approvals, ...completed].find(i => i.id === sel) : null;
+  const selectedItem = sel ? [...tasks, ...approvalItems, ...completedItems].find(i => i.id === sel) : null;
   const hour = new Date().getHours();
   const greeting = hour < 12 ? 'Good Morning' : hour < 17 ? 'Good Afternoon' : 'Good Evening';
   const dateStr = new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-
-  if (!loaded) return <div className="flex items-center justify-center h-64"><Loader2 className="w-5 h-5 text-aurora-teal animate-spin" /></div>;
+  const primaryAgent = agents.find(agent => /tony|atlas/i.test(agent.name || '')) || agents.find(agent => agent.role === 'commander') || agents[0];
 
   return (
-    <div className="flex flex-col h-full overflow-hidden">
+    <div className="flex flex-col h-full overflow-hidden relative">
+      <div className="pointer-events-none absolute inset-0 overflow-hidden">
+        <div className="absolute -top-24 left-[-10%] w-[520px] h-[520px] rounded-full bg-aurora-teal/10 blur-[120px]" />
+        <div className="absolute top-[22%] right-[-8%] w-[460px] h-[460px] rounded-full bg-aurora-blue/10 blur-[140px]" />
+        <div className="absolute bottom-[-18%] left-[22%] w-[420px] h-[420px] rounded-full bg-aurora-violet/10 blur-[140px]" />
+      </div>
+
       {/* Header */}
-      <div className="shrink-0 mb-4">
-        <div className="flex items-end justify-between mb-4">
-          <div>
-            <p className="text-[13px] text-text-muted font-mono">{dateStr}</p>
-            <h1 className="text-3xl font-bold text-text-primary tracking-tight mt-1">{greeting}, Commander</h1>
-            <p className="text-[14px] text-text-muted mt-1">What needs your attention today?</p>
+      <div className="shrink-0 mb-5 relative">
+        <div className="rounded-[28px] border border-aurora-teal/15 bg-[linear-gradient(135deg,rgba(255,255,255,0.03),rgba(255,255,255,0.01))] overflow-hidden shadow-[0_20px_80px_rgba(0,0,0,0.35)]">
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(0,217,200,0.12),transparent_42%),linear-gradient(180deg,rgba(96,165,250,0.08),transparent_55%)] pointer-events-none" />
+          <div className="relative px-6 py-6">
+            <div className="flex items-start justify-between gap-6">
+              <div className="min-w-0">
+                <div className="flex items-center gap-3 mb-3">
+                  <span className="px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-[0.2em] bg-aurora-teal/10 text-aurora-teal border border-aurora-teal/20">
+                    Mission Control
+                  </span>
+                  <span className="text-[11px] font-mono text-text-muted">{dateStr}</span>
+                </div>
+                <h1 className="text-3xl font-bold text-text-primary tracking-tight">{greeting}, Commander</h1>
+                <p className="text-[14px] text-text-muted mt-2 max-w-2xl">What needs your attention today? Stand up missions fast, track live execution, and keep Tony moving without leaving the deck.</p>
+
+                <div className="mt-5 flex flex-wrap gap-3">
+                  <div className="px-3.5 py-2.5 rounded-2xl bg-black/20 border border-white/10 min-w-[150px]">
+                    <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted mb-1">Primary Operator</div>
+                    <div className="flex items-center gap-2">
+                      <span className="w-2 h-2 rounded-full bg-aurora-teal animate-pulse" />
+                      <span className="text-sm font-semibold text-text-primary">{primaryAgent?.name || 'Unassigned'}</span>
+                    </div>
+                  </div>
+                  <div className="px-3.5 py-2.5 rounded-2xl bg-black/20 border border-white/10 min-w-[150px]">
+                    <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted mb-1">Execution State</div>
+                    <div className="text-sm font-semibold text-text-primary">{running} active missions, {approvalItems.length} awaiting human input</div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="w-[280px] shrink-0 rounded-[24px] border border-white/10 bg-black/25 backdrop-blur-sm px-4 py-4">
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Command Pulse</span>
+                  <span className="text-[10px] font-mono text-aurora-teal">LIVE</span>
+                </div>
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between text-[12px]">
+                    <span className="text-text-muted">Queued / Running</span>
+                    <span className="text-text-primary font-semibold">{running}</span>
+                  </div>
+                  <div className="flex items-center justify-between text-[12px]">
+                    <span className="text-text-muted">Needs approval</span>
+                    <span className="text-aurora-amber font-semibold">{approvalItems.length}</span>
+                  </div>
+                  <div className="flex items-center justify-between text-[12px]">
+                    <span className="text-text-muted">Failures / blocked</span>
+                    <span className="text-aurora-rose font-semibold">{failed}</span>
+                  </div>
+                </div>
+                <button onClick={() => setCreatorOpen(true)} className="mt-4 w-full flex items-center justify-center gap-2 px-4 py-3 rounded-2xl bg-aurora-teal text-black text-sm font-semibold hover:bg-[#00ebd8] transition-colors shadow-glow-teal">
+                  <Plus className="w-4 h-4" /> Spin up a Mission
+                </button>
+              </div>
+            </div>
           </div>
-          <button className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-aurora-teal text-black text-sm font-semibold hover:bg-[#00ebd8] transition-colors">
-            <Plus className="w-4 h-4" /> New Task
-          </button>
         </div>
 
-        <div className="flex items-center gap-1 bg-surface rounded-2xl p-1 border border-border">
+        <div className="mt-4 flex items-center gap-1 bg-surface/90 rounded-2xl p-1.5 border border-border backdrop-blur-sm">
           {[
             { id: 'ops', lb: 'Operations', ic: Radio, ct: running },
             { id: 'plan', lb: 'Planner', ic: Calendar, ct: schedules.filter(s => s.enabled).length },
-            { id: 'app', lb: 'Approvals', ic: ShieldCheck, ct: approvals.length },
+            { id: 'app', lb: 'Approvals', ic: ShieldCheck, ct: approvalItems.length },
           ].map(t => (
             <button key={t.id} onClick={() => setTab(t.id)} className={cn(
               "flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-[13px] font-semibold transition-all",
-              tab === t.id ? "bg-surface-raised text-text-primary shadow-sm" : "text-text-muted hover:text-text-primary"
+              tab === t.id ? "bg-surface-raised text-text-primary shadow-sm border border-white/10" : "text-text-muted hover:text-text-primary"
             )}>
               <t.ic className="w-4 h-4" />{t.lb}
               {t.ct > 0 && <span className={cn("px-2 py-0.5 rounded-full text-[10px] font-bold", tab === t.id ? "bg-aurora-teal/10 text-aurora-teal" : "bg-surface-raised text-text-disabled")}>{t.ct}</span>}
@@ -559,16 +772,19 @@ export function MissionControlView() {
       </div>
 
       {/* Pulse strip */}
-      <div className="flex items-center gap-2 mb-4">
+      <div className="grid grid-cols-4 gap-3 mb-5">
         {[
-          { lb: 'Active', v: running, c: 'text-aurora-amber' },
-          { lb: 'Failed', v: failed, c: 'text-aurora-rose' },
-          { lb: 'Approvals', v: approvals.length, c: 'text-aurora-amber' },
-          { lb: 'Done Today', v: completed.length, c: 'text-aurora-teal' },
+          { lb: 'Active Grid', desc: 'Queued or executing', v: running, c: 'text-aurora-amber' },
+          { lb: 'Failures', desc: 'Blocked or error state', v: failed, c: 'text-aurora-rose' },
+          { lb: 'Approvals', desc: 'Need your judgment', v: approvalItems.length, c: 'text-aurora-amber' },
+          { lb: 'Completed', desc: 'Closed successfully', v: completedItems.length, c: 'text-aurora-teal' },
         ].map(s => (
-          <div key={s.lb} className="flex-1 px-3 py-2.5 rounded-2xl bg-surface border border-border flex items-center gap-2">
-            <span className={cn("text-xl font-mono font-bold", s.c)}>{s.v}</span>
-            <span className="text-[10px] font-medium text-text-muted uppercase">{s.lb}</span>
+          <div key={s.lb} className="rounded-[22px] bg-surface/90 border border-border px-4 py-3.5 backdrop-blur-sm">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-medium text-text-muted uppercase tracking-[0.18em]">{s.lb}</span>
+              <span className={cn("text-2xl font-mono font-bold", s.c)}>{s.v}</span>
+            </div>
+            <p className="text-[11px] text-text-disabled mt-2">{s.desc}</p>
           </div>
         ))}
       </div>
@@ -577,9 +793,9 @@ export function MissionControlView() {
       {criticalItems.length > 0 && (
         <div className="mb-4">
           <div className="flex items-center gap-2 mb-2"><div className="w-2 h-2 rounded-full bg-aurora-rose animate-pulse" /><span className="text-[11px] font-bold uppercase text-aurora-rose tracking-wider">Critical — Needs You Now</span></div>
-          <div className="flex gap-3">
+          <div className="grid grid-cols-3 gap-3">
             {criticalItems.map(item => (
-              <Card key={item.id} onClick={() => setSel(item.id)} className="flex-1 p-4">
+              <Card key={item.id} onClick={() => setSel(item.id)} className="p-4 bg-[linear-gradient(135deg,rgba(251,113,133,0.06),rgba(255,255,255,0.02))]">
                 <div className="absolute left-0 top-0 bottom-0 w-[3px] bg-aurora-rose rounded-l-2xl" />
                 <div className="flex items-center gap-2 mb-1">
                   <AgentAvatar agent={agents.find(a => a.id === (item.agentId || item.agent_id))} name={item.agentName} />
@@ -593,18 +809,48 @@ export function MissionControlView() {
 
       {/* Main: content + intel sidebar */}
       <div className="flex-1 flex gap-4 overflow-hidden min-h-0">
-        <div className="flex-[3] flex flex-col min-w-0 overflow-y-auto no-scrollbar space-y-2 pr-1">
-          {tab === 'ops' && tasks.map(t => <ItemRow key={t.id} item={t} agents={agents} selected={sel === t.id} onClick={() => setSel(t.id)} />)}
-          {tab === 'ops' && tasks.length === 0 && <p className="text-center text-text-disabled py-12">No active tasks.</p>}
+        <div className="flex-[3] min-w-0 overflow-hidden rounded-[28px] border border-white/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.025),rgba(255,255,255,0.01))] backdrop-blur-sm">
+          <div className="h-full overflow-y-auto no-scrollbar space-y-2 pr-1 px-4 py-4">
+            <div className="flex items-center justify-between mb-2 px-1">
+              <div>
+                <h2 className="text-sm font-semibold text-text-primary">
+                  {tab === 'ops' ? 'Live Missions' : tab === 'plan' ? 'Automation Planner' : 'Approvals Queue'}
+                </h2>
+                <p className="text-[11px] text-text-muted mt-1">
+                  {tab === 'ops'
+                    ? 'Real-time execution rail for queued, running, and blocked missions.'
+                    : tab === 'plan'
+                      ? 'Recurring automations and dispatch timing.'
+                      : 'Mission gates that require human judgment before execution continues.'}
+                </p>
+              </div>
+              {tab === 'ops' && (
+                <button onClick={() => setCreatorOpen(true)} className="flex items-center gap-2 px-3 py-2 rounded-xl border border-aurora-teal/20 bg-aurora-teal/8 text-aurora-teal text-[11px] font-semibold hover:bg-aurora-teal/12 transition-colors">
+                  <Plus className="w-3.5 h-3.5" /> New Mission
+                </button>
+              )}
+            </div>
+
+          {tab === 'ops' && operationalTasks.map(t => <ItemRow key={t.id} item={t} agents={agents} selected={sel === t.id} onClick={() => setSel(t.id)} />)}
+          {tab === 'ops' && operationalTasks.length === 0 && <p className="text-center text-text-disabled py-12">No active tasks.</p>}
 
           {tab === 'plan' && <PlannerTab schedules={schedules} agents={agents} onToggle={handleToggleSchedule} onDispatch={handleDispatch} />}
 
           {tab === 'app' && (() => {
-            const now = Date.now();
-            const visible = approvals.filter(a => !a.snoozedUntil || new Date(a.snoozedUntil).getTime() <= now);
-            const snoozed = approvals.filter(a => a.snoozedUntil && new Date(a.snoozedUntil).getTime() > now);
+            const visible = approvalItems.filter(a => !a.snoozedUntil);
+            const snoozed = approvalItems.filter(a => a.snoozedUntil);
             return (<>
-              {visible.map(a => <ItemRow key={a.id} item={a} agents={agents} selected={sel === a.id} onClick={() => setSel(a.id)} />)}
+              {visible.map(a => (
+                <ApprovalCard
+                  key={a.id}
+                  item={a}
+                  agents={agents}
+                  selected={sel === a.id}
+                  onClick={() => setSel(a.id)}
+                  onApprove={handleApprove}
+                  onReject={(id) => handleReject(id, 'Rejected from approvals card')}
+                />
+              ))}
               {visible.length === 0 && snoozed.length === 0 && <p className="text-center text-text-disabled py-12">No pending approvals. All clear.</p>}
               {snoozed.length > 0 && (
                 <div className="mt-4">
@@ -616,15 +862,15 @@ export function MissionControlView() {
           })()}
 
           {/* Recently completed */}
-          {(tab === 'ops' || tab === 'app') && completed.length > 0 && (
+          {(tab === 'ops' || tab === 'app') && completedItems.length > 0 && (
             <div className="mt-4">
               <div className="flex items-center gap-2 mb-2"><Archive className="w-3 h-3 text-text-disabled" /><span className="text-[11px] font-bold uppercase text-text-disabled tracking-wider">Recently Completed</span></div>
               <div className="space-y-1.5 opacity-80">
-                {completed.map(c => (
+                {completedItems.map(c => (
                   <button key={c.id} onClick={() => setSel(c.id)} className="w-full text-left px-4 py-3 rounded-2xl border bg-surface/60 border-border/60 hover:bg-surface transition-all flex items-center gap-3">
                     <AgentAvatar agent={agents.find(a => a.id === (c.agentId || c.agent_id))} name={c.agentName} />
                     <span className="text-[12px] text-text-body flex-1 truncate">{c.name || c.title}</span>
-                    <span className="text-[10px] font-mono text-text-disabled">{c.completedAt}</span>
+                    <span className="text-[10px] font-mono text-text-disabled">{c.completedAt || c.lastRunAt || c.updatedAt}</span>
                     <CheckCircle2 className="w-3.5 h-3.5 text-aurora-teal shrink-0" />
                   </button>
                 ))}
@@ -632,17 +878,26 @@ export function MissionControlView() {
             </div>
           )}
         </div>
+        </div>
 
         {/* Intel sidebar */}
-        <div className="w-[260px] shrink-0 overflow-y-auto no-scrollbar">
-          <IntelSidebar tasks={tasks} approvals={approvals} completed={completed} agents={agents} schedules={schedules} />
+        <div className="w-[280px] shrink-0 overflow-y-auto no-scrollbar rounded-[28px] border border-white/8 bg-[linear-gradient(180deg,rgba(96,165,250,0.06),rgba(255,255,255,0.015))] backdrop-blur-sm p-3">
+          <IntelSidebar tasks={tasks} approvals={approvalItems} completed={completedItems} agents={agents} schedules={schedules} logs={logs} />
         </div>
       </div>
 
       {/* Drawer */}
       <AnimatePresence>
-        {selectedItem && <Drawer item={selectedItem} agents={agents} tasks={tasks} logs={logs} onClose={() => setSel(null)} onApprove={handleApprove} onReject={handleReject} onRetry={handleRetry} onStop={handleStop} onCopy={handleCopy} onAcknowledge={handleAcknowledge} onReopen={handleReopen} onSnooze={handleSnooze} onReload={reload} />}
+        {selectedItem && <Drawer item={selectedItem} agents={agents} tasks={tasks} logs={logs} onClose={() => setSel(null)} onApprove={handleApprove} onReject={handleReject} onRetry={handleRetry} onStop={handleStop} onCopy={handleCopy} onAcknowledge={handleAcknowledge} onReopen={handleReopen} onSnooze={handleSnooze} />}
       </AnimatePresence>
+
+      <MissionCreatorPanel
+        isOpen={creatorOpen}
+        agents={agents}
+        onClose={() => setCreatorOpen(false)}
+        onLaunch={handleLaunchMission}
+        onPreview={previewMissionPlan}
+      />
     </div>
   );
 }
