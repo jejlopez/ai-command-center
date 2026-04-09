@@ -115,7 +115,7 @@ export function DispatchTaskModal({ isOpen, agent, onClose }) {
                   </div>
                   <div>
                     <p className="text-sm font-semibold text-aurora-teal">Task dispatched</p>
-                    <p className="text-[11px] text-text-muted mt-1">Check Review Room for the output</p>
+                    <p className="text-[11px] text-text-muted mt-1">Check Mission Control for the output</p>
                   </div>
                 </motion.div>
               ) : (

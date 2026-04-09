@@ -88,7 +88,7 @@ function buildNotifications(agents, tasks, pendingCount) {
       title: `${pendingCount} approval${pendingCount > 1 ? 's' : ''} pending`,
       description: 'Review agent outputs before they go live.',
       createdAt: mins(3), read: false,
-      action: { type: 'navigate', route: 'review' },
+      action: { type: 'navigate', route: 'missions' },
     });
   }
 
@@ -109,7 +109,7 @@ function buildNotifications(agents, tasks, pendingCount) {
     title: `${agents.length} agents in fleet`,
     description: `${agents.filter(a => a.status === 'processing').length} active, ${agents.filter(a => a.status === 'error').length} in error state.`,
     createdAt: mins(6), read: agents.filter(a => a.status === 'error').length === 0,
-    action: { type: 'navigate', route: 'operations' },
+    action: { type: 'navigate', route: 'overview' },
   });
 
   return notifs.sort((a, b) => b.createdAt - a.createdAt);

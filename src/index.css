@@ -47,6 +47,16 @@ body::after {
 }
 @keyframes dash-flow { to { stroke-dashoffset: -28; } }
 @keyframes cell-pulse { 0%, 100% { opacity: 0.4; } 50% { opacity: 1; } }
+@keyframes jarvis-sweep {
+  0% { opacity: 0.15; transform: rotate(0deg); }
+  50% { opacity: 0.75; }
+  100% { opacity: 0.15; transform: rotate(360deg); }
+}
+@keyframes jarvis-grid-shift {
+  0% { transform: translateY(0); opacity: 0.2; }
+  50% { opacity: 0.35; }
+  100% { transform: translateY(18px); opacity: 0.2; }
+}
 
 @property --border-angle { syntax: '<angle>'; inherits: false; initial-value: 0deg; }
 @keyframes rotate-border { to { --border-angle: 360deg; } }
@@ -98,6 +108,274 @@ body::after {
 
 .animate-glitch-heal {
   animation: glitch-heal 3s infinite;
+}
+
+.jarvis-halo-glow {
+  background:
+    radial-gradient(circle at 50% 50%, rgba(96,165,250,0.28) 0%, rgba(167,139,250,0.14) 28%, rgba(0,0,0,0) 70%),
+    radial-gradient(circle at 50% 50%, rgba(0,217,200,0.18) 0%, rgba(0,0,0,0) 58%);
+  filter: blur(12px);
+}
+
+.jarvis-dot-field {
+  background-image: radial-gradient(circle, rgba(255,255,255,0.55) 0 1px, transparent 1.5px);
+  background-size: 10px 10px;
+  mask-image: radial-gradient(circle, black 38%, transparent 72%);
+  opacity: 0.55;
+}
+
+.jarvis-sweep {
+  background: linear-gradient(to top, rgba(96,165,250,0), rgba(96,165,250,0.85));
+  box-shadow: 0 0 14px rgba(96,165,250,0.65);
+  animation: jarvis-sweep 5s linear infinite;
+}
+
+.jarvis-grid {
+  background-image:
+    linear-gradient(rgba(96,165,250,0.07) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(96,165,250,0.07) 1px, transparent 1px);
+  background-size: 64px 64px;
+  mask-image: radial-gradient(circle at center, black 32%, transparent 82%);
+  animation: jarvis-grid-shift 18s linear infinite;
+}
+
+.jarvis-login-orb {
+  background:
+    radial-gradient(circle at center, rgba(167,139,250,0.18) 0%, rgba(96,165,250,0.12) 18%, rgba(0,0,0,0) 56%),
+    radial-gradient(circle at center, rgba(0,217,200,0.12) 0%, rgba(0,0,0,0) 48%);
+  filter: blur(18px);
+}
+
+.hud-shell {
+  position: relative;
+  border-radius: 1.75rem;
+  border: 1px solid rgba(255,255,255,0.1);
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.025), rgba(255,255,255,0.01)),
+    rgba(8,8,8,0.78);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.05),
+    inset 0 0 0 1px rgba(255,255,255,0.02),
+    0 20px 50px rgba(0,0,0,0.28);
+}
+
+.hud-shell::before {
+  content: '';
+  position: absolute;
+  inset: 12px;
+  border-radius: 1.2rem;
+  border: 1px solid rgba(255,255,255,0.05);
+  pointer-events: none;
+}
+
+.hud-subpanel {
+  position: relative;
+  border-radius: 1.5rem;
+  border: 1px solid rgba(255,255,255,0.08);
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.012)),
+    rgba(255,255,255,0.018);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.04),
+    inset 0 0 0 1px rgba(255,255,255,0.015);
+}
+
+.hud-card {
+  position: relative;
+  border-radius: 1.2rem;
+  border: 1px solid rgba(255,255,255,0.08);
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.018), rgba(255,255,255,0.008)),
+    rgba(0,0,0,0.18);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.035);
+}
+
+.hud-card::before,
+.hud-card::after {
+  content: '';
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  pointer-events: none;
+  opacity: 0.6;
+}
+
+.hud-card::before {
+  top: 10px;
+  left: 10px;
+  border-top: 1px solid rgba(255,255,255,0.28);
+  border-left: 1px solid rgba(255,255,255,0.28);
+  border-top-left-radius: 0.35rem;
+}
+
+.hud-card::after {
+  right: 10px;
+  bottom: 10px;
+  border-right: 1px solid rgba(255,255,255,0.18);
+  border-bottom: 1px solid rgba(255,255,255,0.18);
+  border-bottom-right-radius: 0.35rem;
+}
+
+.hud-card-late {
+  border-color: rgba(251,113,133,0.28);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.04),
+    0 0 0 1px rgba(251,113,133,0.08);
+}
+
+.hud-stat {
+  border-radius: 1rem;
+  border: 1px solid rgba(255,255,255,0.08);
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.014), rgba(255,255,255,0.006)),
+    rgba(0,0,0,0.16);
+}
+
+.jarvis-console {
+  position: relative;
+  overflow: hidden;
+  border-radius: 2rem;
+  border: 1px solid rgba(255,255,255,0.1);
+  background:
+    radial-gradient(circle at top left, rgba(96,165,250,0.12), transparent 22%),
+    radial-gradient(circle at top right, rgba(167,139,250,0.12), transparent 24%),
+    linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.008)),
+    rgba(8,8,8,0.82);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.05),
+    inset 0 0 0 1px rgba(255,255,255,0.02),
+    0 24px 60px rgba(0,0,0,0.32);
+}
+
+.jarvis-console::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(90deg, rgba(96,165,250,0.08), transparent 18%, transparent 82%, rgba(167,139,250,0.08)),
+    repeating-linear-gradient(
+      180deg,
+      rgba(255,255,255,0.018) 0,
+      rgba(255,255,255,0.018) 1px,
+      transparent 1px,
+      transparent 18px
+    );
+  opacity: 0.35;
+}
+
+.jarvis-column {
+  position: relative;
+  border-radius: 1.5rem;
+  border: 1px solid rgba(255,255,255,0.08);
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01)),
+    rgba(255,255,255,0.018);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.04),
+    inset 0 0 0 1px rgba(255,255,255,0.015);
+}
+
+.jarvis-column::before {
+  content: '';
+  position: absolute;
+  left: 18px;
+  right: 18px;
+  top: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.18), transparent);
+  pointer-events: none;
+}
+
+.jarvis-kpi {
+  position: relative;
+  overflow: hidden;
+  border-radius: 1rem;
+  border: 1px solid rgba(255,255,255,0.08);
+  background:
+    linear-gradient(120deg, rgba(255,255,255,0.025), rgba(255,255,255,0.006)),
+    rgba(0,0,0,0.16);
+}
+
+.jarvis-kpi::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.04), transparent);
+  transform: translateX(-100%);
+  animation: shimmer 3.2s infinite;
+  pointer-events: none;
+  opacity: 0.45;
+}
+
+.jarvis-schedule-card {
+  position: relative;
+  overflow: hidden;
+  border-radius: 1.25rem;
+  border: 1px solid rgba(255,255,255,0.08);
+  background:
+    radial-gradient(circle at 100% 0%, rgba(255,255,255,0.03), transparent 30%),
+    linear-gradient(180deg, rgba(255,255,255,0.018), rgba(255,255,255,0.008)),
+    rgba(0,0,0,0.18);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.04),
+    0 8px 24px rgba(0,0,0,0.18);
+}
+
+.jarvis-schedule-card::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 16px;
+  bottom: 16px;
+  width: 3px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(96,165,250,0.9), rgba(0,217,200,0.35));
+  opacity: 0.9;
+}
+
+.jarvis-schedule-card-late {
+  border-color: rgba(251,113,133,0.3);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.04),
+    0 0 0 1px rgba(251,113,133,0.08),
+    0 10px 28px rgba(251,113,133,0.08);
+}
+
+.jarvis-schedule-card-late::before {
+  background: linear-gradient(180deg, rgba(251,113,133,1), rgba(251,113,133,0.28));
+}
+
+.jarvis-badge {
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,0.12);
+  padding: 0.45rem 0.75rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  backdrop-filter: blur(12px);
+}
+
+.jarvis-callout {
+  position: relative;
+  overflow: hidden;
+  border-radius: 1.35rem;
+  border: 1px solid rgba(52,211,153,0.22);
+  background:
+    linear-gradient(135deg, rgba(52,211,153,0.12), rgba(52,211,153,0.03) 55%, rgba(255,255,255,0.01)),
+    rgba(0,0,0,0.2);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.04);
+}
+
+.jarvis-callout::after {
+  content: '';
+  position: absolute;
+  inset: auto -20% -40% auto;
+  width: 180px;
+  height: 180px;
+  background: radial-gradient(circle, rgba(52,211,153,0.16), transparent 68%);
+  pointer-events: none;
 }
 
 /* Run table row status borders */

@@ -4,14 +4,14 @@ import { Plus, Check } from 'lucide-react';
 import { cn } from '../utils/cn';
 
 const projects = [
-  { id: 'nexus', name: 'Nexus Command', agents: 7, color: 'bg-aurora-teal' },
+  { id: 'jarvis', name: 'Jarvis Command', agents: 7, color: 'bg-aurora-teal' },
   { id: 'atlas', name: 'Project Atlas', agents: 3, color: 'bg-aurora-violet' },
   { id: 'sentinel', name: 'Sentinel Ops', agents: 12, color: 'bg-aurora-amber' },
   { id: 'research', name: 'Research Lab', agents: 2, color: 'bg-aurora-green' },
 ];
 
 export function ProjectSwitcher() {
-  const [activeProject, setActiveProject] = useState('nexus');
+  const [activeProject, setActiveProject] = useState('jarvis');
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
 

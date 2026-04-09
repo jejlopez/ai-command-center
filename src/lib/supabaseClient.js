@@ -12,7 +12,7 @@ export const supabaseConfigError = missingSupabaseEnv.length
   : null;
 
 if (supabaseConfigError) {
-  console.warn(`[Nexus] ${supabaseConfigError}`);
+  console.warn(`[Jarvis] ${supabaseConfigError}`);
 }
 
 export const supabase = createClient(

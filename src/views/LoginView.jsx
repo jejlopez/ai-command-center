@@ -62,6 +62,8 @@ export function LoginView() {
       {/* Aurora background */}
       <div className="aurora-drift absolute inset-0 pointer-events-none" />
       <div className="noise-overlay absolute inset-0 pointer-events-none" />
+      <div className="jarvis-grid absolute inset-0 pointer-events-none opacity-60" />
+      <div className="jarvis-login-orb absolute left-1/2 top-1/2 h-[36rem] w-[36rem] -translate-x-1/2 -translate-y-1/2 pointer-events-none" />
 
       <motion.div
         initial={{ opacity: 0, y: 20, scale: 0.98 }}
@@ -74,7 +76,7 @@ export function LoginView() {
           <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-aurora-teal/10 border border-aurora-teal/20 mb-4">
             <Lock className="w-6 h-6 text-aurora-teal" />
           </div>
-          <h1 className="text-2xl font-bold text-text-primary tracking-tight">Nexus</h1>
+          <h1 className="text-2xl font-bold text-text-primary tracking-tight">Jarvis</h1>
           <p className="text-sm text-text-muted mt-1">Agent Command Center</p>
         </div>
 
@@ -188,7 +190,7 @@ export function LoginView() {
         </form>
 
         <p className="text-center text-[10px] text-text-disabled mt-6 font-mono">
-          Nexus v4.0 &middot; Secured by Supabase
+          Jarvis v4.0 &middot; Secured by Supabase
         </p>
       </motion.div>
     </div>
