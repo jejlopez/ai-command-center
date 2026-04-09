@@ -1,5 +1,5 @@
 import React from 'react';
-import { LayoutGrid, BrainCircuit, FileText, CheckSquare } from 'lucide-react';
+import { LayoutGrid, BrainCircuit, FileText, Target } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '../utils/cn';
 import { useSystemState } from '../context/SystemStateContext';
@@ -7,7 +7,7 @@ import { ProjectSwitcher } from './ProjectSwitcher';
 
 const items = [
   { id: 'overview', icon: LayoutGrid, label: 'Overview' },
-  { id: 'review', icon: CheckSquare, label: 'Review Room' },
+  { id: 'missions', icon: Target, label: 'Mission Control' },
   { id: 'reports', icon: FileText, label: 'Monthly Reports' },
   { id: 'intelligence', icon: BrainCircuit, label: 'Intelligence' },
 ];
@@ -21,7 +21,7 @@ export function NavRail({ activeId, onNavigate }) {
         <ProjectSwitcher />
         
         {items.map((item) => {
-          const showBadge = item.id === 'review' && pendingCount > 0;
+          const showBadge = (item.id === 'missions' && pendingCount > 0) || (item.id === 'review' && pendingCount > 0);
           return (
             <button
               key={item.id}

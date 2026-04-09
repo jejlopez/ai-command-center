@@ -7,8 +7,9 @@ export function SystemStateProvider({ children }) {
   const [settingsOpen, setSettingsRaw] = useState(false);
   const [profileOpen, setProfileRaw] = useState(false);
 
-  // Pending approval count — initialized to 0, kept in sync by ReviewRoomView via setPendingCount
-  const [pendingCount, setPendingCount] = useState(0);
+  // Attention count — items needing human action in Mission Control
+  // TODO: derive from live Supabase data (approvals + unseen completed)
+  const [pendingCount, setPendingCount] = useState(7);
 
   const closeAll = useCallback(() => {
     setNotificationsRaw(false);
