@@ -46,6 +46,8 @@ function mapReviewRow(row) {
     waitingMs:  row.waiting_since
       ? Date.now() - new Date(row.waiting_since).getTime()
       : 0,
+    acknowledgedAt: row.acknowledged_at,
+    snoozedUntil: row.snoozed_until,
   };
 }
 
@@ -214,6 +216,157 @@ export async function stopTask(taskId) {
     throw error;
   }
   return { success: true, taskId };
+}
+
+// ── Task Notes ──────────────────────────────────────────────────
+
+export async function fetchTaskNotes(taskId) {
+  if (!isSupabaseConfigured) return [];
+
+  const { data, error } = await supabase
+    .from('task_notes')
+    .select('*')
+    .eq('task_id', taskId)
+    .order('created_at', { ascending: true });
+
+  if (error) {
+    console.error('[api] fetchTaskNotes:', error.message);
+    return [];
+  }
+  return data.map(row => ({
+    id: row.id,
+    taskId: row.task_id,
+    author: row.author,
+    content: row.content,
+    createdAt: row.created_at,
+  }));
+}
+
+export async function createTaskNote(taskId, content, author = 'Human') {
+  if (!isSupabaseConfigured) return { success: true };
+
+  const user = (await supabase.auth.getUser()).data?.user;
+  if (!user) throw new Error('Not authenticated');
+
+  const { error } = await supabase
+    .from('task_notes')
+    .insert({ task_id: taskId, user_id: user.id, author, content });
+
+  if (error) throw error;
+  return { success: true };
+}
+
+// ── Acknowledge / Reopen / Snooze ───────────────────────────────
+
+export async function acknowledgeItem(table, itemId) {
+  if (!isSupabaseConfigured) return { success: true };
+
+  const { error } = await supabase
+    .from(table)
+    .update({ acknowledged_at: new Date().toISOString() })
+    .eq('id', itemId);
+
+  if (error) throw error;
+  return { success: true };
+}
+
+export async function reopenReview(reviewId) {
+  if (!isSupabaseConfigured) return { success: true };
+
+  const { error } = await supabase
+    .from('pending_reviews')
+    .update({ status: 'awaiting_approval', acknowledged_at: null })
+    .eq('id', reviewId);
+
+  if (error) throw error;
+  return { success: true };
+}
+
+export async function snoozeReview(reviewId, minutes = 30) {
+  if (!isSupabaseConfigured) return { success: true };
+
+  const until = new Date(Date.now() + minutes * 60_000).toISOString();
+  const { error } = await supabase
+    .from('pending_reviews')
+    .update({ snoozed_until: until })
+    .eq('id', reviewId);
+
+  if (error) throw error;
+  return { success: true };
+}
+
+// ── Schedules ───────────────────────────────────────────────────
+
+export async function fetchSchedules() {
+  if (!isSupabaseConfigured) return [];
+
+  const { data, error } = await supabase
+    .from('schedules')
+    .select('*')
+    .order('priority', { ascending: false });
+
+  if (error) {
+    console.error('[api] fetchSchedules:', error.message);
+    return [];
+  }
+  return data.map(row => ({
+    id: row.id,
+    name: row.name,
+    agentId: row.agent_id,
+    cronExpr: row.cron_expr,
+    cadence: row.cadence_label,
+    enabled: row.enabled,
+    approvalRequired: row.approval_required,
+    estMinutes: row.estimated_minutes,
+    estCost: parseFloat(row.estimated_cost) || 0,
+    priority: row.priority,
+    lastResult: row.last_result,
+    lastRunAt: row.last_run_at,
+    nextRunAt: row.next_run_at,
+  }));
+}
+
+export async function toggleSchedule(scheduleId, enabled) {
+  if (!isSupabaseConfigured) return { success: true };
+
+  const { error } = await supabase
+    .from('schedules')
+    .update({ enabled })
+    .eq('id', scheduleId);
+
+  if (error) throw error;
+  return { success: true };
+}
+
+export async function dispatchFromSchedule(schedule, agents) {
+  if (!isSupabaseConfigured) return { success: true };
+
+  const user = (await supabase.auth.getUser()).data?.user;
+  if (!user) throw new Error('Not authenticated');
+
+  const agent = agents.find(a => a.id === schedule.agentId);
+  const { error } = await supabase
+    .from('tasks')
+    .insert({
+      id: crypto.randomUUID(),
+      user_id: user.id,
+      name: schedule.name,
+      status: 'pending',
+      agent_id: schedule.agentId,
+      agent_name: agent?.name || 'Unknown',
+      duration_ms: 0,
+      cost_usd: 0,
+    });
+
+  if (error) throw error;
+
+  // Update schedule last_run
+  await supabase
+    .from('schedules')
+    .update({ last_run_at: new Date().toISOString(), last_result: 'pending' })
+    .eq('id', schedule.id);
+
+  return { success: true };
 }
 
 // ── Agent Actions ───────────────────────────────────────────────
