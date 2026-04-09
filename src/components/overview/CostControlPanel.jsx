@@ -6,7 +6,7 @@ export function CostControlPanel({ summary }) {
       <div className="flex items-start justify-between gap-4">
         <div>
           <div className="text-[10px] uppercase tracking-[0.18em] text-text-disabled">Cost Control</div>
-          <div className="mt-1 text-lg font-semibold text-text-primary">Spend, burn, and biggest drivers</div>
+          <div className="mt-1 text-lg font-semibold text-text-primary">Spend and burn</div>
         </div>
         <div className="rounded-xl border border-white/[0.08] bg-white/[0.03] p-2">
           <DollarSign className="h-4 w-4 text-aurora-teal" />
@@ -30,7 +30,7 @@ export function CostControlPanel({ summary }) {
         </div>
       </div>
 
-      <div className="mt-5 rounded-2xl border border-white/[0.08] bg-white/[0.02] p-4">
+      <div className="mt-4 rounded-2xl border border-white/[0.08] bg-white/[0.02] p-4">
         <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.16em] text-text-disabled">
           <BarChart3 className="h-3.5 w-3.5 text-aurora-blue" />
           Cost By Model
@@ -53,7 +53,7 @@ export function CostControlPanel({ summary }) {
         </div>
       </div>
 
-      <div className="mt-4 flex items-center justify-between rounded-2xl border border-white/[0.08] bg-white/[0.02] px-4 py-3 text-sm">
+      <div className="mt-3 flex items-center justify-between rounded-2xl border border-white/[0.08] bg-white/[0.02] px-4 py-3 text-sm">
         <span className="flex items-center gap-2 text-text-muted"><Wallet className="h-4 w-4 text-aurora-violet" /> Budget status</span>
         <span className="text-text-primary">No budget limit configured</span>
       </div>

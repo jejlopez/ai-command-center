@@ -13,7 +13,7 @@ export function FleetHealthPanel({ summary, onOpenDetail }) {
   return (
     <div className="spatial-panel p-5">
       <div className="text-[10px] uppercase tracking-[0.18em] text-text-disabled">Fleet Health</div>
-      <div className="mt-1 text-lg font-semibold text-text-primary">Fleet posture and risk concentration</div>
+      <div className="mt-1 text-lg font-semibold text-text-primary">System posture</div>
 
       <div className="mt-5 grid gap-3 sm:grid-cols-2">
         <Kpi label="Active" value={summary.activeAgents} tone="text-aurora-teal" />
@@ -42,7 +42,7 @@ export function FleetHealthPanel({ summary, onOpenDetail }) {
         <div className="space-y-2">
           {summary.flaggedAgents.length === 0 && (
             <div className="rounded-xl border border-aurora-green/15 bg-aurora-green/5 px-4 py-3 text-sm text-aurora-green">
-              Fleet looks stable. No agents are currently flagged for follow-up.
+              No flagged agents.
             </div>
           )}
 

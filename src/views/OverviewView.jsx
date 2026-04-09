@@ -1,11 +1,11 @@
 import { useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
 import { container, item } from '../utils/variants';
-import { useActivityLog, useCostData, usePendingReviews, useSchedules } from '../utils/useSupabase';
+import { useActivityLog, useCostData, useModelBank, usePendingReviews, useSchedules } from '../utils/useSupabase';
 import { CreateAgentModal } from '../components/CreateAgentModal';
 import { Loader2 } from 'lucide-react';
-import { OverviewBriefingHeader } from '../components/overview/OverviewBriefingHeader';
-import { AttentionStrip } from '../components/overview/AttentionStrip';
+import { CommanderHero } from '../components/overview/CommanderHero';
+import { CommandSquadPanel } from '../components/overview/CommandSquadPanel';
 import { LiveOpsTable } from '../components/overview/LiveOpsTable';
 import { FleetHealthPanel } from '../components/overview/FleetHealthPanel';
 import { CostControlPanel } from '../components/overview/CostControlPanel';
@@ -23,8 +23,9 @@ function formatWaitLabel(ms) {
 
 export function OverviewView({ agents, tasks, loading, addOptimistic, onOpenDetail, onNavigate }) {
   const { logs } = useActivityLog();
-  const { reviews, loading: loadingReviews } = usePendingReviews();
+  const { reviews } = usePendingReviews();
   const { schedules, loading: loadingSchedules } = useSchedules();
+  const { models } = useModelBank();
   const { data: costData } = useCostData();
   const [createModalOpen, setCreateModalOpen] = useState(false);
 
@@ -61,6 +62,27 @@ export function OverviewView({ agents, tasks, loading, addOptimistic, onOpenDeta
       .slice(0, 3);
   }, [agents, stalledAgents, errorLogs]);
 
+  const providerByModel = useMemo(
+    () => new Map(models.map((model) => [model.modelKey, model.provider || 'Custom'])),
+    [models]
+  );
+  const commanderAgent = useMemo(
+    () => agents.find((agent) => agent.role === 'commander') || null,
+    [agents]
+  );
+  const operatorAgents = useMemo(
+    () => agents.filter((agent) => agent.role !== 'commander'),
+    [agents]
+  );
+  const ephemeralCount = useMemo(
+    () => agents.filter((agent) => agent.isEphemeral).length,
+    [agents]
+  );
+  const flaggedAgentIds = useMemo(
+    () => new Set(flaggedAgents.map((agent) => agent.id)),
+    [flaggedAgents]
+  );
+
   const medianLatency = useMemo(() => {
     const values = agents.map((agent) => Number(agent.latencyMs || 0)).filter((value) => value > 0).sort((a, b) => a - b);
     if (values.length === 0) return 0;
@@ -96,53 +118,6 @@ export function OverviewView({ agents, tasks, loading, addOptimistic, onOpenDeta
   const now = Date.now();
   const lateSchedules = schedules.filter((job) => job.status === 'active' && job.nextRunAt && new Date(job.nextRunAt).getTime() < now).length;
   const needsAttention = reviews.length + failedTasks.length + stalledAgents.length + lateSchedules;
-  const attentionItems = [
-    {
-      id: 'approvals',
-      label: 'Pending approvals',
-      value: reviews.length,
-      detail: reviews.length ? 'Human sign-off needed before agents proceed.' : 'Approval queue is clear.',
-      badge: reviews.some((review) => review.urgency === 'critical') ? 'Critical' : 'Queue',
-      tone: reviews.length ? 'warning' : 'info',
-      clickable: true,
-    },
-    {
-      id: 'schedules',
-      label: 'Late schedules',
-      value: lateSchedules,
-      detail: lateSchedules ? 'Scheduled work missed its expected run window.' : 'All tracked schedules are on time.',
-      badge: 'Scheduler',
-      tone: lateSchedules ? 'critical' : 'info',
-      clickable: false,
-    },
-    {
-      id: 'failures',
-      label: 'Failed tasks',
-      value: failedTasks.length,
-      detail: failedTasks.length ? 'Task errors need retry, reassignment, or review.' : 'No failed tasks right now.',
-      badge: 'Errors',
-      tone: failedTasks.length ? 'critical' : 'info',
-      clickable: false,
-    },
-    {
-      id: 'stalled',
-      label: 'Stalled agents',
-      value: stalledAgents.length,
-      detail: stalledAgents.length ? 'Agents are active but have stale heartbeats.' : 'No stale active agents.',
-      badge: 'Heartbeat',
-      tone: stalledAgents.length ? 'warning' : 'info',
-      clickable: false,
-    },
-    {
-      id: 'questions',
-      label: 'Questions waiting',
-      value: questionCount,
-      detail: questionCount ? 'Agent outputs that likely need a direct response.' : 'No open agent questions detected.',
-      badge: 'Inbox',
-      tone: questionCount ? 'warning' : 'info',
-      clickable: true,
-    },
-  ].filter((item) => ['approvals', 'schedules', 'failures', 'questions'].includes(item.id));
 
   const reviewAgentIds = new Set(reviews.map((review) => review.agentId).filter(Boolean));
   const prioritizedTasks = useMemo(() => {
@@ -212,24 +187,18 @@ export function OverviewView({ agents, tasks, loading, addOptimistic, onOpenDeta
       className="grid grid-cols-12 gap-5 pb-8"
     >
       <motion.div variants={item} className="col-span-12">
-        <OverviewBriefingHeader
+        <CommanderHero
+          commander={commanderAgent}
+          provider={commanderAgent ? providerByModel.get(commanderAgent.model) : null}
+          operatorCount={operatorAgents.length}
+          ephemeralCount={ephemeralCount}
           summary={overviewSummary}
-          onDeploy={() => setCreateModalOpen(true)}
           onNavigate={onNavigate}
+          onOpenDetail={onOpenDetail}
         />
       </motion.div>
 
-      <motion.div variants={item} className="col-span-12">
-        <AttentionStrip
-          items={attentionItems}
-          loading={loadingReviews}
-          onSelect={(itemSelected) => {
-            if (itemSelected.id === 'approvals' || itemSelected.id === 'alerts') onNavigate?.('missions');
-          }}
-        />
-      </motion.div>
-
-      <motion.div variants={item} className="col-span-12 xl:col-span-8">
+      <motion.div variants={item} className="col-span-12 xl:col-span-7">
         <LiveOpsTable
           tasks={prioritizedTasks}
           loading={loading}
@@ -238,11 +207,15 @@ export function OverviewView({ agents, tasks, loading, addOptimistic, onOpenDeta
         />
       </motion.div>
 
-      <motion.div variants={item} className="col-span-12 xl:col-span-4">
+      <motion.div variants={item} className="col-span-12 xl:col-span-5">
+        <SchedulesBottlenecksPanel summary={overviewSummary} schedules={schedules} loading={loadingSchedules} />
+      </motion.div>
+
+      <motion.div variants={item} className="col-span-12 xl:col-span-5">
         <FleetHealthPanel summary={overviewSummary} onOpenDetail={onOpenDetail} />
       </motion.div>
 
-      <motion.div variants={item} className="col-span-12 xl:col-span-6">
+      <motion.div variants={item} className="col-span-12 xl:col-span-7">
         <CostControlPanel
           summary={{
             ...costData,
@@ -251,8 +224,14 @@ export function OverviewView({ agents, tasks, loading, addOptimistic, onOpenDeta
         />
       </motion.div>
 
-      <motion.div variants={item} className="col-span-12 xl:col-span-6">
-        <SchedulesBottlenecksPanel summary={overviewSummary} schedules={schedules} loading={loadingSchedules} />
+      <motion.div variants={item} className="col-span-12">
+        <CommandSquadPanel
+          operators={operatorAgents}
+          providerByModel={providerByModel}
+          flaggedIds={flaggedAgentIds}
+          onOpenDetail={onOpenDetail}
+          onAddOperator={() => setCreateModalOpen(true)}
+        />
       </motion.div>
 
       <CreateAgentModal
