@@ -1,7 +1,7 @@
 /**
  * Mission Control — Production View
  * Unified command center: Operations / Planner / Approvals
- * Real data from api.js + static placeholders where tables don't exist yet
+ * Real data from api.js and shared command-state surfaces
  */
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
@@ -34,12 +34,13 @@ import { AnimatedNumber } from '../components/command/AnimatedNumber';
 import { CommandSectionHeader } from '../components/command/CommandSectionHeader';
 import { useLearningMemory } from '../utils/useLearningMemory';
 import { DoctrineCards } from '../components/command/DoctrineCards';
-
-// ═══════════════════════════════════════════════════════════════
-// STATIC PLANNER DATA (until schedules table exists)
-// ═══════════════════════════════════════════════════════════════
-
-// Intelligence recommendations now derived from real data in IntelSidebar
+import { TruthAuditStrip } from '../components/command/TruthAuditStrip';
+import { useCommandCenterTruth } from '../utils/useCommandCenterTruth';
+import { useConnectedSystems } from '../utils/useSupabase';
+import { ReactorCoreBoard } from '../components/command/ReactorCoreBoard';
+import { CommandTimelineRail } from '../components/command/CommandTimelineRail';
+import { TacticalInterventionConsole } from '../components/command/TacticalInterventionConsole';
+import { buildTimelineEntries } from '../utils/buildCommandTimeline';
 
 // ═══════════════════════════════════════════════════════════════
 // UI ATOMS
@@ -428,12 +429,12 @@ function Drawer({ item, agents, tasks, logs, onClose, onApprove, onReject, onRet
 // INTELLIGENCE SIDEBAR
 // ═══════════════════════════════════════════════════════════════
 
-function IntelSidebar({ tasks, approvals, completed, agents, schedules, logs, learningMemory }) {
+function IntelSidebar({ tasks, approvals, completed, agents, schedules, logs, learningMemory, connectedSystems, truth, onOpenApprovals, onOpenSystems, onOpenCreator, onOpenOps }) {
   const totalCost = tasks.reduce((sum, task) => sum + Number(task.costUsd || 0), 0);
   const failedCount = tasks.filter(t => t.status === 'failed' || t.status === 'error').length;
   const runningCount = tasks.filter(t => t.status === 'running').length;
   const avgApprovalWait = approvals.length > 0 ? Math.round(approvals.reduce((s, a) => s + (a.waitingMs || 0), 0) / approvals.length / 60000) : 0;
-  const commandStream = [...logs].slice(-5).reverse();
+  const timelineEntries = buildTimelineEntries({ tasks, reviews: approvals, logs, connectedSystems });
 
   // Derive recommendations from real data
   const recs = [];
@@ -459,6 +460,14 @@ function IntelSidebar({ tasks, approvals, completed, agents, schedules, logs, le
   ];
 
   return (<div className="flex flex-col gap-4">
+    <TacticalInterventionConsole
+      truth={truth}
+      onOpenApprovals={onOpenApprovals}
+      onOpenSystems={onOpenSystems}
+      onOpenCreator={onOpenCreator}
+      onOpenOps={onOpenOps}
+    />
+
     <div className="p-3.5 rounded-[24px] bg-surface border border-border">
       <div className="flex items-center gap-2 mb-3"><Target className="w-3.5 h-3.5 text-aurora-teal" /><span className="text-[11px] font-bold uppercase text-text-muted tracking-wider">Mission Health</span></div>
       <div className="grid grid-cols-2 gap-2 mb-3">
@@ -506,21 +515,11 @@ function IntelSidebar({ tasks, approvals, completed, agents, schedules, logs, le
       <DoctrineCards items={learningMemory.missionThree} compact columns="one" />
     </div>
 
-    <div className="p-3.5 rounded-[24px] bg-surface border border-border">
-      <div className="flex items-center gap-2 mb-2.5"><Zap className="w-3.5 h-3.5 text-aurora-blue" /><span className="text-[11px] font-bold uppercase text-text-muted tracking-wider">Command Stream</span></div>
-      <div className="space-y-2">
-        {commandStream.length === 0 && <p className="text-[11px] text-text-disabled">No live command traffic yet.</p>}
-        {commandStream.map((log, index) => (
-          <div key={`${log.id || index}-stream`} className="rounded-xl border border-white/[0.06] bg-black/20 px-3 py-2.5">
-            <div className="flex items-center justify-between gap-2 mb-1">
-              <span className="text-[9px] font-mono uppercase text-text-muted">{log.type}</span>
-              <span className="text-[9px] font-mono text-text-disabled">{typeof log.timestamp === 'string' ? log.timestamp : new Date(log.timestamp).toLocaleTimeString()}</span>
-            </div>
-            <p className="text-[11px] text-text-body leading-relaxed">{log.message}</p>
-          </div>
-        ))}
-      </div>
-    </div>
+    <CommandTimelineRail
+      entries={timelineEntries}
+      title="Command Timeline"
+      description="Recent launches, approvals, failures, and systems traffic flowing through Mission Control."
+    />
   </div>);
 }
 
@@ -597,7 +596,7 @@ function PlannerTab({ schedules, agents, onToggle, onDispatch }) {
 // ═══════════════════════════════════════════════════════════════
 
 export function MissionControlView() {
-  const { setPendingCount } = useSystemState();
+  const { setPendingCount, setSettingsOpen } = useSystemState();
   const [agents, setAgents] = useState([]);
   const [tasks, setTasks] = useState([]);
   const [logs, setLogs] = useState([]);
@@ -690,6 +689,8 @@ export function MissionControlView() {
   const greeting = hour < 12 ? 'Good Morning' : hour < 17 ? 'Good Afternoon' : 'Good Evening';
   const dateStr = new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
   const primaryAgent = agents.find(agent => /tony|atlas/i.test(agent.name || '')) || agents.find(agent => agent.role === 'commander') || agents[0];
+  const truth = useCommandCenterTruth();
+  const { connectedSystems } = useConnectedSystems();
 
   return (
     <div className="flex flex-col h-full overflow-hidden relative">
@@ -750,6 +751,14 @@ export function MissionControlView() {
             </div>
           }
         />
+
+        <div className="mt-4">
+          <TruthAuditStrip truth={truth} />
+        </div>
+
+        <div className="mt-4">
+          <ReactorCoreBoard truth={truth} summary={{ burnRate: totalMissionCost }} />
+        </div>
 
         <div className="mt-4 flex items-center gap-1 bg-surface/90 rounded-2xl p-1.5 border border-border backdrop-blur-sm">
           {[
@@ -846,9 +855,36 @@ export function MissionControlView() {
             </AnimatePresence>
           )}
           {tab === 'ops' && operationalTasks.length === 0 && (
-            <div className="rounded-[24px] border border-white/[0.06] bg-black/15 px-6 py-10 text-center">
-              <p className="text-base font-semibold text-text-primary">No live missions right now</p>
-              <p className="text-sm text-text-muted mt-2">The deck is clear. Spin up a mission or let the scheduled systems take the next pass.</p>
+            <div className="rounded-[24px] border border-white/[0.06] bg-black/15 px-6 py-8">
+              <div className="grid gap-5 xl:grid-cols-[1.2fr_0.8fr]">
+                <div>
+                  <p className="text-base font-semibold text-text-primary">No live missions right now</p>
+                  <p className="mt-2 text-sm text-text-muted">The deck is clear. Launch something new, check approvals, or let the scheduled systems take the next pass.</p>
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    <button onClick={() => setCreatorOpen(true)} className="rounded-xl border border-aurora-teal/20 bg-aurora-teal/10 px-3 py-2 text-[11px] font-semibold text-aurora-teal transition-colors hover:bg-aurora-teal/14">
+                      Launch mission
+                    </button>
+                    <button onClick={() => setTab('app')} className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-[11px] font-semibold text-text-primary transition-colors hover:bg-white/[0.06]">
+                      Review approvals
+                    </button>
+                    <button onClick={() => setTab('plan')} className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-[11px] font-semibold text-text-primary transition-colors hover:bg-white/[0.06]">
+                      Open planner
+                    </button>
+                  </div>
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    { label: 'Approvals', value: approvalItems.length },
+                    { label: 'Blocked', value: failed },
+                    { label: 'Scheduled', value: schedules.filter(s => s.enabled).length },
+                  ].map((metric) => (
+                    <div key={metric.label} className="rounded-[18px] border border-white/8 bg-white/[0.02] px-3 py-3">
+                      <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">{metric.label}</div>
+                      <div className="mt-2 text-lg font-semibold text-text-primary">{metric.value}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
             </div>
           )}
 
@@ -921,7 +957,21 @@ export function MissionControlView() {
 
         {/* Intel sidebar */}
         <div className="w-[320px] shrink-0 overflow-y-auto no-scrollbar rounded-[28px] border border-white/8 bg-[linear-gradient(180deg,rgba(96,165,250,0.06),rgba(255,255,255,0.015))] backdrop-blur-sm p-3">
-          <IntelSidebar tasks={tasks} approvals={approvalItems} completed={completedItems} agents={agents} schedules={schedules} logs={logs} learningMemory={learningMemory} />
+          <IntelSidebar
+            tasks={tasks}
+            approvals={approvalItems}
+            completed={completedItems}
+            agents={agents}
+            schedules={schedules}
+            logs={logs}
+            learningMemory={learningMemory}
+            connectedSystems={connectedSystems}
+            truth={truth}
+            onOpenApprovals={() => setTab('app')}
+            onOpenSystems={() => setSettingsOpen(true)}
+            onOpenCreator={() => setCreatorOpen(true)}
+            onOpenOps={() => setTab('ops')}
+          />
         </div>
       </div>
 

@@ -1,5 +1,5 @@
 import React from 'react';
-import { motion } from 'framer-motion';
+import { motion as Motion } from 'framer-motion';
 import { useCostData } from '../utils/useSupabase';
 import { useAnimatedCounter } from '../utils/useAnimatedCounter';
 
@@ -9,9 +9,6 @@ const colors = {
   'Gemini': '#fbbf24'
 };
 
-// TODO: useCostData() currently returns static mock data inside the hook.
-// Replace with a real Supabase query when a cost_summary table or
-// aggregation view is created.
 export function CostBurnWidget() {
   const { data: costData } = useCostData();
   const displayTotal = useAnimatedCounter(costData.total, { decimals: 2 });
@@ -22,7 +19,7 @@ export function CostBurnWidget() {
         <div className="text-[10px] uppercase tracking-[0.15em] text-text-muted mb-2 font-semibold">Cost Today</div>
         <div className="font-mono text-3xl font-light text-text-primary font-tabular flex items-baseline">
           <span className="text-text-muted text-xl mr-1">$</span>
-          <motion.span>{displayTotal}</motion.span>
+          <Motion.span>{displayTotal}</Motion.span>
         </div>
       </div>
 
@@ -34,7 +31,7 @@ export function CostBurnWidget() {
               <span className="font-mono text-[11px] text-text-muted font-tabular">${m.cost.toFixed(2)}</span>
             </div>
             <div className="h-1.5 rounded-full bg-white/5 overflow-hidden w-full">
-              <motion.div 
+              <Motion.div 
                 className="h-full rounded-full"
                 style={{ backgroundColor: colors[m.name] || '#fff' }}
                 initial={{ width: 0 }}
@@ -47,13 +44,13 @@ export function CostBurnWidget() {
       </div>
 
       <div className="mt-6 border-t border-border pt-4 text-center">
-        <motion.div 
+        <Motion.div 
           className="text-aurora-teal font-mono text-sm font-tabular"
           animate={{ opacity: [0.6, 1, 0.6] }}
           transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
         >
           ${costData.burnRate.toFixed(2)}/hr
-        </motion.div>
+        </Motion.div>
       </div>
     </div>
   );
