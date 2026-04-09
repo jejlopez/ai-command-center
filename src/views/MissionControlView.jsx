@@ -20,6 +20,9 @@ import {
   fetchPendingReviews, fetchCompletedOutputs,
   approveReview, rejectReview, retryTask, stopTask,
   subscribeToPendingReviews,
+  fetchTaskNotes, createTaskNote,
+  acknowledgeItem, reopenReview, snoozeReview,
+  fetchSchedules, toggleSchedule, dispatchFromSchedule,
 } from '../lib/api';
 import { useSystemState } from '../context/SystemStateContext';
 
@@ -27,23 +30,7 @@ import { useSystemState } from '../context/SystemStateContext';
 // STATIC PLANNER DATA (until schedules table exists)
 // ═══════════════════════════════════════════════════════════════
 
-const PLAN_QUEUE = [
-  { id: 'pq1', name: 'Morning cost digest', agent: 'Orion', sched: '09:00 AM', pri: 6, approve: false, est: '~2 min', estC: '$0.04' },
-  { id: 'pq2', name: 'Close stale Pipedrive quotes', agent: 'Atlas', sched: '10:00 AM', pri: 9, approve: true, est: '~5 min', estC: '$0.18' },
-  { id: 'pq3', name: 'Weekly fleet report', agent: 'Nova', sched: '11:00 AM', pri: 5, approve: false, est: '~3 min', estC: '$0.06' },
-];
-
-const PLAN_ROUTINES = [
-  { id: 'r1', name: 'Broadway lottery entries', cad: 'Daily 9 AM', agent: 'Atlas', st: 'enabled', last: 'success' },
-  { id: 'r2', name: 'Cost digest email', cad: 'Weekdays 8:30 AM', agent: 'Orion', st: 'enabled', last: 'success' },
-  { id: 'r3', name: 'Vector index compaction', cad: 'Weekly Sun 2 AM', agent: 'Sol', st: 'enabled', last: 'success' },
-];
-
-const INTEL_RECS = [
-  { type: 'anomaly', text: 'Check for repeated failures on vector batch tasks. Consider switching to a larger instance.', imp: 'high' },
-  { type: 'cost', text: 'Research tasks using Opus could run on Sonnet at 80% lower cost with similar quality.', imp: 'med' },
-  { type: 'bottleneck', text: 'Approval queue growing — consider auto-approve rules for low-risk QA passes.', imp: 'high' },
-];
+// Intelligence recommendations now derived from real data in IntelSidebar
 
 // ═══════════════════════════════════════════════════════════════
 // UI ATOMS
@@ -138,12 +125,35 @@ function ItemRow({ item, agents, selected, onClick }) {
 // DETAIL DRAWER
 // ═══════════════════════════════════════════════════════════════
 
-function Drawer({ item, agents, tasks, logs, onClose, onApprove, onReject, onRetry, onStop, onCopy }) {
+function Drawer({ item, agents, tasks, logs, onClose, onApprove, onReject, onRetry, onStop, onCopy, onAcknowledge, onReopen, onSnooze, onReload }) {
   const [tab, setTab] = useState('timeline');
   const [feedback, setFeedback] = useState('');
   const [showRejectForm, setShowRejectForm] = useState(false);
   const [actionLoading, setActionLoading] = useState(null);
   const [actionError, setActionError] = useState(null);
+  const [notes, setNotes] = useState([]);
+  const [noteText, setNoteText] = useState('');
+  const [notesLoaded, setNotesLoaded] = useState(false);
+
+  // Load notes when item changes or notes tab opens
+  useEffect(() => {
+    if (!item?.id) return;
+    let x = false;
+    fetchTaskNotes(item.id).then(n => { if (!x) { setNotes(n); setNotesLoaded(true); } });
+    return () => { x = true; };
+  }, [item?.id]);
+
+  async function handleAddNote() {
+    if (!noteText.trim() || !item?.id) return;
+    setActionLoading('Note');
+    try {
+      await createTaskNote(item.id, noteText.trim());
+      setNoteText('');
+      const updated = await fetchTaskNotes(item.id);
+      setNotes(updated);
+    } catch (e) { setActionError(`Note failed: ${e.message}`); }
+    finally { setActionLoading(null); }
+  }
 
   if (!item) return null;
   const agent = agents.find(a => a.id === (item.agentId || item.agent_id));
@@ -234,15 +244,60 @@ function Drawer({ item, agents, tasks, logs, onClose, onApprove, onReject, onRet
         })()}
         {tab === 'output' && item.payload && <div className={cn("p-4 rounded-lg text-sm font-mono leading-relaxed whitespace-pre-wrap border", item.outputType === 'error' ? "bg-aurora-rose/5 border-aurora-rose/20 text-aurora-rose/90" : item.outputType === 'code' ? "bg-black/40 border-white/5 text-text-primary" : "bg-white/[0.02] border-white/5 text-text-body")}>{item.payload}</div>}
         {tab === 'output' && !item.payload && <p className="text-sm text-text-disabled text-center py-8">No output payload.</p>}
-        {tab === 'notes' && <div className="space-y-3"><p className="text-sm text-text-disabled text-center py-4">Notes available after task_notes table is created.</p><textarea placeholder="Add a note..." rows={2} className="w-full bg-surface border border-border rounded-lg px-3 py-2.5 text-xs font-mono text-text-primary resize-none focus:border-aurora-teal/40 outline-none placeholder:text-text-disabled" /></div>}
+        {tab === 'notes' && (
+          <div className="space-y-3">
+            {notes.map(n => (
+              <div key={n.id} className="p-3 bg-surface rounded-xl border border-border">
+                <div className="flex items-center gap-2 mb-1.5">
+                  <span className={cn("text-[9px] font-mono font-bold uppercase px-1.5 py-0.5 rounded-full",
+                    n.author === 'Human' ? "bg-aurora-teal/10 text-aurora-teal" : "bg-aurora-amber/10 text-aurora-amber"
+                  )}>{n.author}</span>
+                  <span className="text-[10px] font-mono text-text-disabled">{new Date(n.createdAt).toLocaleTimeString()}</span>
+                </div>
+                <p className="text-[12px] text-text-body leading-relaxed">{n.content}</p>
+              </div>
+            ))}
+            {notesLoaded && notes.length === 0 && <p className="text-sm text-text-disabled text-center py-4">No notes yet.</p>}
+            <div className="flex gap-2 mt-2">
+              <input
+                value={noteText}
+                onChange={e => setNoteText(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleAddNote(); }}
+                placeholder="Add a note... (Cmd+Enter to save)"
+                className="flex-1 bg-surface-input border border-border rounded-xl px-3 py-2.5 text-xs font-mono text-text-primary focus:border-aurora-teal/40 outline-none placeholder:text-text-disabled"
+              />
+              <button onClick={handleAddNote} disabled={!noteText.trim() || !!actionLoading}
+                className="px-3 py-2.5 bg-aurora-teal text-black text-[11px] font-bold rounded-xl hover:bg-[#00ebd8] transition-colors disabled:opacity-50">
+                {actionLoading === 'Note' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Save'}
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="shrink-0 border-t border-border p-4 flex gap-2">
-        {isApproval && !isCompleted ? (
+        {isCompleted ? (
+          /* Completed item actions */
+          <>
+            <button onClick={() => act('Acknowledge', () => { const tbl = item.outputType ? 'pending_reviews' : 'tasks'; return onAcknowledge(tbl, item.id); })} disabled={!!actionLoading}
+              className="flex items-center gap-1.5 px-4 py-2.5 text-[11px] font-bold text-aurora-teal bg-aurora-teal/5 border border-aurora-teal/20 rounded-xl hover:bg-aurora-teal/10">
+              {actionLoading === 'Acknowledge' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Eye className="w-3.5 h-3.5" />}Acknowledge
+            </button>
+            <button onClick={() => act('Reopen', () => onReopen(item.id))} disabled={!!actionLoading}
+              className="flex items-center gap-1.5 px-4 py-2.5 text-[11px] font-bold text-aurora-amber bg-aurora-amber/5 border border-aurora-amber/20 rounded-xl hover:bg-aurora-amber/10">
+              {actionLoading === 'Reopen' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RotateCcw className="w-3.5 h-3.5" />}Reopen
+            </button>
+            <button onClick={() => onCopy(item)} className="flex items-center gap-1.5 px-3 py-2.5 text-[11px] font-bold text-text-muted bg-surface border border-border rounded-xl hover:bg-surface-raised ml-auto"><Copy className="w-3.5 h-3.5" />Copy</button>
+          </>
+        ) : isApproval ? (
+          /* Approval actions */
           <AnimatePresence mode="wait">
             {!showRejectForm ? (
               <motion.div key="btns" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex gap-2 w-full">
                 <button onClick={() => setShowRejectForm(true)} disabled={!!actionLoading} className="flex-1 h-11 flex items-center justify-center gap-2 border border-aurora-rose/30 bg-aurora-rose/5 text-aurora-rose rounded-xl font-bold uppercase text-[11px] hover:bg-aurora-rose/10"><XCircle className="w-4 h-4" />Reject</button>
+                <button onClick={() => act('Snooze', () => onSnooze(item.id))} disabled={!!actionLoading} className="h-11 px-3 flex items-center justify-center gap-1.5 border border-border bg-surface text-text-muted rounded-xl text-[11px] font-bold hover:bg-surface-raised">
+                  {actionLoading === 'Snooze' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <AlarmClock className="w-3.5 h-3.5" />}30m
+                </button>
                 <button onClick={() => act('Approve', () => onApprove(item.id))} disabled={!!actionLoading} className="flex-[2] h-11 flex items-center justify-center gap-2 bg-aurora-teal text-black rounded-xl font-bold uppercase text-[11px] shadow-[0_0_20px_rgba(0,217,200,0.2)] hover:bg-[#00ebd8]">{actionLoading === 'Approve' ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}Approve</button>
               </motion.div>
             ) : (
@@ -254,6 +309,7 @@ function Drawer({ item, agents, tasks, logs, onClose, onApprove, onReject, onRet
             )}
           </AnimatePresence>
         ) : (
+          /* Task actions */
           <>
             {isRunning && <button onClick={() => act('Stop', () => onStop(item.id))} disabled={!!actionLoading} className="flex items-center gap-1.5 px-3 py-2.5 text-[11px] font-bold text-aurora-rose bg-aurora-rose/5 border border-aurora-rose/20 rounded-xl hover:bg-aurora-rose/10">{actionLoading === 'Stop' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <StopCircle className="w-3.5 h-3.5" />}Stop</button>}
             <button onClick={() => act('Rerun', () => onRetry(item.id))} disabled={!!actionLoading} className="flex items-center gap-1.5 px-3 py-2.5 text-[11px] font-bold text-aurora-amber bg-aurora-amber/5 border border-aurora-amber/20 rounded-xl hover:bg-aurora-amber/10">{actionLoading === 'Rerun' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RotateCcw className="w-3.5 h-3.5" />}Rerun</button>
@@ -269,28 +325,82 @@ function Drawer({ item, agents, tasks, logs, onClose, onApprove, onReject, onRet
 // INTELLIGENCE SIDEBAR
 // ═══════════════════════════════════════════════════════════════
 
-function IntelSidebar({ tasks, approvals, completed }) {
+function IntelSidebar({ tasks, approvals, completed, agents, schedules }) {
   const totalCost = tasks.reduce((s, t) => s + (t.costUsd || 0), 0);
+  const failedCount = tasks.filter(t => t.status === 'failed' || t.status === 'error').length;
+  const runningCount = tasks.filter(t => t.status === 'running').length;
+  const avgApprovalWait = approvals.length > 0 ? Math.round(approvals.reduce((s, a) => s + (a.waitingMs || 0), 0) / approvals.length / 60000) : 0;
+
+  // Derive recommendations from real data
+  const recs = [];
+  if (failedCount > 0) {
+    const failedAgents = [...new Set(tasks.filter(t => t.status === 'failed' || t.status === 'error').map(t => t.agentName || 'Unknown'))];
+    recs.push({ type: 'anomaly', text: `${failedCount} failed task${failedCount > 1 ? 's' : ''} from ${failedAgents.join(', ')}. Check agent health and retry or reassign.`, imp: 'high' });
+  }
+  if (avgApprovalWait > 3) {
+    recs.push({ type: 'bottleneck', text: `Approval queue averaging ${avgApprovalWait}m wait. Consider auto-approve rules for low-risk items.`, imp: 'high' });
+  }
+  if (totalCost > 1) {
+    recs.push({ type: 'cost', text: `Session cost at $${totalCost.toFixed(2)}. Review if research tasks can use cheaper models.`, imp: 'med' });
+  }
+  if (recs.length === 0 && agents.length > 0) {
+    recs.push({ type: 'status', text: `${agents.length} agents in fleet, ${runningCount} active. All systems nominal.`, imp: 'low' });
+  }
+
+  // Mission goals derived from real data
+  const goals = [
+    { lb: 'Approval queue < 2m', pct: avgApprovalWait <= 2 ? 100 : Math.max(0, 100 - avgApprovalWait * 15), c: avgApprovalWait <= 2 ? '#34d399' : '#fbbf24' },
+    { lb: 'Zero failures today', pct: failedCount === 0 ? 100 : Math.max(0, 100 - failedCount * 25), c: failedCount === 0 ? '#34d399' : '#fb7185' },
+    { lb: `${schedules.length} automations set`, pct: Math.min(100, schedules.length * 20), c: '#60a5fa' },
+  ];
+
   return (<div className="flex flex-col gap-4">
+    {/* Mission Goals */}
     <div className="p-3 rounded-2xl bg-surface border border-border">
-      <div className="flex items-center gap-2 mb-2.5"><Sparkles className="w-3.5 h-3.5 text-aurora-violet" /><span className="text-[11px] font-bold uppercase text-text-muted tracking-wider">AI Recommendations</span></div>
-      <div className="space-y-1.5">
-        {INTEL_RECS.map((r, i) => (
-          <div key={i} className={cn("p-2.5 rounded-xl border border-border", r.imp === 'high' ? 'bg-aurora-rose/[0.03] border-l-[3px] border-l-aurora-rose' : 'bg-aurora-amber/[0.03] border-l-[3px] border-l-aurora-amber')}>
-            <span className={cn("text-[9px] font-mono font-bold uppercase px-1.5 py-0.5 rounded-full mb-1.5 inline-block", r.type === 'anomaly' ? 'bg-aurora-rose/10 text-aurora-rose' : r.type === 'cost' ? 'bg-aurora-amber/10 text-aurora-amber' : 'bg-aurora-violet/10 text-aurora-violet')}>{r.type}</span>
-            <p className="text-[11px] text-text-body leading-relaxed">{r.text}</p>
-          </div>
-        ))}
-      </div>
+      <div className="flex items-center gap-2 mb-2.5"><Target className="w-3.5 h-3.5 text-aurora-teal" /><span className="text-[11px] font-bold uppercase text-text-muted tracking-wider">Mission Goals</span></div>
+      {goals.map(g => (
+        <div key={g.lb} className="mb-2.5 last:mb-0">
+          <div className="flex items-center justify-between mb-1"><span className="text-[11px] text-text-body">{g.lb}</span><span className="text-[11px] font-mono font-bold" style={{ color: g.c }}>{g.pct}%</span></div>
+          <div className="w-full h-1.5 rounded-full bg-surface-raised overflow-hidden"><div className="h-full rounded-full transition-all" style={{ width: `${g.pct}%`, backgroundColor: g.c }} /></div>
+        </div>
+      ))}
     </div>
 
+    {/* Recommendations */}
+    {recs.length > 0 && (
+      <div className="p-3 rounded-2xl bg-surface border border-border">
+        <div className="flex items-center gap-2 mb-2.5"><Sparkles className="w-3.5 h-3.5 text-aurora-violet" /><span className="text-[11px] font-bold uppercase text-text-muted tracking-wider">AI Recommendations</span></div>
+        <div className="space-y-1.5">
+          {recs.map((r, i) => (
+            <div key={i} className={cn("p-2.5 rounded-xl border border-border border-l-[3px]",
+              r.imp === 'high' ? 'bg-aurora-rose/[0.03] border-l-aurora-rose' :
+              r.imp === 'med' ? 'bg-aurora-amber/[0.03] border-l-aurora-amber' :
+              'bg-aurora-teal/[0.03] border-l-aurora-teal'
+            )}>
+              <span className={cn("text-[9px] font-mono font-bold uppercase px-1.5 py-0.5 rounded-full mb-1.5 inline-block",
+                r.type === 'anomaly' ? 'bg-aurora-rose/10 text-aurora-rose' :
+                r.type === 'cost' ? 'bg-aurora-amber/10 text-aurora-amber' :
+                r.type === 'bottleneck' ? 'bg-aurora-violet/10 text-aurora-violet' :
+                'bg-aurora-teal/10 text-aurora-teal'
+              )}>{r.type}</span>
+              <p className="text-[11px] text-text-body leading-relaxed">{r.text}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    )}
+
+    {/* Daily Digest */}
     <div className="p-3 rounded-2xl bg-surface border border-border">
       <div className="flex items-center gap-2 mb-2.5"><TrendingUp className="w-3.5 h-3.5 text-aurora-teal" /><span className="text-[11px] font-bold uppercase text-text-muted tracking-wider">Today's Digest</span></div>
       <div className="space-y-1.5 text-[11px] font-mono">
+        <div className="flex justify-between"><span className="text-text-muted">Agents</span><span className="text-text-primary">{agents.length}</span></div>
+        <div className="flex justify-between"><span className="text-text-muted">Running</span><span className="text-aurora-amber">{runningCount}</span></div>
         <div className="flex justify-between"><span className="text-text-muted">Completed</span><span className="text-aurora-teal">{completed.length}</span></div>
         <div className="flex justify-between"><span className="text-text-muted">Approvals</span><span className="text-aurora-amber">{approvals.length}</span></div>
-        <div className="flex justify-between"><span className="text-text-muted">Failed</span><span className="text-aurora-rose">{tasks.filter(t => t.status === 'failed' || t.status === 'error').length}</span></div>
-        <div className="flex justify-between"><span className="text-text-muted">Total cost</span><span className="text-text-primary">${totalCost.toFixed(2)}</span></div>
+        <div className="flex justify-between"><span className="text-text-muted">Failed</span><span className="text-aurora-rose">{failedCount}</span></div>
+        <div className="flex justify-between"><span className="text-text-muted">Schedules</span><span className="text-aurora-blue">{schedules.filter(s => s.enabled).length}</span></div>
+        <div className="flex justify-between border-t border-border pt-1.5 mt-1.5"><span className="text-text-muted">Total cost</span><span className="text-text-primary">${totalCost.toFixed(2)}</span></div>
       </div>
     </div>
   </div>);
@@ -300,51 +410,67 @@ function IntelSidebar({ tasks, approvals, completed }) {
 // PLANNER TAB (static until schedules table)
 // ═══════════════════════════════════════════════════════════════
 
-function PlannerTab() {
+function PlannerTab({ schedules, agents, onToggle, onDispatch }) {
+  const enabled = schedules.filter(s => s.enabled);
+  const paused = schedules.filter(s => !s.enabled);
+
   return (<div className="flex-1 overflow-y-auto no-scrollbar pr-1">
+    {/* Queued / upcoming */}
     <div className="mb-5">
-      <div className="flex items-center gap-2 mb-3"><Calendar className="w-3.5 h-3.5 text-aurora-teal" /><span className="text-[11px] font-bold uppercase text-text-muted tracking-wider">Queued for Today</span></div>
+      <div className="flex items-center gap-2 mb-3"><Calendar className="w-3.5 h-3.5 text-aurora-teal" /><span className="text-[11px] font-bold uppercase text-text-muted tracking-wider">Upcoming Schedules ({enabled.length})</span></div>
+      {enabled.length === 0 && <p className="text-center text-text-disabled py-8 text-sm">No active schedules. Create one in Supabase to get started.</p>}
       <div className="space-y-2">
-        {PLAN_QUEUE.map(j => (
-          <div key={j.id} className="px-4 py-3.5 rounded-2xl border border-border bg-surface">
-            <div className="flex items-center gap-3 mb-2">
-              <span className="w-6 h-6 rounded-full bg-aurora-teal/10 flex items-center justify-center text-[10px] font-bold text-aurora-teal ring-1 ring-aurora-teal/20">{j.agent[0]}</span>
-              <span className="text-[11px] font-medium text-text-muted">{j.agent}</span>
-              <span className="text-[13px] font-semibold text-text-primary flex-1 truncate">{j.name}</span>
-              <span className="text-[11px] font-mono text-aurora-blue">{j.sched}</span>
-              {j.approve && <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-aurora-amber/10 text-aurora-amber border border-aurora-amber/20">Approval</span>}
+        {enabled.map(s => {
+          const agent = agents.find(a => a.id === s.agentId);
+          const lCfg = stColor[s.lastResult] || stColor.pending;
+          return (
+            <div key={s.id} className="px-4 py-3.5 rounded-2xl border border-border bg-surface">
+              <div className="flex items-center gap-3 mb-2">
+                <AgentAvatar agent={agent} name={agent?.name || '?'} />
+                <span className="text-[13px] font-semibold text-text-primary flex-1 truncate">{s.name}</span>
+                {s.nextRunAt && <span className="text-[11px] font-mono text-aurora-blue">{new Date(s.nextRunAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>}
+                {s.approvalRequired && <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-aurora-amber/10 text-aurora-amber border border-aurora-amber/20">Approval</span>}
+              </div>
+              <div className="flex items-center gap-3 ml-8">
+                <span className="text-[10px] font-mono text-text-disabled flex items-center gap-1"><Repeat className="w-3 h-3" />{s.cadence}</span>
+                <span className="text-[10px] font-mono text-text-disabled flex items-center gap-1"><Timer className="w-3 h-3" />~{s.estMinutes}m</span>
+                <span className="text-[10px] font-mono text-text-disabled flex items-center gap-1"><DollarSign className="w-3 h-3" />${s.estCost.toFixed(2)}</span>
+                <PriBadge v={s.priority} />
+                {s.lastResult && <span className="text-[10px] font-mono text-text-disabled">Last: <span className={lCfg.tx}>{s.lastResult}</span></span>}
+              </div>
+              <div className="flex items-center gap-2 mt-3 ml-8">
+                <button onClick={() => onDispatch(s)} className="flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-bold text-aurora-teal bg-aurora-teal/5 border border-aurora-teal/20 rounded-lg hover:bg-aurora-teal/10"><Send className="w-3 h-3" />Dispatch Now</button>
+                <button onClick={() => onToggle(s.id, false)} className="flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-bold text-text-muted bg-surface border border-border rounded-lg hover:bg-surface-raised"><AlarmClock className="w-3 h-3" />Pause</button>
+              </div>
             </div>
-            <div className="flex items-center gap-3 ml-8">
-              <span className="text-[10px] font-mono text-text-disabled flex items-center gap-1"><Timer className="w-3 h-3" />{j.est}</span>
-              <span className="text-[10px] font-mono text-text-disabled flex items-center gap-1"><DollarSign className="w-3 h-3" />{j.estC}</span>
-              <PriBadge v={j.pri} />
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-    <div>
-      <div className="flex items-center gap-2 mb-3"><Repeat className="w-3.5 h-3.5 text-aurora-violet" /><span className="text-[11px] font-bold uppercase text-text-muted tracking-wider">Automations</span></div>
-      <div className="space-y-2">
-        {PLAN_ROUTINES.map(r => {
-          const cfg = stColor[r.st] || stColor.paused;
-          const lCfg = stColor[r.last] || stColor.success;
-          return (<div key={r.id} className="px-4 py-3 rounded-2xl border border-border bg-surface">
-            <div className="flex items-center gap-3">
-              <span className="w-6 h-6 rounded-full bg-aurora-violet/10 flex items-center justify-center text-[10px] font-bold text-aurora-violet ring-1 ring-aurora-violet/20">{r.agent[0]}</span>
-              <span className="text-[11px] font-medium text-text-muted">{r.agent}</span>
-              <span className="text-[12px] font-semibold text-text-primary flex-1 truncate">{r.name}</span>
-              <span className={cn("px-2 py-0.5 rounded-full text-[10px] font-bold", cfg.bg, cfg.tx)}>{cfg.lb}</span>
-            </div>
-            <div className="flex items-center gap-4 mt-1.5 ml-8 text-[10px] font-mono text-text-disabled">
-              <span className="flex items-center gap-1"><Repeat className="w-3 h-3" />{r.cad}</span>
-              <span>Last: <span className={lCfg.tx}>{r.last}</span></span>
-            </div>
-          </div>);
+          );
         })}
       </div>
     </div>
-    <p className="text-[10px] text-text-disabled text-center mt-6 font-mono">Planner shows static data — schedules table coming in Phase 3</p>
+
+    {/* Paused */}
+    {paused.length > 0 && (
+      <div>
+        <div className="flex items-center gap-2 mb-3"><Repeat className="w-3.5 h-3.5 text-text-disabled" /><span className="text-[11px] font-bold uppercase text-text-disabled tracking-wider">Paused ({paused.length})</span></div>
+        <div className="space-y-2 opacity-60">
+          {paused.map(s => {
+            const agent = agents.find(a => a.id === s.agentId);
+            return (
+              <div key={s.id} className="px-4 py-3 rounded-2xl border border-border bg-surface">
+                <div className="flex items-center gap-3">
+                  <AgentAvatar agent={agent} name={agent?.name || '?'} />
+                  <span className="text-[12px] font-semibold text-text-body flex-1 truncate">{s.name}</span>
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-white/5 text-text-muted">Paused</span>
+                </div>
+                <div className="flex items-center gap-2 mt-2 ml-8">
+                  <button onClick={() => onToggle(s.id, true)} className="flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-bold text-aurora-teal bg-aurora-teal/5 border border-aurora-teal/20 rounded-lg hover:bg-aurora-teal/10">Enable</button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    )}
   </div>);
 }
 
@@ -359,13 +485,14 @@ export function MissionControlView() {
   const [logs, setLogs] = useState([]);
   const [approvals, setApprovals] = useState([]);
   const [completed, setCompleted] = useState([]);
+  const [schedules, setSchedules] = useState([]);
   const [loaded, setLoaded] = useState(false);
   const [tab, setTab] = useState('ops');
   const [sel, setSel] = useState(null);
 
   const reload = useCallback(async () => {
-    const [a, t, l, p, c] = await Promise.all([fetchAgents(), fetchTasks(), fetchActivityLog(), fetchPendingReviews(), fetchCompletedOutputs()]);
-    setAgents(a); setTasks(t); setLogs(l); setApprovals(p); setCompleted(c);
+    const [a, t, l, p, c, s] = await Promise.all([fetchAgents(), fetchTasks(), fetchActivityLog(), fetchPendingReviews(), fetchCompletedOutputs(), fetchSchedules()]);
+    setAgents(a); setTasks(t); setLogs(l); setApprovals(p); setCompleted(c); setSchedules(s);
     setPendingCount(p.length);
   }, [setPendingCount]);
 
@@ -385,6 +512,11 @@ export function MissionControlView() {
   async function handleReject(id, fb) { await rejectReview(id, fb); setSel(null); reload(); }
   async function handleRetry(id) { await retryTask(id); reload(); }
   async function handleStop(id) { await stopTask(id); reload(); }
+  async function handleAcknowledge(table, id) { await acknowledgeItem(table, id); setSel(null); reload(); }
+  async function handleReopen(id) { await reopenReview(id); setSel(null); reload(); }
+  async function handleSnooze(id) { await snoozeReview(id, 30); setSel(null); reload(); }
+  async function handleToggleSchedule(id, enabled) { await toggleSchedule(id, enabled); reload(); }
+  async function handleDispatch(schedule) { await dispatchFromSchedule(schedule, agents); reload(); }
   function handleCopy(item) { navigator.clipboard?.writeText(`${item.name || item.title}\nStatus: ${item.status}\nAgent: ${item.agentName || ''}\nCost: $${item.costUsd?.toFixed(3) || '0.000'}`); }
 
   const selectedItem = sel ? [...tasks, ...approvals, ...completed].find(i => i.id === sel) : null;
@@ -412,7 +544,7 @@ export function MissionControlView() {
         <div className="flex items-center gap-1 bg-surface rounded-2xl p-1 border border-border">
           {[
             { id: 'ops', lb: 'Operations', ic: Radio, ct: running },
-            { id: 'plan', lb: 'Planner', ic: Calendar, ct: PLAN_QUEUE.length },
+            { id: 'plan', lb: 'Planner', ic: Calendar, ct: schedules.filter(s => s.enabled).length },
             { id: 'app', lb: 'Approvals', ic: ShieldCheck, ct: approvals.length },
           ].map(t => (
             <button key={t.id} onClick={() => setTab(t.id)} className={cn(
@@ -465,10 +597,23 @@ export function MissionControlView() {
           {tab === 'ops' && tasks.map(t => <ItemRow key={t.id} item={t} agents={agents} selected={sel === t.id} onClick={() => setSel(t.id)} />)}
           {tab === 'ops' && tasks.length === 0 && <p className="text-center text-text-disabled py-12">No active tasks.</p>}
 
-          {tab === 'plan' && <PlannerTab />}
+          {tab === 'plan' && <PlannerTab schedules={schedules} agents={agents} onToggle={handleToggleSchedule} onDispatch={handleDispatch} />}
 
-          {tab === 'app' && approvals.map(a => <ItemRow key={a.id} item={a} agents={agents} selected={sel === a.id} onClick={() => setSel(a.id)} />)}
-          {tab === 'app' && approvals.length === 0 && <p className="text-center text-text-disabled py-12">No pending approvals. All clear.</p>}
+          {tab === 'app' && (() => {
+            const now = Date.now();
+            const visible = approvals.filter(a => !a.snoozedUntil || new Date(a.snoozedUntil).getTime() <= now);
+            const snoozed = approvals.filter(a => a.snoozedUntil && new Date(a.snoozedUntil).getTime() > now);
+            return (<>
+              {visible.map(a => <ItemRow key={a.id} item={a} agents={agents} selected={sel === a.id} onClick={() => setSel(a.id)} />)}
+              {visible.length === 0 && snoozed.length === 0 && <p className="text-center text-text-disabled py-12">No pending approvals. All clear.</p>}
+              {snoozed.length > 0 && (
+                <div className="mt-4">
+                  <div className="flex items-center gap-2 mb-2"><AlarmClock className="w-3 h-3 text-text-disabled" /><span className="text-[11px] font-bold uppercase text-text-disabled tracking-wider">Snoozed ({snoozed.length})</span></div>
+                  <div className="space-y-1.5 opacity-60">{snoozed.map(a => <ItemRow key={a.id} item={a} agents={agents} selected={sel === a.id} onClick={() => setSel(a.id)} />)}</div>
+                </div>
+              )}
+            </>);
+          })()}
 
           {/* Recently completed */}
           {(tab === 'ops' || tab === 'app') && completed.length > 0 && (
@@ -490,13 +635,13 @@ export function MissionControlView() {
 
         {/* Intel sidebar */}
         <div className="w-[260px] shrink-0 overflow-y-auto no-scrollbar">
-          <IntelSidebar tasks={tasks} approvals={approvals} completed={completed} />
+          <IntelSidebar tasks={tasks} approvals={approvals} completed={completed} agents={agents} schedules={schedules} />
         </div>
       </div>
 
       {/* Drawer */}
       <AnimatePresence>
-        {selectedItem && <Drawer item={selectedItem} agents={agents} tasks={tasks} logs={logs} onClose={() => setSel(null)} onApprove={handleApprove} onReject={handleReject} onRetry={handleRetry} onStop={handleStop} onCopy={handleCopy} />}
+        {selectedItem && <Drawer item={selectedItem} agents={agents} tasks={tasks} logs={logs} onClose={() => setSel(null)} onApprove={handleApprove} onReject={handleReject} onRetry={handleRetry} onStop={handleStop} onCopy={handleCopy} onAcknowledge={handleAcknowledge} onReopen={handleReopen} onSnooze={handleSnooze} onReload={reload} />}
       </AnimatePresence>
     </div>
   );
