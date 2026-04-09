@@ -36,7 +36,7 @@ export const systemRecommendations = [
 
 export const baseCommandItems = [
   { id: 'c1', group: 'Navigation', label: 'Go to Overview', icon: 'LayoutGrid', action: { type: 'navigate', route: 'overview' } },
-  { id: 'c3', group: 'Navigation', label: 'Go to Review Room', icon: 'CheckSquare', action: { type: 'navigate', route: 'review' } },
+  { id: 'c3', group: 'Navigation', label: 'Go to Mission Control', icon: 'CheckSquare', action: { type: 'navigate', route: 'missions' } },
   { id: 'c4', group: 'Navigation', label: 'Go to Monthly Reports', icon: 'FileText', action: { type: 'navigate', route: 'reports' } },
   { id: 'c5', group: 'Navigation', label: 'Go to Intelligence', icon: 'BrainCircuit', action: { type: 'navigate', route: 'intelligence' } },
   { id: 'c20', group: 'Panels', label: 'Open Notifications', icon: 'Bell', action: { type: 'panel', panel: 'notifications' } },

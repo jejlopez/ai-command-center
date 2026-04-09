@@ -1,31 +1,208 @@
-import { useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { useMemo, useState } from 'react';
+import { motion } from 'framer-motion';
 import { container, item } from '../utils/variants';
-import { useHealthMetrics } from '../utils/useSupabase';
-import { SpotlightCard } from '../components/SpotlightCard';
-import { NeuralPulse } from '../components/NeuralPulse';
-import { AgentVitalCard } from '../components/AgentVitalCard';
-import { CostBurnWidget } from '../components/CostBurnWidget';
-import { ActivityFeed } from '../components/ActivityFeed';
-import { TaskDAG } from '../components/TaskDAG';
-import { HealthRadial } from '../components/HealthRadial';
+import { useActivityLog, useCostData, usePendingReviews, useSchedules } from '../utils/useSupabase';
 import { CreateAgentModal } from '../components/CreateAgentModal';
-import { Plus, GitBranch, RotateCcw, Loader2 } from 'lucide-react';
-import { retryTask } from '../lib/api';
-import { cn } from '../utils/cn';
+import { Loader2 } from 'lucide-react';
+import { OverviewBriefingHeader } from '../components/overview/OverviewBriefingHeader';
+import { AttentionStrip } from '../components/overview/AttentionStrip';
+import { LiveOpsTable } from '../components/overview/LiveOpsTable';
+import { FleetHealthPanel } from '../components/overview/FleetHealthPanel';
+import { CostControlPanel } from '../components/overview/CostControlPanel';
+import { SchedulesBottlenecksPanel } from '../components/overview/SchedulesBottlenecksPanel';
 
-const statusStyles = {
-  success: 'row-success text-aurora-green border-aurora-green/20',
-  completed: 'row-success text-aurora-green border-aurora-green/20',
-  error: 'row-error text-aurora-rose border-aurora-rose/20',
-  running: 'row-running text-aurora-amber border-aurora-amber/20',
-  idle: 'row-idle text-text-muted border-white/5',
-  pending: 'row-idle text-text-muted border-white/5',
-};
+function formatWaitLabel(ms) {
+  if (!ms || ms <= 0) return 'None';
+  const minutes = Math.round(ms / 60000);
+  if (minutes < 1) return '<1m';
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  const rem = minutes % 60;
+  return rem ? `${hours}h ${rem}m` : `${hours}h`;
+}
 
-export function OverviewView({ agents, tasks, loading, addOptimistic, onOpenDetail, onQuickDispatch }) {
-  const { data: healthData, errorsByAgent } = useHealthMetrics();
+export function OverviewView({ agents, tasks, loading, addOptimistic, onOpenDetail, onNavigate }) {
+  const { logs } = useActivityLog();
+  const { reviews, loading: loadingReviews } = usePendingReviews();
+  const { schedules, loading: loadingSchedules } = useSchedules();
+  const { data: costData } = useCostData();
   const [createModalOpen, setCreateModalOpen] = useState(false);
+
+  const activeAgents = agents.filter(a => a.status === 'processing').length;
+  const idleAgents = agents.filter(a => a.status === 'idle').length;
+  const errorAgents = agents.filter(a => a.status === 'error').length;
+  const failedTasks = tasks.filter((task) => task.status === 'error');
+  const runningTasks = tasks.filter((task) => task.status === 'running');
+  const pendingTasks = tasks.filter((task) => task.status === 'pending');
+  const errorLogs = logs.filter((log) => log.type === 'ERR');
+
+  const stalledAgents = agents.filter((agent) => {
+    if (!agent.lastHeartbeat) return false;
+    const heartbeatAge = Date.now() - new Date(agent.lastHeartbeat).getTime();
+    return heartbeatAge > 10 * 60 * 1000 && agent.status !== 'idle';
+  });
+
+  const flaggedAgents = useMemo(() => {
+    return agents
+      .map((agent) => {
+        if (agent.status === 'error') {
+          return { id: agent.id, name: agent.name, reason: agent.errorMessage || 'Agent entered an error state.' };
+        }
+        if (stalledAgents.some((stalled) => stalled.id === agent.id)) {
+          return { id: agent.id, name: agent.name, reason: 'Agent heartbeat looks stale while still active.' };
+        }
+        const recentErrors = errorLogs.filter((log) => log.agentId === agent.id).length;
+        if (recentErrors > 0) {
+          return { id: agent.id, name: agent.name, reason: `${recentErrors} recent error log${recentErrors > 1 ? 's' : ''}.` };
+        }
+        return null;
+      })
+      .filter(Boolean)
+      .slice(0, 3);
+  }, [agents, stalledAgents, errorLogs]);
+
+  const medianLatency = useMemo(() => {
+    const values = agents.map((agent) => Number(agent.latencyMs || 0)).filter((value) => value > 0).sort((a, b) => a - b);
+    if (values.length === 0) return 0;
+    const middle = Math.floor(values.length / 2);
+    return values.length % 2 === 0
+      ? Math.round((values[middle - 1] + values[middle]) / 2)
+      : values[middle];
+  }, [agents]);
+
+  const successRate = useMemo(() => {
+    if (agents.length === 0) return 100;
+    return Math.round(agents.reduce((sum, agent) => sum + Number(agent.successRate || 0), 0) / agents.length);
+  }, [agents]);
+
+  const oldestPendingLabel = useMemo(() => {
+    if (pendingTasks.length === 0) return 'No queue';
+    const maxDuration = Math.max(...pendingTasks.map((task) => Number(task.durationMs || 0)));
+    if (!maxDuration) return `${pendingTasks.length} queued`;
+    const seconds = Math.round(maxDuration / 1000);
+    return seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
+  }, [pendingTasks]);
+
+  const approvalWaitTimes = useMemo(
+    () => reviews.map((review) => Number(review.waitingMs || 0)).filter((value) => value > 0),
+    [reviews]
+  );
+  const avgApprovalWaitMs = approvalWaitTimes.length
+    ? Math.round(approvalWaitTimes.reduce((sum, value) => sum + value, 0) / approvalWaitTimes.length)
+    : 0;
+  const longestApprovalWaitMs = approvalWaitTimes.length ? Math.max(...approvalWaitTimes) : 0;
+
+  const questionCount = reviews.filter((review) => ['message', 'question'].includes(review.outputType)).length;
+  const now = Date.now();
+  const lateSchedules = schedules.filter((job) => job.status === 'active' && job.nextRunAt && new Date(job.nextRunAt).getTime() < now).length;
+  const needsAttention = reviews.length + failedTasks.length + stalledAgents.length;
+  const attentionItems = [
+    {
+      id: 'approvals',
+      label: 'Pending approvals',
+      value: reviews.length,
+      detail: reviews.length ? 'Human sign-off needed before agents proceed.' : 'Approval queue is clear.',
+      badge: reviews.some((review) => review.urgency === 'critical') ? 'Critical' : 'Queue',
+      tone: reviews.length ? 'warning' : 'info',
+      clickable: true,
+    },
+    {
+      id: 'schedules',
+      label: 'Late schedules',
+      value: lateSchedules,
+      detail: lateSchedules ? 'Scheduled work missed its expected run window.' : 'All tracked schedules are on time.',
+      badge: 'Scheduler',
+      tone: lateSchedules ? 'critical' : 'info',
+      clickable: false,
+    },
+    {
+      id: 'failures',
+      label: 'Failed tasks',
+      value: failedTasks.length,
+      detail: failedTasks.length ? 'Task errors need retry, reassignment, or review.' : 'No failed tasks right now.',
+      badge: 'Errors',
+      tone: failedTasks.length ? 'critical' : 'info',
+      clickable: false,
+    },
+    {
+      id: 'stalled',
+      label: 'Stalled agents',
+      value: stalledAgents.length,
+      detail: stalledAgents.length ? 'Agents are active but have stale heartbeats.' : 'No stale active agents.',
+      badge: 'Heartbeat',
+      tone: stalledAgents.length ? 'warning' : 'info',
+      clickable: false,
+    },
+    {
+      id: 'cost',
+      label: 'Spend today',
+      value: `$${costData.total.toFixed(2)}`,
+      detail: costData.total > 0 ? `Burning about $${costData.burnRate.toFixed(2)}/hr.` : 'No spend recorded yet today.',
+      badge: 'Budget',
+      tone: costData.total > 0 ? 'info' : 'info',
+      clickable: false,
+    },
+    {
+      id: 'alerts',
+      label: 'Questions waiting',
+      value: questionCount,
+      detail: questionCount ? 'Agent outputs that likely need a direct response.' : 'No open agent questions detected.',
+      badge: 'Inbox',
+      tone: questionCount ? 'warning' : 'info',
+      clickable: true,
+    },
+  ];
+
+  const reviewAgentIds = new Set(reviews.map((review) => review.agentId).filter(Boolean));
+  const prioritizedTasks = useMemo(() => {
+    const priorityMap = { error: 0, pending: 1, running: 2, completed: 3 };
+    return tasks
+      .filter((task) => task.status !== 'completed')
+      .slice()
+      .sort((a, b) => {
+        const scoreA = priorityMap[a.status] ?? 9;
+        const scoreB = priorityMap[b.status] ?? 9;
+        if (scoreA !== scoreB) return scoreA - scoreB;
+        return Number(b.durationMs || 0) - Number(a.durationMs || 0);
+      })
+      .slice(0, 8)
+      .map((task) => ({
+        ...task,
+        needsReview: reviewAgentIds.has(task.agentId),
+        blocker:
+          task.status === 'error'
+            ? 'Task failed and likely needs retry or review.'
+            : reviewAgentIds.has(task.agentId)
+              ? 'Waiting on human approval.'
+              : task.status === 'pending'
+                ? 'Queued behind current work.'
+                : 'Running normally.',
+      }));
+  }, [tasks, reviewAgentIds]);
+
+  const overviewSummary = {
+    primaryMessage:
+      needsAttention > 0
+        ? `${needsAttention} items need attention before the system is fully clear.`
+        : 'Fleet is clear and work is moving normally.',
+    needsAttention,
+    activeAgents,
+    burnRate: costData.burnRate,
+    pendingApprovals: reviews.length,
+    runningTasks: runningTasks.length,
+    failedTasks: failedTasks.length,
+    idleAgents,
+    errorAgents,
+    medianLatency,
+    successRate,
+    stalledAgents: stalledAgents.length,
+    flaggedAgents,
+    oldestPendingLabel,
+    avgApprovalWaitLabel: formatWaitLabel(avgApprovalWaitMs),
+    longestApprovalWaitLabel: formatWaitLabel(longestApprovalWaitMs),
+    lateSchedules,
+    scheduledJobs: schedules.length,
+  };
 
   if (loading) {
     return (
@@ -35,11 +212,6 @@ export function OverviewView({ agents, tasks, loading, addOptimistic, onOpenDeta
     );
   }
 
-  const activeAgents = agents.filter(a => a.status === 'processing').length;
-  const idleAgents = agents.filter(a => a.status === 'idle').length;
-  const errorAgents = agents.filter(a => a.status === 'error').length;
-
-
   return (
     <motion.div
       variants={container}
@@ -47,116 +219,48 @@ export function OverviewView({ agents, tasks, loading, addOptimistic, onOpenDeta
       animate="show"
       className="grid grid-cols-12 gap-5 pb-8"
     >
-      {/* Row 1: System pulse + fleet status */}
       <motion.div variants={item} className="col-span-12">
-        <SpotlightCard>
-          <NeuralPulse
-            systemHealth={healthData.length ? Math.round(healthData.reduce((s, m) => s + m.value, 0) / healthData.length) : 100}
-            agentCount={activeAgents}
-            idleCount={idleAgents}
-            errorCount={errorAgents}
-            totalCount={agents.length}
-            onDeploy={() => setCreateModalOpen(true)}
-          />
-        </SpotlightCard>
+        <OverviewBriefingHeader
+          summary={overviewSummary}
+          onDeploy={() => setCreateModalOpen(true)}
+          onNavigate={onNavigate}
+        />
       </motion.div>
 
-      {/* Row 2: Agent cards — AoE unit-selection grid */}
-      <motion.div variants={item} className="col-span-12 overflow-visible">
-        <div className="grid grid-cols-12 gap-5">
-          <AnimatePresence mode="popLayout">
-            {agents.map(a => (
-              <motion.div key={a.id} variants={item} layout layoutId={a.id} className="col-span-4 relative z-10 hover:z-50 overflow-visible">
-                <AgentVitalCard
-                  agent={a}
-                  errorCount={errorsByAgent.counts[a.id] || 0}
-                  latestErrorMessage={errorsByAgent.messages[a.id] || null}
-                  onOpenDetail={() => onOpenDetail(a.id)}
-                  onQuickDispatch={() => onQuickDispatch(a.id)}
-                  onViewLogs={() => onOpenDetail(a.id, { mode: 'logs' })}
-                  onTuneAgent={() => onOpenDetail(a.id, { mode: 'config' })}
-                />
-              </motion.div>
-            ))}
-          </AnimatePresence>
-        </div>
-      </motion.div>
-
-      {/* Row 3: Neural Execution Graph (full width hero) */}
-      <motion.div variants={item} className="col-span-12 h-[380px]">
-        <div className="spatial-panel p-6 h-full flex flex-col relative">
-          <h3 className="text-xs uppercase tracking-widest text-text-muted mb-4 absolute top-6 left-6 z-10 flex items-center gap-2">
-            <GitBranch className="w-4 h-4" /> Neural Execution Graph
-          </h3>
-          <div className="absolute inset-0 bg-gradient-to-b from-aurora-blue/5 to-transparent pointer-events-none rounded-2xl" />
-          <div className="flex-1 w-full h-full relative -mx-4 -mb-4 pt-8">
-            <TaskDAG onNodeClick={(id) => onOpenDetail(id)} tasks={tasks} />
-          </div>
-        </div>
-      </motion.div>
-
-      {/* Row 4: Cost, Activity, Health */}
-      <motion.div variants={item} className="col-span-4 h-72">
-        <SpotlightCard className="h-full">
-          <CostBurnWidget />
-        </SpotlightCard>
-      </motion.div>
-      <motion.div variants={item} className="col-span-4 h-72">
-        <SpotlightCard className="h-full">
-          <ActivityFeed />
-        </SpotlightCard>
-      </motion.div>
-      <motion.div variants={item} className="col-span-4 h-72">
-        <div className="spatial-panel flex flex-col gap-5 justify-center items-center h-full">
-          {healthData.map(m => (
-            <HealthRadial key={m.label} label={m.label} value={m.value} color={m.color} history={m.history24h} />
-          ))}
-        </div>
-      </motion.div>
-
-      {/* Row 5: Live Tasks */}
       <motion.div variants={item} className="col-span-12">
-        <h3 className="text-sm font-bold text-text-muted uppercase tracking-wider mb-4 border-b border-border pb-2">Live Tasks</h3>
-        <AnimatePresence mode="popLayout">
-          {tasks.map((run, i) => (
-            <motion.div
-              key={run.id}
-              variants={item}
-              layout
-              whileHover={{ x: 4, backgroundColor: 'rgba(255,255,255,0.03)' }}
-              onClick={() => run.agentId && onOpenDetail(run.agentId)}
-              className={cn(
-                'spatial-panel p-4 flex items-center justify-between group mb-2 border hover:shadow-card transition-all cursor-pointer',
-                statusStyles[run.status] || 'row-idle'
-              )}
-            >
-              <div className="flex items-center gap-6 flex-1">
-                <span className="font-medium text-sm text-text-primary w-32 truncate tracking-wide">{run.agentName}</span>
-                <span className="text-sm font-medium w-64 text-text-primary truncate">{run.name}</span>
-              </div>
-              <div className="flex items-center gap-6">
-                <span className={cn('text-xs font-bold uppercase tracking-wider w-24 text-right', statusStyles[run.status]?.split(' ')[1])}>
-                  {run.status}
-                </span>
-                <span className="font-mono text-xs text-text-muted tabular-nums w-16 text-right">
-                  {run.durationMs < 1000 ? `${run.durationMs}ms` : `${(run.durationMs / 1000).toFixed(1)}s`}
-                </span>
-                <span className="font-mono text-[11px] text-text-muted w-16 text-right">
-                  ${run.costUsd.toFixed(3)}
-                </span>
-                {run.status === 'error' && (
-                  <button
-                    onClick={(e) => { e.stopPropagation(); retryTask(run.id).catch(console.error); }}
-                    className="p-1.5 text-aurora-rose hover:text-aurora-rose hover:bg-white/5 rounded transition-all"
-                    title="Retry Task"
-                  >
-                    <RotateCcw className="w-3.5 h-3.5" />
-                  </button>
-                )}
-              </div>
-            </motion.div>
-          ))}
-        </AnimatePresence>
+        <AttentionStrip
+          items={attentionItems}
+          loading={loadingReviews}
+          onSelect={(itemSelected) => {
+            if (itemSelected.id === 'approvals' || itemSelected.id === 'alerts') onNavigate?.('missions');
+          }}
+        />
+      </motion.div>
+
+      <motion.div variants={item} className="col-span-12 xl:col-span-8">
+        <LiveOpsTable
+          tasks={prioritizedTasks}
+          loading={loading}
+          onOpenDetail={onOpenDetail}
+          onNavigate={onNavigate}
+        />
+      </motion.div>
+
+      <motion.div variants={item} className="col-span-12 xl:col-span-4">
+        <FleetHealthPanel summary={overviewSummary} onOpenDetail={onOpenDetail} />
+      </motion.div>
+
+      <motion.div variants={item} className="col-span-12 xl:col-span-6">
+        <CostControlPanel
+          summary={{
+            ...costData,
+            topModel: costData.models[0] || null,
+          }}
+        />
+      </motion.div>
+
+      <motion.div variants={item} className="col-span-12 xl:col-span-6">
+        <SchedulesBottlenecksPanel summary={overviewSummary} schedules={schedules} loading={loadingSchedules} />
       </motion.div>
 
       <CreateAgentModal

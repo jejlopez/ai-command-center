@@ -9,8 +9,6 @@ import { SettingsPanel } from './components/SettingsPanel';
 import { UserProfilePanel } from './components/UserProfilePanel';
 import { AppErrorBoundary } from './components/AppErrorBoundary';
 import { OverviewView } from './views/OverviewView';
-// FleetOperationsView merged into OverviewView
-import { ReviewRoomView } from './views/ReviewRoomView';
 import { ReportsView } from './views/ReportsView';
 import { IntelligenceView } from './views/IntelligenceView';
 import { LoginView } from './views/LoginView';
@@ -18,17 +16,25 @@ import { MissionControlView } from './views/MissionControlView';
 import { TimeRangeProvider } from './utils/useTimeRange';
 import { useSystemState } from './context/SystemStateContext';
 import { AuthProvider, useAuth } from './context/AuthContext';
-import { useAgents, useTasks } from './utils/useSupabase';
+import { useAgents, usePendingReviews, useTasks } from './utils/useSupabase';
 import { Bell, Settings, User, Loader2 } from 'lucide-react';
 import { cn } from './utils/cn';
+
+const routeLabels = {
+  overview: 'overview',
+  missions: 'mission control',
+  reports: 'reports',
+  intelligence: 'intelligence',
+};
 
 function Dashboard() {
   const [activeRoute, setActiveRoute] = useState('overview');
   const [cmdOpen, setCmdOpen] = useState(false);
   const [detailState, setDetailState] = useState(null);
-  const { notificationsOpen, setNotificationsOpen, settingsOpen, setSettingsOpen, profileOpen, setProfileOpen } = useSystemState();
+  const { notificationsOpen, setNotificationsOpen, settingsOpen, setSettingsOpen, profileOpen, setProfileOpen, setPendingCount } = useSystemState();
   const { agents, loading: loadingAgents, addOptimistic } = useAgents();
   const { tasks, loading: loadingTasks } = useTasks();
+  const { reviews } = usePendingReviews();
 
   useEffect(() => {
     const handleKeyDown = (e) => {
@@ -41,6 +47,10 @@ function Dashboard() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
+  useEffect(() => {
+    setPendingCount(reviews.length);
+  }, [reviews.length, setPendingCount]);
+
   function openAgentWorkspace(agentId, options = {}) {
     if (!agentId) return;
     setDetailState({
@@ -52,7 +62,11 @@ function Dashboard() {
   function handleAction(action) {
     if (!action) return;
     const { type, route, agentId, panel } = action;
-    if (type === 'navigate') setActiveRoute(route);
+    if (type === 'navigate') {
+      if (route === 'review') setActiveRoute('missions');
+      else if (route === 'operations') setActiveRoute('overview');
+      else setActiveRoute(route);
+    }
     if (type === 'agent') openAgentWorkspace(agentId);
     if (type === 'panel') {
       if (panel === 'notifications') setNotificationsOpen(true);
@@ -73,10 +87,10 @@ function Dashboard() {
         {/* Topbar */}
         <header className="h-16 flex items-center justify-between px-8 shrink-0 z-10 w-full relative">
           <div className="flex items-center gap-2">
-            <span className="text-text-muted font-medium">Nexus</span>
+            <span className="text-text-muted font-medium">Jarvis</span>
             <span className="text-text-muted">/</span>
             <span className="text-text-primary font-semibold capitalize font-mono">
-              {activeRoute.replace('review', 'review room')}
+              {routeLabels[activeRoute] || activeRoute}
             </span>
           </div>
           
@@ -135,8 +149,8 @@ function Dashboard() {
               tasks={tasks}
               loading={loadingAgents || loadingTasks}
               addOptimistic={addOptimistic}
+              onNavigate={setActiveRoute}
               onOpenDetail={openAgentWorkspace}
-              onQuickDispatch={(agentId) => openAgentWorkspace(agentId, { mode: 'dispatch' })}
             />
           )}
           {activeRoute === 'missions' && <MissionControlView />}

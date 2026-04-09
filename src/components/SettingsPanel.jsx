@@ -397,7 +397,7 @@ function AboutTab() {
     <div>
       <SectionLabel>Application</SectionLabel>
       <div className="p-4 rounded-xl bg-white/[0.02] border border-border mb-4">
-        <p className="text-lg font-semibold text-text-primary">Nexus <span className="text-aurora-teal">v4.2.0</span></p>
+        <p className="text-lg font-semibold text-text-primary">Jarvis <span className="text-aurora-teal">v4.2.0</span></p>
         <p className="text-xs text-text-muted mt-1">AI Agent Command Center</p>
       </div>
 

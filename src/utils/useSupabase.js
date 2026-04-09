@@ -214,6 +214,124 @@ export function useActivityLog(agentId = null) {
   return { logs, loading, refetch: fetchLogs };
 }
 
+export function usePendingReviews() {
+  const { user } = useAuth();
+  const [reviews, setReviews] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetchReviews = useCallback(async () => {
+    if (!user) {
+      setReviews([]);
+      setLoading(false);
+      return;
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from('pending_reviews')
+        .select('*')
+        .eq('user_id', user.id)
+        .in('status', ['awaiting_approval', 'needs_intervention'])
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+
+      setReviews((data || []).map((row) => ({
+        id: row.id,
+        agentId: row.agent_id,
+        agentName: row.agent_name,
+        urgency: row.urgency,
+        title: row.title,
+        outputType: row.output_type,
+        status: row.status,
+        summary: row.summary,
+        createdAt: row.created_at,
+        waitingMs: row.waiting_since
+          ? Date.now() - new Date(row.waiting_since).getTime()
+          : 0,
+      })));
+    } catch (err) {
+      console.error('[usePendingReviews] Fetch error:', err);
+      setReviews([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) return;
+
+    fetchReviews();
+
+    const channel = supabase
+      .channel(createRealtimeChannelName('pending-reviews-user', user.id))
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'pending_reviews', filter: `user_id=eq.${user.id}` },
+        () => fetchReviews()
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user, fetchReviews]);
+
+  return { reviews, loading, refetch: fetchReviews };
+}
+
+export function useSchedules() {
+  const { user } = useAuth();
+  const [schedules, setSchedules] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetchSchedules = useCallback(async () => {
+    if (!user) {
+      setSchedules([]);
+      setLoading(false);
+      return;
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from('scheduled_jobs')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('next_run_at', { ascending: true });
+
+      if (error) throw error;
+
+      setSchedules((data || []).map(mapScheduledJobFromDb));
+    } catch (err) {
+      console.error('[useSchedules] Fetch error:', err);
+      setSchedules([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) return;
+
+    fetchSchedules();
+
+    const channel = supabase
+      .channel(createRealtimeChannelName('scheduled-jobs-user', user.id))
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'scheduled_jobs', filter: `user_id=eq.${user.id}` },
+        () => fetchSchedules()
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user, fetchSchedules]);
+
+  return { schedules, loading, refetch: fetchSchedules };
+}
+
 /**
  * Hook for cost data.
  */
@@ -606,6 +724,27 @@ function mapModelFromDb(row) {
     provider: row.provider || 'Custom',
     costPer1k: Number(row.cost_per_1k || 0),
     createdAt: row.created_at,
+  };
+}
+
+function mapScheduledJobFromDb(row) {
+  return {
+    id: row.id,
+    userId: row.user_id,
+    agentId: row.agent_id,
+    agentName: row.agent_name,
+    name: row.name,
+    scheduleLabel: row.schedule_label,
+    status: row.status,
+    approvalRequired: row.approval_required ?? false,
+    nextRunAt: row.next_run_at,
+    lastRunAt: row.last_run_at,
+    lastRunStatus: row.last_run_status || 'never',
+    estimatedDurationMs: row.estimated_duration_ms || 0,
+    estimatedCostUsd: parseFloat(row.estimated_cost_usd) || 0,
+    lastError: row.last_error || null,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
   };
 }
 
