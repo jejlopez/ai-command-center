@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../lib/supabaseClient';
 import { useAuth } from '../context/AuthContext';
 
@@ -9,6 +9,79 @@ function createRealtimeChannelName(prefix, userId) {
   return `${prefix}-${userId}-${uniqueSuffix}`;
 }
 
+async function ensureCommanderAgent(user) {
+  if (!user?.id) return null;
+
+  const commanderName = user.user_metadata?.full_name?.trim()
+    ? `${user.user_metadata.full_name.trim()} Command`
+    : 'Jarvis Commander';
+
+  const row = {
+    id: crypto.randomUUID(),
+    user_id: user.id,
+    name: commanderName,
+    model: 'Claude Opus 4.6',
+    status: 'idle',
+    role: 'commander',
+    color: '#00D9C8',
+    can_spawn: true,
+    spawn_pattern: 'fan-out',
+  };
+
+  const { data, error } = await supabase
+    .from('agents')
+    .insert([row])
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data;
+}
+
+function buildSyntheticCommander(user) {
+  const commanderName = user?.user_metadata?.full_name?.trim()
+    ? `${user.user_metadata.full_name.trim()} Command`
+    : 'Jarvis Commander';
+
+  return {
+    id: 'synthetic-commander',
+    userId: user?.id || null,
+    name: commanderName,
+    model: 'Claude Opus 4.6',
+    status: 'idle',
+    role: 'commander',
+    roleDescription: 'Fallback command agent while the persistent commander record is unavailable.',
+    color: '#00D9C8',
+    temperature: 0.4,
+    responseLength: 'medium',
+    systemPrompt: '',
+    parentId: null,
+    canSpawn: true,
+    spawnPattern: 'fan-out',
+    taskCompletion: 0,
+    latencyMs: 0,
+    totalTokens: 0,
+    totalCost: 0,
+    successRate: 100,
+    taskCount: 0,
+    uptimeMs: 0,
+    lastHeartbeat: null,
+    restartCount: 0,
+    errorMessage: null,
+    errorStack: null,
+    lastRestart: null,
+    tokenBurn: [],
+    tokenHistory24h: [],
+    latencyHistory24h: [],
+    skills: [],
+    isEphemeral: false,
+    subagents: [],
+    createdAt: null,
+    updatedAt: null,
+    isSyntheticCommander: true,
+  };
+}
+
 /**
  * Hook to fetch agents from Supabase with realtime subscription.
  * Scoped to the current authenticated user.
@@ -17,6 +90,7 @@ export function useAgents() {
   const { user } = useAuth();
   const [agents, setAgents] = useState([]);
   const [loading, setLoading] = useState(true);
+  const commanderBootstrapAttempted = useRef(false);
 
   const fetchAgents = useCallback(async () => {
     if (!user) {
@@ -34,7 +108,21 @@ export function useAgents() {
 
       if (error) throw error;
 
-      setAgents((data || []).map(mapAgentFromDb));
+      const rows = data || [];
+      const hasCommander = rows.some((agent) => agent.role === 'commander');
+
+      if (!hasCommander && !commanderBootstrapAttempted.current) {
+        commanderBootstrapAttempted.current = true;
+        try {
+          await ensureCommanderAgent(user);
+          return fetchAgents();
+        } catch (bootstrapError) {
+          console.error('[useAgents] Commander bootstrap failed, using fallback commander:', bootstrapError);
+        }
+      }
+
+      const mappedAgents = rows.map(mapAgentFromDb);
+      setAgents(hasCommander ? mappedAgents : [buildSyntheticCommander(user), ...mappedAgents]);
     } catch (err) {
       console.error('[useAgents] Fetch error:', err);
       setAgents([]);
