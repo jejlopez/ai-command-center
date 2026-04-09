@@ -42,9 +42,6 @@ export function SchedulesBottlenecksPanel({ summary, schedules, loading }) {
         <div>
           <div className="text-[10px] uppercase tracking-[0.26em] text-text-disabled">Schedules & Bottlenecks</div>
           <div className="mt-2 text-2xl font-semibold tracking-tight text-text-primary">Operational bottlenecks and scheduled work</div>
-          <div className="mt-2 text-sm leading-6 text-text-muted">
-            Monitor what is queued, what is late, and which automations are drifting out of rhythm.
-          </div>
         </div>
         <div className="hidden rounded-full border border-white/10 bg-white/[0.03] px-3 py-1.5 text-[10px] font-mono uppercase tracking-[0.18em] text-text-muted md:block">
           Jarvis Ops Grid
@@ -85,7 +82,7 @@ export function SchedulesBottlenecksPanel({ summary, schedules, loading }) {
               >
                 <div className="flex items-center justify-between gap-3">
                   <div className="min-w-0">
-                    <div className="truncate text-lg font-semibold text-text-primary">{job.name}</div>
+                    <div className="truncate text-base font-semibold text-text-primary">{job.name}</div>
                     <div className="mt-1 text-xs uppercase tracking-[0.16em] text-text-disabled">{job.agentName} · {job.scheduleLabel}</div>
                   </div>
                   <div className="flex items-center gap-2">

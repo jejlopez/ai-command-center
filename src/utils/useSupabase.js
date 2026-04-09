@@ -561,6 +561,52 @@ export async function createAgent(agentData) {
   return mapAgentFromDb(data);
 }
 
+/**
+ * Create a temp (ephemeral) agent tied to the Commander.
+ */
+export async function createTempAgent({ objective, role, model, commanderId }) {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('Not authenticated');
+
+  const slug = objective.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 40);
+  const row = {
+    id: crypto.randomUUID(),
+    user_id: user.id,
+    name: `temp-${slug}`,
+    model,
+    status: 'idle',
+    role: role || 'researcher',
+    parent_id: commanderId,
+    can_spawn: false,
+    spawn_pattern: 'sequential',
+    is_ephemeral: true,
+    system_prompt: `You are a temporary specialist. Objective: ${objective}`,
+    color: '#6b7280',
+  };
+  const { data, error } = await supabase.from('agents').insert([row]).select().single();
+  if (error) throw error;
+  return mapAgentFromDb(data);
+}
+
+/**
+ * Delete all ephemeral agents whose tasks are in a terminal state.
+ */
+export async function cleanupTempAgents() {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('Not authenticated');
+
+  const { data, error } = await supabase
+    .from('agents')
+    .delete()
+    .eq('user_id', user.id)
+    .eq('is_ephemeral', true)
+    .in('status', ['idle', 'error'])
+    .select();
+
+  if (error) throw error;
+  return (data || []).length;
+}
+
 export async function createModelBankEntry(modelData) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error('Not authenticated');
@@ -657,7 +703,8 @@ function mapAgentFromDb(row) {
     tokenHistory24h:  row.token_history_24h || [],
     latencyHistory24h: row.latency_history_24h || [],
     skills:           row.skills || [],
-    subagents:        [], 
+    isEphemeral:      row.is_ephemeral ?? false,
+    subagents:        [],
     createdAt:        row.created_at,
     updatedAt:        row.updated_at,
   };
@@ -685,6 +732,7 @@ function mapAgentToDb(agent) {
     task_count:        agent.taskCount ?? 0,
     skills:           agent.skills || [],
     token_burn:        agent.tokenBurn || [],
+    is_ephemeral:      agent.isEphemeral ?? false,
   };
 }
 

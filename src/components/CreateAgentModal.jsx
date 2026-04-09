@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Plus, Sparkles } from 'lucide-react';
 import { createAgent, createModelBankEntry, useModelBank } from '../utils/useSupabase';
+import { getTemplateForRole } from '../utils/agentInstructions';
 import { cn } from '../utils/cn';
 
 // ── Roles (Commander excluded — auto-seeded, one per workspace) ──
@@ -41,13 +42,29 @@ export function CreateAgentModal({ isOpen, onClose, onCreated }) {
     color: '#60a5fa',
     temperature: 0.7,
     responseLength: 'medium',
-    systemPrompt: '',
+    systemPrompt: getTemplateForRole(defaultRole.id),
     canSpawn: false,
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
   const [newModel, setNewModel] = useState({ label: '', provider: '', costPer1k: '' });
   const [addingModel, setAddingModel] = useState(false);
+  const [selectedProvider, setSelectedProvider] = useState('All');
+
+  const providerGroups = useMemo(() => {
+    const groups = models.reduce((acc, model) => {
+      const provider = model.provider || 'Custom';
+      if (!acc[provider]) acc[provider] = [];
+      acc[provider].push(model);
+      return acc;
+    }, {});
+    return Object.entries(groups).sort(([a], [b]) => a.localeCompare(b));
+  }, [models]);
+
+  const visibleModels = useMemo(() => {
+    if (selectedProvider === 'All') return models;
+    return models.filter((model) => (model.provider || 'Custom') === selectedProvider);
+  }, [models, selectedProvider]);
 
   const update = (key, value) => setForm(prev => ({ ...prev, [key]: value }));
 
@@ -58,6 +75,11 @@ export function CreateAgentModal({ isOpen, onClose, onCreated }) {
     const prevRole = ROLE_OPTIONS.find(r => r.id === form.role);
     if (!form.roleDescription || form.roleDescription === prevRole?.defaultDesc) {
       update('roleDescription', role.defaultDesc);
+    }
+    // Auto-populate system prompt from template if empty or still a template
+    const prevTemplate = getTemplateForRole(form.role);
+    if (!form.systemPrompt || form.systemPrompt === prevTemplate) {
+      update('systemPrompt', getTemplateForRole(role.id));
     }
   };
 
@@ -80,7 +102,7 @@ export function CreateAgentModal({ isOpen, onClose, onCreated }) {
         name: '', model: '', role: defaultRole.id,
         roleDescription: defaultRole.defaultDesc, color: '#60a5fa',
         temperature: 0.7, responseLength: 'medium',
-        systemPrompt: '', canSpawn: false,
+        systemPrompt: getTemplateForRole(defaultRole.id), canSpawn: false,
       });
     } catch (err) {
       setError(err.message || 'Failed to create agent');
@@ -103,6 +125,7 @@ export function CreateAgentModal({ isOpen, onClose, onCreated }) {
       });
       await refetchModels();
       update('model', saved.modelKey);
+      setSelectedProvider(saved.provider || 'Custom');
       setNewModel({ label: '', provider: '', costPer1k: '' });
     } catch (err) {
       setError(err.message || 'Failed to save model');
@@ -139,8 +162,8 @@ export function CreateAgentModal({ isOpen, onClose, onCreated }) {
                   <Plus className="w-5 h-5 text-aurora-teal" />
                 </div>
                 <div>
-                  <h2 className="text-lg font-semibold text-text-primary">Deploy Agent</h2>
-                  <p className="text-[11px] text-text-muted">Add a new agent to the fleet</p>
+                  <h2 className="text-lg font-semibold text-text-primary">Add Operator</h2>
+                  <p className="text-[11px] text-text-muted">Create an operator for research, UI, QA, or ops execution</p>
                 </div>
               </div>
               <button onClick={onClose} className="p-2 rounded-lg hover:bg-white/[0.05] transition-colors text-text-muted hover:text-text-primary">
@@ -150,6 +173,11 @@ export function CreateAgentModal({ isOpen, onClose, onCreated }) {
 
             {/* Form */}
             <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto px-6 py-5 space-y-6 no-scrollbar">
+              <div>
+                <div className="text-[10px] uppercase tracking-[0.22em] text-text-disabled">Identity</div>
+                <div className="mt-1 text-sm text-text-muted">Define who this operator is and what the Commander should use it for.</div>
+              </div>
+
               {/* Agent Name */}
               <div>
                 <label className="text-[10px] uppercase tracking-widest text-text-muted block mb-2">Agent Name</label>
@@ -164,17 +192,57 @@ export function CreateAgentModal({ isOpen, onClose, onCreated }) {
               </div>
 
               {/* Model Selection — unified from modelRegistry */}
+              <div className="pt-1">
+                <div className="text-[10px] uppercase tracking-[0.22em] text-text-disabled">Runtime</div>
+                <div className="mt-1 text-sm text-text-muted">Pick the provider and model this operator should run on.</div>
+              </div>
               <div>
                 <label className="text-[10px] uppercase tracking-widest text-text-muted block mb-2">Model</label>
+                <div className="mb-3 rounded-xl border border-white/[0.08] bg-white/[0.025] px-3 py-3">
+                  <div className="text-[9px] uppercase tracking-[0.18em] text-text-disabled">Selected runtime</div>
+                  <div className="mt-2 text-sm font-semibold text-text-primary">{form.model || 'No model selected yet'}</div>
+                </div>
                 {models.length > 0 ? (
                   <div className="space-y-2">
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedProvider('All')}
+                        className={cn(
+                          'rounded-full border px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.16em] transition-colors',
+                          selectedProvider === 'All'
+                            ? 'border-aurora-teal/30 bg-aurora-teal/10 text-aurora-teal'
+                            : 'border-white/[0.08] bg-white/[0.02] text-text-muted hover:bg-white/[0.04]'
+                        )}
+                      >
+                        All
+                      </button>
+                      {providerGroups.map(([provider]) => (
+                        <button
+                          key={provider}
+                          type="button"
+                          onClick={() => setSelectedProvider(provider)}
+                          className={cn(
+                            'rounded-full border px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.16em] transition-colors',
+                            selectedProvider === provider
+                              ? 'border-aurora-teal/30 bg-aurora-teal/10 text-aurora-teal'
+                              : 'border-white/[0.08] bg-white/[0.02] text-text-muted hover:bg-white/[0.04]'
+                          )}
+                        >
+                          {provider}
+                        </button>
+                      ))}
+                    </div>
                     <div className="text-[9px] uppercase tracking-widest text-text-disabled mb-1.5 font-bold">Your Model Bank</div>
                     <div className="grid grid-cols-2 gap-1.5">
-                      {models.map((m) => (
+                      {visibleModels.map((m) => (
                         <button
                           key={m.id}
                           type="button"
-                          onClick={() => update('model', m.modelKey)}
+                          onClick={() => {
+                            update('model', m.modelKey);
+                            setSelectedProvider(m.provider || 'Custom');
+                          }}
                           className={cn(
                             'flex items-center justify-between gap-2 px-3 py-2 rounded-lg border text-xs font-mono transition-all text-left',
                             form.model === m.modelKey
@@ -187,6 +255,11 @@ export function CreateAgentModal({ isOpen, onClose, onCreated }) {
                         </button>
                       ))}
                     </div>
+                    {visibleModels.length === 0 && (
+                      <div className="rounded-xl border border-white/[0.08] bg-white/[0.02] p-3 text-xs text-text-muted">
+                        No models saved for this provider yet.
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <div className="rounded-xl border border-white/[0.08] bg-white/[0.02] p-4 text-xs text-text-muted">
@@ -292,6 +365,10 @@ export function CreateAgentModal({ isOpen, onClose, onCreated }) {
               </div>
 
               {/* Temperature Slider */}
+              <div className="pt-1">
+                <div className="text-[10px] uppercase tracking-[0.22em] text-text-disabled">Behavior</div>
+                <div className="mt-1 text-sm text-text-muted">Tune how the operator responds and whether it can deploy follow-on operators.</div>
+              </div>
               <div>
                 <div className="flex items-center justify-between mb-2">
                   <label className="text-[10px] uppercase tracking-widest text-text-muted">Temperature</label>
@@ -387,10 +464,10 @@ export function CreateAgentModal({ isOpen, onClose, onCreated }) {
               </button>
               <button
                 onClick={handleSubmit}
-                disabled={!form.name.trim() || saving}
+                disabled={!form.name.trim() || !form.model.trim() || saving}
                 className={cn(
                   'flex-1 py-3 rounded-xl text-xs font-semibold transition-all flex items-center justify-center gap-2',
-                  form.name.trim() && !saving
+                  form.name.trim() && form.model.trim() && !saving
                     ? 'bg-aurora-teal text-black hover:bg-aurora-teal/90 active:scale-[0.98]'
                     : 'bg-white/[0.05] text-text-disabled cursor-not-allowed'
                 )}
@@ -402,12 +479,12 @@ export function CreateAgentModal({ isOpen, onClose, onCreated }) {
                       transition={{ repeat: Infinity, duration: 1, ease: 'linear' }}
                       className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full"
                     />
-                    Deploying…
+                    Creating…
                   </>
                 ) : (
                   <>
                     <Sparkles className="w-3.5 h-3.5" />
-                    Deploy Agent
+                    Add Operator
                   </>
                 )}
               </button>

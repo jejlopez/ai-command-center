@@ -21,7 +21,7 @@ export function AttentionStrip({ items, loading, onSelect }) {
             key={item.id}
             onClick={() => onSelect?.(item)}
             className={cn(
-              'spatial-panel min-h-[118px] p-4 text-left transition-all',
+              'spatial-panel min-h-[96px] p-4 text-left transition-all',
               item.tone === 'critical' && 'border-aurora-rose/30 bg-aurora-rose/5',
               item.tone === 'warning' && 'border-aurora-amber/30 bg-aurora-amber/5',
               item.clickable && 'hover:-translate-y-0.5 hover:bg-white/[0.05]'
@@ -36,11 +36,11 @@ export function AttentionStrip({ items, loading, onSelect }) {
               </div>
               <span className="text-[10px] uppercase tracking-[0.18em] text-text-disabled">{item.badge}</span>
             </div>
-            <div className="mt-5 font-mono text-3xl text-text-primary">
+            <div className="mt-4 font-mono text-3xl text-text-primary">
               {loading ? '--' : item.value}
             </div>
             <div className="mt-1 text-sm font-medium text-text-primary">{item.label}</div>
-            <div className="mt-2 text-xs leading-5 text-text-muted">{item.detail}</div>
+            <div className="mt-1 text-[11px] leading-5 text-text-muted">{item.badge}</div>
           </button>
         );
       })}
