@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion as Motion, AnimatePresence } from 'framer-motion';
 import { Plus, Check, ChevronDown } from 'lucide-react';
 import { cn } from '../utils/cn';
 
@@ -36,7 +36,7 @@ export function ProjectSwitcher({ compact = false }) {
         onClick={() => setOpen(!open)}
         className={cn(
           compact
-            ? 'flex items-center gap-2 rounded-xl px-2.5 py-2 text-left transition-all duration-200 text-white hover:bg-white/[0.05]'
+            ? 'relative flex items-center gap-2 rounded-xl px-2.5 py-2 text-left transition-all duration-200 text-white hover:bg-white/[0.05] overflow-hidden'
             : 'flex items-center gap-2 rounded-xl px-2.5 py-2 text-left transition-all duration-200 border min-w-[104px] max-w-[104px]',
           compact
             ? open && 'bg-white/[0.05]'
@@ -45,6 +45,14 @@ export function ProjectSwitcher({ compact = false }) {
               : 'bg-white/[0.03] border-white/6 text-white hover:bg-white/[0.06] hover:border-aurora-teal/16'
         )}
       >
+        {compact && (
+          <Motion.div
+            initial={{ opacity: 0.12, x: '-40%' }}
+            animate={{ opacity: 0.24, x: '130%' }}
+            transition={{ duration: 5.4, repeat: Infinity, ease: 'linear' }}
+            className="pointer-events-none absolute top-0 h-full w-10 bg-[linear-gradient(90deg,transparent,rgba(255,255,255,0.08),transparent)] blur-md"
+          />
+        )}
         <div className={cn('w-2.5 h-2.5 rounded-full shrink-0', current?.color || 'bg-aurora-teal')} />
         <div className="min-w-0 flex-1">
           {compact ? (

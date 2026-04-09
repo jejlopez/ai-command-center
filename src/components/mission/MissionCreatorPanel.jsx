@@ -161,6 +161,22 @@ function inferBestAgent(intent, agents) {
   return primary;
 }
 
+function inferExplicitOutput(intent) {
+  const lower = intent.toLowerCase();
+  if (/(email|draft|outreach)/.test(lower)) return 'email_drafts';
+  if (/(pipedrive|crm|notes)/.test(lower)) return 'crm_notes';
+  if (/(report|doc)/.test(lower)) return 'report';
+  return null;
+}
+
+function findAgentByDoctrineName(agents, doctrineName) {
+  if (!doctrineName) return null;
+  const normalized = doctrineName.toLowerCase();
+  return agents.find((agent) => (agent.name || '').toLowerCase() === normalized)
+    || agents.find((agent) => (agent.name || '').toLowerCase().includes(normalized))
+    || null;
+}
+
 function deriveTodayRunAt() {
   const now = new Date();
   const later = new Date(now.getTime() + 60 * 60 * 1000);
@@ -302,6 +318,47 @@ function describeSchedule(form) {
   return `Repeat ${form.repeatFrequency} at ${form.repeatTime}${form.repeatEndDate ? ` until ${form.repeatEndDate}` : ''}.`;
 }
 
+function inferDoctrineDefaults({ intent, agents, learningMemory }) {
+  const lower = intent.toLowerCase();
+  const doctrine = learningMemory?.doctrineById || {};
+  const agentDoctrine = doctrine['doctrine-agent'];
+  const outputDoctrine = doctrine['doctrine-output'];
+  const costDoctrine = doctrine['doctrine-cost'];
+  const speedDoctrine = doctrine['doctrine-speed'];
+  const routingDoctrine = doctrine['doctrine-routing'];
+
+  const explicitOutput = inferExplicitOutput(intent);
+  const doctrineAgent = findAgentByDoctrineName(agents, agentDoctrine?.metrics?.topAgentName);
+  const suggestedAgent = doctrineAgent || inferBestAgent(intent, agents);
+  const suggestedOutput = explicitOutput || outputDoctrine?.metrics?.dominantOutput || 'summary';
+
+  let suggestedMode = 'balanced';
+  if (/(rush|asap|immediately|urgent|today|alert)/.test(lower) && Number(speedDoctrine?.metrics?.approvalCount || 0) === 0) {
+    suggestedMode = 'fast';
+  } else if (Number(costDoctrine?.metrics?.savings || 0) < 0 || Number(routingDoctrine?.metrics?.spendLeaderCost || 0) > 1.5) {
+    suggestedMode = 'efficient';
+  }
+
+  return {
+    agent: suggestedAgent,
+    outputType: suggestedOutput,
+    mode: suggestedMode,
+    notes: [
+      doctrineAgent
+        ? `${doctrineAgent.name} is carrying the strongest execution pattern right now.`
+        : 'No branch is dominant enough to override the standard agent heuristic yet.',
+      explicitOutput
+        ? `Your wording already implies ${explicitOutput.replaceAll('_', ' ')}.`
+        : `${(outputDoctrine?.metrics?.dominantOutput || 'summary').replaceAll('_', ' ')} is the cleanest recent landing pattern.`,
+      suggestedMode === 'fast'
+        ? 'Approval drag is light enough to push speed harder.'
+        : suggestedMode === 'efficient'
+          ? 'Spend concentration suggests a more disciplined mode by default.'
+          : 'Balanced mode is still the safest lane for quality and cost together.',
+    ],
+  };
+}
+
 function buildFlightPlan(preview, missionSummary, form) {
   const steps = preview?.steps || [];
   const total = Math.max(steps.length, 1);
@@ -343,12 +400,15 @@ function SegmentedControl({ options, value, onChange }) {
 export function MissionCreatorPanel({
   isOpen,
   agents,
+  learningMemory,
   onClose,
   onLaunch,
   onPreview,
 }) {
   const [form, setForm] = useState(() => initialFormState(agents));
   const [agentTouched, setAgentTouched] = useState(false);
+  const [outputTouched, setOutputTouched] = useState(false);
+  const [modeTouched, setModeTouched] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [preview, setPreview] = useState(null);
   const [previewLoading, setPreviewLoading] = useState(false);
@@ -363,6 +423,10 @@ export function MissionCreatorPanel({
     () => agents.find(agent => agent.id === form.agentId) || pickPrimaryOperationsAgent(agents),
     [agents, form.agentId]
   );
+  const doctrineDefaults = useMemo(
+    () => inferDoctrineDefaults({ intent: form.intent, agents, learningMemory }),
+    [agents, form.intent, learningMemory]
+  );
   const missionSummary = useMemo(() => summarizeMissionIntent(form.intent), [form.intent]);
   const agentRationale = useMemo(() => describeWhyAgent(form.intent, selectedAgent), [form.intent, selectedAgent]);
   const modeRationale = useMemo(() => describeWhyMode(form.mode), [form.mode]);
@@ -373,6 +437,8 @@ export function MissionCreatorPanel({
     if (!isOpen) return;
     setForm(initialFormState(agents));
     setAgentTouched(false);
+    setOutputTouched(false);
+    setModeTouched(false);
     setError('');
     setPreview(null);
     setPreviewOpen(false);
@@ -399,11 +465,25 @@ export function MissionCreatorPanel({
 
   useEffect(() => {
     if (agentTouched) return;
-    const inferred = inferBestAgent(form.intent, agents);
+    const inferred = doctrineDefaults.agent || inferBestAgent(form.intent, agents);
     if (inferred?.id && inferred.id !== form.agentId) {
       setForm(prev => ({ ...prev, agentId: inferred.id }));
     }
-  }, [form.intent, agents, form.agentId, agentTouched]);
+  }, [form.intent, agents, form.agentId, agentTouched, doctrineDefaults.agent]);
+
+  useEffect(() => {
+    if (outputTouched || !doctrineDefaults.outputType) return;
+    if (doctrineDefaults.outputType !== form.outputType) {
+      setForm(prev => ({ ...prev, outputType: doctrineDefaults.outputType }));
+    }
+  }, [doctrineDefaults.outputType, form.outputType, outputTouched]);
+
+  useEffect(() => {
+    if (modeTouched || !doctrineDefaults.mode) return;
+    if (doctrineDefaults.mode !== form.mode) {
+      setForm(prev => ({ ...prev, mode: doctrineDefaults.mode }));
+    }
+  }, [doctrineDefaults.mode, form.mode, modeTouched]);
 
   useEffect(() => {
     saveSessionDefaults({
@@ -423,6 +503,9 @@ export function MissionCreatorPanel({
   }, [form]);
 
   function updateField(field, value) {
+    if (field === 'agentId') setAgentTouched(true);
+    if (field === 'outputType') setOutputTouched(true);
+    if (field === 'mode') setModeTouched(true);
     setForm(prev => ({ ...prev, [field]: value }));
     setError('');
   }
@@ -445,7 +528,9 @@ export function MissionCreatorPanel({
       repeatTime: preset.defaults.repeatTime || '09:00',
       repeatEndDate: preset.defaults.repeatEndDate || '',
     }));
-    setAgentTouched(false);
+    setAgentTouched(true);
+    setOutputTouched(true);
+    setModeTouched(true);
   }
 
   function buildPayload() {
@@ -629,6 +714,39 @@ export function MissionCreatorPanel({
                       <span key={cue} className="px-2.5 py-1 rounded-full text-[10px] font-semibold border border-white/[0.08] bg-white/[0.03] text-text-body">
                         {cue}
                       </span>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="mt-4 rounded-[20px] border border-white/[0.08] bg-black/20 px-4 py-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <div className="text-[10px] uppercase tracking-[0.18em] text-aurora-violet font-semibold">Doctrine Suggests</div>
+                      <div className="mt-1 text-sm font-semibold text-text-primary">Use the learned branch unless you want to override it.</div>
+                    </div>
+                    <div className="rounded-full border border-aurora-violet/20 bg-aurora-violet/10 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-aurora-violet">
+                      learned defaults
+                    </div>
+                  </div>
+                  <div className="mt-4 grid grid-cols-3 gap-3">
+                    <div className="rounded-2xl border border-white/[0.08] bg-white/[0.03] px-3 py-3">
+                      <div className="text-[9px] uppercase tracking-[0.18em] text-text-muted">Agent</div>
+                      <div className="mt-1 text-[12px] font-semibold text-text-primary">{doctrineDefaults.agent?.name || selectedAgent?.name || 'Auto-selecting'}</div>
+                    </div>
+                    <div className="rounded-2xl border border-white/[0.08] bg-white/[0.03] px-3 py-3">
+                      <div className="text-[9px] uppercase tracking-[0.18em] text-text-muted">Output</div>
+                      <div className="mt-1 text-[12px] font-semibold text-text-primary">{doctrineDefaults.outputType.replaceAll('_', ' ')}</div>
+                    </div>
+                    <div className="rounded-2xl border border-white/[0.08] bg-white/[0.03] px-3 py-3">
+                      <div className="text-[9px] uppercase tracking-[0.18em] text-text-muted">Mode</div>
+                      <div className="mt-1 text-[12px] font-semibold text-text-primary">{doctrineDefaults.mode}</div>
+                    </div>
+                  </div>
+                  <div className="mt-3 space-y-2">
+                    {doctrineDefaults.notes.map((note) => (
+                      <div key={note} className="rounded-2xl border border-white/[0.08] bg-white/[0.02] px-3 py-2 text-[11px] leading-relaxed text-text-body">
+                        {note}
+                      </div>
                     ))}
                   </div>
                 </div>

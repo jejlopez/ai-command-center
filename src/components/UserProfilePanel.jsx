@@ -1,269 +1,165 @@
 import React from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion as Motion, AnimatePresence } from 'framer-motion';
 import {
-  X, Shield, ChevronRight, LogOut, Activity, Download,
-  Bell, ShieldCheck, Crown, AlertTriangle,
+  Activity,
+  ArrowUpRight,
+  Bell,
+  Bot,
+  Briefcase,
+  Crown,
+  LogOut,
+  Shield,
+  ShieldCheck,
+  Sparkles,
+  User,
+  X,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useSystemState } from '../context/SystemStateContext';
+import { useAgents, useTasks } from '../utils/useSupabase';
+import { useCommanderPreferences } from '../utils/useCommanderPreferences';
 import { cn } from '../utils/cn';
 
-// ── Placeholder data (only values not yet available from real sources) ──
-const COMMANDER_DEFAULTS = {
-  name: 'J. Jarvis',
-  initials: 'JJ',
-  role: 'Commander',
-  workspace: 'Jarvis Primary',
-  clearance: 'OMEGA',
-  tokenUsage: 142800,
-  tokenLimit: 500000,
-  currentMode: 'Operational',
-  permissionLevel: 'Full Authority',
-  approvalAuthority: 'All agents, all actions',
-  connectedProviders: [
-    { name: 'Anthropic', status: 'connected' },
-    { name: 'OpenAI', status: 'connected' },
-    { name: 'Google AI', status: 'connected' },
-    { name: 'Ollama (local)', status: 'connected' },
-  ],
-  apiAccess: 'Active',
-};
+const DOCK_STORAGE_KEY = 'jarvis-connected-systems-v1';
 
-// ── Helpers ──────────────────────────────────────────────────────
-
-function formatTimestamp(isoString) {
-  if (!isoString) return '—';
+function loadConnectedSystems() {
   try {
-    const d = new Date(isoString);
-    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-      + ' — '
-      + d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+    const parsed = JSON.parse(localStorage.getItem(DOCK_STORAGE_KEY) || '[]');
+    return Array.isArray(parsed) ? parsed : [];
   } catch {
-    return '—';
+    return [];
   }
 }
 
-function exportSessionData({ email, agentCount, pendingCount }) {
-  const payload = {
-    exportedAt: new Date().toISOString(),
-    commander: email || 'unknown',
-    agentsDeployed: agentCount,
-    approvalsPending: pendingCount,
-  };
-  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `jarvis-session-${Date.now()}.json`;
-  a.click();
-  URL.revokeObjectURL(url);
-}
-
-// ── Section label ─────────────────────────────────���──────────────
 function SectionLabel({ children }) {
+  return <p className="mb-3 text-[10px] font-semibold uppercase tracking-[0.2em] text-text-muted">{children}</p>;
+}
+
+function InfoPill({ children, tone = 'teal' }) {
+  const toneMap = {
+    teal: 'border-aurora-teal/20 bg-aurora-teal/10 text-aurora-teal',
+    amber: 'border-aurora-amber/20 bg-aurora-amber/10 text-aurora-amber',
+    violet: 'border-aurora-violet/20 bg-aurora-violet/10 text-aurora-violet',
+    blue: 'border-aurora-blue/20 bg-aurora-blue/10 text-aurora-blue',
+  };
+
   return (
-    <div className="text-[9px] uppercase tracking-[0.2em] text-text-disabled font-bold mt-6 mb-3 px-0.5">
+    <span className={cn('inline-flex items-center rounded-full border px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.16em]', toneMap[tone] || toneMap.teal)}>
       {children}
-    </div>
+    </span>
   );
 }
 
-// ── Stat row ───────────────────────��─────────────────────────────
-function StatRow({ label, value, valueClass }) {
+function MetricCard({ label, value, detail, tone = 'teal' }) {
+  const toneMap = {
+    teal: 'text-aurora-teal',
+    amber: 'text-aurora-amber',
+    violet: 'text-aurora-violet',
+    blue: 'text-aurora-blue',
+  };
+
   return (
-    <div className="flex items-center justify-between py-1.5">
-      <span className="text-[11px] text-text-muted">{label}</span>
-      <span className={cn("text-[11px] font-mono font-medium", valueClass || "text-text-primary")}>{value}</span>
+    <div className="rounded-[22px] border border-white/[0.08] bg-[linear-gradient(180deg,rgba(255,255,255,0.035),rgba(255,255,255,0.015))] p-4">
+      <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">{label}</div>
+      <div className={cn('mt-3 text-2xl font-semibold tracking-tight', toneMap[tone] || toneMap.teal)}>{value}</div>
+      <div className="mt-2 text-[12px] leading-relaxed text-text-muted">{detail}</div>
     </div>
   );
 }
 
-// ── Action row ───────────────────────────────────────────────────
-function ActionRow({ icon: Icon, label, onClick, badge, destructive, disabled }) {
+function CommandLink({ iconComponent: IconComponent, label, detail, onClick, tone = 'teal', destructive = false }) {
+  const toneClass = destructive
+    ? 'border-aurora-rose/18 bg-aurora-rose/6 text-aurora-rose hover:bg-aurora-rose/10'
+    : tone === 'amber'
+      ? 'border-aurora-amber/18 bg-aurora-amber/[0.06] text-text-primary hover:border-aurora-amber/30'
+      : 'border-white/[0.08] bg-white/[0.03] text-text-primary hover:border-aurora-teal/20';
+
   return (
     <button
-      onClick={disabled ? undefined : onClick}
-      className={cn(
-        "flex items-center justify-between w-full py-2 px-2.5 -mx-2.5 rounded-lg text-[12px] transition-colors group",
-        disabled
-          ? "text-text-disabled cursor-not-allowed"
-          : destructive
-            ? "text-aurora-rose hover:bg-aurora-rose/5"
-            : "text-text-body hover:text-text-primary hover:bg-white/[0.03]"
-      )}
+      type="button"
+      onClick={onClick}
+      className={cn('flex w-full items-center justify-between rounded-[18px] border px-4 py-3 text-left transition-colors', toneClass)}
     >
-      <span className="flex items-center gap-2.5">
-        <Icon className={cn("w-3.5 h-3.5 shrink-0", disabled ? "text-text-disabled" : destructive ? "text-aurora-rose" : "text-text-muted group-hover:text-text-primary transition-colors")} />
-        {label}
-      </span>
-      <span className="flex items-center gap-2">
-        {badge && (
-          <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-aurora-amber/10 text-aurora-amber">
-            {badge}
-          </span>
-        )}
-        {!disabled && <ChevronRight className="w-3.5 h-3.5 text-text-disabled group-hover:text-text-muted transition-colors" />}
-      </span>
+      <div className="flex items-start gap-3">
+        <div className={cn('mt-0.5 rounded-xl border p-2', destructive ? 'border-aurora-rose/20 bg-aurora-rose/10' : 'border-white/[0.08] bg-black/20')}>
+          {React.createElement(IconComponent, {
+            className: cn('h-4 w-4', destructive ? 'text-aurora-rose' : 'text-aurora-teal'),
+          })}
+        </div>
+        <div>
+          <div className="text-sm font-semibold">{label}</div>
+          <div className="mt-1 text-[12px] text-text-muted">{detail}</div>
+        </div>
+      </div>
+      <ArrowUpRight className={cn('h-4 w-4', destructive ? 'text-aurora-rose' : 'text-text-muted')} />
     </button>
   );
 }
 
-// ── Provider dot ─────────────────────────────────────────────────
-function ProviderDot({ name, status }) {
-  return (
-    <div className="flex items-center justify-between py-1">
-      <span className="text-[11px] text-text-muted">{name}</span>
-      <div className="flex items-center gap-1.5">
-        <div className={cn("w-1.5 h-1.5 rounded-full", status === 'connected' ? "bg-aurora-green" : "bg-text-disabled")} />
-        <span className={cn("text-[9px] font-mono uppercase", status === 'connected' ? "text-aurora-green" : "text-text-disabled")}>
-          {status}
-        </span>
-      </div>
-    </div>
-  );
+function formatDateTime(value) {
+  if (!value) return 'Unknown';
+  try {
+    const date = new Date(value);
+    return `${date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} at ${date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`;
+  } catch {
+    return 'Unknown';
+  }
 }
 
-// ── Commander content ────────────────────────────────────────────
-function CommanderView({ onSignOut, onSignOutAll, onAction, user, pendingCount, agentCount }) {
-  const data = COMMANDER_DEFAULTS;
-  const email = user?.email || null;
-  const lastSignIn = formatTimestamp(user?.last_sign_in_at);
-  const activeSince = formatTimestamp(user?.created_at);
-  const usagePercent = Math.round((data.tokenUsage / data.tokenLimit) * 100);
-
-  function nav(route) {
-    onAction?.({ type: 'navigate', route });
-  }
-  function panel(p) {
-    onAction?.({ type: 'panel', panel: p });
-  }
-
-  return (
-    <div className="flex-1 overflow-y-auto no-scrollbar px-5 py-5 flex flex-col">
-
-      {/* ── Commander Identity ─────────────────────────────────── */}
-      <div className="flex items-start gap-3.5">
-        <div className="w-11 h-11 rounded-xl bg-aurora-teal/10 border border-aurora-teal/20 flex items-center justify-center shrink-0">
-          <span className="text-sm font-bold text-aurora-teal font-mono">{data.initials}</span>
-        </div>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2">
-            <h3 className="text-sm font-semibold text-text-primary truncate">{data.name}</h3>
-            <span className="px-1.5 py-0.5 rounded text-[8px] font-mono font-bold uppercase tracking-wider bg-aurora-amber/10 text-aurora-amber border border-aurora-amber/20">
-              {data.clearance}
-            </span>
-          </div>
-          <p className={cn("text-[11px] font-mono mt-0.5 truncate", email ? "text-text-muted" : "text-text-disabled")}>
-            {email || 'No email linked'}
-          </p>
-          <div className="flex items-center gap-2 mt-1.5">
-            <span className="flex items-center gap-1 text-[9px] font-mono text-aurora-teal">
-              <Crown className="w-2.5 h-2.5" />
-              {data.role}
-            </span>
-            <span className="text-text-disabled text-[9px]">/</span>
-            <span className="text-[9px] font-mono text-text-disabled">{data.workspace}</span>
-          </div>
-        </div>
-      </div>
-
-      {/* ── Live Status ──────────────────────────────────��────── */}
-      <SectionLabel>Live Status</SectionLabel>
-      <div className="space-y-0.5">
-        <StatRow label="Member since" value={activeSince} valueClass="text-text-disabled" />
-        <StatRow label="Agents deployed" value={agentCount} />
-        <StatRow
-          label="Approvals pending"
-          value={pendingCount}
-          valueClass={pendingCount > 0 ? "text-aurora-amber" : "text-text-primary"}
-        />
-        <StatRow label="Mode" value={data.currentMode} valueClass="text-aurora-green" />
-        <div className="pt-1.5">
-          <div className="flex items-center justify-between mb-1.5">
-            <span className="text-[11px] text-text-muted">Token budget</span>
-            <span className="text-[10px] font-mono text-text-disabled">
-              {(data.tokenUsage / 1000).toFixed(0)}k / {(data.tokenLimit / 1000).toFixed(0)}k
-            </span>
-          </div>
-          <div className="w-full h-1 rounded-full bg-white/[0.06] overflow-hidden">
-            <motion.div
-              className="h-full rounded-full bg-aurora-teal"
-              initial={{ width: 0 }}
-              animate={{ width: `${usagePercent}%` }}
-              transition={{ duration: 0.8, ease: 'easeOut' }}
-            />
-          </div>
-        </div>
-      </div>
-
-      {/* ── Authority / Access ─────────────────────────────────�� */}
-      <SectionLabel>Authority</SectionLabel>
-      <div className="space-y-0.5">
-        <StatRow label="Permission level" value={data.permissionLevel} valueClass="text-aurora-teal" />
-        <StatRow label="Approval scope" value={data.approvalAuthority} />
-        <StatRow label="API access" value={data.apiAccess} valueClass="text-aurora-green" />
-        <StatRow label="Last sign-in" value={lastSignIn} valueClass="text-text-disabled" />
-      </div>
-
-      {/* Connected providers */}
-      <div className="mt-3 p-3 bg-white/[0.02] rounded-lg border border-white/[0.04]">
-        <div className="text-[9px] uppercase tracking-[0.15em] text-text-disabled font-bold mb-2">Connected Providers</div>
-        {data.connectedProviders.map(p => (
-          <ProviderDot key={p.name} name={p.name} status={p.status} />
-        ))}
-      </div>
-
-      {/* ── Command Actions ──────────────────────────────────��── */}
-      <SectionLabel>Command Actions</SectionLabel>
-      <div className="space-y-0.5">
-        <ActionRow
-          icon={ShieldCheck}
-          label="Review pending approvals"
-          badge={pendingCount > 0 ? pendingCount : null}
-          onClick={() => nav('missions')}
-        />
-        <ActionRow
-          icon={Activity}
-          label="View activity log"
-          onClick={() => nav('overview')}
-        />
-        <ActionRow
-          icon={Bell}
-          label="Notification preferences"
-          onClick={() => panel('settings')}
-        />
-        <ActionRow
-          icon={Download}
-          label="Export session data"
-          onClick={() => exportSessionData({ email, agentCount, pendingCount })}
-        />
-      </div>
-
-      {/* ── Sign Out ──────────────────────────────────────────── */}
-      <div className="mt-auto pt-5 space-y-1.5">
-        <button
-          onClick={onSignOut}
-          className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg border border-aurora-rose/20 text-aurora-rose text-[12px] font-medium hover:bg-aurora-rose/5 transition-colors"
-        >
-          <LogOut className="w-3.5 h-3.5" />
-          Sign Out
-        </button>
-        <button
-          onClick={onSignOutAll}
-          className="w-full flex items-center justify-center gap-2 py-2 rounded-lg text-[10px] text-text-disabled hover:text-aurora-rose hover:bg-aurora-rose/5 transition-colors"
-        >
-          <AlertTriangle className="w-3 h-3" />
-          Sign out all sessions
-        </button>
-      </div>
-    </div>
-  );
+function deriveExecutionPosture(tasks, pendingCount) {
+  const running = tasks.filter((task) => ['queued', 'running', 'pending', 'in_progress'].includes(task.status)).length;
+  if (pendingCount > 0) return { label: 'Human attention required', tone: 'amber', detail: 'Approvals are the current constraint.' };
+  if (running > 0) return { label: 'Tony running hot', tone: 'teal', detail: 'Execution branches are moving cleanly.' };
+  return { label: 'Deck is clear', tone: 'blue', detail: 'No live pressure on the command queue.' };
 }
 
-// ── Main panel shell ─────────────────────────────────────────────
+function buildCommanderDirective({ pendingCount, runningTasks, connectedSystems }) {
+  if (pendingCount > 0) {
+    return {
+      eyebrow: 'Commander priority',
+      title: 'Clear the approval rail first.',
+      detail: 'Human decisions are currently slowing the machine more than missing integrations or idle agents.',
+      tone: 'amber',
+    };
+  }
+
+  if (runningTasks > 0) {
+    return {
+      eyebrow: 'Commander priority',
+      title: 'Execution is live. Stay in oversight mode.',
+      detail: 'The system is already moving work. Best move is monitoring alerts and keeping route friction low.',
+      tone: 'teal',
+    };
+  }
+
+  return {
+    eyebrow: 'Commander priority',
+    title: connectedSystems > 0 ? 'Deck is clear. Prime the next mission.' : 'Wire the stack before scaling harder.',
+    detail: connectedSystems > 0
+      ? 'No immediate pressure. You can use this calm state to launch or tighten doctrine.'
+      : 'Adding the right core systems will improve the reach of every mission you launch.',
+    tone: connectedSystems > 0 ? 'blue' : 'violet',
+  };
+}
+
 export function UserProfilePanel({ profileOpen, setProfileOpen, onAction }) {
   const { user, signOut, signOutAll } = useAuth();
   const { pendingCount } = useSystemState();
+  const { agents } = useAgents();
+  const { tasks } = useTasks();
+  const { commandStyle, alertPosture, commanderPersona, trustedWriteMode, approvalDoctrine, notificationRoute } = useCommanderPreferences();
+
+  const connectedSystems = profileOpen ? loadConnectedSystems() : [];
+  const runningTasks = tasks.filter((task) => ['queued', 'running', 'pending', 'in_progress'].includes(task.status)).length;
+  const completedToday = tasks.filter((task) => ['done', 'completed'].includes(task.status)).length;
+  const posture = deriveExecutionPosture(tasks, pendingCount ?? 0);
+  const directive = buildCommanderDirective({ pendingCount: pendingCount ?? 0, runningTasks, connectedSystems: connectedSystems.length });
+  const commanderName = user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Commander';
+  const initials = commanderName
+    .split(' ')
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase())
+    .join('') || 'CM';
 
   async function handleSignOut() {
     await signOut();
@@ -275,7 +171,6 @@ export function UserProfilePanel({ profileOpen, setProfileOpen, onAction }) {
     setProfileOpen(false);
   }
 
-  // Wrap onAction to also close the panel after navigating
   function handleAction(action) {
     onAction?.(action);
     setProfileOpen(false);
@@ -285,49 +180,236 @@ export function UserProfilePanel({ profileOpen, setProfileOpen, onAction }) {
     <AnimatePresence>
       {profileOpen && (
         <>
-          <motion.div
-            key="commander-backdrop"
+          <Motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            transition={{ duration: 0.2 }}
-            className="fixed inset-0 z-40 bg-black/20"
             onClick={() => setProfileOpen(false)}
+            className="fixed inset-0 z-40 bg-black/45 backdrop-blur-sm"
           />
 
-          <motion.div
-            key="commander-panel"
-            initial={{ x: 380, opacity: 0, scale: 0.98 }}
-            animate={{ x: 0, opacity: 1, scale: 1 }}
-            exit={{ x: 380, opacity: 0, scale: 0.98 }}
-            transition={{ type: 'spring', damping: 32, stiffness: 200, mass: 0.8 }}
-            className="fixed top-0 bottom-0 right-0 z-50 w-[360px] bg-surface/95 backdrop-blur-2xl border-l border-border flex flex-col shadow-[-4px_0_24px_-4px_rgba(0,0,0,0.5)]"
+          <Motion.aside
+            initial={{ x: 460, opacity: 0 }}
+            animate={{ x: 0, opacity: 1 }}
+            exit={{ x: 460, opacity: 0 }}
+            transition={{ type: 'spring', damping: 30, stiffness: 220 }}
+            className="fixed inset-y-0 right-0 z-50 flex w-[540px] max-w-[96vw] flex-col overflow-hidden border-l border-white/[0.08] bg-[linear-gradient(180deg,rgba(8,10,14,0.985),rgba(6,9,12,0.985))] shadow-[-18px_0_60px_rgba(0,0,0,0.55)]"
           >
-            {/* Header */}
-            <div className="flex items-center justify-between px-5 pt-5 pb-3">
-              <div className="flex items-center gap-2.5">
-                <Shield className="w-5 h-5 text-aurora-teal" />
-                <h2 className="text-sm font-semibold text-text-primary tracking-wide">Commander</h2>
+            <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(45,212,191,0.12),transparent_22%),radial-gradient(circle_at_24%_10%,rgba(96,165,250,0.1),transparent_24%),linear-gradient(180deg,rgba(255,255,255,0.02),transparent_24%)]" />
+            <div className="pointer-events-none absolute inset-0 opacity-[0.05] [background-image:repeating-linear-gradient(180deg,rgba(255,255,255,0.18)_0px,rgba(255,255,255,0.18)_1px,transparent_1px,transparent_12px)]" />
+
+            <div className="relative border-b border-white/[0.08] px-5 py-5">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.22em] text-text-muted">
+                    <Shield className="h-3.5 w-3.5 text-aurora-teal" />
+                    Commander Identity
+                  </div>
+                  <h2 className="mt-4 text-2xl font-semibold tracking-tight text-text-primary">Operator authority, live posture, and system access.</h2>
+                  <p className="mt-2 text-[13px] leading-relaxed text-text-muted">This is the human layer of the machine. It should feel like the same command system as Mission Control, Reports, Intelligence, and Overview.</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setProfileOpen(false)}
+                  className="rounded-2xl border border-white/[0.08] bg-white/[0.03] p-2 text-text-muted transition-colors hover:text-text-primary"
+                >
+                  <X className="h-4.5 w-4.5" />
+                </button>
               </div>
-              <button
-                onClick={() => setProfileOpen(false)}
-                className="p-1.5 rounded-lg text-text-muted hover:text-text-primary hover:bg-white/[0.06] transition-colors"
-              >
-                <X className="w-4 h-4" />
-              </button>
             </div>
 
-            <div className="h-px bg-border mx-5" />
+            <div className="relative flex-1 overflow-y-auto px-5 py-5 no-scrollbar">
+              <div className="rounded-[30px] border border-white/[0.08] bg-[linear-gradient(135deg,rgba(255,255,255,0.05),rgba(255,255,255,0.018))] p-5 shadow-[0_24px_80px_rgba(0,0,0,0.25)]">
+                <div className="flex items-start gap-4">
+                  <div className="flex h-16 w-16 items-center justify-center rounded-[22px] border border-aurora-teal/20 bg-aurora-teal/10 shadow-[0_0_28px_rgba(45,212,191,0.12)]">
+                    <span className="text-lg font-semibold tracking-[0.12em] text-aurora-teal">{initials}</span>
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h3 className="text-xl font-semibold tracking-tight text-text-primary">{commanderName}</h3>
+                      <InfoPill tone="amber">OMEGA Clearance</InfoPill>
+                      <InfoPill tone={posture.tone}>Live posture</InfoPill>
+                    </div>
+                    <p className="mt-2 text-sm text-text-muted">{user?.email || 'No email linked yet.'}</p>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <InfoPill tone="teal">Commander</InfoPill>
+                      <InfoPill tone="blue">Jarvis Primary</InfoPill>
+                      <InfoPill tone="violet">{connectedSystems.length} systems wired</InfoPill>
+                      <InfoPill tone="amber">{commandStyle === 'tony' ? 'Tony mode' : commandStyle === 'elon' ? 'Elon mode' : 'Hybrid mode'}</InfoPill>
+                      <InfoPill tone="blue">{alertPosture === 'critical_only' ? 'Critical alerts' : alertPosture === 'full_feed' ? 'Full-feed alerts' : 'Balanced alerts'}</InfoPill>
+                      <InfoPill tone="violet">{commanderPersona}</InfoPill>
+                    </div>
+                  </div>
+                </div>
 
-            <CommanderView
-              onSignOut={handleSignOut}
-              onSignOutAll={handleSignOutAll}
-              onAction={handleAction}
-              user={user}
-              pendingCount={pendingCount ?? 0}
-              agentCount={pendingCount != null ? 6 : 0}
-            />
-          </motion.div>
+                <div className="mt-5 rounded-[24px] border border-white/[0.08] bg-black/20 p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Execution doctrine</div>
+                      <div className="mt-2 text-base font-semibold text-text-primary">{posture.label}</div>
+                    </div>
+                    <div className={cn('rounded-full border px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.16em]',
+                      posture.tone === 'amber'
+                        ? 'border-aurora-amber/20 bg-aurora-amber/10 text-aurora-amber'
+                        : posture.tone === 'blue'
+                          ? 'border-aurora-blue/20 bg-aurora-blue/10 text-aurora-blue'
+                          : 'border-aurora-teal/20 bg-aurora-teal/10 text-aurora-teal'
+                    )}>
+                      Human + System
+                    </div>
+                  </div>
+                  <p className="mt-2 text-[12px] leading-relaxed text-text-muted">{posture.detail}</p>
+                </div>
+
+                <div className={cn(
+                  'mt-4 rounded-[24px] border p-4',
+                  directive.tone === 'amber'
+                    ? 'border-aurora-amber/20 bg-aurora-amber/[0.07]'
+                    : directive.tone === 'violet'
+                      ? 'border-aurora-violet/20 bg-aurora-violet/[0.07]'
+                      : directive.tone === 'blue'
+                        ? 'border-aurora-blue/20 bg-aurora-blue/[0.07]'
+                        : 'border-aurora-teal/20 bg-aurora-teal/[0.07]'
+                )}>
+                  <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">{directive.eyebrow}</div>
+                  <div className="mt-2 text-base font-semibold text-text-primary">{directive.title}</div>
+                  <p className="mt-2 text-[12px] leading-relaxed text-text-muted">{directive.detail}</p>
+                </div>
+              </div>
+
+              <div className="mt-5 grid gap-3 md:grid-cols-2">
+                <MetricCard label="Approvals in queue" value={pendingCount ?? 0} detail="The asks waiting for your judgment right now." tone={pendingCount ? 'amber' : 'teal'} />
+                <MetricCard label="Active branches" value={runningTasks} detail="Queued or running work currently moving through the deck." tone="teal" />
+                <MetricCard label="Connected systems" value={connectedSystems.length} detail="APIs and command surfaces currently wired into the stack." tone="violet" />
+                <MetricCard label="Completed missions" value={completedToday} detail="Finished work the system can already use as operating memory." tone="blue" />
+              </div>
+
+              <div className="mt-6 grid gap-4 md:grid-cols-[1.2fr_0.8fr]">
+                <div className="rounded-[26px] border border-white/[0.08] bg-[linear-gradient(180deg,rgba(255,255,255,0.035),rgba(255,255,255,0.015))] p-4">
+                  <SectionLabel>Command Access</SectionLabel>
+                  <div className="space-y-3">
+                    <CommandLink
+                      iconComponent={Bell}
+                      label="Open command alerts"
+                      detail="Failures, approvals, and system anomalies that need attention."
+                      onClick={() => handleAction({ type: 'panel', panel: 'notifications' })}
+                      tone="amber"
+                    />
+                    <CommandLink
+                      iconComponent={ShieldCheck}
+                      label="Open systems control"
+                      detail="Tune doctrine, wire integrations, and configure the command rack."
+                      onClick={() => handleAction({ type: 'panel', panel: 'settings' })}
+                    />
+                    <CommandLink
+                      iconComponent={Activity}
+                      label="Go to Mission Control"
+                      detail="Jump straight into live execution and approvals."
+                      onClick={() => handleAction({ type: 'navigate', route: 'missions' })}
+                    />
+                    <CommandLink
+                      iconComponent={Briefcase}
+                      label="Open Executive Debrief"
+                      detail="Review pressure, economics, and where operator attention belongs."
+                      onClick={() => handleAction({ type: 'navigate', route: 'reports' })}
+                    />
+                  </div>
+                </div>
+
+                <div className="rounded-[26px] border border-white/[0.08] bg-black/20 p-4">
+                  <SectionLabel>Identity + Access</SectionLabel>
+                  <div className="space-y-3">
+                    <div className="rounded-[18px] border border-white/[0.08] bg-white/[0.03] p-3">
+                      <div className="flex items-center gap-2 text-[11px] uppercase tracking-[0.18em] text-text-muted">
+                        <Crown className="h-3.5 w-3.5 text-aurora-amber" />
+                        Clearance
+                      </div>
+                      <div className="mt-2 text-sm font-semibold text-text-primary">Full command authority</div>
+                      <div className="mt-1 text-[12px] text-text-muted">Approvals, routing, missions, and command surfaces are all under your control.</div>
+                    </div>
+                    <div className="rounded-[18px] border border-white/[0.08] bg-white/[0.03] p-3">
+                      <div className="flex items-center gap-2 text-[11px] uppercase tracking-[0.18em] text-text-muted">
+                        <Bot className="h-3.5 w-3.5 text-aurora-teal" />
+                        Fleet reach
+                      </div>
+                      <div className="mt-2 text-sm font-semibold text-text-primary">{agents.length} agents standing by</div>
+                      <div className="mt-1 text-[12px] text-text-muted">The system can route through operations, planning, and specialized branches from one command layer.</div>
+                    </div>
+                    <div className="rounded-[18px] border border-white/[0.08] bg-white/[0.03] p-3">
+                      <div className="flex items-center gap-2 text-[11px] uppercase tracking-[0.18em] text-text-muted">
+                        <User className="h-3.5 w-3.5 text-aurora-blue" />
+                        Session state
+                      </div>
+                      <div className="mt-2 text-sm font-semibold text-text-primary">Last sign-in {formatDateTime(user?.last_sign_in_at)}</div>
+                      <div className="mt-1 text-[12px] text-text-muted">Member since {formatDateTime(user?.created_at)}.</div>
+                    </div>
+                    <div className="rounded-[18px] border border-white/[0.08] bg-white/[0.03] p-3">
+                      <div className="flex items-center gap-2 text-[11px] uppercase tracking-[0.18em] text-text-muted">
+                        <ShieldCheck className="h-3.5 w-3.5 text-aurora-violet" />
+                        Integration posture
+                      </div>
+                      <div className="mt-2 text-sm font-semibold text-text-primary">{connectedSystems.length} systems connected</div>
+                      <div className="mt-1 text-[12px] text-text-muted">{connectedSystems.length > 0 ? 'Core command surfaces are available from your profile, settings, and mission workflows.' : 'No external systems are wired yet. Use Systems Control to establish your base stack.'}</div>
+                    </div>
+                    <div className="rounded-[18px] border border-white/[0.08] bg-white/[0.03] p-3">
+                      <div className="flex items-center gap-2 text-[11px] uppercase tracking-[0.18em] text-text-muted">
+                        <Shield className="h-3.5 w-3.5 text-aurora-amber" />
+                        Approval doctrine
+                      </div>
+                      <div className="mt-2 text-sm font-semibold text-text-primary">
+                        {trustedWriteMode === 'locked' ? 'Locked writes' : trustedWriteMode === 'trusted' ? 'Trusted writes enabled' : 'Review-first writes'}
+                      </div>
+                      <div className="mt-1 text-[12px] text-text-muted">
+                        {approvalDoctrine === 'always' ? 'Every meaningful write waits for human review.' : approvalDoctrine === 'exceptions_only' ? 'Only anomalies and exceptions should interrupt flow.' : 'Approval pressure is weighted by risk, not by volume.'}
+                      </div>
+                    </div>
+                    <div className="rounded-[18px] border border-white/[0.08] bg-white/[0.03] p-3">
+                      <div className="flex items-center gap-2 text-[11px] uppercase tracking-[0.18em] text-text-muted">
+                        <Bell className="h-3.5 w-3.5 text-aurora-blue" />
+                        Alert routing
+                      </div>
+                      <div className="mt-2 text-sm font-semibold text-text-primary">
+                        {notificationRoute === 'command_center' ? 'Command center first' : `${notificationRoute} first`}
+                      </div>
+                      <div className="mt-1 text-[12px] text-text-muted">Critical traffic is currently biased toward this rail before the rest of the system fans out.</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-6 rounded-[26px] border border-white/[0.08] bg-[linear-gradient(180deg,rgba(255,255,255,0.035),rgba(255,255,255,0.015))] p-4">
+                <SectionLabel>Command Actions</SectionLabel>
+                <div className="grid gap-3 md:grid-cols-2">
+                  <CommandLink
+                    iconComponent={Sparkles}
+                    label="Open Strategic Systems"
+                    detail="Inspect doctrine, models, learning memory, and cost posture."
+                    onClick={() => handleAction({ type: 'navigate', route: 'intelligence' })}
+                  />
+                  <CommandLink
+                    iconComponent={Activity}
+                    label="Return to Overview"
+                    detail="See the high-level operating readback before diving into details."
+                    onClick={() => handleAction({ type: 'navigate', route: 'overview' })}
+                  />
+                  <CommandLink
+                    iconComponent={LogOut}
+                    label="Sign out"
+                    detail="Close this session on the current device."
+                    onClick={handleSignOut}
+                    destructive
+                  />
+                  <CommandLink
+                    iconComponent={Shield}
+                    label="Sign out all sessions"
+                    detail="Force a clean reset across every connected session."
+                    onClick={handleSignOutAll}
+                    destructive
+                  />
+                </div>
+              </div>
+            </div>
+          </Motion.aside>
         </>
       )}
     </AnimatePresence>
