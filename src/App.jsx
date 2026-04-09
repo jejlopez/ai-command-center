@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react';
 import { AnimatePresence } from 'framer-motion';
 import { NavRail } from './components/NavRail';
 import { CommandPalette } from './components/CommandPalette';
-import { TimeRangePicker } from './components/TimeRangePicker';
 import { DetailPanel } from './components/DetailPanel';
 import { NotificationsPanel } from './components/NotificationsPanel';
 import { SettingsPanel } from './components/SettingsPanel';
@@ -17,15 +16,9 @@ import { TimeRangeProvider } from './utils/useTimeRange';
 import { useSystemState } from './context/SystemStateContext';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { useAgents, usePendingReviews, useTasks } from './utils/useSupabase';
-import { Bell, Settings, User, Loader2 } from 'lucide-react';
+import { Bell, Settings, User, Loader2, Search } from 'lucide-react';
 import { cn } from './utils/cn';
-
-const routeLabels = {
-  overview: 'overview',
-  missions: 'mission control',
-  reports: 'reports',
-  intelligence: 'intelligence',
-};
+import { ProjectSwitcher } from './components/ProjectSwitcher';
 
 function Dashboard() {
   const [activeRoute, setActiveRoute] = useState('overview');
@@ -81,63 +74,63 @@ function Dashboard() {
 
   return (
     <div className="flex w-screen h-screen overflow-hidden bg-canvas text-text-primary relative">
-      <NavRail activeId={activeRoute} onNavigate={setActiveRoute} />
-
-      <main className="flex-1 ml-16 flex flex-col relative">
+      <main className="flex-1 flex flex-col relative">
         {/* Topbar */}
-        <header className="h-16 flex items-center justify-between px-8 shrink-0 z-10 w-full relative">
-          <div className="flex items-center gap-2">
-            <span className="text-text-muted font-medium">Jarvis</span>
-            <span className="text-text-muted">/</span>
-            <span className="text-text-primary font-semibold capitalize font-mono">
-              {routeLabels[activeRoute] || activeRoute}
-            </span>
-          </div>
-          
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => setCmdOpen(true)}
-              className="flex items-center gap-2 px-3 py-1.5 spatial-panel hover:bg-white/[0.05] transition-colors text-xs text-text-muted"
-            >
-              Search... <kbd className="font-mono bg-white/[0.05] px-1 rounded">⌘K</kbd>
-            </button>
-            <TimeRangePicker />
+        <header className="px-8 py-4 shrink-0 z-10 w-full relative">
+          <div className="flex items-center gap-4">
+            <div className="shrink-0 min-w-0">
+              <ProjectSwitcher compact />
+            </div>
 
-            <div className="w-px h-6 bg-border mx-1" />
+            <div className="flex-1 min-w-0 flex justify-center">
+              <NavRail activeId={activeRoute} onNavigate={setActiveRoute} />
+            </div>
 
-            {/* Notifications */}
-            <button
-              onClick={() => setNotificationsOpen(!notificationsOpen)}
-              className={cn(
-                "p-2 rounded-lg transition-all duration-200 relative",
-                notificationsOpen ? "bg-aurora-teal/20 text-aurora-teal" : "text-text-muted hover:text-text-primary hover:bg-white/[0.05]"
-              )}
-            >
-              <Bell className="w-4.5 h-4.5" />
-              <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-aurora-rose rounded-full ring-2 ring-canvas" />
-            </button>
+            <div className="flex items-center justify-end gap-1.5 shrink-0">
+              <button
+                onClick={() => setCmdOpen(true)}
+                className="flex items-center justify-center w-9 h-9 rounded-xl border border-white/[0.06] bg-white/[0.03] hover:bg-white/[0.055] transition-colors text-text-muted"
+                aria-label="Open search"
+              >
+                <Search className="w-3.5 h-3.5" />
+              </button>
 
-            {/* Settings */}
-            <button
-              onClick={() => setSettingsOpen(!settingsOpen)}
-              className={cn(
-                "p-2 rounded-lg transition-all duration-200",
-                settingsOpen ? "bg-aurora-teal/20 text-aurora-teal" : "text-text-muted hover:text-text-primary hover:bg-white/[0.05]"
-              )}
-            >
-              <Settings className="w-4.5 h-4.5" />
-            </button>
+              <div className="w-px h-5 bg-border mx-1" />
 
-            {/* User Avatar */}
-            <button
-              onClick={() => setProfileOpen(!profileOpen)}
-              className={cn(
-                "w-8 h-8 rounded-full border flex items-center justify-center transition-colors",
-                profileOpen ? "bg-aurora-teal/20 border-aurora-teal/50" : "bg-surface-raised border-border hover:border-aurora-teal/50"
-              )}
-            >
-              <User className="w-4 h-4 text-aurora-teal" />
-            </button>
+              {/* Notifications */}
+              <button
+                onClick={() => setNotificationsOpen(!notificationsOpen)}
+                className={cn(
+                  "p-2 rounded-xl transition-all duration-200 relative",
+                  notificationsOpen ? "bg-aurora-teal/20 text-aurora-teal" : "text-text-muted hover:text-text-primary hover:bg-white/[0.05]"
+                )}
+              >
+                <Bell className="w-4.5 h-4.5" />
+                <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-aurora-rose rounded-full ring-2 ring-canvas" />
+              </button>
+
+              {/* Settings */}
+              <button
+                onClick={() => setSettingsOpen(!settingsOpen)}
+                className={cn(
+                  "p-2 rounded-xl transition-all duration-200",
+                  settingsOpen ? "bg-aurora-teal/20 text-aurora-teal" : "text-text-muted hover:text-text-primary hover:bg-white/[0.05]"
+                )}
+              >
+                <Settings className="w-4.5 h-4.5" />
+              </button>
+
+              {/* User Avatar */}
+              <button
+                onClick={() => setProfileOpen(!profileOpen)}
+                className={cn(
+                  "w-9 h-9 rounded-xl border flex items-center justify-center transition-colors",
+                  profileOpen ? "bg-aurora-teal/20 border-aurora-teal/50" : "bg-surface-raised border-border hover:border-aurora-teal/50"
+                )}
+              >
+                <User className="w-4 h-4 text-aurora-teal" />
+              </button>
+            </div>
           </div>
         </header>
 
