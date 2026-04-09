@@ -14,9 +14,7 @@ import {
   X,
 } from 'lucide-react';
 import { cn } from '../utils/cn';
-import { useAgents, useTasks } from '../utils/useSupabase';
-import { useSystemState } from '../context/SystemStateContext';
-import { useCommanderPreferences } from '../utils/useCommanderPreferences';
+import { useDerivedAlerts } from '../utils/useDerivedAlerts';
 
 const FILTERS = [
   { id: 'all', label: 'All' },
@@ -63,113 +61,6 @@ function relativeTime(date) {
   const hours = Math.floor(mins / 60);
   if (hours < 24) return `${hours}h ago`;
   return `${Math.floor(hours / 24)}d ago`;
-}
-
-function buildAlerts(agents, tasks, pendingCount) {
-  const now = Date.now();
-  const minsAgo = (mins) => new Date(now - mins * 60000);
-  const alerts = [];
-
-  const brokenAgents = agents.filter((agent) => agent.status === 'error');
-  brokenAgents.forEach((agent, index) => {
-    alerts.push({
-      id: `agent-error-${agent.id}`,
-      type: 'failure',
-      headline: `${agent.name} failed inside the execution deck`,
-      detail: agent.errorMessage || 'Agent entered an error state and needs inspection or reassignment.',
-      createdAt: minsAgo(2 + index),
-      actionLabel: 'Open agent',
-      action: { type: 'agent', agentId: agent.id },
-      unread: true,
-    });
-  });
-
-  if (pendingCount > 0) {
-    alerts.push({
-      id: 'approval-queue',
-      type: pendingCount > 2 ? 'critical' : 'approval',
-      headline: `${pendingCount} approval gate${pendingCount > 1 ? 's are' : ' is'} holding the line`,
-      detail: 'Human sign-off is still the first bottleneck. Clear the queue or lower friction on low-risk branches.',
-      createdAt: minsAgo(4),
-      actionLabel: 'Open approvals',
-      action: { type: 'navigate', route: 'missions' },
-      unread: true,
-    });
-  }
-
-  const queued = tasks.filter((task) => ['queued', 'running', 'pending'].includes(task.status)).length;
-  alerts.push({
-    id: 'system-pulse',
-    type: 'system',
-    headline: `${queued} missions are active in the live deck`,
-    detail: `${agents.filter((agent) => agent.status === 'processing').length} branches are currently hot. Command pulse is healthy unless approval drag spikes.`,
-    createdAt: minsAgo(6),
-    actionLabel: 'Open Mission Control',
-    action: { type: 'navigate', route: 'missions' },
-    unread: brokenAgents.length > 0 || pendingCount > 0,
-  });
-
-  tasks.filter((task) => ['done', 'completed'].includes(task.status)).slice(0, 2).forEach((task, index) => {
-    alerts.push({
-      id: `success-${task.id}`,
-      type: 'success',
-      headline: `${task.name || task.title} landed cleanly`,
-      detail: `${task.agentName || 'Agent'} finished the run${task.costUsd ? ` at $${Number(task.costUsd).toFixed(2)}` : ''}.`,
-      createdAt: minsAgo(12 + index * 5),
-      actionLabel: 'Open mission',
-      action: { type: 'navigate', route: 'missions' },
-      unread: false,
-    });
-  });
-
-  return alerts.sort((a, b) => b.createdAt - a.createdAt);
-}
-
-function buildDirective(alerts, pendingCount) {
-  const topCritical = alerts.find((alert) => alert.type === 'critical' || alert.type === 'failure');
-  if (topCritical) {
-    return {
-      eyebrow: 'Immediate action',
-      title: topCritical.headline,
-      detail: topCritical.detail,
-      actionLabel: topCritical.actionLabel || 'Open now',
-      action: topCritical.action,
-      tone: 'rose',
-    };
-  }
-
-  if (pendingCount > 0) {
-    return {
-      eyebrow: 'Human bottleneck',
-      title: 'Approval friction is the main drag right now.',
-      detail: 'Clearing human review first will usually do more than tuning execution speed.',
-      actionLabel: 'Open approvals',
-      action: { type: 'navigate', route: 'missions' },
-      tone: 'amber',
-    };
-  }
-
-  return {
-    eyebrow: 'Command readback',
-    title: 'Alert bus is stable and the deck is readable.',
-    detail: 'No major anomalies are crowding attention. You can stay in flow and inspect only what matters.',
-    actionLabel: 'Open Mission Control',
-    action: { type: 'navigate', route: 'missions' },
-    tone: 'teal',
-  };
-}
-
-function isWithinQuietHours(enabled, start, end) {
-  if (!enabled || !start || !end) return false;
-  const [startHour, startMinute] = start.split(':').map(Number);
-  const [endHour, endMinute] = end.split(':').map(Number);
-  const now = new Date();
-  const current = now.getHours() * 60 + now.getMinutes();
-  const startValue = startHour * 60 + startMinute;
-  const endValue = endHour * 60 + endMinute;
-  if (startValue === endValue) return false;
-  if (startValue < endValue) return current >= startValue && current < endValue;
-  return current >= startValue || current < endValue;
 }
 
 function AlertCard({ alert, onClick, onDismiss }) {
@@ -222,41 +113,30 @@ function AlertCard({ alert, onClick, onDismiss }) {
 }
 
 export function NotificationsPanel({ notificationsOpen, setNotificationsOpen, onNavigate }) {
-  const { agents } = useAgents();
-  const { tasks } = useTasks();
-  const { pendingCount } = useSystemState();
-  const { alertPosture, quietHoursEnabled, quietHoursStart, quietHoursEnd, notificationRoute, commanderPersona } = useCommanderPreferences();
   const [activeFilter, setActiveFilter] = useState('all');
   const [dismissedIds, setDismissedIds] = useState([]);
+  const {
+    visibleAlerts: derivedVisibleAlerts,
+    unreadCount,
+    criticalCount,
+    approvalCount,
+    quietActive,
+    notificationRoute,
+    commanderPersona,
+    alertPosture,
+    directive,
+  } = useDerivedAlerts();
 
-  const alerts = useMemo(() => buildAlerts(agents, tasks, pendingCount ?? 0), [agents, tasks, pendingCount]);
   const visibleAlerts = useMemo(() => {
-    const base = alerts.filter((alert) => !dismissedIds.includes(alert.id));
-    const quietHoursActive = isWithinQuietHours(quietHoursEnabled, quietHoursStart, quietHoursEnd);
-    const quietFiltered = quietHoursActive
-      ? base.filter((alert) => ['critical', 'failure'].includes(alert.type))
-      : base;
-    if (alertPosture === 'critical_only') {
-      return quietFiltered.filter((alert) => ['critical', 'failure', 'approval'].includes(alert.type));
-    }
-    if (alertPosture === 'balanced') {
-      return quietFiltered.filter((alert) => alert.type !== 'success');
-    }
-    return quietFiltered;
-  }, [alerts, dismissedIds, alertPosture, quietHoursEnabled, quietHoursStart, quietHoursEnd]);
+    return derivedVisibleAlerts.filter((alert) => !dismissedIds.includes(alert.id));
+  }, [derivedVisibleAlerts, dismissedIds]);
   const filtered = useMemo(
     () => activeFilter === 'all' ? visibleAlerts : visibleAlerts.filter((alert) => alert.type === activeFilter),
     [activeFilter, visibleAlerts]
   );
 
-  const unreadCount = visibleAlerts.filter((alert) => alert.unread).length;
-  const criticalCount = visibleAlerts.filter((alert) => alert.type === 'critical' || alert.type === 'failure').length;
-  const approvalCount = visibleAlerts.filter((alert) => alert.type === 'approval' || alert.type === 'critical').length;
-  const directive = useMemo(() => buildDirective(visibleAlerts, pendingCount ?? 0), [visibleAlerts, pendingCount]);
-  const quietActive = isWithinQuietHours(quietHoursEnabled, quietHoursStart, quietHoursEnd);
-
   const dismiss = useCallback((id) => setDismissedIds((prev) => [...prev, id]), []);
-  const clearAll = useCallback(() => setDismissedIds(alerts.map((alert) => alert.id)), [alerts]);
+  const clearAll = useCallback(() => setDismissedIds(visibleAlerts.map((alert) => alert.id)), [visibleAlerts]);
   const handleAlertClick = useCallback((alert) => {
     if (alert.action && onNavigate) {
       onNavigate(alert.action);

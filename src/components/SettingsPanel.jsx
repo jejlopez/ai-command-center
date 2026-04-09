@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { motion as Motion, AnimatePresence } from 'framer-motion';
 import {
   Check,
@@ -20,10 +20,8 @@ import {
 } from 'lucide-react';
 import { cn } from '../utils/cn';
 import { supabase } from '../lib/supabaseClient';
-import { useModelBank } from '../utils/useSupabase';
+import { useConnectedSystems, useModelBank } from '../utils/useSupabase';
 import { useCommanderPreferences } from '../utils/useCommanderPreferences';
-
-const DOCK_STORAGE_KEY = 'jarvis-connected-systems-v1';
 
 const tabs = [
   { id: 'general', icon: Monitor, label: 'Commander' },
@@ -47,23 +45,6 @@ const integrationCatalog = [
   { id: 'postgres', name: 'Postgres', category: 'Data', statusTone: 'violet', placeholder: 'postgres://...', desc: 'Direct warehouse and ops reporting access' },
 ];
 
-function loadConnectedSystems() {
-  try {
-    const parsed = JSON.parse(localStorage.getItem(DOCK_STORAGE_KEY) || '[]');
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
-}
-
-function saveConnectedSystems(entries) {
-  try {
-    localStorage.setItem(DOCK_STORAGE_KEY, JSON.stringify(entries));
-  } catch {
-    // ignore storage failures for UI preview
-  }
-}
-
 function toneClasses(tone = 'teal') {
   const map = {
     teal: 'border-aurora-teal/20 bg-aurora-teal/10 text-aurora-teal',
@@ -72,6 +53,41 @@ function toneClasses(tone = 'teal') {
     amber: 'border-aurora-amber/20 bg-aurora-amber/10 text-aurora-amber',
   };
   return map[tone] || map.teal;
+}
+
+function formatVerifiedTime(value) {
+  if (!value) return 'Never';
+  try {
+    return new Date(value).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  } catch {
+    return 'Unknown';
+  }
+}
+
+function normalizeConnectedSystem(entry) {
+  const toneByCategory = {
+    Models: 'teal',
+    Backend: 'blue',
+    CRM: 'amber',
+    Comms: 'teal',
+    Finance: 'violet',
+    Automation: 'blue',
+    Data: 'violet',
+  };
+
+  return {
+    ...entry,
+    name: entry.displayName,
+    tone: entry.metadata?.tone || toneByCategory[entry.category] || 'teal',
+    statusLabel: entry.status === 'needs_refresh'
+      ? 'Needs Refresh'
+      : entry.status === 'degraded'
+        ? 'Degraded'
+        : entry.status === 'error'
+          ? 'Error'
+          : 'Connected',
+    securityState: entry.metadata?.securityState || 'Encrypted vault link',
+  };
 }
 
 function Toggle({ enabled, onChange, color = 'bg-aurora-teal' }) {
@@ -300,17 +316,14 @@ function ApiKeyField({ value, onChange, placeholder }) {
 }
 
 function IntegrationsTab() {
-  const [connected, setConnected] = useState(() => loadConnectedSystems());
+  const { connectedSystems, upsertSystem, removeSystem, refreshSystem, loading } = useConnectedSystems();
   const [query, setQuery] = useState('');
   const [selectedId, setSelectedId] = useState('openai');
   const [apiKey, setApiKey] = useState('');
   const [identifier, setIdentifier] = useState('');
   const [saving, setSaving] = useState(false);
   const [savedPulse, setSavedPulse] = useState(false);
-
-  useEffect(() => {
-    saveConnectedSystems(connected);
-  }, [connected]);
+  const connected = connectedSystems.map(normalizeConnectedSystem);
 
   const selected = integrationCatalog.find((item) => item.id === selectedId) || integrationCatalog[0];
   const filteredCatalog = integrationCatalog.filter((item) => {
@@ -318,9 +331,9 @@ function IntegrationsTab() {
     if (!q) return true;
     return item.name.toLowerCase().includes(q) || item.category.toLowerCase().includes(q) || item.desc.toLowerCase().includes(q);
   });
-  const wiredIds = new Set(connected.map((entry) => entry.integrationId));
+  const wiredIds = new Set(connected.map((entry) => entry.integrationKey));
   const recommendedStack = integrationCatalog.filter((item) => ['supabase', 'anthropic', 'openai', 'slack', 'pipedrive'].includes(item.id) && !wiredIds.has(item.id));
-  const currentConnection = connected.find((entry) => entry.integrationId === selected.id);
+  const currentConnection = connected.find((entry) => entry.integrationKey === selected.id);
 
   async function saveAnthropicIfNeeded(key) {
     if (selected.id !== 'anthropic' || !key.trim()) return;
@@ -338,43 +351,38 @@ function IntegrationsTab() {
   async function handleAuthorize() {
     if (!selected || !apiKey.trim()) return;
     setSaving(true);
-    await saveAnthropicIfNeeded(apiKey);
-    const stamp = new Date().toISOString();
-    const nextEntry = {
-      id: `${selected.id}-${stamp}`,
-      integrationId: selected.id,
-      name: selected.name,
-      category: selected.category,
-      desc: selected.desc,
-      tone: selected.statusTone,
-      identifier: identifier.trim() || `${selected.name.toLowerCase()}-primary`,
-      status: 'Connected',
-      lastVerifiedAt: new Date(stamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      capabilities: ['Read', 'Write', 'Sync'],
-      securityState: 'Encrypted vault link',
-    };
-    setConnected((prev) => [nextEntry, ...prev.filter((entry) => entry.integrationId !== selected.id)]);
-    setApiKey('');
-    setIdentifier('');
-    setSaving(false);
-    setSavedPulse(true);
-    setTimeout(() => setSavedPulse(false), 1800);
+    try {
+      await saveAnthropicIfNeeded(apiKey);
+      const stamp = new Date().toISOString();
+      await upsertSystem({
+        integrationKey: selected.id,
+        displayName: selected.name,
+        category: selected.category,
+        status: 'connected',
+        identifier: identifier.trim() || `${selected.name.toLowerCase()}-primary`,
+        capabilities: ['Read', 'Write', 'Sync'],
+        lastVerifiedAt: stamp,
+        metadata: {
+          description: selected.desc,
+          tone: selected.statusTone,
+          securityState: 'Encrypted vault link',
+        },
+      });
+      setApiKey('');
+      setIdentifier('');
+      setSavedPulse(true);
+      setTimeout(() => setSavedPulse(false), 1800);
+    } finally {
+      setSaving(false);
+    }
   }
 
-  function runHealthCheck(id) {
-    setConnected((prev) => prev.map((entry) => (
-      entry.id === id
-        ? {
-            ...entry,
-            status: 'Ready',
-            lastVerifiedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-          }
-        : entry
-    )));
+  async function runHealthCheck(id) {
+    await refreshSystem(id, { status: 'connected', lastVerifiedAt: new Date().toISOString() });
   }
 
-  function removeIntegration(id) {
-    setConnected((prev) => prev.filter((entry) => entry.id !== id));
+  async function removeIntegration(id) {
+    await removeSystem(id);
   }
 
   return (
@@ -388,10 +396,10 @@ function IntegrationsTab() {
               Wire The Stack
             </div>
             <h3 className="mt-3 text-lg font-semibold text-text-primary">Add APIs and drop them straight into the systems dock.</h3>
-            <p className="mt-2 text-[12px] leading-relaxed text-text-muted">This is the UI version: connect the service, authorize it, and the dock updates at the bottom like a live systems rack.</p>
+            <p className="mt-2 text-[12px] leading-relaxed text-text-muted">Authorize the service, persist the connection state, and let the dock update across Settings, Profile, Notifications, and mission creation.</p>
           </div>
-          <div className="rounded-2xl border border-white/[0.08] bg-black/20 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-text-muted">
-            UI Preview
+          <div className="rounded-2xl border border-aurora-green/20 bg-aurora-green/10 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-aurora-green">
+            Live Dock
           </div>
         </div>
 
@@ -519,6 +527,11 @@ function IntegrationsTab() {
 
       <SectionLabel>Connected Systems Dock</SectionLabel>
       <div className="rounded-[26px] border border-white/[0.08] bg-[linear-gradient(180deg,rgba(255,255,255,0.04),rgba(255,255,255,0.015))] p-4">
+        {loading && (
+          <div className="mb-4 rounded-[20px] border border-white/[0.08] bg-black/20 px-4 py-3 text-[12px] text-text-muted">
+            Loading connected systems...
+          </div>
+        )}
         {recommendedStack.length > 0 && (
           <div className="mb-4 rounded-[20px] border border-white/[0.08] bg-black/20 p-4">
             <div className="flex items-start justify-between gap-3">
@@ -562,7 +575,7 @@ function IntegrationsTab() {
                     <div className="mt-1 text-[10px] uppercase tracking-[0.16em] text-text-muted">{entry.category}</div>
                   </div>
                   <span className={cn('rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em]', toneClasses(entry.tone))}>
-                    {entry.status}
+                    {entry.statusLabel}
                   </span>
                 </div>
                 <div className="mt-3 text-[12px] text-text-body">{entry.identifier}</div>
@@ -573,7 +586,7 @@ function IntegrationsTab() {
                   </div>
                   <div className="inline-flex items-center gap-1.5 rounded-full border border-aurora-green/20 bg-aurora-green/10 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-aurora-green">
                     <span className="h-1.5 w-1.5 rounded-full bg-aurora-green" />
-                    Connected
+                    {entry.statusLabel}
                   </div>
                 </div>
                 <div className="mt-3 flex flex-wrap gap-2">
@@ -584,7 +597,7 @@ function IntegrationsTab() {
                   ))}
                 </div>
                 <div className="mt-3 flex items-center justify-between gap-3">
-                  <div className="text-[10px] uppercase tracking-[0.16em] text-text-disabled">Verified {entry.lastVerifiedAt}</div>
+                  <div className="text-[10px] uppercase tracking-[0.16em] text-text-disabled">Verified {formatVerifiedTime(entry.lastVerifiedAt)}</div>
                   <div className="flex items-center gap-2">
                     <button
                       type="button"
@@ -625,7 +638,7 @@ function AboutTab() {
       <SectionLabel>Systems Control</SectionLabel>
       <div className="rounded-[24px] border border-white/[0.08] bg-black/20 p-4">
         <div className="text-lg font-semibold text-text-primary">Jarvis Command Center</div>
-        <p className="mt-2 text-[12px] leading-relaxed text-text-muted">This drawer is now treated like a systems rack instead of a generic settings form. The next real backend step would be persisting all integration keys securely instead of only previewing the dock locally.</p>
+        <p className="mt-2 text-[12px] leading-relaxed text-text-muted">This drawer now acts like the real command rack: preference state persists in Supabase, connected systems are shared across the app, and secrets stay hidden from the UI.</p>
       </div>
     </div>
   );
