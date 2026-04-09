@@ -131,12 +131,16 @@ export function SchedulesBottlenecksPanel({ summary, schedules, loading }) {
                   <span className="text-text-muted">{item.label}</span>
                   <span className={`font-mono ${item.tone}`}>{item.value}</span>
                 </div>
-                <div className="h-2.5 overflow-hidden rounded-full bg-white/[0.05] shadow-[inset_0_1px_2px_rgba(0,0,0,0.4)]">
-                  <div
-                    className="h-full rounded-full bg-gradient-to-r from-aurora-violet via-aurora-blue to-aurora-teal"
-                    style={{ width: `${Math.min(100, Math.max(item.value * 18, item.value ? 12 : 4))}%`, opacity: item.value === 0 ? 0.18 : 1 }}
-                  />
-                </div>
+                {blockersTotal === 0 ? (
+                  <div className="h-2.5 overflow-hidden rounded-full bg-white/[0.04] shadow-[inset_0_1px_2px_rgba(0,0,0,0.3)]" />
+                ) : (
+                  <div className="h-2.5 overflow-hidden rounded-full bg-white/[0.05] shadow-[inset_0_1px_2px_rgba(0,0,0,0.4)]">
+                    <div
+                      className="h-full rounded-full bg-gradient-to-r from-aurora-violet via-aurora-blue to-aurora-teal"
+                      style={{ width: `${Math.min(100, Math.max(item.value * 18, item.value ? 12 : 4))}%` }}
+                    />
+                  </div>
+                )}
               </div>
             ))}
           </div>

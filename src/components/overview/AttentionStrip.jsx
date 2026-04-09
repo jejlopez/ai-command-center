@@ -4,6 +4,7 @@ import { cn } from '../../utils/cn';
 const iconMap = {
   approvals: ShieldCheck,
   questions: BadgeHelp,
+  schedules: Clock3,
   failures: OctagonAlert,
   stalled: Clock3,
   cost: DollarSign,
@@ -12,7 +13,7 @@ const iconMap = {
 
 export function AttentionStrip({ items, loading, onSelect }) {
   return (
-    <div className="grid gap-4 lg:grid-cols-3 xl:grid-cols-6">
+    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
       {items.map((item) => {
         const Icon = iconMap[item.id] || AlertTriangle;
         return (

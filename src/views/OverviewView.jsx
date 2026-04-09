@@ -95,7 +95,7 @@ export function OverviewView({ agents, tasks, loading, addOptimistic, onOpenDeta
   const questionCount = reviews.filter((review) => ['message', 'question'].includes(review.outputType)).length;
   const now = Date.now();
   const lateSchedules = schedules.filter((job) => job.status === 'active' && job.nextRunAt && new Date(job.nextRunAt).getTime() < now).length;
-  const needsAttention = reviews.length + failedTasks.length + stalledAgents.length;
+  const needsAttention = reviews.length + failedTasks.length + stalledAgents.length + lateSchedules;
   const attentionItems = [
     {
       id: 'approvals',
@@ -134,16 +134,7 @@ export function OverviewView({ agents, tasks, loading, addOptimistic, onOpenDeta
       clickable: false,
     },
     {
-      id: 'cost',
-      label: 'Spend today',
-      value: `$${costData.total.toFixed(2)}`,
-      detail: costData.total > 0 ? `Burning about $${costData.burnRate.toFixed(2)}/hr.` : 'No spend recorded yet today.',
-      badge: 'Budget',
-      tone: costData.total > 0 ? 'info' : 'info',
-      clickable: false,
-    },
-    {
-      id: 'alerts',
+      id: 'questions',
       label: 'Questions waiting',
       value: questionCount,
       detail: questionCount ? 'Agent outputs that likely need a direct response.' : 'No open agent questions detected.',
@@ -151,7 +142,7 @@ export function OverviewView({ agents, tasks, loading, addOptimistic, onOpenDeta
       tone: questionCount ? 'warning' : 'info',
       clickable: true,
     },
-  ];
+  ].filter((item) => ['approvals', 'schedules', 'failures', 'questions'].includes(item.id));
 
   const reviewAgentIds = new Set(reviews.map((review) => review.agentId).filter(Boolean));
   const prioritizedTasks = useMemo(() => {
@@ -197,6 +188,7 @@ export function OverviewView({ agents, tasks, loading, addOptimistic, onOpenDeta
     successRate,
     stalledAgents: stalledAgents.length,
     flaggedAgents,
+    flaggedAgentCount: flaggedAgents.length,
     oldestPendingLabel,
     avgApprovalWaitLabel: formatWaitLabel(avgApprovalWaitMs),
     longestApprovalWaitLabel: formatWaitLabel(longestApprovalWaitMs),

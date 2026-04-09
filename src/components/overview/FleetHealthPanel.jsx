@@ -32,8 +32,8 @@ export function FleetHealthPanel({ summary, onOpenDetail }) {
           <span className="font-mono text-text-primary">{summary.stalledAgents}</span>
         </div>
         <div className="flex items-center justify-between text-sm">
-          <span className="flex items-center gap-2 text-text-muted"><ShieldCheck className="h-4 w-4 text-aurora-green" /> Pending approvals</span>
-          <span className="font-mono text-text-primary">{summary.pendingApprovals}</span>
+          <span className="flex items-center gap-2 text-text-muted"><ShieldCheck className="h-4 w-4 text-aurora-green" /> Agents to check</span>
+          <span className="font-mono text-text-primary">{summary.flaggedAgentCount}</span>
         </div>
       </div>
 
