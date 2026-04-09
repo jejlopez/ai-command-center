@@ -1,9 +1,18 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { AnimatePresence, motion as Motion } from 'framer-motion';
 import * as Icons from 'lucide-react';
-import { baseCommandItems } from '../utils/staticCatalog';
-import { useAgents } from '../utils/useSupabase';
+import { useAgents, useConnectedSystems } from '../utils/useSupabase';
 import { cn } from '../utils/cn';
+
+const baseCommandItems = [
+  { id: 'nav-overview', group: 'Navigate', label: 'Open Overview', icon: 'LayoutDashboard', action: { type: 'navigate', route: 'overview' } },
+  { id: 'nav-missions', group: 'Navigate', label: 'Open Mission Control', icon: 'Crosshair', action: { type: 'navigate', route: 'missions' } },
+  { id: 'nav-reports', group: 'Navigate', label: 'Open Reports', icon: 'FileBarChart', action: { type: 'navigate', route: 'reports' } },
+  { id: 'nav-intelligence', group: 'Navigate', label: 'Open Intelligence', icon: 'BrainCircuit', action: { type: 'navigate', route: 'intelligence' } },
+  { id: 'panel-alerts', group: 'Panels', label: 'Open Command Alerts', icon: 'Bell', action: { type: 'panel', panel: 'notifications' } },
+  { id: 'panel-settings', group: 'Panels', label: 'Open Systems Control', icon: 'Settings2', action: { type: 'panel', panel: 'settings' } },
+  { id: 'panel-profile', group: 'Panels', label: 'Open Commander Identity', icon: 'UserCircle2', action: { type: 'panel', panel: 'profile' } },
+];
 
 const statusColors = {
   processing: 'bg-aurora-teal',
@@ -13,6 +22,7 @@ const statusColors = {
 
 export function CommandPalette({ isOpen, onClose, onExecute }) {
   const { agents } = useAgents();
+  const { connectedSystems } = useConnectedSystems();
   const [query, setQuery] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
   const inputRef = useRef(null);
@@ -25,6 +35,13 @@ export function CommandPalette({ isOpen, onClose, onExecute }) {
       icon: agent.role === 'commander' ? 'Crown' : agent.status === 'error' ? 'AlertTriangle' : 'Cpu',
       action: { type: 'agent', agentId: agent.id },
     })),
+    ...connectedSystems.map((system) => ({
+      id: `system-${system.id}`,
+      group: 'Systems',
+      label: `Inspect ${system.displayName}`,
+      icon: system.status === 'error' ? 'AlertTriangle' : 'Plug',
+      action: { type: 'panel', panel: 'settings' },
+    })),
   ];
 
   const filteredItems = query
@@ -32,18 +49,16 @@ export function CommandPalette({ isOpen, onClose, onExecute }) {
     : commandItems;
 
   useEffect(() => {
-    if (isOpen && inputRef.current) {
-      setTimeout(() => inputRef.current.focus(), 10);
-      setSelectedIndex(0);
-    }
-    if (!isOpen) setQuery('');
-  }, [isOpen, query]);
+    if (!isOpen || !inputRef.current) return undefined;
+    const timeout = setTimeout(() => inputRef.current?.focus(), 10);
+    return () => clearTimeout(timeout);
+  }, [isOpen]);
 
-  function handleExecute(item) {
+  const handleExecute = useCallback((item) => {
     if (!item) return;
     onExecute?.(item);
     onClose();
-  }
+  }, [onClose, onExecute]);
 
   useEffect(() => {
     const handleKeyDown = (e) => {
@@ -63,7 +78,7 @@ export function CommandPalette({ isOpen, onClose, onExecute }) {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, filteredItems, selectedIndex, onClose]);
+  }, [filteredItems, handleExecute, isOpen, onClose, selectedIndex]);
 
   // Group items for rendering
   let lastGroup = null;
@@ -72,7 +87,7 @@ export function CommandPalette({ isOpen, onClose, onExecute }) {
     <AnimatePresence>
       {isOpen && (
         <>
-          <motion.div
+          <Motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -80,7 +95,7 @@ export function CommandPalette({ isOpen, onClose, onExecute }) {
             className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm"
           />
           <div className="fixed inset-0 z-[101] flex items-start justify-center pt-28 pointer-events-none">
-            <motion.div
+            <Motion.div
               initial={{ opacity: 0, y: -20, scale: 0.98 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: -20, scale: 0.98 }}
@@ -151,7 +166,7 @@ export function CommandPalette({ isOpen, onClose, onExecute }) {
                 <span className="flex items-center gap-1"><kbd className="bg-white/5 px-1 rounded">↵</kbd> select</span>
                 <span className="flex items-center gap-1"><kbd className="bg-white/5 px-1 rounded">esc</kbd> close</span>
               </div>
-            </motion.div>
+            </Motion.div>
           </div>
         </>
       )}

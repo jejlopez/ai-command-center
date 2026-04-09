@@ -9,18 +9,53 @@ function createRealtimeChannelName(prefix, userId) {
   return `${prefix}-${userId}-${uniqueSuffix}`;
 }
 
+async function ensureModelBankEntry(user, modelKey, provider = 'Custom') {
+  if (!user?.id || !modelKey) return null;
+
+  const row = {
+    user_id: user.id,
+    model_key: modelKey,
+    label: modelKey,
+    provider,
+  };
+
+  const { data, error } = await supabase
+    .from('model_bank')
+    .upsert(row, { onConflict: 'user_id,model_key' })
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data;
+}
+
 async function ensureCommanderAgent(user) {
   if (!user?.id) return null;
 
   const commanderName = user.user_metadata?.full_name?.trim()
     ? `${user.user_metadata.full_name.trim()} Command`
     : 'Jarvis Commander';
+  const commanderModel = 'Claude Opus 4.6';
+
+  const { data: existingCommander, error: existingError } = await supabase
+    .from('agents')
+    .select('*')
+    .eq('user_id', user.id)
+    .eq('role', 'commander')
+    .order('created_at', { ascending: true })
+    .limit(1)
+    .maybeSingle();
+
+  if (existingError) throw existingError;
+  if (existingCommander) return existingCommander;
+
+  await ensureModelBankEntry(user, commanderModel, 'Anthropic');
 
   const row = {
     id: crypto.randomUUID(),
     user_id: user.id,
     name: commanderName,
-    model: 'Claude Opus 4.6',
+    model: commanderModel,
     status: 'idle',
     role: 'commander',
     color: '#00D9C8',
@@ -418,6 +453,222 @@ export function useSchedules() {
   }, [user, fetchSchedules]);
 
   return { schedules, loading, refetch: fetchSchedules };
+}
+
+export function useConnectedSystems() {
+  const { user } = useAuth();
+  const [connectedSystems, setConnectedSystems] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetchConnectedSystems = useCallback(async () => {
+    if (!user) {
+      setConnectedSystems([]);
+      setLoading(false);
+      return;
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from('connected_systems')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      setConnectedSystems((data || []).map(mapConnectedSystemFromDb));
+    } catch (error) {
+      console.error('[useConnectedSystems] Fetch error:', error);
+      setConnectedSystems([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) return undefined;
+
+    fetchConnectedSystems();
+
+    const channel = supabase
+      .channel(createRealtimeChannelName('connected-systems-user', user.id))
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'connected_systems', filter: `user_id=eq.${user.id}` },
+        () => fetchConnectedSystems()
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user, fetchConnectedSystems]);
+
+  const upsertSystem = useCallback(async (system) => {
+    if (!user) throw new Error('Not authenticated');
+
+    const row = mapConnectedSystemToDb(user.id, system);
+    const { data, error } = await supabase
+      .from('connected_systems')
+      .upsert(row, { onConflict: 'user_id,integration_key' })
+      .select()
+      .single();
+
+    if (error) throw error;
+    return mapConnectedSystemFromDb(data);
+  }, [user]);
+
+  const removeSystem = useCallback(async (systemId) => {
+    if (!user || !systemId) return;
+    const { error } = await supabase
+      .from('connected_systems')
+      .delete()
+      .eq('user_id', user.id)
+      .eq('id', systemId);
+
+    if (error) throw error;
+  }, [user]);
+
+  const refreshSystem = useCallback(async (systemId, patch = {}) => {
+    if (!user || !systemId) return;
+    const row = {
+      status: patch.status || 'connected',
+      last_verified_at: patch.lastVerifiedAt || new Date().toISOString(),
+      metadata: patch.metadata,
+    };
+
+    const { error } = await supabase
+      .from('connected_systems')
+      .update(row)
+      .eq('user_id', user.id)
+      .eq('id', systemId);
+
+    if (error) throw error;
+  }, [user]);
+
+  return {
+    connectedSystems,
+    loading,
+    refetch: fetchConnectedSystems,
+    upsertSystem,
+    removeSystem,
+    refreshSystem,
+  };
+}
+
+export function useKnowledgeNamespaces() {
+  const { user } = useAuth();
+  const [namespaces, setNamespaces] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetchNamespaces = useCallback(async () => {
+    if (!user) {
+      setNamespaces([]);
+      setLoading(false);
+      return;
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from('knowledge_namespaces')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('updated_at', { ascending: false });
+
+      if (error) throw error;
+      setNamespaces((data || []).map(mapKnowledgeNamespaceFromDb));
+    } catch (error) {
+      console.error('[useKnowledgeNamespaces] Fetch error:', error);
+      setNamespaces([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) return undefined;
+    fetchNamespaces();
+    return undefined;
+  }, [user, fetchNamespaces]);
+
+  return { namespaces, loading, refetch: fetchNamespaces };
+}
+
+export function useSharedDirectives() {
+  const { user } = useAuth();
+  const [directives, setDirectives] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetchDirectives = useCallback(async () => {
+    if (!user) {
+      setDirectives([]);
+      setLoading(false);
+      return;
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from('shared_directives')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('priority', { ascending: false })
+        .order('updated_at', { ascending: false });
+
+      if (error) throw error;
+      setDirectives((data || []).map(mapSharedDirectiveFromDb));
+    } catch (error) {
+      console.error('[useSharedDirectives] Fetch error:', error);
+      setDirectives([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) return undefined;
+    fetchDirectives();
+    return undefined;
+  }, [user, fetchDirectives]);
+
+  return { directives, loading, refetch: fetchDirectives };
+}
+
+export function useSystemRecommendations() {
+  const { user } = useAuth();
+  const [recommendations, setRecommendations] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetchRecommendations = useCallback(async () => {
+    if (!user) {
+      setRecommendations([]);
+      setLoading(false);
+      return;
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from('system_recommendations')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('priority', { ascending: false })
+        .order('updated_at', { ascending: false });
+
+      if (error) throw error;
+      setRecommendations((data || []).map(mapSystemRecommendationFromDb));
+    } catch (error) {
+      console.error('[useSystemRecommendations] Fetch error:', error);
+      setRecommendations([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) return undefined;
+    fetchRecommendations();
+    return undefined;
+  }, [user, fetchRecommendations]);
+
+  return { recommendations, loading, refetch: fetchRecommendations };
 }
 
 /**
@@ -1006,6 +1257,75 @@ function mapMcpServerFromDb(row) {
   };
 }
 
+function mapConnectedSystemFromDb(row) {
+  return {
+    id: row.id,
+    userId: row.user_id,
+    integrationKey: row.integration_key,
+    displayName: row.display_name,
+    category: row.category || 'System',
+    status: row.status || 'connected',
+    identifier: row.identifier || '',
+    capabilities: Array.isArray(row.capabilities) ? row.capabilities : [],
+    metadata: row.metadata || {},
+    lastVerifiedAt: row.last_verified_at,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function mapConnectedSystemToDb(userId, system) {
+  return {
+    user_id: userId,
+    integration_key: system.integrationKey,
+    display_name: system.displayName,
+    category: system.category || 'System',
+    status: system.status || 'connected',
+    identifier: system.identifier || '',
+    capabilities: system.capabilities || [],
+    metadata: system.metadata || {},
+    last_verified_at: system.lastVerifiedAt || new Date().toISOString(),
+  };
+}
+
+function mapKnowledgeNamespaceFromDb(row) {
+  return {
+    id: row.id,
+    name: row.name,
+    vectors: row.vectors || 0,
+    sizeLabel: row.size_label || '0 MB',
+    lastSyncAt: row.last_sync_at,
+    status: row.status || 'idle',
+    agents: Array.isArray(row.agents) ? row.agents : [],
+    description: row.description || '',
+    updatedAt: row.updated_at,
+  };
+}
+
+function mapSharedDirectiveFromDb(row) {
+  return {
+    id: row.id,
+    name: row.name,
+    scope: row.scope || 'all',
+    appliedTo: Array.isArray(row.applied_to) ? row.applied_to : [],
+    content: row.content || '',
+    priority: row.priority || 'normal',
+    icon: row.icon || 'ShieldCheck',
+    updatedAt: row.updated_at,
+  };
+}
+
+function mapSystemRecommendationFromDb(row) {
+  return {
+    id: row.id,
+    type: row.rec_type || 'optimization',
+    title: row.title,
+    description: row.description || '',
+    impact: row.impact || 'medium',
+    savings: row.savings_label || '',
+    updatedAt: row.updated_at,
+  };
+}
 function inferSkillIcon(source, reference) {
   if (source === 'github') return 'Monitor';
   if (source === 'local') return 'FolderOpen';

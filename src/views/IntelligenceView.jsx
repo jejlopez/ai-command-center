@@ -22,20 +22,13 @@ import {
   Bar,
   BarChart,
   CartesianGrid,
-  Cell,
   ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
 } from 'recharts';
-import {
-  directiveTemplates,
-  knowledgeNamespaces,
-  modelBenchmarks,
-  systemRecommendations,
-} from '../utils/staticCatalog';
 import { container, item } from '../utils/variants';
-import { useActivityLog, useAgents, useModelBank, useTasks } from '../utils/useSupabase';
+import { useActivityLog, useAgents, useKnowledgeNamespaces, useModelBank, useSharedDirectives, useSystemRecommendations, useTasks } from '../utils/useSupabase';
 import { CommandDeckHero } from '../components/command/CommandDeckHero';
 import { AnimatedNumber } from '../components/command/AnimatedNumber';
 import { CommandSectionHeader } from '../components/command/CommandSectionHeader';
@@ -43,6 +36,8 @@ import { useCommanderPreferences } from '../utils/useCommanderPreferences';
 import { useLearningMemory } from '../utils/useLearningMemory';
 import { DoctrineCards } from '../components/command/DoctrineCards';
 import { cn } from '../utils/cn';
+import { TruthAuditStrip } from '../components/command/TruthAuditStrip';
+import { useCommandCenterTruth } from '../utils/useCommandCenterTruth';
 
 const tabs = [
   { id: 'models', label: 'Model Command Matrix', icon: Cpu },
@@ -61,12 +56,85 @@ const modelColors = {
 
 const directiveIconMap = { ShieldCheck, FileJson, Lock, Zap, TrendingUp };
 const capabilityMetrics = [
-  { key: 'reasoning', label: 'Reasoning' },
-  { key: 'codeGen', label: 'Code generation' },
-  { key: 'extraction', label: 'Extraction' },
-  { key: 'latency', label: 'Speed' },
-  { key: 'costEfficiency', label: 'Cost efficiency' },
+  { key: 'reliability', label: 'Reliability' },
+  { key: 'missionLoad', label: 'Mission load' },
+  { key: 'agentCoverage', label: 'Agent coverage' },
+  { key: 'speed', label: 'Speed' },
+  { key: 'costDiscipline', label: 'Cost discipline' },
 ];
+
+function normalizeModelProvider(provider = '') {
+  const lower = provider.toLowerCase();
+  if (lower.includes('ollama')) return 'Ollama';
+  if (lower.includes('anthropic')) return 'Anthropic';
+  if (lower.includes('openai')) return 'OpenAI';
+  return provider || 'Custom';
+}
+
+function deriveAvailableModels(models, agents, tasks) {
+  const modelKeys = new Map();
+
+  models.forEach((model) => {
+    modelKeys.set(model.label || model.modelKey, {
+      model: model.label || model.modelKey,
+      provider: normalizeModelProvider(model.provider),
+      costPer1k: Number(model.costPer1k || 0),
+      contextWindow: model.provider ? `${model.provider} lane` : 'Custom lane',
+    });
+  });
+
+  agents.forEach((agent) => {
+    if (!agent.model) return;
+    if (!modelKeys.has(agent.model)) {
+      modelKeys.set(agent.model, {
+        model: agent.model,
+        provider: 'Live agent',
+        costPer1k: 0,
+        contextWindow: 'Live lane',
+      });
+    }
+  });
+
+  const byModel = Array.from(modelKeys.values()).map((entry) => {
+    const modelAgents = agents.filter((agent) => agent.model === entry.model);
+    const modelTasks = tasks.filter((task) => {
+      const agent = agents.find((candidate) => candidate.id === task.agentId);
+      return agent?.model === entry.model;
+    });
+
+    const avgSuccess = modelAgents.length
+      ? modelAgents.reduce((sum, agent) => sum + Number(agent.successRate || 0), 0) / modelAgents.length
+      : modelTasks.length
+        ? (modelTasks.filter((task) => ['done', 'completed'].includes(String(task.status || '').toLowerCase())).length / modelTasks.length) * 100
+        : 0;
+    const avgLatency = modelAgents.length
+      ? modelAgents.reduce((sum, agent) => sum + Number(agent.latencyMs || 0), 0) / modelAgents.length
+      : 0;
+    const costDiscipline = entry.costPer1k > 0
+      ? Math.max(18, Math.round(100 - Math.min(80, entry.costPer1k * 10)))
+      : 96;
+
+    return {
+      ...entry,
+      reliability: Math.round(avgSuccess || 0),
+      missionLoad: modelTasks.length,
+      agentCoverage: modelAgents.length,
+      speed: avgLatency > 0 ? Math.max(12, Math.round(100 - Math.min(85, avgLatency / 12))) : 50,
+      costDiscipline,
+      tokensPerSec: 0,
+      monthlyCost: modelTasks.reduce((sum, task) => sum + Number(task.costUsd || 0), 0),
+    };
+  });
+
+  const maxLoad = Math.max(...byModel.map((model) => model.missionLoad), 1);
+  const maxCoverage = Math.max(...byModel.map((model) => model.agentCoverage), 1);
+
+  return byModel.map((model) => ({
+    ...model,
+    missionLoad: Math.round((model.missionLoad / maxLoad) * 100),
+    agentCoverage: Math.round((model.agentCoverage / maxCoverage) * 100),
+  }));
+}
 
 function HudPanel({ eyebrow, title, description, accent = 'teal', children, className = '' }) {
   const accents = {
@@ -362,9 +430,9 @@ function ModelRegistryTab({ availableModels, agents, tasks }) {
       .sort((a, b) => b.tasks - a.tasks);
   }, [agents, tasks]);
 
-  const primaryReasoner = [...availableModels].sort((a, b) => b.reasoning - a.reasoning)[0];
-  const fastestModel = [...availableModels].sort((a, b) => b.latency - a.latency)[0];
-  const cheapestModel = [...availableModels].sort((a, b) => b.costEfficiency - a.costEfficiency)[0];
+  const primaryReasoner = [...availableModels].sort((a, b) => b.reliability - a.reliability)[0];
+  const fastestModel = [...availableModels].sort((a, b) => b.speed - a.speed)[0];
+  const cheapestModel = [...availableModels].sort((a, b) => b.costDiscipline - a.costDiscipline)[0];
   const heaviestLoad = modelLoad.slice().sort((a, b) => b.tasks - a.tasks)[0];
 
   return (
@@ -400,16 +468,16 @@ function ModelRegistryTab({ availableModels, agents, tasks }) {
         >
           <CommandSectionHeader
             eyebrow="Capability Constellation"
-            title="Reasoning, code, extraction, speed, and cost in one view"
-            description="Grouped bars are easier to compare than overlapping radar shapes."
+            title="Reliability, load, coverage, speed, and cost in one view"
+            description="Real operating metrics are easier to compare than decorative capability guesses."
             icon={RadarIcon}
             tone="violet"
           />
           <div className="mt-5 grid gap-3 md:grid-cols-3">
             {[
-              { label: 'Best reasoner', value: primaryReasoner?.model || 'No model bank yet', detail: 'Highest-quality planning and ambiguity handling.' },
-              { label: 'Fastest branch', value: fastestModel?.model || 'No model bank yet', detail: 'Best for speed-sensitive workflows and volume dispatch.' },
-              { label: 'Most efficient', value: cheapestModel?.model || 'No model bank yet', detail: 'Best for inexpensive background work and utility jobs.' },
+              { label: 'Most reliable', value: primaryReasoner?.model || 'No live model data yet', detail: 'Strongest completion and success posture from your active bank.' },
+              { label: 'Fastest branch', value: fastestModel?.model || 'No live model data yet', detail: 'Best current latency posture across routed branches.' },
+              { label: 'Most disciplined', value: cheapestModel?.model || 'No live model data yet', detail: 'Best cost discipline based on configured spend profile.' },
             ].map((card) => (
               <div key={card.label} className="rounded-[20px] border border-white/8 bg-black/20 p-4">
                 <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">{card.label}</div>
@@ -461,7 +529,7 @@ function ModelRegistryTab({ availableModels, agents, tasks }) {
             </div>
           </div>
           <div className="mt-3 rounded-2xl border border-aurora-violet/15 bg-aurora-violet/[0.05] px-3 py-2 text-[11px] text-text-body">
-            Readback: one chart, five metrics, four model families. The winner strip tells you the default choice; the bars tell you how close the alternatives really are.
+            Readback: one chart, five operating metrics, real routed model lanes. The winner strip gives the quick answer; the bars show how close the alternatives really are.
           </div>
         </HudPanel>
         )}
@@ -552,18 +620,18 @@ function ModelRegistryTab({ availableModels, agents, tasks }) {
                     {model.contextWindow}
                   </span>
                 </div>
-                <div className="mt-4 grid grid-cols-3 gap-3 text-[11px]">
+                    <div className="mt-4 grid grid-cols-3 gap-3 text-[11px]">
                   <div>
-                    <div className="text-text-disabled">Tok / sec</div>
-                    <div className="mt-1 font-mono text-text-primary">{model.tokensPerSec || 0}</div>
+                    <div className="text-text-disabled">Live spend</div>
+                    <div className="mt-1 font-mono text-text-primary">{model.monthlyCost ? `$${model.monthlyCost.toFixed(2)}` : '$0.00'}</div>
                   </div>
                   <div>
-                    <div className="text-text-disabled">Reasoning</div>
-                    <div className="mt-1 font-mono text-text-primary">{model.reasoning}</div>
+                    <div className="text-text-disabled">Reliability</div>
+                    <div className="mt-1 font-mono text-text-primary">{model.reliability}</div>
                   </div>
                   <div>
-                    <div className="text-text-disabled">Monthly cost</div>
-                    <div className="mt-1 font-mono text-text-primary">{model.monthlyCost ? `$${model.monthlyCost}` : 'Free'}</div>
+                    <div className="text-text-disabled">Active agents</div>
+                    <div className="mt-1 font-mono text-text-primary">{Math.round((model.agentCoverage / 100) * Math.max(availableModels.length, 1))}</div>
                   </div>
                 </div>
               </div>
@@ -580,8 +648,8 @@ function ModelRegistryTab({ availableModels, agents, tasks }) {
   );
 }
 
-function KnowledgeMapTab() {
-  const totalVectors = knowledgeNamespaces.reduce((sum, namespace) => sum + namespace.vectors, 0);
+function KnowledgeMapTab({ namespaces }) {
+  const totalVectors = namespaces.reduce((sum, namespace) => sum + Number(namespace.vectors || 0), 0);
 
   return (
     <div className="grid gap-5 xl:grid-cols-[0.9fr_1.1fr]">
@@ -601,12 +669,12 @@ function KnowledgeMapTab() {
             </div>
             <div className="rounded-[22px] border border-white/8 bg-black/20 p-4">
               <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Namespaces</div>
-              <div className="mt-2 text-3xl font-semibold text-text-primary">{knowledgeNamespaces.length}</div>
+              <div className="mt-2 text-3xl font-semibold text-text-primary">{namespaces.length}</div>
             </div>
             <div className="rounded-[22px] border border-white/8 bg-black/20 p-4">
               <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Stale terrain</div>
               <div className="mt-2 text-3xl font-semibold text-text-primary">
-                {knowledgeNamespaces.filter((namespace) => namespace.status !== 'active').length}
+                {namespaces.filter((namespace) => namespace.status !== 'active').length}
               </div>
             </div>
           </div>
@@ -621,9 +689,14 @@ function KnowledgeMapTab() {
             tone="blue"
           />
           <div className="mt-5 space-y-3">
-            {knowledgeNamespaces
+            {namespaces.length === 0 && (
+              <div className="rounded-[22px] border border-dashed border-white/10 bg-black/10 p-4 text-[12px] text-text-muted">
+                No knowledge namespaces are stored yet. Once memory zones are persisted, this terrain will rank them here instead of inventing placeholders.
+              </div>
+            )}
+            {namespaces
               .slice()
-              .sort((a, b) => b.vectors - a.vectors)
+              .sort((a, b) => Number(b.vectors || 0) - Number(a.vectors || 0))
               .map((namespace, index) => (
                 <div key={namespace.id} className="rounded-[22px] border border-white/8 bg-black/20 p-4">
                   <div className="flex items-center justify-between gap-3">
@@ -637,8 +710,8 @@ function KnowledgeMapTab() {
                       </div>
                     </div>
                     <div className="text-right">
-                      <div className="text-sm font-semibold text-text-primary">{namespace.size}</div>
-                      <div className="mt-1 text-[11px] text-text-muted">{namespace.vectors.toLocaleString()} vectors</div>
+                      <div className="text-sm font-semibold text-text-primary">{namespace.sizeLabel}</div>
+                      <div className="mt-1 text-[11px] text-text-muted">{Number(namespace.vectors || 0).toLocaleString()} vectors</div>
                     </div>
                   </div>
                 </div>
@@ -656,12 +729,12 @@ function KnowledgeMapTab() {
           tone="violet"
         />
         <div className="mt-5 grid gap-4 md:grid-cols-2">
-          {knowledgeNamespaces.slice(0, 6).map((namespace) => (
+          {namespaces.slice(0, 6).map((namespace) => (
             <div key={namespace.id} className="rounded-[24px] border border-white/8 bg-black/20 p-4">
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <div className="text-sm font-semibold text-text-primary">{namespace.name}</div>
-                  <div className="mt-1 text-[11px] text-text-muted">{namespace.lastSync}</div>
+                  <div className="mt-1 text-[11px] text-text-muted">{namespace.lastSyncAt ? new Date(namespace.lastSyncAt).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Not synced yet'}</div>
                 </div>
                 <span
                   className={`rounded-full border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] ${
@@ -682,7 +755,7 @@ function KnowledgeMapTab() {
                 <div className="h-1.5 overflow-hidden rounded-full bg-white/[0.05]">
                   <div
                     className="h-full rounded-full bg-gradient-to-r from-aurora-teal to-aurora-blue"
-                    style={{ width: `${Math.max(12, Math.min(100, (namespace.vectors / totalVectors) * 220))}%` }}
+                    style={{ width: `${Math.max(12, Math.min(100, totalVectors > 0 ? (Number(namespace.vectors || 0) / totalVectors) * 220 : 12))}%` }}
                   />
                 </div>
               </div>
@@ -696,9 +769,9 @@ function KnowledgeMapTab() {
             </div>
           ))}
         </div>
-        {knowledgeNamespaces.length > 6 && (
+        {namespaces.length > 6 && (
           <div className="mt-4 rounded-[22px] border border-dashed border-white/10 bg-black/10 p-4 text-[12px] text-text-muted">
-            {knowledgeNamespaces.length - 6} more namespaces are tracked. The terrain map is showing the strongest and largest zones first.
+            {namespaces.length - 6} more namespaces are tracked. The terrain map is showing the strongest and largest zones first.
           </div>
         )}
       </div>
@@ -706,14 +779,14 @@ function KnowledgeMapTab() {
   );
 }
 
-function DirectivesTab({ agents, tasks }) {
+function DirectivesTab({ directives, agents, tasks, recommendations }) {
   const directivePressure = useMemo(() => {
-    return directiveTemplates.map((directive) => ({
+    return directives.map((directive) => ({
       ...directive,
       affected: directive.appliedTo.filter((name) => agents.some((agent) => agent.name === name)).length || directive.appliedTo.length,
       drag: directive.priority === 'critical' ? 88 : directive.priority === 'high' ? 64 : 38,
     }));
-  }, [agents]);
+  }, [agents, directives]);
 
   const approvalSensitiveTasks = tasks.filter((task) => task.status === 'needs_approval').length;
 
@@ -800,7 +873,7 @@ function DirectivesTab({ agents, tasks }) {
             </div>
             <div className="rounded-[22px] border border-white/8 bg-black/20 p-4">
               <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Directives live</div>
-              <div className="mt-2 text-3xl font-semibold text-text-primary">{directiveTemplates.length}</div>
+              <div className="mt-2 text-3xl font-semibold text-text-primary">{directives.length}</div>
               <p className="mt-2 text-[12px] leading-relaxed text-text-muted">
                 Shared command constraints protecting output quality, privacy, and operating cost.
               </p>
@@ -817,23 +890,13 @@ function DirectivesTab({ agents, tasks }) {
             tone="violet"
           />
           <div className="mt-4 space-y-3">
-            {[
+            {(recommendations.length > 0 ? recommendations : [
               {
-                title: 'Consolidate overlapping output rules',
-                description: 'Several directives are describing formatting and review behavior in parallel. Centralizing that language will reduce drift and approval churn.',
-                impact: 'high',
-              },
-              {
-                title: 'Protect expensive planning lanes',
-                description: 'Premium planning models should stay reserved for strategy, ambiguity, and high-risk work rather than commodity execution.',
-                impact: 'critical',
-              },
-              {
-                title: 'Lower human interrupts',
-                description: 'Make high-confidence CRM and summary tasks resolve through stronger directives instead of asking for operator attention each time.',
+                title: 'No live directive upgrades yet',
+                description: 'Once recommendation rows are persisted, this rail will promote the highest-leverage directive improvements here.',
                 impact: 'normal',
               },
-            ].map((recommendation) => (
+            ]).map((recommendation) => (
               <OptimizationCard key={recommendation.title} recommendation={recommendation} />
             ))}
           </div>
@@ -849,34 +912,22 @@ export function IntelligenceView() {
   const { models } = useModelBank();
   const { tasks } = useTasks();
   const { logs } = useActivityLog();
+  const { namespaces: knowledgeNamespaces } = useKnowledgeNamespaces();
+  const { directives: sharedDirectives } = useSharedDirectives();
+  const { recommendations: persistedRecommendations } = useSystemRecommendations();
   const { humanHourlyRate } = useCommanderPreferences();
+  const truth = useCommandCenterTruth();
 
   const availableModels = useMemo(() => {
-    const bankBenchmarks = models.map((model) => {
-      const known = modelBenchmarks.find((entry) => entry.model === model.label || entry.model === model.modelKey);
-      return known || {
-        model: model.label,
-        provider: model.provider || 'Custom',
-        reasoning: 72,
-        codeGen: 72,
-        extraction: 70,
-        latency: 72,
-        costEfficiency: model.costPer1k > 0 ? 58 : 96,
-        tokensPerSec: 0,
-        contextWindow: 'Custom',
-        monthlyCost: 0,
-      };
-    });
-
-    return bankBenchmarks.length > 0 ? bankBenchmarks : modelBenchmarks;
-  }, [models]);
+    return deriveAvailableModels(models, agents, tasks);
+  }, [agents, models, tasks]);
 
   const systemSummary = useMemo(() => {
     const activeAgents = agents.filter((agent) => agent.status === 'processing').length;
     const errorAgents = agents.filter((agent) => agent.status === 'error').length;
     const localModels = availableModels.filter((model) => model.provider === 'Ollama').length;
-    const directivesLive = directiveTemplates.length;
-    const recommendationCount = systemRecommendations.length;
+    const directivesLive = sharedDirectives.length;
+    const recommendationCount = persistedRecommendations.length;
     const liveTraffic = logs.length;
 
     return {
@@ -887,12 +938,12 @@ export function IntelligenceView() {
       recommendationCount,
       liveTraffic,
     };
-  }, [agents, availableModels, logs.length]);
+  }, [agents, availableModels, logs.length, persistedRecommendations.length, sharedDirectives.length]);
 
   const derivedRecommendations = useMemo(() => {
     const runningTasks = tasks.filter((task) => task.status === 'running').length;
     const failedTasks = tasks.filter((task) => ['failed', 'error', 'blocked'].includes(task.status)).length;
-    const recommendations = [...systemRecommendations];
+    const recommendations = [...persistedRecommendations];
 
     if (failedTasks > 0) {
       recommendations.unshift({
@@ -915,7 +966,7 @@ export function IntelligenceView() {
     }
 
     return recommendations.slice(0, 5);
-  }, [tasks]);
+  }, [persistedRecommendations, tasks]);
 
   const economics = useMemo(() => {
     const durationHours = tasks.reduce((sum, task) => sum + Number(task.durationMs || 0), 0) / (1000 * 60 * 60);
@@ -935,30 +986,30 @@ export function IntelligenceView() {
 
   const learningMemory = useLearningMemory({ agents, tasks, logs, approvals: [], costData: { total: economics.agentCost, models: [] }, humanHourlyRate });
   const readFirstItems = useMemo(() => {
-    const bestReasoner = availableModels.slice().sort((a, b) => b.reasoning - a.reasoning)[0];
-    const fastest = availableModels.slice().sort((a, b) => b.latency - a.latency)[0];
-    const cheapest = availableModels.slice().sort((a, b) => b.costEfficiency - a.costEfficiency)[0];
+    const bestReasoner = availableModels.slice().sort((a, b) => b.reliability - a.reliability)[0];
+    const fastest = availableModels.slice().sort((a, b) => b.speed - a.speed)[0];
+    const cheapest = availableModels.slice().sort((a, b) => b.costDiscipline - a.costDiscipline)[0];
     return [
       {
         eyebrow: 'Use First',
-        title: bestReasoner ? `${bestReasoner.model} is the planning brain` : 'No clear planning brain yet',
+        title: bestReasoner ? `${bestReasoner.model} is the most reliable lane` : 'No clear reliable lane yet',
         detail: bestReasoner
-          ? `For ambiguity, strategy, and high-risk reasoning, this is the strongest first-choice lane right now.`
-          : 'You do not have enough model data yet to pick a dominant strategy lane confidently.',
+          ? `This branch is currently closing the highest-quality work most consistently across the live deck.`
+          : 'You do not have enough live model data yet to pick a dominant lane confidently.',
       },
       {
         eyebrow: 'Move Faster',
         title: fastest ? `${fastest.model} is the speed lane` : 'No clear speed lane yet',
         detail: fastest
-          ? `This branch should be absorbing time-sensitive and repetitive work where latency matters more than maximal depth.`
+          ? `This branch has the best current latency posture for time-sensitive and repetitive work.`
           : 'More live traffic is needed before a true speed winner emerges.',
       },
       {
         eyebrow: 'Spend Smarter',
-        title: cheapest ? `${cheapest.model} is the efficiency lane` : 'No clear efficiency lane yet',
+        title: cheapest ? `${cheapest.model} is the cost-discipline lane` : 'No clear efficiency lane yet',
         detail: cheapest
-          ? `Default cheap utility work here unless the mission explicitly needs a more premium reasoning branch.`
-          : 'Cost-efficiency signals are still too weak to make a hard routing doctrine call.',
+          ? `This is the best current lane for keeping spend disciplined before a mission truly needs premium depth.`
+          : 'Cost signals are still too weak to make a hard routing doctrine call.',
       },
     ];
   }, [availableModels]);
@@ -1012,6 +1063,7 @@ export function IntelligenceView() {
         </Motion.div>
 
         <StrategicReadFirst items={readFirstItems.slice(0, 2)} />
+        <TruthAuditStrip truth={truth} />
 
         <Motion.section variants={item} className="grid grid-cols-1 gap-5 xl:grid-cols-[1.55fr_0.45fr]">
           <div className="space-y-5">
@@ -1036,8 +1088,8 @@ export function IntelligenceView() {
 
             <div className="rounded-[28px] border border-white/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.015))] p-5">
               {activeTab === 'models' && <ModelRegistryTab availableModels={availableModels} agents={agents} tasks={tasks} />}
-              {activeTab === 'knowledge' && <KnowledgeMapTab />}
-              {activeTab === 'directives' && <DirectivesTab agents={agents} tasks={tasks} />}
+              {activeTab === 'knowledge' && <KnowledgeMapTab namespaces={knowledgeNamespaces} />}
+              {activeTab === 'directives' && <DirectivesTab directives={sharedDirectives} agents={agents} tasks={tasks} recommendations={persistedRecommendations} />}
             </div>
           </div>
 

@@ -16,20 +16,9 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useSystemState } from '../context/SystemStateContext';
-import { useAgents, useTasks } from '../utils/useSupabase';
+import { useAgents, useConnectedSystems, useTasks } from '../utils/useSupabase';
 import { useCommanderPreferences } from '../utils/useCommanderPreferences';
 import { cn } from '../utils/cn';
-
-const DOCK_STORAGE_KEY = 'jarvis-connected-systems-v1';
-
-function loadConnectedSystems() {
-  try {
-    const parsed = JSON.parse(localStorage.getItem(DOCK_STORAGE_KEY) || '[]');
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
-}
 
 function SectionLabel({ children }) {
   return <p className="mb-3 text-[10px] font-semibold uppercase tracking-[0.2em] text-text-muted">{children}</p>;
@@ -147,9 +136,9 @@ export function UserProfilePanel({ profileOpen, setProfileOpen, onAction }) {
   const { pendingCount } = useSystemState();
   const { agents } = useAgents();
   const { tasks } = useTasks();
+  const { connectedSystems } = useConnectedSystems();
   const { commandStyle, alertPosture, commanderPersona, trustedWriteMode, approvalDoctrine, notificationRoute } = useCommanderPreferences();
 
-  const connectedSystems = profileOpen ? loadConnectedSystems() : [];
   const runningTasks = tasks.filter((task) => ['queued', 'running', 'pending', 'in_progress'].includes(task.status)).length;
   const completedToday = tasks.filter((task) => ['done', 'completed'].includes(task.status)).length;
   const posture = deriveExecutionPosture(tasks, pendingCount ?? 0);

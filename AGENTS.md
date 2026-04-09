@@ -290,6 +290,13 @@ Run the lightest verification that still meaningfully reduces risk.
 - Test command: not currently defined in `package.json`
 - Main folders: `src`, `public`, `supabase`, `active`
 
+## Supabase Sync Memory
+
+- Command Center real-state sync should follow [`/Users/Jjarvis/ai-command-center/active/verification/supabase_sync_playbook.md`](/Users/Jjarvis/ai-command-center/active/verification/supabase_sync_playbook.md).
+- Live operational surfaces must prefer real Supabase-backed state or clean empty states.
+- Do not reintroduce `staticCatalog` as the live source for command truth.
+- After schema changes, run the truth audit in the UI and verify matching values across shell, profile, notifications, mission control, reports, and intelligence.
+
 ## Output Format
 
 Use this closeout format unless the user asks for something else:
