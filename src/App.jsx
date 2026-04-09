@@ -49,7 +49,7 @@ function Dashboard() {
     if (!agentId) return;
     setDetailState({
       agentId,
-      mode: options.mode ?? 'config',
+      mode: options.mode ?? 'setup',
     });
   }
 

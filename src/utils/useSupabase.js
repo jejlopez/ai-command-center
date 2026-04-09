@@ -545,6 +545,42 @@ export function useSkillBank() {
   return { skills, loading, refetch: fetchSkills };
 }
 
+export function useMcpServers() {
+  const { user } = useAuth();
+  const [servers, setServers] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetchServers = useCallback(async () => {
+    if (!user) {
+      setServers([]);
+      setLoading(false);
+      return;
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from('mcp_servers')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: true });
+
+      if (error) throw error;
+      setServers((data || []).map(mapMcpServerFromDb));
+    } catch (error) {
+      console.error('[useMcpServers] Fetch error:', error);
+      setServers([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [user]);
+
+  useEffect(() => {
+    fetchServers();
+  }, [fetchServers]);
+
+  return { servers, loading, refetch: fetchServers };
+}
+
 /**
  * Insert a new agent into Supabase.
  */
@@ -667,6 +703,66 @@ export async function updateAgentSkills(agentId, skills) {
 
   if (error) throw error;
   return mapAgentFromDb(data);
+}
+
+export async function updateAgentConfig(agentId, patch) {
+  const row = {
+    model: patch.model,
+    temperature: patch.temperature,
+    response_length: patch.responseLength,
+    system_prompt: patch.systemPrompt,
+    can_spawn: patch.canSpawn,
+    spawn_pattern: patch.spawnPattern,
+  };
+
+  const sanitized = Object.fromEntries(
+    Object.entries(row).filter(([, value]) => value !== undefined)
+  );
+
+  const { data, error } = await supabase
+    .from('agents')
+    .update(sanitized)
+    .eq('id', agentId)
+    .select()
+    .single();
+
+  if (error) throw error;
+  return mapAgentFromDb(data);
+}
+
+export async function createMcpServer(serverData) {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('Not authenticated');
+
+  const url = serverData.url?.trim();
+  if (!url) throw new Error('Server URL is required');
+
+  const row = {
+    user_id: user.id,
+    name: serverData.name?.trim() || deriveMcpServerName(url),
+    url,
+    status: serverData.status?.trim() || 'configured',
+    tool_count: Number(serverData.toolCount ?? 0),
+  };
+
+  const { data, error } = await supabase
+    .from('mcp_servers')
+    .upsert(row, { onConflict: 'user_id,url' })
+    .select()
+    .single();
+
+  if (error) throw error;
+  return mapMcpServerFromDb(data);
+}
+
+export async function deleteMcpServer(serverId) {
+  const { error } = await supabase
+    .from('mcp_servers')
+    .delete()
+    .eq('id', serverId);
+
+  if (error) throw error;
+  return serverId;
 }
 
 // ── Mappers ────────────────────────────────────────────────────
@@ -809,9 +905,34 @@ function mapSkillFromDb(row) {
   };
 }
 
+function mapMcpServerFromDb(row) {
+  return {
+    id: row.id,
+    userId: row.user_id,
+    name: row.name,
+    url: row.url,
+    status: row.status || 'configured',
+    toolCount: row.tool_count || 0,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
 function inferSkillIcon(source, reference) {
   if (source === 'github') return 'Monitor';
   if (source === 'local') return 'FolderOpen';
   if (reference?.includes('http')) return 'Globe';
   return 'Zap';
+}
+
+function deriveMcpServerName(url) {
+  try {
+    const normalized = url.startsWith('http://') || url.startsWith('https://')
+      ? url
+      : `http://${url}`;
+    const parsed = new URL(normalized);
+    return parsed.hostname === '127.0.0.1' ? 'Local MCP Server' : parsed.hostname;
+  } catch {
+    return url;
+  }
 }

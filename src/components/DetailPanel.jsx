@@ -8,14 +8,13 @@ import { ActivityFeed } from './ActivityFeed';
 import { TraceWaterfall } from './TraceWaterfall';
 import { fetchPendingReviews, fetchSpans, restartAgent } from '../lib/api';
 import { cn } from '../utils/cn';
-import { ConfigTab } from './detail/ConfigTab';
-import { SkillsTab } from './detail/SkillsTab';
+import { SetupTab } from './detail/SetupTab';
 import { MetricsTab } from './detail/MetricsTab';
 import { DispatchComposer } from './detail/DispatchComposer';
 
 function getInitialTab(agent) {
   if (agent.status === 'error') return 'logs';
-  return 'config';
+  return 'setup';
 }
 
 const urgencyStyles = {
@@ -169,9 +168,10 @@ function KebabMenu({ onClose }) {
   );
 }
 
-export function DetailPanel({ agent, initialMode = 'config', onClose }) {
-  const tabModes = ['config', 'skills', 'metrics', 'logs'];
+export function DetailPanel({ agent, initialMode = 'setup', onClose }) {
+  const tabModes = ['setup', 'metrics', 'logs'];
   const resolveInitialTab = () => {
+    if (initialMode === 'config' || initialMode === 'skills') return 'setup';
     if (tabModes.includes(initialMode)) return initialMode;
     return getInitialTab(agent);
   };
@@ -233,8 +233,7 @@ export function DetailPanel({ agent, initialMode = 'config', onClose }) {
 
   const isProcessing = agent.status === 'processing';
   const tabs = useMemo(() => [
-    { id: 'config', label: 'Config' },
-    { id: 'skills', label: 'Skills' },
+    { id: 'setup', label: 'Setup' },
     { id: 'metrics', label: 'Metrics' },
     { id: 'logs', label: 'Logs' },
   ], []);
@@ -278,21 +277,24 @@ export function DetailPanel({ agent, initialMode = 'config', onClose }) {
           >
             <div className="min-w-0">
               <div className="mb-2 flex items-center gap-3">
-                <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-black/20 px-2.5 py-1 font-mono text-[10px] text-text-muted">
+                <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-black/20 px-2.5 py-1 font-mono text-[10px] text-text-body">
                   <span className={cn('h-2 w-2 rounded-full', isProcessing ? 'bg-aurora-teal animate-pulse' : agent.status === 'error' ? 'bg-aurora-rose' : 'bg-text-muted')} />
-                  {agent.id}
+                  {agent.id?.slice?.(0, 8) || agent.id}
                 </div>
-                <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-black/20 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-text-disabled">
+                <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-black/20 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-text-body">
                   <span className="h-2 w-2 rounded-full" style={{ backgroundColor: agent.color }} />
                   {agent.status}
+                </div>
+                <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-black/20 px-2.5 py-1 text-[10px] font-mono text-text-body">
+                  {agent.role}
                 </div>
               </div>
               <div className="flex items-center gap-3">
                 {agent.role === 'commander' && <Crown className="h-4 w-4 shrink-0 text-aurora-amber" />}
                 <div className="min-w-0">
-                  <h2 className="truncate text-xl font-semibold text-text-primary">{agent.name}</h2>
-                  <div className="mt-1 flex items-center gap-2 text-xs text-text-muted">
-                    <span className="font-mono">{agent.model}</span>
+                  <h2 className="truncate text-[1.9rem] font-semibold tracking-[-0.03em] text-text-primary">{agent.name}</h2>
+                  <div className="mt-1 flex items-center gap-2 text-sm text-text-body">
+                    <span className="font-mono text-text-primary">{agent.model}</span>
                     <span>•</span>
                     <span>{agent.latencyMs}ms latency</span>
                   </div>
@@ -308,16 +310,16 @@ export function DetailPanel({ agent, initialMode = 'config', onClose }) {
                 <Send className="h-3.5 w-3.5" />
                 Dispatch
               </button>
-              <button onClick={() => restartAgent(agent.id).catch(console.error)} className="rounded-lg p-2 text-text-muted transition-colors hover:bg-white/[0.05] hover:text-aurora-teal" title="Restart">
+              <button onClick={() => restartAgent(agent.id).catch(console.error)} className="rounded-lg p-2 text-text-body transition-colors hover:bg-white/[0.05] hover:text-aurora-teal" title="Restart">
                 <RefreshCw className="h-4 w-4" />
               </button>
-              <button className="rounded-lg p-2 text-text-muted transition-colors hover:bg-white/[0.05] hover:text-aurora-amber" title={isProcessing ? 'Pause' : 'Resume'}>
+              <button className="rounded-lg p-2 text-text-body transition-colors hover:bg-white/[0.05] hover:text-aurora-amber" title={isProcessing ? 'Pause' : 'Resume'}>
                 {isProcessing ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
               </button>
               <div className="relative">
                 <button
                   onClick={(e) => { e.stopPropagation(); setShowKebab(!showKebab); }}
-                  className="rounded-lg p-2 text-text-muted transition-colors hover:bg-white/[0.05] hover:text-text-primary"
+                  className="rounded-lg p-2 text-text-body transition-colors hover:bg-white/[0.05] hover:text-text-primary"
                 >
                   <MoreVertical className="h-4 w-4" />
                 </button>
@@ -326,7 +328,7 @@ export function DetailPanel({ agent, initialMode = 'config', onClose }) {
                 </AnimatePresence>
               </div>
               <div className="mx-1 h-4 w-px bg-border" />
-              <button onClick={onClose} className="rounded-lg p-2 text-text-muted transition-colors hover:bg-white/[0.05] hover:text-white">
+              <button onClick={onClose} className="rounded-lg p-2 text-text-body transition-colors hover:bg-white/[0.05] hover:text-white">
                 <X className="h-5 w-5" />
               </button>
             </div>
@@ -358,19 +360,23 @@ export function DetailPanel({ agent, initialMode = 'config', onClose }) {
             transition={{ delay: 0.15, duration: 0.16, ease: 'easeOut' }}
             className="shrink-0 border-b border-border px-5"
           >
-            <div className="flex">
+            <div className="flex py-3">
+              <div className="flex rounded-2xl border border-white/[0.06] bg-white/[0.02] p-1">
               {tabs.map((tab) => (
                 <button
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id)}
                   className={cn(
-                    'border-b-2 px-4 py-3 text-sm font-medium transition-colors',
-                    activeTab === tab.id ? 'border-aurora-teal text-aurora-teal' : 'border-transparent text-text-muted hover:text-text-primary',
+                    'rounded-xl px-4 py-2 text-sm font-medium transition-all focus:outline-none',
+                    activeTab === tab.id
+                      ? 'bg-[linear-gradient(135deg,rgba(0,217,200,0.18),rgba(96,165,250,0.12))] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_0_0_1px_rgba(0,217,200,0.16)]'
+                      : 'text-text-body hover:text-text-primary',
                   )}
                 >
                   {tab.label}
                 </button>
               ))}
+              </div>
             </div>
           </motion.div>
         )}
@@ -433,8 +439,7 @@ export function DetailPanel({ agent, initialMode = 'config', onClose }) {
                 transition={{ duration: 0.18 }}
                 className="absolute inset-0"
               >
-                {activeTab === 'config' && <ConfigTab agent={agent} />}
-                {activeTab === 'skills' && <SkillsTab agent={agent} />}
+                {activeTab === 'setup' && <SetupTab agent={agent} />}
                 {activeTab === 'metrics' && <MetricsTab agent={agent} />}
                 {activeTab === 'logs' && (
                   <div className="flex h-full flex-col">
