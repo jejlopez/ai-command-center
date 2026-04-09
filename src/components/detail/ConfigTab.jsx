@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Crown, ArrowUpRight, ChevronDown, Plus, Info } from 'lucide-react';
+import { Crown, ArrowUpRight, ChevronDown, Plus, Info, RotateCcw } from 'lucide-react';
 import { cn } from '../../utils/cn';
 import { createModelBankEntry, useModelBank } from '../../utils/useSupabase';
+import { getTemplateForRole } from '../../utils/agentInstructions';
 
 function InfoBubble({ text }) {
   const [show, setShow] = useState(false);
@@ -65,6 +66,22 @@ export function ConfigTab({ agent }) {
   const [customTemp, setCustomTemp] = useState('');
   const [dirty, setDirty] = useState(false);
   const [newModelLabel, setNewModelLabel] = useState('');
+  const [selectedProvider, setSelectedProvider] = useState('All');
+
+  const providerGroups = useMemo(() => {
+    const groups = models.reduce((acc, modelItem) => {
+      const provider = modelItem.provider || 'Custom';
+      if (!acc[provider]) acc[provider] = [];
+      acc[provider].push(modelItem);
+      return acc;
+    }, {});
+    return Object.entries(groups).sort(([a], [b]) => a.localeCompare(b));
+  }, [models]);
+
+  const visibleModels = useMemo(() => {
+    if (selectedProvider === 'All') return models;
+    return models.filter((modelItem) => (modelItem.provider || 'Custom') === selectedProvider);
+  }, [models, selectedProvider]);
 
   useEffect(() => {
     setModel(agent.model);
@@ -76,6 +93,7 @@ export function ConfigTab({ agent }) {
     setParallelCalls(true);
     setCustomTemp('');
     setDirty(false);
+    setSelectedProvider('All');
   }, [agent]);
 
   const handleDiscard = () => {
@@ -113,6 +131,7 @@ export function ConfigTab({ agent }) {
     });
     await refetchModels();
     setModel(saved.modelKey);
+    setSelectedProvider(saved.provider || 'Custom');
     setNewModelLabel('');
     setShowModelDropdown(false);
     markDirty();
@@ -147,7 +166,37 @@ export function ConfigTab({ agent }) {
         </div>
 
         <div>
+          <div className="mb-3 text-[10px] font-semibold uppercase tracking-[0.18em] text-text-disabled">Runtime</div>
           <label className="mb-2 block text-[10px] font-semibold uppercase tracking-[0.15em] text-text-muted">Model</label>
+          <div className="mb-3 flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => setSelectedProvider('All')}
+              className={cn(
+                'rounded-full border px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.16em] transition-colors',
+                selectedProvider === 'All'
+                  ? 'border-aurora-teal/30 bg-aurora-teal/10 text-aurora-teal'
+                  : 'border-white/[0.08] bg-white/[0.02] text-text-muted hover:bg-white/[0.04]'
+              )}
+            >
+              All
+            </button>
+            {providerGroups.map(([provider]) => (
+              <button
+                key={provider}
+                type="button"
+                onClick={() => setSelectedProvider(provider)}
+                className={cn(
+                  'rounded-full border px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.16em] transition-colors',
+                  selectedProvider === provider
+                    ? 'border-aurora-teal/30 bg-aurora-teal/10 text-aurora-teal'
+                    : 'border-white/[0.08] bg-white/[0.02] text-text-muted hover:bg-white/[0.04]'
+                )}
+              >
+                {provider}
+              </button>
+            ))}
+          </div>
           <div className="relative">
             <button
               onClick={() => setShowModelDropdown(!showModelDropdown)}
@@ -168,10 +217,15 @@ export function ConfigTab({ agent }) {
                     <div className="bg-canvas/50 px-3 py-1.5 text-[9px] font-bold uppercase tracking-[0.2em] text-text-disabled">
                       Your Model Bank
                     </div>
-                    {models.length > 0 ? models.map((m) => (
+                    {visibleModels.length > 0 ? visibleModels.map((m) => (
                         <button
                           key={m.id}
-                          onClick={() => { setModel(m.modelKey); setShowModelDropdown(false); markDirty(); }}
+                          onClick={() => {
+                            setModel(m.modelKey);
+                            setSelectedProvider(m.provider || 'Custom');
+                            setShowModelDropdown(false);
+                            markDirty();
+                          }}
                           className={cn(
                             'flex w-full items-center justify-between px-3 py-2 text-left transition-colors hover:bg-white/[0.05]',
                             model === m.modelKey && 'bg-aurora-teal/5'
@@ -181,7 +235,7 @@ export function ConfigTab({ agent }) {
                           <span className="font-mono text-[10px] text-text-disabled">{m.provider}</span>
                         </button>
                       ))
-                      : <div className="px-3 py-3 text-xs text-text-muted">No saved models yet.</div>}
+                      : <div className="px-3 py-3 text-xs text-text-muted">No saved models for this provider yet.</div>}
                   </div>
                   <div className="border-t border-white/5 p-3 space-y-2">
                     <input
@@ -207,6 +261,7 @@ export function ConfigTab({ agent }) {
         </div>
 
         <div>
+          <div className="mb-3 text-[10px] font-semibold uppercase tracking-[0.18em] text-text-disabled">Behavior</div>
           <div className="mb-2 flex items-center gap-2">
             <label className="text-[10px] font-semibold uppercase tracking-[0.15em] text-text-muted">Temperature</label>
             <InfoBubble text="Controls how creative vs deterministic the agent's responses are. Lower = more precise and reliable. Higher = more creative and varied." />
@@ -263,7 +318,20 @@ export function ConfigTab({ agent }) {
         </div>
 
         <div>
-          <label className="mb-2 block text-[10px] font-semibold uppercase tracking-[0.15em] text-text-muted">System Prompt</label>
+          <div className="mb-3 text-[10px] font-semibold uppercase tracking-[0.18em] text-text-disabled">Instructions</div>
+          <div className="mb-2 flex items-center justify-between">
+            <label className="text-[10px] font-semibold uppercase tracking-[0.15em] text-text-muted">System Prompt</label>
+            {agent.role !== 'commander' && getTemplateForRole(agent.role) && (
+              <button
+                type="button"
+                onClick={() => { setSysPrompt(getTemplateForRole(agent.role)); markDirty(); }}
+                className="flex items-center gap-1.5 rounded-lg border border-white/[0.07] px-2.5 py-1 text-[10px] font-medium text-text-muted transition-colors hover:border-white/[0.14] hover:text-text-primary"
+              >
+                <RotateCcw className="h-3 w-3" />
+                Reset to default
+              </button>
+            )}
+          </div>
           <textarea
             value={sysPrompt}
             onChange={(e) => { setSysPrompt(e.target.value); markDirty(); }}
@@ -277,6 +345,7 @@ export function ConfigTab({ agent }) {
         </div>
 
         <div>
+          <div className="mb-3 text-[10px] font-semibold uppercase tracking-[0.18em] text-text-disabled">Delegation</div>
           <label className="mb-3 block text-[10px] font-semibold uppercase tracking-[0.15em] text-text-muted">Orchestration</label>
           <div className="space-y-3">
             <div>
@@ -312,7 +381,7 @@ export function ConfigTab({ agent }) {
             <div className="flex items-center justify-between py-2">
               <div className="flex items-center gap-2">
                 <span className="text-xs text-text-body">Can Spawn Sub-agents</span>
-                <InfoBubble text="Whether this agent is allowed to create child agents to delegate work to." />
+                <InfoBubble text="Whether this operator is allowed to create child operators for follow-on work." />
               </div>
               <Toggle value={canSpawn} onChange={(value) => { setCanSpawn(value); markDirty(); }} />
             </div>

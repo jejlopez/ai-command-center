@@ -1,6 +1,6 @@
 import React from 'react';
 import { motion } from 'framer-motion';
-import { Send, Eye, Wand2, RotateCcw, AlertTriangle } from 'lucide-react';
+import { Send, Eye, Wand2, RotateCcw, AlertTriangle, Timer } from 'lucide-react';
 import { cn } from '../utils/cn';
 
 function parseErrorMessage(raw) {
@@ -41,6 +41,7 @@ export function AgentVitalCard({
 }) {
   const status = statusConfig[agent.status] || statusConfig.idle;
   const isError = agent.status === 'error';
+  const isEphemeral = agent.isEphemeral;
   const hasErrors = errorCount > 0;
 
   const description = agent.roleDescription
@@ -59,7 +60,9 @@ export function AgentVitalCard({
           'relative h-full overflow-hidden rounded-2xl border transition-all duration-300',
           isError
             ? 'border-aurora-rose/20 bg-[linear-gradient(180deg,rgba(251,113,133,0.06),rgba(17,17,17,0.98))]'
-            : 'border-white/[0.08] bg-[linear-gradient(180deg,rgba(255,255,255,0.035),rgba(17,17,17,0.98))]',
+            : isEphemeral
+              ? 'border-dashed border-white/[0.15] bg-[linear-gradient(180deg,rgba(255,255,255,0.02),rgba(17,17,17,0.98))]'
+              : 'border-white/[0.08] bg-[linear-gradient(180deg,rgba(255,255,255,0.035),rgba(17,17,17,0.98))]',
         )}
         style={{ boxShadow: isError ? '0 8px 32px rgba(251,113,133,0.08)' : '0 8px 32px rgba(0,0,0,0.28)' }}
       >
@@ -79,6 +82,12 @@ export function AgentVitalCard({
               <span className={cn('h-2 w-2 rounded-full', status.dot)} />
               {status.label}
             </motion.div>
+            {isEphemeral && (
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-[0.18em] text-text-disabled">
+                <Timer className="h-3 w-3" />
+                Temp
+              </span>
+            )}
 
             <div className="rounded-xl border border-white/[0.08] bg-black/30 px-3.5 py-2.5 text-right">
               <div className="text-[9px] font-semibold uppercase tracking-[0.2em] text-text-disabled">Token Burn</div>

@@ -5,7 +5,7 @@ import { cn } from '../utils/cn';
 import { useSystemState } from '../context/SystemStateContext';
 
 const items = [
-  { id: 'overview', icon: LayoutGrid, label: 'Overview' },
+  { id: 'overview', icon: LayoutGrid, label: 'Command Center' },
   { id: 'missions', icon: Target, label: 'Mission Control' },
   { id: 'reports', icon: FileText, label: 'Reports' },
   { id: 'intelligence', icon: BrainCircuit, label: 'Intelligence' },
