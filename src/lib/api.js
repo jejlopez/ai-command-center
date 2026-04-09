@@ -2,7 +2,7 @@
  * API abstraction layer.
  *
  * Every function returns a Promise so call sites use async/await.
- * Review Room functions (fetchPendingReviews, approveReview, rejectReview)
+ * Approval queue functions (fetchPendingReviews, approveReview, rejectReview)
  * read/write from Supabase when configured.
  *
  * Static catalog/config helpers remain local until backed by tables.

@@ -13,7 +13,7 @@ const COMMANDER_DEFAULTS = {
   name: 'J. Jarvis',
   initials: 'JJ',
   role: 'Commander',
-  workspace: 'Nexus Primary',
+  workspace: 'Jarvis Primary',
   clearance: 'OMEGA',
   tokenUsage: 142800,
   tokenLimit: 500000,
@@ -54,7 +54,7 @@ function exportSessionData({ email, agentCount, pendingCount }) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `nexus-session-${Date.now()}.json`;
+  a.download = `jarvis-session-${Date.now()}.json`;
   a.click();
   URL.revokeObjectURL(url);
 }
@@ -220,7 +220,7 @@ function CommanderView({ onSignOut, onSignOutAll, onAction, user, pendingCount, 
           icon={ShieldCheck}
           label="Review pending approvals"
           badge={pendingCount > 0 ? pendingCount : null}
-          onClick={() => nav('review')}
+          onClick={() => nav('missions')}
         />
         <ActionRow
           icon={Activity}

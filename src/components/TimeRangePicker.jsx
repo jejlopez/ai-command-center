@@ -22,7 +22,7 @@ export function TimeRangePicker() {
     <div className="relative">
       <button
         onClick={() => setOpen(!open)}
-        className="flex items-center gap-2 px-3 py-1.5 spatial-panel hover:bg-white/[0.05] transition-colors text-xs font-medium text-text-primary"
+        className="flex items-center gap-2 px-3 py-2 rounded-xl border border-white/[0.06] bg-white/[0.03] hover:bg-white/[0.055] transition-colors text-xs font-medium text-text-primary"
       >
         <span>{activeRange?.label || 'Last 1h'}</span>
         <ChevronDown className="w-3 h-3 text-text-muted" />

@@ -9,7 +9,7 @@ export function SystemStateProvider({ children }) {
 
   // Attention count — items needing human action in Mission Control
   // TODO: derive from live Supabase data (approvals + unseen completed)
-  const [pendingCount, setPendingCount] = useState(7);
+  const [pendingCount, setPendingCount] = useState(0);
 
   const closeAll = useCallback(() => {
     setNotificationsRaw(false);

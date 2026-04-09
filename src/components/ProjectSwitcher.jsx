@@ -1,17 +1,17 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, Check } from 'lucide-react';
+import { Plus, Check, ChevronDown } from 'lucide-react';
 import { cn } from '../utils/cn';
 
 const projects = [
-  { id: 'nexus', name: 'Nexus Command', agents: 7, color: 'bg-aurora-teal' },
+  { id: 'jarvis', name: 'Jarvis Command', agents: 7, color: 'bg-aurora-teal' },
   { id: 'atlas', name: 'Project Atlas', agents: 3, color: 'bg-aurora-violet' },
   { id: 'sentinel', name: 'Sentinel Ops', agents: 12, color: 'bg-aurora-amber' },
   { id: 'research', name: 'Research Lab', agents: 2, color: 'bg-aurora-green' },
 ];
 
-export function ProjectSwitcher() {
-  const [activeProject, setActiveProject] = useState('nexus');
+export function ProjectSwitcher({ compact = false }) {
+  const [activeProject, setActiveProject] = useState('jarvis');
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
 
@@ -30,34 +30,55 @@ export function ProjectSwitcher() {
   }, [open]);
 
   return (
-    <div ref={ref} className="relative mb-4">
+    <div ref={ref} className="relative">
       {/* Trigger */}
       <button
         onClick={() => setOpen(!open)}
         className={cn(
-          'w-9 h-9 rounded-xl flex items-center justify-center font-bold text-sm transition-all duration-200 border',
-          open
-            ? 'bg-aurora-teal/20 border-aurora-teal/50 text-white'
-            : 'bg-white/[0.04] border-transparent text-white hover:bg-white/[0.08] hover:border-aurora-teal/30'
+          compact
+            ? 'flex items-center gap-2 rounded-xl px-2.5 py-2 text-left transition-all duration-200 text-white hover:bg-white/[0.05]'
+            : 'flex items-center gap-2 rounded-xl px-2.5 py-2 text-left transition-all duration-200 border min-w-[104px] max-w-[104px]',
+          compact
+            ? open && 'bg-white/[0.05]'
+            : open
+              ? 'bg-aurora-teal/10 border-aurora-teal/30 text-white'
+              : 'bg-white/[0.03] border-white/6 text-white hover:bg-white/[0.06] hover:border-aurora-teal/16'
         )}
       >
-        {current?.name.charAt(0) || 'N'}
+        <div className={cn('w-2.5 h-2.5 rounded-full shrink-0', current?.color || 'bg-aurora-teal')} />
+        <div className="min-w-0 flex-1">
+          {compact ? (
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] uppercase tracking-[0.32em] text-text-muted">
+                Jarvis
+              </span>
+            </div>
+          ) : (
+            <p className="text-[11px] font-medium truncate leading-tight text-text-primary">
+              {current?.name?.replace(' Command', '') || 'Jarvis'}
+            </p>
+          )}
+        </div>
+        <ChevronDown className={cn('w-3.5 h-3.5 text-text-muted transition-transform', open && 'rotate-180 text-aurora-teal')} />
       </button>
 
       {/* Popover */}
       <AnimatePresence>
         {open && (
           <motion.div
-            initial={{ opacity: 0, x: -8, scale: 0.95 }}
-            animate={{ opacity: 1, x: 0, scale: 1 }}
-            exit={{ opacity: 0, x: -8, scale: 0.95 }}
+            initial={{ opacity: 0, y: -8, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -8, scale: 0.98 }}
             transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-            className="absolute left-full top-0 ml-3 w-[260px] bg-surface border border-border rounded-xl shadow-lg z-[60] overflow-hidden"
+            className="absolute left-0 top-full mt-2 w-[260px] bg-surface border border-border rounded-2xl shadow-lg z-[60] overflow-hidden"
           >
-            <div className="px-4 pt-3 pb-2">
+            <div className="px-4 pt-3 pb-3 border-b border-white/[0.06]">
               <span className="text-[10px] uppercase tracking-wider text-text-muted font-medium">
                 Workspaces
               </span>
+              <p className="text-sm font-semibold text-text-primary mt-1">
+                {current?.name || 'Jarvis Command'}
+              </p>
             </div>
 
             <div className="flex flex-col px-1.5 pb-1.5">
