@@ -1,210 +1,142 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { supabase } from '../lib/supabaseClient';
+import { useAuth } from '../context/AuthContext';
 
-const STORAGE_KEYS = {
-  humanHourlyRate: 'jarvis.humanHourlyRate',
-  commandStyle: 'jarvis.commandStyle',
-  alertPosture: 'jarvis.alertPosture',
-  quietHoursEnabled: 'jarvis.quietHoursEnabled',
-  quietHoursStart: 'jarvis.quietHoursStart',
-  quietHoursEnd: 'jarvis.quietHoursEnd',
-  notificationRoute: 'jarvis.notificationRoute',
-  commanderPersona: 'jarvis.commanderPersona',
-  trustedWriteMode: 'jarvis.trustedWriteMode',
-  approvalDoctrine: 'jarvis.approvalDoctrine',
+const DEFAULTS = {
+  humanHourlyRate: 42,
+  commandStyle: 'hybrid',
+  alertPosture: 'balanced',
+  quietHoursEnabled: false,
+  quietHoursStart: '22:00',
+  quietHoursEnd: '07:00',
+  notificationRoute: 'command_center',
+  commanderPersona: 'founder',
+  trustedWriteMode: 'review_first',
+  approvalDoctrine: 'risk_weighted',
 };
 
-function readStoredNumber(key, fallback) {
-  if (typeof window === 'undefined') return fallback;
-  const raw = window.localStorage.getItem(key);
-  if (!raw) return fallback;
-  const parsed = Number(raw);
-  return Number.isFinite(parsed) ? parsed : fallback;
+function mapRowToPreferences(row) {
+  return {
+    humanHourlyRate: Number(row?.human_hourly_rate ?? DEFAULTS.humanHourlyRate),
+    commandStyle: row?.command_style || DEFAULTS.commandStyle,
+    alertPosture: row?.alert_posture || DEFAULTS.alertPosture,
+    quietHoursEnabled: row?.quiet_hours_enabled ?? DEFAULTS.quietHoursEnabled,
+    quietHoursStart: row?.quiet_hours_start || DEFAULTS.quietHoursStart,
+    quietHoursEnd: row?.quiet_hours_end || DEFAULTS.quietHoursEnd,
+    notificationRoute: row?.notification_route || DEFAULTS.notificationRoute,
+    commanderPersona: row?.commander_persona || DEFAULTS.commanderPersona,
+    trustedWriteMode: row?.trusted_write_mode || DEFAULTS.trustedWriteMode,
+    approvalDoctrine: row?.approval_doctrine || DEFAULTS.approvalDoctrine,
+  };
 }
 
-function readStoredString(key, fallback) {
-  if (typeof window === 'undefined') return fallback;
-  const raw = window.localStorage.getItem(key);
-  return raw || fallback;
-}
-
-function readStoredBoolean(key, fallback) {
-  if (typeof window === 'undefined') return fallback;
-  const raw = window.localStorage.getItem(key);
-  if (raw == null) return fallback;
-  return raw === 'true';
+function mapPreferencesToRow(userId, prefs) {
+  return {
+    user_id: userId,
+    human_hourly_rate: prefs.humanHourlyRate,
+    command_style: prefs.commandStyle,
+    alert_posture: prefs.alertPosture,
+    quiet_hours_enabled: prefs.quietHoursEnabled,
+    quiet_hours_start: prefs.quietHoursStart,
+    quiet_hours_end: prefs.quietHoursEnd,
+    notification_route: prefs.notificationRoute,
+    commander_persona: prefs.commanderPersona,
+    trusted_write_mode: prefs.trustedWriteMode,
+    approval_doctrine: prefs.approvalDoctrine,
+  };
 }
 
 export function useCommanderPreferences() {
-  const [humanHourlyRate, setHumanHourlyRateState] = useState(() =>
-    readStoredNumber(STORAGE_KEYS.humanHourlyRate, 42)
-  );
-  const [commandStyle, setCommandStyleState] = useState(() =>
-    readStoredString(STORAGE_KEYS.commandStyle, 'hybrid')
-  );
-  const [alertPosture, setAlertPostureState] = useState(() =>
-    readStoredString(STORAGE_KEYS.alertPosture, 'balanced')
-  );
-  const [quietHoursEnabled, setQuietHoursEnabledState] = useState(() =>
-    readStoredBoolean(STORAGE_KEYS.quietHoursEnabled, false)
-  );
-  const [quietHoursStart, setQuietHoursStartState] = useState(() =>
-    readStoredString(STORAGE_KEYS.quietHoursStart, '22:00')
-  );
-  const [quietHoursEnd, setQuietHoursEndState] = useState(() =>
-    readStoredString(STORAGE_KEYS.quietHoursEnd, '07:00')
-  );
-  const [notificationRoute, setNotificationRouteState] = useState(() =>
-    readStoredString(STORAGE_KEYS.notificationRoute, 'command_center')
-  );
-  const [commanderPersona, setCommanderPersonaState] = useState(() =>
-    readStoredString(STORAGE_KEYS.commanderPersona, 'founder')
-  );
-  const [trustedWriteMode, setTrustedWriteModeState] = useState(() =>
-    readStoredString(STORAGE_KEYS.trustedWriteMode, 'review_first')
-  );
-  const [approvalDoctrine, setApprovalDoctrineState] = useState(() =>
-    readStoredString(STORAGE_KEYS.approvalDoctrine, 'risk_weighted')
-  );
+  const { user } = useAuth();
+  const [preferences, setPreferences] = useState(DEFAULTS);
+  const [loading, setLoading] = useState(true);
+  const hydratedRef = useRef(false);
 
   useEffect(() => {
-    if (typeof window === 'undefined') return undefined;
-    const onStorage = (event) => {
-      if (event.key === STORAGE_KEYS.humanHourlyRate) {
-        setHumanHourlyRateState(readStoredNumber(STORAGE_KEYS.humanHourlyRate, 42));
+    let cancelled = false;
+
+    async function loadPreferences() {
+      if (!user) {
+        hydratedRef.current = false;
+        setPreferences(DEFAULTS);
+        setLoading(false);
+        return;
       }
-      if (event.key === STORAGE_KEYS.commandStyle) {
-        setCommandStyleState(readStoredString(STORAGE_KEYS.commandStyle, 'hybrid'));
+
+      setLoading(true);
+
+      const { data, error } = await supabase
+        .from('user_settings')
+        .select(`
+          human_hourly_rate,
+          command_style,
+          alert_posture,
+          quiet_hours_enabled,
+          quiet_hours_start,
+          quiet_hours_end,
+          notification_route,
+          commander_persona,
+          trusted_write_mode,
+          approval_doctrine
+        `)
+        .eq('user_id', user.id)
+        .maybeSingle();
+
+      if (cancelled) return;
+
+      if (error) {
+        console.error('[useCommanderPreferences] load:', error.message);
+        setPreferences(DEFAULTS);
+      } else {
+        setPreferences({ ...DEFAULTS, ...mapRowToPreferences(data) });
       }
-      if (event.key === STORAGE_KEYS.alertPosture) {
-        setAlertPostureState(readStoredString(STORAGE_KEYS.alertPosture, 'balanced'));
-      }
-      if (event.key === STORAGE_KEYS.quietHoursEnabled) {
-        setQuietHoursEnabledState(readStoredBoolean(STORAGE_KEYS.quietHoursEnabled, false));
-      }
-      if (event.key === STORAGE_KEYS.quietHoursStart) {
-        setQuietHoursStartState(readStoredString(STORAGE_KEYS.quietHoursStart, '22:00'));
-      }
-      if (event.key === STORAGE_KEYS.quietHoursEnd) {
-        setQuietHoursEndState(readStoredString(STORAGE_KEYS.quietHoursEnd, '07:00'));
-      }
-      if (event.key === STORAGE_KEYS.notificationRoute) {
-        setNotificationRouteState(readStoredString(STORAGE_KEYS.notificationRoute, 'command_center'));
-      }
-      if (event.key === STORAGE_KEYS.commanderPersona) {
-        setCommanderPersonaState(readStoredString(STORAGE_KEYS.commanderPersona, 'founder'));
-      }
-      if (event.key === STORAGE_KEYS.trustedWriteMode) {
-        setTrustedWriteModeState(readStoredString(STORAGE_KEYS.trustedWriteMode, 'review_first'));
-      }
-      if (event.key === STORAGE_KEYS.approvalDoctrine) {
-        setApprovalDoctrineState(readStoredString(STORAGE_KEYS.approvalDoctrine, 'risk_weighted'));
-      }
+
+      hydratedRef.current = true;
+      setLoading(false);
+    }
+
+    loadPreferences();
+
+    return () => {
+      cancelled = true;
     };
-    window.addEventListener('storage', onStorage);
-    return () => window.removeEventListener('storage', onStorage);
-  }, []);
+  }, [user]);
 
-  function setHumanHourlyRate(value) {
-    const numeric = Number(value);
-    const safeValue = Number.isFinite(numeric) && numeric > 0 ? numeric : 42;
-    setHumanHourlyRateState(safeValue);
-    if (typeof window !== 'undefined') {
-      window.localStorage.setItem(STORAGE_KEYS.humanHourlyRate, String(safeValue));
-    }
+  useEffect(() => {
+    if (!user || !hydratedRef.current) return undefined;
+
+    const timeout = setTimeout(async () => {
+      const row = mapPreferencesToRow(user.id, preferences);
+      const { error } = await supabase.from('user_settings').upsert(row, { onConflict: 'user_id' });
+      if (error) {
+        console.error('[useCommanderPreferences] save:', error.message);
+      }
+    }, 250);
+
+    return () => clearTimeout(timeout);
+  }, [preferences, user]);
+
+  function patchPreference(key, value) {
+    setPreferences((prev) => ({ ...prev, [key]: value }));
   }
 
-  function setCommandStyle(value) {
-    const safeValue = value || 'hybrid';
-    setCommandStyleState(safeValue);
-    if (typeof window !== 'undefined') {
-      window.localStorage.setItem(STORAGE_KEYS.commandStyle, safeValue);
-    }
-  }
+  const api = useMemo(() => ({
+    ...preferences,
+    loading,
+    setHumanHourlyRate: (value) => {
+      const numeric = Number(value);
+      patchPreference('humanHourlyRate', Number.isFinite(numeric) && numeric > 0 ? numeric : DEFAULTS.humanHourlyRate);
+    },
+    setCommandStyle: (value) => patchPreference('commandStyle', value || DEFAULTS.commandStyle),
+    setAlertPosture: (value) => patchPreference('alertPosture', value || DEFAULTS.alertPosture),
+    setQuietHoursEnabled: (value) => patchPreference('quietHoursEnabled', Boolean(value)),
+    setQuietHoursStart: (value) => patchPreference('quietHoursStart', value || DEFAULTS.quietHoursStart),
+    setQuietHoursEnd: (value) => patchPreference('quietHoursEnd', value || DEFAULTS.quietHoursEnd),
+    setNotificationRoute: (value) => patchPreference('notificationRoute', value || DEFAULTS.notificationRoute),
+    setCommanderPersona: (value) => patchPreference('commanderPersona', value || DEFAULTS.commanderPersona),
+    setTrustedWriteMode: (value) => patchPreference('trustedWriteMode', value || DEFAULTS.trustedWriteMode),
+    setApprovalDoctrine: (value) => patchPreference('approvalDoctrine', value || DEFAULTS.approvalDoctrine),
+  }), [loading, preferences]);
 
-  function setAlertPosture(value) {
-    const safeValue = value || 'balanced';
-    setAlertPostureState(safeValue);
-    if (typeof window !== 'undefined') {
-      window.localStorage.setItem(STORAGE_KEYS.alertPosture, safeValue);
-    }
-  }
-
-  function setQuietHoursEnabled(value) {
-    const safeValue = Boolean(value);
-    setQuietHoursEnabledState(safeValue);
-    if (typeof window !== 'undefined') {
-      window.localStorage.setItem(STORAGE_KEYS.quietHoursEnabled, String(safeValue));
-    }
-  }
-
-  function setQuietHoursStart(value) {
-    const safeValue = value || '22:00';
-    setQuietHoursStartState(safeValue);
-    if (typeof window !== 'undefined') {
-      window.localStorage.setItem(STORAGE_KEYS.quietHoursStart, safeValue);
-    }
-  }
-
-  function setQuietHoursEnd(value) {
-    const safeValue = value || '07:00';
-    setQuietHoursEndState(safeValue);
-    if (typeof window !== 'undefined') {
-      window.localStorage.setItem(STORAGE_KEYS.quietHoursEnd, safeValue);
-    }
-  }
-
-  function setNotificationRoute(value) {
-    const safeValue = value || 'command_center';
-    setNotificationRouteState(safeValue);
-    if (typeof window !== 'undefined') {
-      window.localStorage.setItem(STORAGE_KEYS.notificationRoute, safeValue);
-    }
-  }
-
-  function setCommanderPersona(value) {
-    const safeValue = value || 'founder';
-    setCommanderPersonaState(safeValue);
-    if (typeof window !== 'undefined') {
-      window.localStorage.setItem(STORAGE_KEYS.commanderPersona, safeValue);
-    }
-  }
-
-  function setTrustedWriteMode(value) {
-    const safeValue = value || 'review_first';
-    setTrustedWriteModeState(safeValue);
-    if (typeof window !== 'undefined') {
-      window.localStorage.setItem(STORAGE_KEYS.trustedWriteMode, safeValue);
-    }
-  }
-
-  function setApprovalDoctrine(value) {
-    const safeValue = value || 'risk_weighted';
-    setApprovalDoctrineState(safeValue);
-    if (typeof window !== 'undefined') {
-      window.localStorage.setItem(STORAGE_KEYS.approvalDoctrine, safeValue);
-    }
-  }
-
-  return {
-    humanHourlyRate,
-    setHumanHourlyRate,
-    commandStyle,
-    setCommandStyle,
-    alertPosture,
-    setAlertPosture,
-    quietHoursEnabled,
-    setQuietHoursEnabled,
-    quietHoursStart,
-    setQuietHoursStart,
-    quietHoursEnd,
-    setQuietHoursEnd,
-    notificationRoute,
-    setNotificationRoute,
-    commanderPersona,
-    setCommanderPersona,
-    trustedWriteMode,
-    setTrustedWriteMode,
-    approvalDoctrine,
-    setApprovalDoctrine,
-  };
+  return api;
 }

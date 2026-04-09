@@ -5,8 +5,6 @@
  * Approval queue functions (fetchPendingReviews, approveReview, rejectReview)
  * read/write from Supabase when configured.
  *
- * Static catalog/config helpers remain local until backed by tables.
- *
  * Convention:
  *   fetch*  → read (GET)
  *   create* → insert (POST)
@@ -15,14 +13,6 @@
  */
 
 import { supabase } from './supabaseClient';
-import {
-  mcpServers,
-  knowledgeNamespaces,
-  directiveTemplates,
-  modelBenchmarks,
-  systemRecommendations,
-  baseCommandItems,
-} from '../utils/staticCatalog';
 
 // True when real Supabase env vars are set (not the placeholder)
 const isSupabaseConfigured = import.meta.env.VITE_SUPABASE_URL
@@ -126,6 +116,30 @@ function buildSyntheticCommander(user) {
   };
 }
 
+async function ensureModelBankEntry(user, modelKey, provider = 'Custom') {
+  if (!user?.id || !modelKey) return null;
+
+  const row = {
+    user_id: user.id,
+    model_key: modelKey,
+    label: modelKey,
+    provider,
+  };
+
+  const { data, error } = await supabase
+    .from('model_bank')
+    .upsert(row, { onConflict: 'user_id,model_key' })
+    .select('*')
+    .single();
+
+  if (error) {
+    console.error('[api] ensureModelBankEntry:', error.message);
+    return null;
+  }
+
+  return data;
+}
+
 async function ensureCommanderAgentRow() {
   const { data: authData, error: authError } = await supabase.auth.getUser();
   if (authError || !authData?.user) return null;
@@ -134,12 +148,28 @@ async function ensureCommanderAgentRow() {
   const commanderName = user.user_metadata?.full_name?.trim()
     ? `${user.user_metadata.full_name.trim()} Command`
     : 'Jarvis Commander';
+  const commanderModel = 'Claude Opus 4.6';
+
+  const { data: existingCommander, error: existingError } = await supabase
+    .from('agents')
+    .select('*')
+    .eq('user_id', user.id)
+    .eq('role', 'commander')
+    .order('created_at', { ascending: true })
+    .limit(1)
+    .maybeSingle();
+
+  if (!existingError && existingCommander) {
+    return existingCommander;
+  }
+
+  await ensureModelBankEntry(user, commanderModel, 'Anthropic');
 
   const row = {
     id: crypto.randomUUID(),
     user_id: user.id,
     name: commanderName,
-    model: 'Claude Opus 4.6',
+    model: commanderModel,
     status: 'idle',
     role: 'commander',
     color: '#00D9C8',
@@ -381,6 +411,51 @@ export async function previewMissionPlan(payload) {
   }
 }
 
+async function dispatchMissionNow({ taskId, agentId, taskDescription }) {
+  const { data: { session } } = await supabase.auth.getSession();
+  const res = await fetch(
+    `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/dispatch-task`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${session?.access_token ?? import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+      },
+      body: JSON.stringify({
+        task_id: taskId,
+        agent_id: agentId,
+        task_description: taskDescription,
+      }),
+    }
+  );
+
+  const result = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(result.error || `HTTP ${res.status}`);
+  }
+
+  return result;
+}
+
+async function touchAgentHeartbeat(agentId, status) {
+  if (!agentId) return;
+
+  const payload = {
+    last_heartbeat: new Date().toISOString(),
+  };
+
+  if (status) payload.status = status;
+
+  const { error } = await supabase
+    .from('agents')
+    .update(payload)
+    .eq('id', agentId);
+
+  if (error) {
+    console.error('[api] touchAgentHeartbeat:', error.message);
+  }
+}
+
 export async function createMission(payload, agents = []) {
   if (!isSupabaseConfigured) {
     return {
@@ -405,8 +480,29 @@ export async function createMission(payload, agents = []) {
   if (!user) throw new Error('Not authenticated');
 
   const title = deriveMissionTitle(payload.intent);
-  const selectedAgent = agents.find(agent => agent.id === payload.agentId);
-  const commander = agents.find(agent => agent.role === 'commander') || selectedAgent || agents[0] || null;
+  const requestedSyntheticCommander = !payload.agentId || payload.agentId === 'synthetic-commander';
+  let selectedAgent = agents.find(agent => agent.id === payload.agentId) || null;
+  let commander = agents.find(agent => agent.role === 'commander' && !agent.isSyntheticCommander) || null;
+
+  if (requestedSyntheticCommander) {
+    const persistedCommanderRow = await ensureCommanderAgentRow();
+    if (persistedCommanderRow) {
+      selectedAgent = mapAgentRow(persistedCommanderRow);
+      commander = selectedAgent;
+    } else {
+      selectedAgent = selectedAgent?.isSyntheticCommander ? null : selectedAgent;
+    }
+  }
+
+  if (!commander && selectedAgent && !selectedAgent.isSyntheticCommander) {
+    commander = selectedAgent;
+  }
+
+  if (!commander) {
+    commander = agents.find(agent => !agent.isSyntheticCommander) || null;
+  }
+
+  const assignedAgentId = selectedAgent?.isSyntheticCommander ? null : selectedAgent?.id || null;
   const commanderId = commander?.isSyntheticCommander ? null : commander?.id || null;
   const estimated = estimateMissionPlan(payload);
   const priorityScore = payload.priorityScore ?? 5;
@@ -428,7 +524,7 @@ export async function createMission(payload, agents = []) {
     schedule_type: scheduleType,
     run_at: runAt,
     recurrence_rule: recurrenceRule,
-    agent_id: payload.agentId,
+    agent_id: assignedAgentId,
     agent_name: payload.agentName || selectedAgent?.name || 'Unknown',
     mode: payload.mode,
     output_type: payload.outputType,
@@ -457,7 +553,7 @@ export async function createMission(payload, agents = []) {
       user_id: user.id,
       name: title,
       status: 'pending',
-      agent_id: payload.agentId,
+      agent_id: assignedAgentId,
       agent_name: payload.agentName || selectedAgent?.name || 'Unknown',
       duration_ms: 0,
       cost_usd: 0,
@@ -485,15 +581,30 @@ export async function createMission(payload, agents = []) {
     };
   }
 
+  if (payload.when === 'now' && assignedAgentId) {
+    try {
+      await dispatchMissionNow({
+        taskId: missionId,
+        agentId: assignedAgentId,
+        taskDescription: payload.intent,
+      });
+    } catch (dispatchError) {
+      console.error('[api] createMission dispatch:', dispatchError.message);
+      throw dispatchError;
+    }
+  }
+
   const activityMessage = scheduleType === 'recurring'
     ? `Mission queued: ${title} • recurring ${payload.repeat.frequency} at ${payload.repeat.time}`
-    : `Mission queued: ${title}`;
+    : payload.when === 'now' && assignedAgentId
+      ? `Mission dispatched: ${title}`
+      : `Mission queued: ${title}`;
 
   const { error: activityError } = await supabase.from('activity_log').insert({
     user_id: user.id,
     type: 'SYS',
     message: activityMessage,
-    agent_id: payload.agentId || null,
+    agent_id: assignedAgentId,
     duration_ms: 0,
     tokens: 0,
   });
@@ -506,6 +617,102 @@ export async function createMission(payload, agents = []) {
     success: true,
     mission: mapTaskRow({ ...row, created_at: new Date().toISOString(), updated_at: new Date().toISOString() }),
   };
+}
+
+export async function runCommanderHeartbeat(agents = [], tasks = [], reviews = []) {
+  if (!isSupabaseConfigured) return { dispatched: 0, scanned: 0 };
+
+  const user = (await supabase.auth.getUser()).data?.user;
+  if (!user) return { dispatched: 0, scanned: 0 };
+
+  const commander = agents.find((agent) => agent.role === 'commander' && !agent.isSyntheticCommander) || null;
+  if (!commander?.id) return { dispatched: 0, scanned: 0 };
+
+  await touchAgentHeartbeat(commander.id, commander.status === 'processing' ? 'processing' : 'idle');
+
+  const now = Date.now();
+  const blockedReviewAgentIds = new Set(reviews.map((review) => review.agentId).filter(Boolean));
+  const busyAgentIds = new Set(
+    agents
+      .filter((agent) => agent.status === 'processing')
+      .map((agent) => agent.id)
+      .filter(Boolean)
+  );
+
+  const runnableTasks = tasks
+    .filter((task) => {
+      if (task.status !== 'queued') return false;
+      if (task.requiresApproval) return false;
+      const dueAt = task.runAt ? new Date(task.runAt).getTime() : now;
+      if (Number.isNaN(dueAt) || dueAt > now) return false;
+      const effectiveAgentId = task.agentId || commander.id;
+      if (!effectiveAgentId) return false;
+      if (blockedReviewAgentIds.has(effectiveAgentId)) return false;
+      if (busyAgentIds.has(effectiveAgentId)) return false;
+      return true;
+    })
+    .sort((a, b) => {
+      const priorityDelta = Number(b.priority || 0) - Number(a.priority || 0);
+      if (priorityDelta !== 0) return priorityDelta;
+      return new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime();
+    });
+
+  let dispatched = 0;
+
+  for (const task of runnableTasks) {
+    const effectiveAgentId = task.agentId || commander.id;
+    if (!effectiveAgentId || busyAgentIds.has(effectiveAgentId)) continue;
+
+    const claimTimestamp = new Date().toISOString();
+    const { data: claimedTask, error: claimError } = await supabase
+      .from('tasks')
+      .update({
+        agent_id: effectiveAgentId,
+        created_by_commander_id: task.createdByCommanderId || commander.id,
+        status: 'running',
+        lane: 'active',
+        started_at: task.startedAt || claimTimestamp,
+        progress_percent: Math.max(10, Number(task.progressPercent || 0)),
+        updated_at: claimTimestamp,
+      })
+      .eq('id', task.id)
+      .eq('user_id', user.id)
+      .eq('status', 'queued')
+      .select('id')
+      .maybeSingle();
+
+    if (claimError) {
+      console.error('[api] runCommanderHeartbeat claim:', claimError.message);
+      continue;
+    }
+
+    if (!claimedTask) continue;
+
+    try {
+      await dispatchMissionNow({
+        taskId: task.id,
+        agentId: effectiveAgentId,
+        taskDescription: task.description || task.title || task.name || '',
+      });
+      dispatched += 1;
+      busyAgentIds.add(effectiveAgentId);
+    } catch (dispatchError) {
+      console.error('[api] runCommanderHeartbeat dispatch:', dispatchError.message);
+      await supabase
+        .from('tasks')
+        .update({
+          status: 'failed',
+          lane: 'blocked',
+          failed_at: new Date().toISOString(),
+          progress_percent: 0,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', task.id)
+        .eq('user_id', user.id);
+    }
+  }
+
+  return { dispatched, scanned: runnableTasks.length };
 }
 
 // ── Activity Log ────────────────────────────────────────────────
@@ -1063,24 +1270,158 @@ export async function fetchSkillBank() {
   return data;
 }
 
+async function getCurrentUserId() {
+  const { data: { user } } = await supabase.auth.getUser();
+  return user?.id || null;
+}
+
 export async function fetchMcpServers() {
-  return mcpServers;
+  if (!isSupabaseConfigured) return [];
+
+  const userId = await getCurrentUserId();
+  if (!userId) return [];
+
+  const { data, error } = await supabase
+    .from('connected_systems')
+    .select('*')
+    .eq('user_id', userId);
+
+  if (error) {
+    console.error('[api] fetchMcpServers:', error.message);
+    return [];
+  }
+
+  return (data || [])
+    .filter((row) => row.category === 'MCP' || row.metadata?.protocol === 'mcp')
+    .map((row) => ({
+    id: row.id,
+    name: row.display_name,
+    url: row.identifier || row.metadata?.url || 'Connected through systems dock',
+    tools: Array.isArray(row.capabilities) ? row.capabilities.length : 0,
+    status: row.status || 'connected',
+    lastVerifiedAt: row.last_verified_at || null,
+    }));
 }
 
 export async function fetchKnowledgeNamespaces() {
-  return knowledgeNamespaces;
+  if (!isSupabaseConfigured) return [];
+
+  const userId = await getCurrentUserId();
+  if (!userId) return [];
+
+  const { data, error } = await supabase
+    .from('knowledge_namespaces')
+    .select('*')
+    .eq('user_id', userId)
+    .order('updated_at', { ascending: false });
+
+  if (error) {
+    console.error('[api] fetchKnowledgeNamespaces:', error.message);
+    return [];
+  }
+
+  return (data || []).map((row) => ({
+    id: row.id,
+    name: row.name,
+    vectors: row.vectors || 0,
+    sizeLabel: row.size_label || '0 MB',
+    lastSyncAt: row.last_sync_at,
+    status: row.status || 'active',
+    agents: row.agents || [],
+    description: row.description || '',
+  }));
 }
 
 export async function fetchDirectives() {
-  return directiveTemplates;
+  if (!isSupabaseConfigured) return [];
+
+  const userId = await getCurrentUserId();
+  if (!userId) return [];
+
+  const { data, error } = await supabase
+    .from('shared_directives')
+    .select('*')
+    .eq('user_id', userId)
+    .order('priority', { ascending: false })
+    .order('updated_at', { ascending: false });
+
+  if (error) {
+    console.error('[api] fetchDirectives:', error.message);
+    return [];
+  }
+
+  return (data || []).map((row) => ({
+    id: row.id,
+    name: row.name,
+    scope: row.scope || 'all',
+    appliedTo: row.applied_to || [],
+    content: row.content || '',
+    priority: row.priority || 'normal',
+    icon: row.icon || 'ShieldCheck',
+  }));
 }
 
 export async function fetchModelBenchmarks() {
-  return modelBenchmarks;
+  if (!isSupabaseConfigured) return [];
+
+  const userId = await getCurrentUserId();
+  if (!userId) return [];
+
+  const [{ data: models, error: modelError }, { data: agents, error: agentError }] = await Promise.all([
+    supabase.from('model_bank').select('*').eq('user_id', userId).order('created_at', { ascending: true }),
+    supabase.from('agents').select('model,status').eq('user_id', userId),
+  ]);
+
+  if (modelError) {
+    console.error('[api] fetchModelBenchmarks model_bank:', modelError.message);
+    return [];
+  }
+
+  if (agentError) {
+    console.error('[api] fetchModelBenchmarks agents:', agentError.message);
+    return [];
+  }
+
+  const usageByModel = (agents || []).reduce((acc, row) => {
+    const key = row.model || 'Unassigned';
+    acc[key] = (acc[key] || 0) + 1;
+    return acc;
+  }, {});
+
+  return (models || []).map((row) => ({
+    id: row.id,
+    name: row.label,
+    provider: row.provider || 'Custom',
+    load: usageByModel[row.label] || usageByModel[row.model_key] || 0,
+    costPer1k: Number(row.cost_per_1k || 0),
+  }));
 }
 
 export async function fetchRecommendations() {
-  return systemRecommendations;
+  if (!isSupabaseConfigured) return [];
+
+  const userId = await getCurrentUserId();
+  if (!userId) return [];
+
+  const { data, error } = await supabase
+    .from('system_recommendations')
+    .select('*')
+    .eq('user_id', userId)
+    .order('updated_at', { ascending: false });
+
+  if (error) {
+    console.error('[api] fetchRecommendations:', error.message);
+    return [];
+  }
+
+  return (data || []).map((row) => ({
+    id: row.id,
+    recType: row.rec_type || 'optimization',
+    title: row.title,
+    description: row.description || '',
+    impact: row.impact || 'normal',
+    savingsLabel: row.savings_label || null,
+  }));
 }
 
 // ── Notifications & Commands ────────────────────────────────────
@@ -1090,5 +1431,54 @@ export async function fetchNotifications() {
 }
 
 export async function fetchCommandItems() {
-  return baseCommandItems;
+  if (!isSupabaseConfigured) {
+    return [
+      { id: 'go-overview', label: 'Open Overview', section: 'Navigation', type: 'view', route: '/' },
+      { id: 'go-missions', label: 'Open Mission Control', section: 'Navigation', type: 'view', route: '/missions' },
+      { id: 'go-reports', label: 'Open Reports', section: 'Navigation', type: 'view', route: '/reports' },
+      { id: 'go-intelligence', label: 'Open Intelligence', section: 'Navigation', type: 'view', route: '/intelligence' },
+    ];
+  }
+
+  const userId = await getCurrentUserId();
+  if (!userId) return [];
+
+  const [{ data: agents, error: agentError }, { data: systems, error: systemsError }] = await Promise.all([
+    supabase.from('agents').select('id,name,role,status').eq('user_id', userId).order('created_at', { ascending: true }),
+    supabase.from('connected_systems').select('id,display_name,status,category').eq('user_id', userId).order('created_at', { ascending: true }),
+  ]);
+
+  if (agentError) {
+    console.error('[api] fetchCommandItems agents:', agentError.message);
+  }
+  if (systemsError) {
+    console.error('[api] fetchCommandItems systems:', systemsError.message);
+  }
+
+  const navigationItems = [
+    { id: 'go-overview', label: 'Open Overview', section: 'Navigation', type: 'view', route: '/' },
+    { id: 'go-missions', label: 'Open Mission Control', section: 'Navigation', type: 'view', route: '/missions' },
+    { id: 'go-reports', label: 'Open Reports', section: 'Navigation', type: 'view', route: '/reports' },
+    { id: 'go-intelligence', label: 'Open Intelligence', section: 'Navigation', type: 'view', route: '/intelligence' },
+  ];
+
+  const agentItems = (agents || []).map((row) => ({
+    id: `agent-${row.id}`,
+    label: row.name,
+    section: 'Agents',
+    type: 'agent',
+    status: row.status,
+    detail: row.role,
+  }));
+
+  const systemItems = (systems || []).map((row) => ({
+    id: `system-${row.id}`,
+    label: row.display_name,
+    section: 'Connected Systems',
+    type: 'system',
+    status: row.status,
+    detail: row.category,
+  }));
+
+  return [...navigationItems, ...agentItems, ...systemItems];
 }

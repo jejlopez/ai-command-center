@@ -11,6 +11,7 @@ import {
   X,
 } from 'lucide-react';
 import { cn } from '../../utils/cn';
+import { useConnectedSystems } from '../../utils/useSupabase';
 
 const SESSION_KEY = 'mission-creator-session-v1';
 const SAVED_PRESETS_KEY = 'mission-creator-presets-v1';
@@ -113,6 +114,7 @@ const COMMANDER_PRESETS = [
 ];
 
 function inferAgentModeBadge(agent) {
+  if (agent?.isSyntheticCommander) return 'SUB';
   const model = String(agent?.model || '').toLowerCase();
   const localHints = ['llama', 'mistral', 'gemma', 'qwen', 'deepseek', 'ollama', 'hermes'];
   return localHints.some(hint => model.includes(hint)) ? 'LOCAL' : 'SUB';
@@ -121,6 +123,7 @@ function inferAgentModeBadge(agent) {
 function pickPrimaryOperationsAgent(agents) {
   return (
     agents.find(agent => /tony|atlas/i.test(agent.name || ''))
+    || agents.find(agent => agent.role === 'commander' && !agent.isSyntheticCommander)
     || agents.find(agent => agent.role === 'commander')
     || agents[0]
     || null
@@ -128,7 +131,8 @@ function pickPrimaryOperationsAgent(agents) {
 }
 
 function inferBestAgent(intent, agents) {
-  const primary = pickPrimaryOperationsAgent(agents);
+  const selectableAgents = agents.filter(agent => !agent.isSyntheticCommander);
+  const primary = pickPrimaryOperationsAgent(selectableAgents.length ? selectableAgents : agents);
   if (!intent.trim()) return primary;
 
   const lower = intent.toLowerCase();
@@ -405,6 +409,7 @@ export function MissionCreatorPanel({
   onLaunch,
   onPreview,
 }) {
+  const { connectedSystems } = useConnectedSystems();
   const [form, setForm] = useState(() => initialFormState(agents));
   const [agentTouched, setAgentTouched] = useState(false);
   const [outputTouched, setOutputTouched] = useState(false);
@@ -422,6 +427,14 @@ export function MissionCreatorPanel({
   const selectedAgent = useMemo(
     () => agents.find(agent => agent.id === form.agentId) || pickPrimaryOperationsAgent(agents),
     [agents, form.agentId]
+  );
+  const pipedriveConnected = useMemo(
+    () => connectedSystems.some((system) => system.integrationKey === 'pipedrive' && system.status !== 'error'),
+    [connectedSystems]
+  );
+  const availableTargetOptions = useMemo(
+    () => TARGET_OPTIONS.filter((option) => option.value === 'internal' || pipedriveConnected),
+    [pipedriveConnected]
   );
   const doctrineDefaults = useMemo(
     () => inferDoctrineDefaults({ intent: form.intent, agents, learningMemory }),
@@ -486,6 +499,12 @@ export function MissionCreatorPanel({
   }, [doctrineDefaults.mode, form.mode, modeTouched]);
 
   useEffect(() => {
+    if (!availableTargetOptions.some((option) => option.value === form.targetType)) {
+      setForm((prev) => ({ ...prev, targetType: 'internal', targetIdentifier: '' }));
+    }
+  }, [availableTargetOptions, form.targetType]);
+
+  useEffect(() => {
     saveSessionDefaults({
       agentId: form.agentId,
       mode: form.mode,
@@ -534,9 +553,11 @@ export function MissionCreatorPanel({
   }
 
   function buildPayload() {
+    const launchAgentId = selectedAgent?.isSyntheticCommander ? '' : (form.agentId || selectedAgent?.id || '');
+
     return {
       intent: form.intent.trim(),
-      agentId: form.agentId || selectedAgent?.id || '',
+      agentId: launchAgentId,
       mode: form.mode,
       when: form.when,
       priority: form.priority,
@@ -897,8 +918,13 @@ export function MissionCreatorPanel({
                       onChange={(event) => updateField('targetType', event.target.value)}
                       className="w-full rounded-xl border border-border bg-surface px-3 py-2.5 text-sm text-text-primary focus:outline-none focus:border-aurora-teal/40"
                     >
-                      {TARGET_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                      {availableTargetOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
                     </select>
+                    {!pipedriveConnected && (
+                      <div className="mt-2 text-[11px] leading-relaxed text-text-muted">
+                        Pipedrive destinations unlock automatically once the CRM is connected in Systems Control.
+                      </div>
+                    )}
                     {form.targetType !== 'internal' && (
                       <input
                         value={form.targetIdentifier}

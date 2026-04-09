@@ -1,12 +1,11 @@
 import { useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion as Motion, AnimatePresence } from 'framer-motion';
 import {
   Info, ChevronDown, Search, Zap, Trash2, ExternalLink, Server,
   Globe, Terminal, FolderOpen, Database, MessageSquare, Monitor, BarChart3,
 } from 'lucide-react';
-import { mcpServers } from '../../utils/staticCatalog';
 import { cn } from '../../utils/cn';
-import { createSkillBankEntry, updateAgentSkills, useSkillBank } from '../../utils/useSupabase';
+import { createSkillBankEntry, updateAgentSkills, useConnectedSystems, useSkillBank } from '../../utils/useSupabase';
 
 const iconMap = { Globe, Terminal, FolderOpen, Zap, Database, MessageSquare, Monitor, BarChart3 };
 
@@ -23,14 +22,14 @@ function InfoBubble({ text }) {
       </button>
       <AnimatePresence>
         {show && (
-          <motion.div
+          <Motion.div
             initial={{ opacity: 0, y: 4 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 4 }}
             className="absolute bottom-full left-1/2 z-50 mb-2 w-56 -translate-x-1/2 rounded-lg border border-white/10 bg-surface p-3 text-[11px] leading-relaxed text-text-body shadow-2xl pointer-events-none"
           >
             {text}
-          </motion.div>
+          </Motion.div>
         )}
       </AnimatePresence>
     </div>
@@ -39,6 +38,7 @@ function InfoBubble({ text }) {
 
 export function SkillsTab({ agent }) {
   const { skills: skillBank, refetch: refetchSkills } = useSkillBank();
+  const { connectedSystems, upsertSystem, loading: systemsLoading } = useConnectedSystems();
   const [searchInput, setSearchInput] = useState('');
   const [showMcp, setShowMcp] = useState(false);
   const [showAddServer, setShowAddServer] = useState(false);
@@ -54,6 +54,15 @@ export function SkillsTab({ agent }) {
         skill.description.toLowerCase().includes(searchInput.toLowerCase())
       )
     : [];
+  const mcpServers = connectedSystems
+    .filter((system) => system.category === 'MCP' || system.metadata?.protocol === 'mcp')
+    .map((system) => ({
+      id: system.id,
+      name: system.displayName,
+      url: system.identifier || system.metadata?.url || 'Connected through systems dock',
+      tools: Array.isArray(system.capabilities) ? system.capabilities.length : 0,
+      status: system.status,
+    }));
 
   const syncAgentSkills = async (nextSkills) => {
     await updateAgentSkills(agent.id, nextSkills);
@@ -73,6 +82,29 @@ export function SkillsTab({ agent }) {
     await refetchSkills();
     await syncAgentSkills([...(agent.skills || []), skill.id]);
     setSearchInput('');
+  };
+
+  const handleConnectMcpServer = async () => {
+    const trimmed = serverUrl.trim();
+    if (!trimmed) return;
+
+    await upsertSystem({
+      integrationKey: `mcp-${trimmed.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}`,
+      displayName: trimmed.replace(/^https?:\/\//, '').replace(/\/$/, '') || 'MCP Server',
+      category: 'MCP',
+      status: 'connected',
+      identifier: trimmed,
+      capabilities: ['Tools', 'Read', 'Dispatch'],
+      metadata: {
+        protocol: 'mcp',
+        url: trimmed,
+        securityState: 'Connected through systems dock',
+      },
+      lastVerifiedAt: new Date().toISOString(),
+    });
+
+    setServerUrl('');
+    setShowAddServer(false);
   };
 
   return (
@@ -221,7 +253,7 @@ export function SkillsTab({ agent }) {
 
           <AnimatePresence>
             {showMcp && (
-              <motion.div
+              <Motion.div
                 initial={{ height: 0, opacity: 0 }}
                 animate={{ height: 'auto', opacity: 1 }}
                 exit={{ height: 0, opacity: 0 }}
@@ -239,6 +271,11 @@ export function SkillsTab({ agent }) {
                     <ExternalLink className="h-3.5 w-3.5 text-text-disabled" />
                   </div>
                 ))}
+                {!systemsLoading && mcpServers.length === 0 && (
+                  <div className="rounded-lg border border-dashed border-white/[0.08] bg-white/[0.02] px-3 py-4 text-xs text-text-muted">
+                    No MCP servers are wired yet. Connect one below and it will appear everywhere the systems dock is used.
+                  </div>
+                )}
                 {showAddServer ? (
                   <div className="flex gap-2">
                     <input
@@ -248,7 +285,12 @@ export function SkillsTab({ agent }) {
                       placeholder="Server URL (e.g., localhost:3001)"
                       className="flex-1 rounded-lg border border-white/[0.07] bg-white/[0.03] px-3 py-2 text-xs font-mono text-text-primary outline-none focus:border-aurora-teal/40"
                     />
-                    <button className="shrink-0 rounded-lg bg-aurora-teal px-3 py-2 text-[10px] font-bold text-[#000]">Connect</button>
+                    <button
+                      onClick={handleConnectMcpServer}
+                      className="shrink-0 rounded-lg bg-aurora-teal px-3 py-2 text-[10px] font-bold text-[#000]"
+                    >
+                      Connect
+                    </button>
                   </div>
                 ) : (
                   <button
@@ -258,7 +300,7 @@ export function SkillsTab({ agent }) {
                     <Server className="h-3 w-3" /> Connect MCP Server
                   </button>
                 )}
-              </motion.div>
+              </Motion.div>
             )}
           </AnimatePresence>
         </div>

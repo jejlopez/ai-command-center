@@ -1,4 +1,5 @@
 import { Bot, Plus, Settings2, Sparkles } from 'lucide-react';
+import { CommandSectionHeader } from '../command/CommandSectionHeader';
 
 function getRiskState(agent, flaggedIds) {
   if (!agent.model) return { label: 'Needs config', tone: 'warning', accent: 'text-aurora-amber' };
@@ -24,6 +25,7 @@ function DelegateCard({ agent, providerByModel, flaggedIds, onOpenDetail }) {
 
   return (
     <button
+      type="button"
       onClick={() => onOpenDetail?.(agent.id)}
       className={`delegate-council-card delegate-council-card-${risk.tone} text-left transition-transform hover:-translate-y-0.5`}
     >
@@ -43,22 +45,22 @@ function DelegateCard({ agent, providerByModel, flaggedIds, onOpenDetail }) {
         </div>
       </div>
 
-        <div className="mt-5 grid gap-3">
-          <div className="delegate-runtime-stack">
-            <div className="delegate-runtime-heading">Runtime</div>
-            <div className="mt-2 text-sm font-semibold text-text-primary">{providerByModel.get(agent.model) || 'Unknown'}</div>
-            <div className="mt-1 truncate font-mono text-[12px] text-text-muted">{agent.model || 'Unassigned'}</div>
-          </div>
+      <div className="mt-5 grid gap-3">
+        <div className="delegate-runtime-stack">
+          <div className="delegate-runtime-heading">Runtime</div>
+          <div className="mt-2 text-sm font-semibold text-text-primary">{providerByModel.get(agent.model) || 'Unknown'}</div>
+          <div className="mt-1 truncate font-mono text-[12px] text-text-muted">{agent.model || 'Unassigned'}</div>
+        </div>
 
-          <div className={`delegate-status-panel ${risk.tone}`}>
-            <div>
-              <div className="delegate-runtime-heading">Operator status</div>
-              <div className={`mt-2 text-sm font-semibold ${risk.accent}`}>{risk.label}</div>
-            </div>
-            <div className="delegate-config-icon">
-              <Settings2 className="h-4 w-4 text-aurora-teal" />
-            </div>
+        <div className={`delegate-status-panel ${risk.tone}`}>
+          <div>
+            <div className="delegate-runtime-heading">Operator status</div>
+            <div className={`mt-2 text-sm font-semibold ${risk.accent}`}>{risk.label}</div>
           </div>
+          <div className="delegate-config-icon">
+            <Settings2 className="h-4 w-4 text-aurora-teal" />
+          </div>
+        </div>
       </div>
     </button>
   );
@@ -67,6 +69,7 @@ function DelegateCard({ agent, providerByModel, flaggedIds, onOpenDetail }) {
 function OpenSlotCard({ onAddOperator }) {
   return (
     <button
+      type="button"
       onClick={onAddOperator}
       className="delegate-open-slot text-left transition-transform hover:-translate-y-0.5"
     >
@@ -75,7 +78,7 @@ function OpenSlotCard({ onAddOperator }) {
       </div>
       <div className="mt-5 text-xl font-semibold tracking-[-0.03em] text-text-primary">Open slot</div>
       <div className="mt-2 text-sm leading-6 text-text-muted">
-        Add another operator for research, execution, review, or operations support.
+        Add another specialist for research, execution, QA, or ops support.
       </div>
       <div className="mt-5 inline-flex items-center gap-2 text-sm font-semibold text-aurora-teal">
         <Sparkles className="h-4 w-4" />
@@ -91,26 +94,27 @@ export function CommandSquadPanel({ operators, providerByModel, flaggedIds, onOp
 
   return (
     <div className="jarvis-console p-5">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <div className="text-[10px] uppercase tracking-[0.22em] text-text-disabled">Commander operators</div>
-          <div className="mt-1 text-xl font-semibold text-text-primary">Command squad</div>
-          <div className="mt-1 text-sm text-text-muted">
-            {hasOperators
-              ? `${operators.length} operator${operators.length === 1 ? '' : 's'} attached to the commander.`
-              : 'Commander online. No operators attached yet.'}
-          </div>
-        </div>
-        <button
-          onClick={onAddOperator}
-          className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-sm font-semibold text-text-primary transition-colors hover:bg-white/[0.05]"
-        >
-          <Plus className="h-4 w-4 text-aurora-teal" />
-          Add Operator
-        </button>
-      </div>
+      <CommandSectionHeader
+        eyebrow="Fleet Command Zone"
+        title="Specialist Operator Deck"
+        description={hasOperators
+          ? `${operators.length} specialist operator${operators.length === 1 ? '' : 's'} attached to the commander and ready for deployment.`
+          : 'Commander online. Add specialist operators to give the bridge more range.'}
+        icon={Bot}
+        tone="blue"
+        action={(
+          <button
+            type="button"
+            onClick={onAddOperator}
+            className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-sm font-semibold text-text-primary transition-colors hover:bg-white/[0.05]"
+          >
+            <Plus className="h-4 w-4 text-aurora-teal" />
+            Add Operator
+          </button>
+        )}
+      />
 
-      <div className="mt-5 grid gap-4 md:grid-cols-2 2xl:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-4">
         {operators.map((agent) => (
           <DelegateCard
             key={agent.id}
@@ -127,10 +131,10 @@ export function CommandSquadPanel({ operators, providerByModel, flaggedIds, onOp
       </div>
 
       {!hasOperators && (
-        <div className="mt-4 rounded-2xl border border-aurora-teal/15 bg-aurora-teal/[0.04] px-4 py-3">
-          <div className="text-[10px] uppercase tracking-[0.18em] text-aurora-teal">Commander status</div>
+        <div className="mt-4 rounded-[22px] border border-aurora-teal/15 bg-aurora-teal/[0.04] px-4 py-4">
+          <div className="text-[10px] uppercase tracking-[0.18em] text-aurora-teal">Bridge readiness</div>
           <p className="mt-2 text-sm leading-6 text-text-body">
-            Jarvis Commander is online and ready. This panel only fills up after you add specialist operators for research, execution, QA, or ops.
+            The commander is live, but the bridge is still single-threaded. Add specialists to turn this into a real execution deck.
           </p>
         </div>
       )}

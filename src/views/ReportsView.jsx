@@ -32,6 +32,8 @@ import { AnimatedNumber } from '../components/command/AnimatedNumber';
 import { CommandSectionHeader } from '../components/command/CommandSectionHeader';
 import { useLearningMemory } from '../utils/useLearningMemory';
 import { DoctrineCards } from '../components/command/DoctrineCards';
+import { TruthAuditStrip } from '../components/command/TruthAuditStrip';
+import { useCommandCenterTruth } from '../utils/useCommandCenterTruth';
 
 const PERIOD_OPTIONS = ['30d', '90d', 'QTD'];
 const STATUS_COLORS = {
@@ -298,6 +300,7 @@ export function ReportsView() {
   const { tasks } = useTasks();
   const { reviews } = usePendingReviews();
   const { logs } = useActivityLog();
+  const truth = useCommandCenterTruth();
 
   const summary = useMemo(() => {
     const completed = tasks.filter((task) => ['completed', 'done'].includes(task.status));
@@ -498,6 +501,7 @@ export function ReportsView() {
         </Motion.section>
 
         <ExecutiveReadFirst items={readFirstItems.slice(0, 2)} />
+        <TruthAuditStrip truth={truth} />
 
         <Motion.section variants={item} className="space-y-5">
           <div className="rounded-[28px] border border-white/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.015))] p-5">

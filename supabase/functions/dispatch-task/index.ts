@@ -23,6 +23,21 @@ function costPerToken(model: string): number {
   return 0.000003; // haiku or unknown claude-* variants
 }
 
+function normalizeExecutionModel(model: string): string {
+  const normalized = String(model || '').trim().toLowerCase();
+
+  if (!normalized) return '';
+  if (normalized.startsWith('claude-')) return normalized;
+
+  const aliases: Record<string, string> = {
+    'claude opus 4.6': 'claude-opus-4-6',
+    'claude sonnet 4.6': 'claude-sonnet-4-6',
+    'claude sonnet 4.5': 'claude-sonnet-4-5',
+  };
+
+  return aliases[normalized] || normalized.replace(/\s+/g, '-');
+}
+
 // ── max_tokens by response_length ────────────────────────────────────────────
 
 const MAX_TOKENS_MAP: Record<string, number> = {
@@ -41,14 +56,14 @@ Deno.serve(async (req: Request) => {
 
   // ── Parse body ───────────────────────────────────────────────────────────
 
-  let body: { agent_id?: string; task_description?: string };
+  let body: { agent_id?: string; task_description?: string; task_id?: string };
   try {
     body = await req.json();
   } catch {
     return corsResponse({ error: 'Invalid JSON body' }, 400);
   }
 
-  const { agent_id, task_description } = body;
+  const { agent_id, task_description, task_id } = body;
   if (!agent_id || !task_description) {
     return corsResponse({ error: 'Missing required fields: agent_id, task_description' }, 400);
   }
@@ -93,7 +108,9 @@ Deno.serve(async (req: Request) => {
     return corsResponse({ error: 'Forbidden — agent does not belong to this user' }, 403);
   }
 
-  if (!agent.model?.startsWith('claude-')) {
+  const executionModel = normalizeExecutionModel(agent.model);
+
+  if (!executionModel.startsWith('claude-')) {
     return corsResponse({ error: 'Model not yet supported in Phase 1' }, 422);
   }
 
@@ -113,6 +130,16 @@ Deno.serve(async (req: Request) => {
 
   await db.from('agents').update({ status: 'processing' }).eq('id', agent_id);
 
+  if (task_id) {
+    await db.from('tasks').update({
+      status: 'running',
+      lane: 'active',
+      started_at: new Date().toISOString(),
+      progress_percent: 15,
+      updated_at: new Date().toISOString(),
+    }).eq('id', task_id).eq('user_id', user.id);
+  }
+
   // ── Call Anthropic ───────────────────────────────────────────────────────
 
   const startTime = Date.now();
@@ -121,7 +148,7 @@ Deno.serve(async (req: Request) => {
     const anthropic = new Anthropic({ apiKey: userSettings.anthropic_api_key });
 
     const aiResponse = await anthropic.messages.create({
-      model: agent.model,
+      model: executionModel,
       system: agent.system_prompt || '',
       messages: [{ role: 'user', content: task_description }],
       temperature: parseFloat(agent.temperature) ?? 0.7,
@@ -133,19 +160,24 @@ Deno.serve(async (req: Request) => {
     const tokens = aiResponse.usage.input_tokens + aiResponse.usage.output_tokens;
     const cost = tokens * costPerToken(agent.model);
 
-    const taskId = crypto.randomUUID();
+    const taskId = task_id || crypto.randomUUID();
     const reviewId = crypto.randomUUID();
-
-    await Promise.all([
-      db.from('agents').update({
-        status: 'idle',
-        latency_ms: latency,
-        total_tokens: (agent.total_tokens ?? 0) + tokens,
-        total_cost: parseFloat(agent.total_cost ?? 0) + cost,
-        task_count: (agent.task_count ?? 0) + 1,
-      }).eq('id', agent_id),
-
-      db.from('tasks').insert({
+    const completedAt = new Date().toISOString();
+    const taskWrite = task_id
+      ? db.from('tasks').update({
+        status: 'completed',
+        lane: 'completed',
+        duration_ms: latency,
+        cost_usd: cost,
+        actual_cost_cents: Math.round(cost * 100),
+        progress_percent: 100,
+        prompt_text: task_description,
+        result_text: responseText,
+        completed_at: completedAt,
+        last_run_at: completedAt,
+        updated_at: completedAt,
+      }).eq('id', taskId).eq('user_id', user.id)
+      : db.from('tasks').insert({
         id: taskId,
         user_id: user.id,
         name: task_description.substring(0, 120),
@@ -156,8 +188,19 @@ Deno.serve(async (req: Request) => {
         cost_usd: cost,
         prompt_text: task_description,
         result_text: responseText,
-        completed_at: new Date().toISOString(),
-      }),
+        completed_at: completedAt,
+      });
+
+    await Promise.all([
+      db.from('agents').update({
+        status: 'idle',
+        latency_ms: latency,
+        total_tokens: (agent.total_tokens ?? 0) + tokens,
+        total_cost: parseFloat(agent.total_cost ?? 0) + cost,
+        task_count: (agent.task_count ?? 0) + 1,
+      }).eq('id', agent_id),
+
+      taskWrite,
 
       db.from('activity_log').insert({
         user_id: user.id,
@@ -195,6 +238,16 @@ Deno.serve(async (req: Request) => {
     const latency = Date.now() - startTime;
 
     await db.from('agents').update({ status: 'idle' }).eq('id', agent_id);
+
+    if (task_id) {
+      await db.from('tasks').update({
+        status: 'failed',
+        lane: 'blocked',
+        failed_at: new Date().toISOString(),
+        progress_percent: 0,
+        updated_at: new Date().toISOString(),
+      }).eq('id', task_id).eq('user_id', user.id);
+    }
 
     await db.from('activity_log').insert({
       user_id: user.id,
