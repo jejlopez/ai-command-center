@@ -2,7 +2,6 @@ import { useRef, useState, useEffect, useMemo, useCallback } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useAgents, useActivityLog } from '../utils/useSupabase';
 import { ArrowDown, Search, Copy, Pin, Minimize2, Maximize2, DollarSign, AlertCircle } from 'lucide-react';
-import { WidgetActions } from './WidgetActions';
 
 const tagStyles = {
   OK:  { color: '#00D9C8', label: 'OK' },
@@ -89,7 +88,6 @@ export function ActivityFeed({ agentFilter = null }) {
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
-      <WidgetActions onExpand={() => {}} onConfigure={() => {}} onRemove={() => {}} />
       {/* Sticky header: accumulator + filters */}
       <div className="shrink-0 z-20 border-b border-white/[0.05]">
         {/* Accumulator strip */}
