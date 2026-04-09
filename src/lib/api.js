@@ -201,6 +201,21 @@ export async function retryTask(taskId) {
   return { success: true, taskId };
 }
 
+export async function stopTask(taskId) {
+  if (!isSupabaseConfigured) return { success: true };
+
+  const { error } = await supabase
+    .from('tasks')
+    .update({ status: 'error' })
+    .eq('id', taskId);
+
+  if (error) {
+    console.error('[api] stopTask:', error.message);
+    throw error;
+  }
+  return { success: true, taskId };
+}
+
 // ── Agent Actions ───────────────────────────────────────────────
 
 export async function restartAgent(agentId) {
