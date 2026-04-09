@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import { ActivityFeed } from './ActivityFeed';
 import { TraceWaterfall } from './TraceWaterfall';
-import { fetchPendingReviews, fetchSpans } from '../lib/api';
+import { fetchPendingReviews, fetchSpans, restartAgent } from '../lib/api';
 import { cn } from '../utils/cn';
 import { ConfigTab } from './detail/ConfigTab';
 import { SkillsTab } from './detail/SkillsTab';
@@ -308,7 +308,7 @@ export function DetailPanel({ agent, initialMode = 'config', onClose }) {
                 <Send className="h-3.5 w-3.5" />
                 Dispatch
               </button>
-              <button className="rounded-lg p-2 text-text-muted transition-colors hover:bg-white/[0.05] hover:text-aurora-teal" title="Restart">
+              <button onClick={() => restartAgent(agent.id).catch(console.error)} className="rounded-lg p-2 text-text-muted transition-colors hover:bg-white/[0.05] hover:text-aurora-teal" title="Restart">
                 <RefreshCw className="h-4 w-4" />
               </button>
               <button className="rounded-lg p-2 text-text-muted transition-colors hover:bg-white/[0.05] hover:text-aurora-amber" title={isProcessing ? 'Pause' : 'Resume'}>
@@ -386,7 +386,7 @@ export function DetailPanel({ agent, initialMode = 'config', onClose }) {
                   {agent.errorMessage || 'Agent requires intervention'}
                 </span>
               </div>
-              <button className="ml-3 shrink-0 rounded-md border border-aurora-rose/20 bg-aurora-rose/10 px-3 py-1 text-[10px] font-bold text-aurora-rose transition-colors hover:bg-aurora-rose/20">
+              <button onClick={() => restartAgent(agent.id).catch(console.error)} className="ml-3 shrink-0 rounded-md border border-aurora-rose/20 bg-aurora-rose/10 px-3 py-1 text-[10px] font-bold text-aurora-rose transition-colors hover:bg-aurora-rose/20">
                 Restart Agent
               </button>
             </div>

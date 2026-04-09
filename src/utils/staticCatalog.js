@@ -41,7 +41,6 @@ export const baseCommandItems = [
   { id: 'c5', group: 'Navigation', label: 'Go to Intelligence', icon: 'BrainCircuit', action: { type: 'navigate', route: 'intelligence' } },
   { id: 'c20', group: 'Panels', label: 'Open Notifications', icon: 'Bell', action: { type: 'panel', panel: 'notifications' } },
   { id: 'c21', group: 'Panels', label: 'Open Settings', icon: 'Settings', action: { type: 'panel', panel: 'settings' } },
-  { id: 'c22', group: 'Panels', label: 'Toggle Doctor Mode', icon: 'Stethoscope', action: { type: 'panel', panel: 'doctor' } },
   { id: 'c23', group: 'Panels', label: 'Open Profile', icon: 'User', action: { type: 'panel', panel: 'profile' } },
   { id: 'c30', group: 'Actions', label: 'Export logs as JSON', icon: 'Download', action: { type: 'action', id: 'export-logs' } },
   { id: 'c31', group: 'Actions', label: 'Copy session trace ID', icon: 'Clipboard', action: { type: 'action', id: 'copy-trace' } },

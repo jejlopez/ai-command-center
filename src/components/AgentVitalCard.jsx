@@ -3,6 +3,27 @@ import { motion } from 'framer-motion';
 import { Send, Eye, Wand2, RotateCcw, AlertTriangle } from 'lucide-react';
 import { cn } from '../utils/cn';
 
+function parseErrorMessage(raw) {
+  if (!raw) return null;
+  // Try regex first — handles truncated JSON from DB
+  const msgMatch = raw.match(/"message"\s*:\s*"([^"]+)"/);
+  if (msgMatch) {
+    const msg = msgMatch[1];
+    return msg.length > 120 ? msg.slice(0, 117) + '...' : msg;
+  }
+  // Fallback: try full JSON parse
+  const jsonStart = raw.indexOf('{');
+  const toParse = jsonStart > -1 ? raw.slice(jsonStart) : raw;
+  try {
+    let obj = JSON.parse(toParse);
+    for (let i = 0; i < 5 && obj && typeof obj === 'object'; i++) {
+      if (obj.message) return obj.message.length > 120 ? obj.message.slice(0, 117) + '...' : obj.message;
+      obj = obj.error;
+    }
+  } catch {}
+  return raw.length > 120 ? raw.slice(0, 117) + '...' : raw;
+}
+
 const statusConfig = {
   processing: { label: 'In Flow', dot: 'bg-aurora-teal animate-pulse', badge: 'border-aurora-teal/20 bg-aurora-teal/10 text-aurora-teal' },
   idle: { label: 'Standing By', dot: 'bg-text-muted', badge: 'border-white/10 bg-white/[0.04] text-text-muted' },
@@ -11,6 +32,8 @@ const statusConfig = {
 
 export function AgentVitalCard({
   agent,
+  errorCount = 0,
+  latestErrorMessage = null,
   onOpenDetail,
   onQuickDispatch,
   onViewLogs,
@@ -18,6 +41,7 @@ export function AgentVitalCard({
 }) {
   const status = statusConfig[agent.status] || statusConfig.idle;
   const isError = agent.status === 'error';
+  const hasErrors = errorCount > 0;
 
   const description = agent.roleDescription
     || agent.systemPrompt?.slice(0, 100)
@@ -79,6 +103,25 @@ export function AgentVitalCard({
               >
                 <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-aurora-rose" />
                 <span className="line-clamp-2 text-xs leading-relaxed text-aurora-rose">{agent.errorMessage}</span>
+              </motion.div>
+            )}
+
+            {hasErrors && !isError && (
+              <motion.div
+                initial={{ opacity: 0, y: 4 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="mt-3 flex items-center gap-2 rounded-xl border border-aurora-rose/20 bg-aurora-rose/10 px-3 py-2"
+              >
+                <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-aurora-rose" />
+                <span className="flex-1 min-w-0 truncate text-xs font-medium text-aurora-rose">
+                  {parseErrorMessage(latestErrorMessage) || `${errorCount} error${errorCount > 1 ? 's' : ''}`}
+                </span>
+                <button
+                  onClick={(e) => { e.stopPropagation(); onViewLogs?.(); }}
+                  className="shrink-0 text-[10px] font-bold uppercase tracking-wider text-aurora-rose/70 hover:text-aurora-rose transition-colors"
+                >
+                  View
+                </button>
               </motion.div>
             )}
           </div>

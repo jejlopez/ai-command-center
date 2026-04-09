@@ -11,7 +11,8 @@ import { TaskDAG } from '../components/TaskDAG';
 import { MemorySparkmap } from '../components/MemorySparkmap';
 import { HealthRadial } from '../components/HealthRadial';
 import { CreateAgentModal } from '../components/CreateAgentModal';
-import { Plus, GitBranch, Edit2, RotateCcw, Trash2, Loader2 } from 'lucide-react';
+import { Plus, GitBranch, Edit2, RotateCcw, Trash2, Loader2, AlertTriangle } from 'lucide-react';
+import { retryTask } from '../lib/api';
 import { WidgetActions } from '../components/WidgetActions';
 import { cn } from '../utils/cn';
 
@@ -25,7 +26,7 @@ const statusStyles = {
 };
 
 export function OverviewView({ agents, tasks, loading, addOptimistic, onOpenDetail, onQuickDispatch }) {
-  const { data: healthData } = useHealthMetrics();
+  const { data: healthData, errorsByAgent } = useHealthMetrics();
   const [createModalOpen, setCreateModalOpen] = useState(false);
 
   if (loading) {
@@ -40,6 +41,7 @@ export function OverviewView({ agents, tasks, loading, addOptimistic, onOpenDeta
   const idleAgents = agents.filter(a => a.status === 'idle').length;
   const errorAgents = agents.filter(a => a.status === 'error').length;
 
+
   return (
     <motion.div
       variants={container}
@@ -50,7 +52,7 @@ export function OverviewView({ agents, tasks, loading, addOptimistic, onOpenDeta
       {/* Row 1: System pulse */}
       <motion.div variants={item} className="col-span-12">
         <SpotlightCard>
-          <NeuralPulse systemHealth={94} agentCount={activeAgents} />
+          <NeuralPulse systemHealth={healthData.length ? Math.round(healthData.reduce((s, m) => s + m.value, 0) / healthData.length) : 100} agentCount={activeAgents} />
         </SpotlightCard>
       </motion.div>
 
@@ -97,6 +99,8 @@ export function OverviewView({ agents, tasks, loading, addOptimistic, onOpenDeta
               <motion.div key={a.id} variants={item} layout layoutId={a.id} className="col-span-4 relative z-10 hover:z-50 overflow-visible">
                 <AgentVitalCard
                   agent={a}
+                  errorCount={errorsByAgent.counts[a.id] || 0}
+                  latestErrorMessage={errorsByAgent.messages[a.id] || null}
                   onOpenDetail={() => onOpenDetail(a.id)}
                   onQuickDispatch={() => onQuickDispatch(a.id)}
                   onViewLogs={() => onOpenDetail(a.id, { mode: 'logs' })}
@@ -201,7 +205,7 @@ export function OverviewView({ agents, tasks, loading, addOptimistic, onOpenDeta
                 </span>
                 <div className="flex items-center gap-2 border-l border-white/10 pl-4 ml-4 opacity-0 group-hover:opacity-100 transition-opacity">
                   <button onClick={(e) => e.stopPropagation()} className="p-1.5 text-text-muted hover:text-[#a78bfa] hover:bg-white/5 rounded transition-all" title="Edit Task Config"><Edit2 className="w-3.5 h-3.5" /></button>
-                  <button onClick={(e) => e.stopPropagation()} className="p-1.5 text-text-muted hover:text-aurora-amber hover:bg-white/5 rounded transition-all" title="Force Restart"><RotateCcw className="w-3.5 h-3.5" /></button>
+                  <button onClick={(e) => { e.stopPropagation(); if (run.status === 'error') retryTask(run.id).catch(console.error); }} className={cn("p-1.5 hover:bg-white/5 rounded transition-all", run.status === 'error' ? "text-aurora-amber hover:text-aurora-amber" : "text-text-muted hover:text-aurora-amber")} title="Retry Task"><RotateCcw className="w-3.5 h-3.5" /></button>
                   <button onClick={(e) => e.stopPropagation()} className="p-1.5 text-text-muted hover:text-aurora-rose hover:bg-white/5 rounded transition-all" title="Terminate"><Trash2 className="w-3.5 h-3.5" /></button>
                 </div>
               </div>
