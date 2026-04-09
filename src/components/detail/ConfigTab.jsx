@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Crown, ArrowUpRight, ChevronDown, Plus, Info } from 'lucide-react';
-import { modelRegistry } from '../../utils/mockData';
 import { cn } from '../../utils/cn';
+import { createModelBankEntry, useModelBank } from '../../utils/useSupabase';
 
 function InfoBubble({ text }) {
   const [show, setShow] = useState(false);
@@ -43,6 +43,7 @@ function Toggle({ value, onChange }) {
 }
 
 export function ConfigTab({ agent }) {
+  const { models, refetch: refetchModels } = useModelBank();
   const defaults = {
     model: agent.model,
     temp: agent.temperature ?? 0.7,
@@ -63,6 +64,7 @@ export function ConfigTab({ agent }) {
   const [showModelDropdown, setShowModelDropdown] = useState(false);
   const [customTemp, setCustomTemp] = useState('');
   const [dirty, setDirty] = useState(false);
+  const [newModelLabel, setNewModelLabel] = useState('');
 
   useEffect(() => {
     setModel(agent.model);
@@ -100,12 +102,21 @@ export function ConfigTab({ agent }) {
     { id: 'sequential', label: 'Sequential', desc: 'Run one agent at a time in order, passing results along the chain.' },
     { id: 'persistent', label: 'Persistent', desc: 'Agent stays alive between tasks, maintaining context and state.' },
   ];
-  const allModels = [
-    { group: 'Cloud', items: modelRegistry.cloud },
-    { group: 'Local (Ollama)', items: modelRegistry.local },
-    { group: 'Agents', items: modelRegistry.agents },
-  ];
   const markDirty = () => setDirty(true);
+
+  const handleAddModel = async () => {
+    if (!newModelLabel.trim()) return;
+
+    const saved = await createModelBankEntry({
+      label: newModelLabel,
+      modelKey: newModelLabel,
+    });
+    await refetchModels();
+    setModel(saved.modelKey);
+    setNewModelLabel('');
+    setShowModelDropdown(false);
+    markDirty();
+  };
 
   return (
     <div className="flex h-full flex-col">
@@ -153,33 +164,42 @@ export function ConfigTab({ agent }) {
                   exit={{ opacity: 0, y: -4 }}
                   className="absolute left-0 right-0 top-full z-50 mt-1 max-h-64 overflow-y-auto rounded-lg border border-white/10 bg-surface shadow-2xl no-scrollbar"
                 >
-                  {allModels.map((group) => (
-                    <div key={group.group}>
-                      <div className="bg-canvas/50 px-3 py-1.5 text-[9px] font-bold uppercase tracking-[0.2em] text-text-disabled">
-                        {group.group}
-                      </div>
-                      {group.items.map((m) => (
+                  <div>
+                    <div className="bg-canvas/50 px-3 py-1.5 text-[9px] font-bold uppercase tracking-[0.2em] text-text-disabled">
+                      Your Model Bank
+                    </div>
+                    {models.length > 0 ? models.map((m) => (
                         <button
                           key={m.id}
-                          onClick={() => { setModel(m.id); setShowModelDropdown(false); markDirty(); }}
+                          onClick={() => { setModel(m.modelKey); setShowModelDropdown(false); markDirty(); }}
                           className={cn(
                             'flex w-full items-center justify-between px-3 py-2 text-left transition-colors hover:bg-white/[0.05]',
-                            model === m.id && 'bg-aurora-teal/5'
+                            model === m.modelKey && 'bg-aurora-teal/5'
                           )}
                         >
                           <span className="font-mono text-xs text-text-primary">{m.label}</span>
-                          {m.costPer1k > 0 ? (
-                            <span className="font-mono text-[10px] text-text-disabled">${m.costPer1k}/1k</span>
-                          ) : (
-                            <span className="font-mono text-[10px] text-aurora-green">Free</span>
-                          )}
+                          <span className="font-mono text-[10px] text-text-disabled">{m.provider}</span>
                         </button>
-                      ))}
-                    </div>
-                  ))}
-                  <button className="flex w-full items-center gap-2 border-t border-white/5 px-3 py-2.5 text-xs text-aurora-teal transition-colors hover:bg-white/[0.05]">
-                    <Plus className="h-3.5 w-3.5" /> Add Custom Endpoint
-                  </button>
+                      ))
+                      : <div className="px-3 py-3 text-xs text-text-muted">No saved models yet.</div>}
+                  </div>
+                  <div className="border-t border-white/5 p-3 space-y-2">
+                    <input
+                      type="text"
+                      value={newModelLabel}
+                      onChange={(e) => setNewModelLabel(e.target.value)}
+                      placeholder="Add model to your bank"
+                      className="w-full rounded-lg border border-white/[0.07] bg-white/[0.03] px-3 py-2 text-xs font-mono text-text-primary outline-none focus:border-aurora-teal/40"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleAddModel}
+                      className="flex w-full items-center gap-2 rounded-lg bg-aurora-teal px-3 py-2.5 text-xs font-bold text-black disabled:opacity-50"
+                      disabled={!newModelLabel.trim()}
+                    >
+                      <Plus className="h-3.5 w-3.5" /> Save Model
+                    </button>
+                  </div>
                 </motion.div>
               )}
             </AnimatePresence>

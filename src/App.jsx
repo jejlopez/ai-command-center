@@ -4,7 +4,6 @@ import { NavRail } from './components/NavRail';
 import { CommandPalette } from './components/CommandPalette';
 import { TimeRangePicker } from './components/TimeRangePicker';
 import { DetailPanel } from './components/DetailPanel';
-import { DoctorModePanel } from './components/DoctorModePanel';
 import { NotificationsPanel } from './components/NotificationsPanel';
 import { SettingsPanel } from './components/SettingsPanel';
 import { UserProfilePanel } from './components/UserProfilePanel';
@@ -19,7 +18,7 @@ import { MissionControlV4 } from './mockups/MissionControlV4';
 import { TimeRangeProvider } from './utils/useTimeRange';
 import { useSystemState } from './context/SystemStateContext';
 import { AuthProvider, useAuth } from './context/AuthContext';
-import { useAgents, useTasks, useActivityLog } from './utils/useSupabase';
+import { useAgents, useTasks } from './utils/useSupabase';
 import { Bell, Settings, User, Loader2 } from 'lucide-react';
 import { cn } from './utils/cn';
 
@@ -27,10 +26,9 @@ function Dashboard() {
   const [activeRoute, setActiveRoute] = useState('overview');
   const [cmdOpen, setCmdOpen] = useState(false);
   const [detailState, setDetailState] = useState(null);
-  const { notificationsOpen, setNotificationsOpen, settingsOpen, setSettingsOpen, profileOpen, setProfileOpen, setDoctorModeOpen } = useSystemState();
-  const { agents, loading: loadingAgents, usingMock, addOptimistic } = useAgents();
+  const { notificationsOpen, setNotificationsOpen, settingsOpen, setSettingsOpen, profileOpen, setProfileOpen } = useSystemState();
+  const { agents, loading: loadingAgents, addOptimistic } = useAgents();
   const { tasks, loading: loadingTasks } = useTasks();
-  const { logs, loading: loadingLogs } = useActivityLog();
 
   useEffect(() => {
     const handleKeyDown = (e) => {
@@ -59,7 +57,6 @@ function Dashboard() {
     if (type === 'panel') {
       if (panel === 'notifications') setNotificationsOpen(true);
       if (panel === 'settings') setSettingsOpen(true);
-      if (panel === 'doctor') setDoctorModeOpen(true);
       if (panel === 'profile') setProfileOpen(true);
     }
   }
@@ -67,12 +64,6 @@ function Dashboard() {
   const selectedAgent = detailState?.agentId
     ? agents.find((agent) => agent.id === detailState.agentId) ?? null
     : null;
-  const selectedAgentTasks = selectedAgent
-    ? tasks.filter((task) => task.agentId === selectedAgent.id)
-    : [];
-  const selectedAgentLogs = selectedAgent
-    ? logs.filter((entry) => entry.agentId === selectedAgent.id)
-    : [];
 
   return (
     <div className="flex w-screen h-screen overflow-hidden bg-canvas text-text-primary relative">
@@ -142,9 +133,7 @@ function Dashboard() {
             <OverviewView
               agents={agents}
               tasks={tasks}
-              logData={logs}
-              loading={loadingAgents || loadingTasks || loadingLogs}
-              usingMock={usingMock}
+              loading={loadingAgents || loadingTasks}
               addOptimistic={addOptimistic}
               onOpenDetail={openAgentWorkspace}
               onQuickDispatch={(agentId) => openAgentWorkspace(agentId, { mode: 'dispatch' })}
@@ -163,12 +152,9 @@ function Dashboard() {
       <UserProfilePanel profileOpen={profileOpen} setProfileOpen={setProfileOpen} onAction={handleAction} />
 
       <AnimatePresence>
-        {/* <DoctorModePanel /> */}
         {selectedAgent && (
           <DetailPanel
             agent={selectedAgent}
-            tasks={selectedAgentTasks}
-            logs={selectedAgentLogs}
             initialMode={detailState?.mode}
             onClose={() => setDetailState(null)}
           />

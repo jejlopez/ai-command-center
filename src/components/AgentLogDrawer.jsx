@@ -1,16 +1,14 @@
 import React, { useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Search, Terminal } from 'lucide-react';
-// TODO: Replace with Supabase activity_log query scoped to specific agent
-import { AGENT_LOGS } from '../utils/mockData';
+import { X, Terminal } from 'lucide-react';
+import { useActivityLog, useAgents } from '../utils/useSupabase';
 
 export function AgentLogDrawer({ agentName, onClose }) {
+  const { agents } = useAgents();
+  const agent = agents.find((entry) => entry.name === agentName);
+  const { logs: activityLog } = useActivityLog(agent?.id || null);
   const scrollRef = useRef(null);
-  
-  const logs = AGENT_LOGS[agentName] || [
-    '[SYS] Core initialized...',
-    '[OK] Stream active.',
-  ];
+  const logs = activityLog.map((entry) => `[${entry.type}] ${entry.message}`);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -73,6 +71,9 @@ export function AgentLogDrawer({ agentName, onClose }) {
                   </motion.div>
                 );
               })}
+              {logs.length === 0 && (
+                <div className="text-modern-muted">No logs recorded for this agent yet.</div>
+              )}
               
               <motion.div 
                 animate={{ opacity: [1, 0, 1] }} 

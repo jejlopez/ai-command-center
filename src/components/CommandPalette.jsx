@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import * as Icons from 'lucide-react';
-import { commandItems } from '../utils/mockData'; // commandItems is static nav config — no table needed
+import { baseCommandItems } from '../utils/staticCatalog';
 import { useAgents } from '../utils/useSupabase';
 import { cn } from '../utils/cn';
 
@@ -16,6 +16,16 @@ export function CommandPalette({ isOpen, onClose, onExecute }) {
   const [query, setQuery] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
   const inputRef = useRef(null);
+  const commandItems = [
+    ...baseCommandItems,
+    ...agents.map((agent) => ({
+      id: `agent-${agent.id}`,
+      group: 'Agents',
+      label: `Inspect ${agent.name}`,
+      icon: agent.role === 'commander' ? 'Crown' : agent.status === 'error' ? 'AlertTriangle' : 'Cpu',
+      action: { type: 'agent', agentId: agent.id },
+    })),
+  ];
 
   const filteredItems = query
     ? commandItems.filter(item => item.label.toLowerCase().includes(query.toLowerCase()))

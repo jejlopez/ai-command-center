@@ -1,13 +1,11 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-// TODO: This view is not routed — migrate to useSupabase hooks when activated
-import { tasks, mockSpans } from '../utils/mockData';
 import { cn } from '../utils/cn';
 import { container, item } from '../utils/variants';
 import { TaskDAG } from '../components/TaskDAG';
-import { TraceWaterfall } from '../components/TraceWaterfall';
 import { GitBranch, Activity, Zap, CheckCircle2, Edit2, RotateCcw, Trash2 } from 'lucide-react';
 import { WidgetActions } from '../components/WidgetActions';
+import { useTasks } from '../utils/useSupabase';
 
 const statusStyles = {
   success: 'row-success text-aurora-green border-aurora-green/20',
@@ -19,6 +17,10 @@ const statusStyles = {
 };
 
 export function TasksView({ onOpenDetail }) {
+  const { tasks } = useTasks();
+  const completed = tasks.filter((task) => task.status === 'completed').length;
+  const active = tasks.filter((task) => task.status === 'running').length;
+
   return (
     <div className="flex flex-col h-full overflow-y-auto no-scrollbar pb-12">
       <div className="mb-6 flex justify-between items-end">
@@ -29,11 +31,11 @@ export function TasksView({ onOpenDetail }) {
         <div className="flex gap-4">
           <div className="flex items-center gap-2 px-4 py-2 spatial-panel">
             <CheckCircle2 className="w-4 h-4 text-aurora-green" />
-            <span className="text-sm font-mono text-text-primary">98.4% SNR</span>
+            <span className="text-sm font-mono text-text-primary">{tasks.length ? Math.round((completed / tasks.length) * 100) : 0}% success</span>
           </div>
           <div className="flex items-center gap-2 px-4 py-2 spatial-panel">
             <Zap className="w-4 h-4 text-aurora-amber" />
-            <span className="text-sm font-mono text-text-primary">2,404 ops/sec</span>
+            <span className="text-sm font-mono text-text-primary">{active} active tasks</span>
           </div>
         </div>
       </div>
@@ -49,7 +51,7 @@ export function TasksView({ onOpenDetail }) {
             </h3>
             <div className="absolute inset-0 bg-gradient-to-b from-aurora-blue/5 to-transparent pointer-events-none" />
             <div className="flex-1 w-full h-full relative -mx-4 -mb-4 pt-8">
-              <TaskDAG onNodeClick={onOpenDetail} />
+              <TaskDAG onNodeClick={onOpenDetail} tasks={tasks} />
             </div>
           </div>
 
@@ -124,6 +126,11 @@ export function TasksView({ onOpenDetail }) {
                 </div>
               </motion.div>
             ))}
+            {tasks.length === 0 && (
+              <div className="spatial-panel p-6 text-sm text-text-muted">
+                No tasks have been created for this account yet.
+              </div>
+            )}
           </AnimatePresence>
         </motion.div>
 

@@ -3,10 +3,9 @@
  *
  * Every function returns a Promise so call sites use async/await.
  * Review Room functions (fetchPendingReviews, approveReview, rejectReview)
- * read/write from Supabase when configured, falling back to mockData
- * when VITE_SUPABASE_URL is not set.
+ * read/write from Supabase when configured.
  *
- * All other functions remain mock-backed for now.
+ * Static catalog/config helpers remain local until backed by tables.
  *
  * Convention:
  *   fetch*  → read (GET)
@@ -17,26 +16,13 @@
 
 import { supabase } from './supabaseClient';
 import {
-  agents as mockAgents,
-  tasks as mockTasks,
-  activityLog as mockActivityLog,
-  pendingReviews as mockPendingReviews,
-  completedOutputs as mockCompletedOutputs,
-  costData,
-  healthMetrics,
-  mockSpans,
-  memoryChunks,
-  modelRegistry,
-  skillBank,
   mcpServers,
   knowledgeNamespaces,
   directiveTemplates,
   modelBenchmarks,
   systemRecommendations,
-  commandItems,
-  generateNotifications,
-  approvalAuditTrail,
-} from '../utils/mockData';
+  baseCommandItems,
+} from '../utils/staticCatalog';
 
 // True when real Supabase env vars are set (not the placeholder)
 const isSupabaseConfigured = import.meta.env.VITE_SUPABASE_URL
@@ -128,7 +114,7 @@ function mapLogRow(row) {
 // ── Agents ──────────────────────────────────────────────────────
 
 export async function fetchAgents() {
-  if (!isSupabaseConfigured) return mockAgents;
+  if (!isSupabaseConfigured) return [];
 
   const { data, error } = await supabase
     .from('agents')
@@ -137,13 +123,13 @@ export async function fetchAgents() {
 
   if (error) {
     console.error('[api] fetchAgents:', error.message);
-    return mockAgents; // graceful fallback
+    return [];
   }
   return data.map(mapAgentRow);
 }
 
 export async function fetchAgentById(id) {
-  if (!isSupabaseConfigured) return mockAgents.find(a => a.id === id) ?? null;
+  if (!isSupabaseConfigured) return null;
 
   const { data, error } = await supabase
     .from('agents')
@@ -161,7 +147,7 @@ export async function fetchAgentById(id) {
 // ── Tasks ───────────────────────────────────────────────────────
 
 export async function fetchTasks() {
-  if (!isSupabaseConfigured) return mockTasks;
+  if (!isSupabaseConfigured) return [];
 
   const { data, error } = await supabase
     .from('tasks')
@@ -170,7 +156,7 @@ export async function fetchTasks() {
 
   if (error) {
     console.error('[api] fetchTasks:', error.message);
-    return mockTasks;
+    return [];
   }
   return data.map(mapTaskRow);
 }
@@ -178,10 +164,7 @@ export async function fetchTasks() {
 // ── Activity Log ────────────────────────────────────────────────
 
 export async function fetchActivityLog(agentId = null) {
-  if (!isSupabaseConfigured) {
-    if (agentId) return mockActivityLog.filter(l => l.agentId === agentId);
-    return mockActivityLog;
-  }
+  if (!isSupabaseConfigured) return [];
 
   let query = supabase
     .from('activity_log')
@@ -201,16 +184,63 @@ export async function fetchActivityLog(agentId = null) {
   return data.map(mapLogRow);
 }
 
+// ── Task Actions ────────────────────────────────────────────────
+
+export async function retryTask(taskId) {
+  if (!isSupabaseConfigured) return { success: true };
+
+  const { error } = await supabase
+    .from('tasks')
+    .update({ status: 'pending', duration_ms: 0, cost_usd: 0 })
+    .eq('id', taskId);
+
+  if (error) {
+    console.error('[api] retryTask:', error.message);
+    throw error;
+  }
+  return { success: true, taskId };
+}
+
+// ── Agent Actions ───────────────────────────────────────────────
+
+export async function restartAgent(agentId) {
+  if (!isSupabaseConfigured) return { success: true };
+
+  // Fetch current restart_count to increment
+  const { data: current } = await supabase
+    .from('agents')
+    .select('restart_count')
+    .eq('id', agentId)
+    .single();
+
+  const { error } = await supabase
+    .from('agents')
+    .update({
+      status: 'idle',
+      error_message: null,
+      error_stack: null,
+      last_restart: new Date().toISOString(),
+      restart_count: (current?.restart_count || 0) + 1,
+    })
+    .eq('id', agentId);
+
+  if (error) {
+    console.error('[api] restartAgent:', error.message);
+    throw error;
+  }
+  return { success: true, agentId };
+}
+
 // ── Execution Spans ─────────────────────────────────────────────
 
 export async function fetchSpans() {
-  return mockSpans;
+  return [];
 }
 
 // ── Reviews & Outputs ───────────────────────────────────────────
 
 export async function fetchPendingReviews() {
-  if (!isSupabaseConfigured) return mockPendingReviews;
+  if (!isSupabaseConfigured) return [];
 
   const { data, error } = await supabase
     .from('pending_reviews')
@@ -226,7 +256,7 @@ export async function fetchPendingReviews() {
 }
 
 export async function fetchCompletedOutputs() {
-  if (!isSupabaseConfigured) return mockCompletedOutputs;
+  if (!isSupabaseConfigured) return [];
 
   const { data, error } = await supabase
     .from('pending_reviews')
@@ -245,7 +275,7 @@ export async function fetchCompletedOutputs() {
 }
 
 export async function fetchAuditTrail() {
-  if (!isSupabaseConfigured) return approvalAuditTrail;
+  if (!isSupabaseConfigured) return [];
 
   const { data, error } = await supabase
     .from('approval_audit')
@@ -343,42 +373,72 @@ export async function fetchRevisions() {
 export function subscribeToPendingReviews(onEvent) {
   if (!isSupabaseConfigured) return () => {};
 
-  const channel = supabase
-    .channel('pending_reviews_changes')
-    .on(
-      'postgres_changes',
-      { event: '*', schema: 'public', table: 'pending_reviews' },
-      (payload) => onEvent(payload)
-    )
-    .subscribe();
+  let channel = null;
 
-  return () => { supabase.removeChannel(channel); };
+  supabase.auth.getUser().then(({ data: { user } }) => {
+    if (!user) return;
+
+    channel = supabase
+      .channel(`pending_reviews_changes_${user.id}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'pending_reviews', filter: `user_id=eq.${user.id}` },
+        (payload) => onEvent(payload)
+      )
+      .subscribe();
+  });
+
+  return () => {
+    if (channel) supabase.removeChannel(channel);
+  };
 }
 
 // ── Cost & Health ───────────────────────────────────────────────
 
 export async function fetchCostData() {
-  return costData;
+  return { total: 0, burnRate: 0, models: [] };
 }
 
 export async function fetchHealthMetrics() {
-  return healthMetrics;
+  return [];
 }
 
 // ── Memory ──────────────────────────────────────────────────────
 
 export async function fetchMemoryChunks() {
-  return memoryChunks;
+  return [];
 }
 
 // ── Intelligence / Config ───────────────────────────────────────
 
 export async function fetchModelRegistry() {
-  return modelRegistry;
+  if (!isSupabaseConfigured) return [];
+
+  const { data, error } = await supabase
+    .from('model_bank')
+    .select('*')
+    .order('created_at', { ascending: true });
+
+  if (error) {
+    console.error('[api] fetchModelRegistry:', error.message);
+    return [];
+  }
+  return data;
 }
 
 export async function fetchSkillBank() {
-  return skillBank;
+  if (!isSupabaseConfigured) return [];
+
+  const { data, error } = await supabase
+    .from('skill_bank')
+    .select('*')
+    .order('created_at', { ascending: true });
+
+  if (error) {
+    console.error('[api] fetchSkillBank:', error.message);
+    return [];
+  }
+  return data;
 }
 
 export async function fetchMcpServers() {
@@ -404,9 +464,9 @@ export async function fetchRecommendations() {
 // ── Notifications & Commands ────────────────────────────────────
 
 export async function fetchNotifications() {
-  return generateNotifications();
+  return [];
 }
 
 export async function fetchCommandItems() {
-  return commandItems;
+  return baseCommandItems;
 }

@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-// No mockData fallback — all active parents pass tasks as prop
+// Active parents pass live task data as props.
 
 const statusColors = {
   completed: '#00D9C8',

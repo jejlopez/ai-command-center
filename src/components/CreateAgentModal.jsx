@@ -1,9 +1,7 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Plus, Sparkles } from 'lucide-react';
-import { createAgent } from '../utils/useSupabase';
-// TODO: Replace with Supabase model_registry table when it exists
-import { modelRegistry } from '../utils/mockData';
+import { createAgent, createModelBankEntry, useModelBank } from '../utils/useSupabase';
 import { cn } from '../utils/cn';
 
 // ── Roles (Commander excluded — auto-seeded, one per workspace) ──
@@ -30,22 +28,14 @@ const ROLE_OPTIONS = [
   },
 ];
 
-// ── Flatten model registry into grouped list ────────────────────
-const MODEL_GROUPS = [
-  { group: 'Cloud', items: modelRegistry.cloud },
-  { group: 'Local (Ollama)', items: modelRegistry.local },
-  { group: 'Agents', items: modelRegistry.agents },
-];
-
-const ALL_MODELS = [...modelRegistry.cloud, ...modelRegistry.local, ...modelRegistry.agents];
-
 const COLOR_OPTIONS = ['#00D9C8', '#60a5fa', '#a78bfa', '#fb7185', '#fbbf24', '#34d399', '#f97316', '#ec4899'];
 
 export function CreateAgentModal({ isOpen, onClose, onCreated }) {
+  const { models, refetch: refetchModels } = useModelBank();
   const defaultRole = ROLE_OPTIONS[0];
   const [form, setForm] = useState({
     name: '',
-    model: 'claude-sonnet-4-6',
+    model: '',
     role: defaultRole.id,
     roleDescription: defaultRole.defaultDesc,
     color: '#60a5fa',
@@ -56,6 +46,8 @@ export function CreateAgentModal({ isOpen, onClose, onCreated }) {
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
+  const [newModel, setNewModel] = useState({ label: '', provider: '', costPer1k: '' });
+  const [addingModel, setAddingModel] = useState(false);
 
   const update = (key, value) => setForm(prev => ({ ...prev, [key]: value }));
 
@@ -71,7 +63,7 @@ export function CreateAgentModal({ isOpen, onClose, onCreated }) {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!form.name.trim()) return;
+    if (!form.name.trim() || !form.model.trim()) return;
 
     setSaving(true);
     setError(null);
@@ -85,7 +77,7 @@ export function CreateAgentModal({ isOpen, onClose, onCreated }) {
       onClose();
       // Reset form
       setForm({
-        name: '', model: 'claude-sonnet-4-6', role: defaultRole.id,
+        name: '', model: '', role: defaultRole.id,
         roleDescription: defaultRole.defaultDesc, color: '#60a5fa',
         temperature: 0.7, responseLength: 'medium',
         systemPrompt: '', canSpawn: false,
@@ -94,6 +86,28 @@ export function CreateAgentModal({ isOpen, onClose, onCreated }) {
       setError(err.message || 'Failed to create agent');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleAddModel = async () => {
+    if (!newModel.label.trim()) return;
+    setAddingModel(true);
+    setError(null);
+
+    try {
+      const saved = await createModelBankEntry({
+        label: newModel.label,
+        modelKey: newModel.label,
+        provider: newModel.provider,
+        costPer1k: newModel.costPer1k || 0,
+      });
+      await refetchModels();
+      update('model', saved.modelKey);
+      setNewModel({ label: '', provider: '', costPer1k: '' });
+    } catch (err) {
+      setError(err.message || 'Failed to save model');
+    } finally {
+      setAddingModel(false);
     }
   };
 
@@ -152,33 +166,70 @@ export function CreateAgentModal({ isOpen, onClose, onCreated }) {
               {/* Model Selection — unified from modelRegistry */}
               <div>
                 <label className="text-[10px] uppercase tracking-widest text-text-muted block mb-2">Model</label>
-                {MODEL_GROUPS.map(group => (
-                  <div key={group.group} className="mb-2">
-                    <div className="text-[9px] uppercase tracking-widest text-text-disabled mb-1.5 font-bold">{group.group}</div>
+                {models.length > 0 ? (
+                  <div className="space-y-2">
+                    <div className="text-[9px] uppercase tracking-widest text-text-disabled mb-1.5 font-bold">Your Model Bank</div>
                     <div className="grid grid-cols-2 gap-1.5">
-                      {group.items.map((m) => (
+                      {models.map((m) => (
                         <button
                           key={m.id}
                           type="button"
-                          onClick={() => update('model', m.id)}
+                          onClick={() => update('model', m.modelKey)}
                           className={cn(
                             'flex items-center justify-between gap-2 px-3 py-2 rounded-lg border text-xs font-mono transition-all text-left',
-                            form.model === m.id
+                            form.model === m.modelKey
                               ? 'bg-white/[0.06] border-white/[0.15] shadow-lg'
                               : 'bg-white/[0.015] border-white/[0.04] opacity-60 hover:opacity-100'
                           )}
                         >
                           <span className="truncate text-text-primary">{m.label}</span>
-                          {m.costPer1k > 0 ? (
-                            <span className="text-[9px] text-text-disabled shrink-0">${m.costPer1k}/1k</span>
-                          ) : (
-                            <span className="text-[9px] text-aurora-green shrink-0">Free</span>
-                          )}
+                          <span className="text-[9px] text-text-disabled shrink-0">{m.provider}</span>
                         </button>
                       ))}
                     </div>
                   </div>
-                ))}
+                ) : (
+                  <div className="rounded-xl border border-white/[0.08] bg-white/[0.02] p-4 text-xs text-text-muted">
+                    No models in your bank yet. Add one below to make it available here.
+                  </div>
+                )}
+
+                <div className="mt-3 rounded-xl border border-white/[0.08] bg-white/[0.02] p-3 space-y-2">
+                  <div className="text-[9px] uppercase tracking-widest text-text-disabled font-bold">Add To Model Bank</div>
+                  <input
+                    type="text"
+                    value={newModel.label}
+                    onChange={(e) => setNewModel((prev) => ({ ...prev, label: e.target.value }))}
+                    placeholder="Model ID or name"
+                    className="w-full rounded-lg border border-white/[0.07] bg-white/[0.03] px-3 py-2 text-xs font-mono text-text-primary outline-none focus:border-aurora-teal/40"
+                  />
+                  <div className="grid grid-cols-2 gap-2">
+                    <input
+                      type="text"
+                      value={newModel.provider}
+                      onChange={(e) => setNewModel((prev) => ({ ...prev, provider: e.target.value }))}
+                      placeholder="Provider"
+                      className="w-full rounded-lg border border-white/[0.07] bg-white/[0.03] px-3 py-2 text-xs text-text-primary outline-none focus:border-aurora-teal/40"
+                    />
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.001"
+                      value={newModel.costPer1k}
+                      onChange={(e) => setNewModel((prev) => ({ ...prev, costPer1k: e.target.value }))}
+                      placeholder="Cost / 1k"
+                      className="w-full rounded-lg border border-white/[0.07] bg-white/[0.03] px-3 py-2 text-xs text-text-primary outline-none focus:border-aurora-teal/40"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleAddModel}
+                    disabled={addingModel || !newModel.label.trim()}
+                    className="rounded-lg bg-aurora-teal px-3 py-2 text-[10px] font-bold text-black disabled:opacity-50"
+                  >
+                    {addingModel ? 'Saving…' : 'Save Model'}
+                  </button>
+                </div>
               </div>
 
               {/* Role — with editable description */}
