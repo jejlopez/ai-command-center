@@ -184,6 +184,53 @@ export async function fetchActivityLog(agentId = null) {
   return data.map(mapLogRow);
 }
 
+// ── Task Actions ────────────────────────────────────────────────
+
+export async function retryTask(taskId) {
+  if (!isSupabaseConfigured) return { success: true };
+
+  const { error } = await supabase
+    .from('tasks')
+    .update({ status: 'pending', duration_ms: 0, cost_usd: 0 })
+    .eq('id', taskId);
+
+  if (error) {
+    console.error('[api] retryTask:', error.message);
+    throw error;
+  }
+  return { success: true, taskId };
+}
+
+// ── Agent Actions ───────────────────────────────────────────────
+
+export async function restartAgent(agentId) {
+  if (!isSupabaseConfigured) return { success: true };
+
+  // Fetch current restart_count to increment
+  const { data: current } = await supabase
+    .from('agents')
+    .select('restart_count')
+    .eq('id', agentId)
+    .single();
+
+  const { error } = await supabase
+    .from('agents')
+    .update({
+      status: 'idle',
+      error_message: null,
+      error_stack: null,
+      last_restart: new Date().toISOString(),
+      restart_count: (current?.restart_count || 0) + 1,
+    })
+    .eq('id', agentId);
+
+  if (error) {
+    console.error('[api] restartAgent:', error.message);
+    throw error;
+  }
+  return { success: true, agentId };
+}
+
 // ── Execution Spans ─────────────────────────────────────────────
 
 export async function fetchSpans() {

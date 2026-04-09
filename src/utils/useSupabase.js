@@ -288,6 +288,7 @@ export function useCostData() {
 export function useHealthMetrics() {
   const { user } = useAuth();
   const [data, setData] = useState([]);
+  const [errorsByAgent, setErrorsByAgent] = useState({ counts: {}, messages: {} });
 
   useEffect(() => {
     let cancelled = false;
@@ -295,16 +296,25 @@ export function useHealthMetrics() {
     async function fetchHealthMetrics() {
       if (!user) {
         setData([]);
+        setErrorsByAgent({ counts: {}, messages: {} });
         return;
       }
 
       try {
-        const { data: agentsData, error } = await supabase
-          .from('agents')
-          .select('status, success_rate, latency_ms')
-          .eq('user_id', user.id);
+        const [{ data: agentsData, error: agentsErr }, { data: logsData, error: logsErr }] = await Promise.all([
+          supabase
+            .from('agents')
+            .select('id, status, success_rate, latency_ms')
+            .eq('user_id', user.id),
+          supabase
+            .from('activity_log')
+            .select('agent_id, message')
+            .eq('user_id', user.id)
+            .eq('type', 'ERR'),
+        ]);
 
-        if (error) throw error;
+        if (agentsErr) throw agentsErr;
+        if (logsErr) throw logsErr;
 
         const rows = agentsData || [];
         const totalAgents = rows.length || 1;
@@ -312,7 +322,18 @@ export function useHealthMetrics() {
         const avgSuccess = rows.reduce((sum, row) => sum + Number(row.success_rate || 0), 0) / totalAgents;
         const avgLatency = rows.reduce((sum, row) => sum + Number(row.latency_ms || 0), 0) / totalAgents;
 
+        // Count error logs per agent + capture latest message
+        const errMap = {};
+        const errMsgMap = {};
+        (logsData || []).forEach(log => {
+          if (log.agent_id) {
+            errMap[log.agent_id] = (errMap[log.agent_id] || 0) + 1;
+            errMsgMap[log.agent_id] = log.message; // last one wins (ordered by timestamp)
+          }
+        });
+
         if (!cancelled) {
+          setErrorsByAgent({ counts: errMap, messages: errMsgMap });
           setData([
             { label: 'Availability', value: Math.round((healthyAgents / totalAgents) * 100), color: '#00D9C8', history24h: [] },
             { label: 'Success', value: Math.round(avgSuccess || 0), color: '#60a5fa', history24h: [] },
@@ -321,7 +342,7 @@ export function useHealthMetrics() {
         }
       } catch (error) {
         console.error('[useHealthMetrics] Fetch error:', error);
-        if (!cancelled) setData([]);
+        if (!cancelled) { setData([]); setErrorsByAgent({ counts: {}, messages: {} }); }
       }
     }
 
@@ -331,7 +352,7 @@ export function useHealthMetrics() {
     };
   }, [user]);
 
-  return { data };
+  return { data, errorsByAgent };
 }
 
 export function useModelBank() {
