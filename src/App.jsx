@@ -15,6 +15,7 @@ import { ReviewRoomView } from './views/ReviewRoomView';
 import { ReportsView } from './views/ReportsView';
 import { IntelligenceView } from './views/IntelligenceView';
 import { LoginView } from './views/LoginView';
+import { MissionControlV4 } from './mockups/MissionControlV4';
 import { TimeRangeProvider } from './utils/useTimeRange';
 import { useSystemState } from './context/SystemStateContext';
 import { AuthProvider, useAuth } from './context/AuthContext';
@@ -149,7 +150,7 @@ function Dashboard() {
               onQuickDispatch={(agentId) => openAgentWorkspace(agentId, { mode: 'dispatch' })}
             />
           )}
-          {activeRoute === 'review' && <ReviewRoomView />}
+          {activeRoute === 'missions' && <MissionControlV4 />}
           {activeRoute === 'reports' && <ReportsView />}
           {activeRoute === 'intelligence' && <IntelligenceView />}
         </div>
