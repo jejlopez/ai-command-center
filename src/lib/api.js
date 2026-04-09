@@ -90,13 +90,38 @@ function mapAgentRow(row) {
 function mapTaskRow(row) {
   return {
     id:         row.id,
-    name:       row.name,
+    name:       row.name || row.title,
+    title:      row.title || row.name,
+    description: row.description || row.prompt_text || '',
     status:     row.status,
     parentId:   row.parent_id,
     agentId:    row.agent_id,
     agentName:  row.agent_name,
+    mode:       row.mode || 'balanced',
+    lane:       row.lane || 'active',
+    priority:   row.priority ?? 5,
+    scheduleType: row.schedule_type || 'once',
+    runAt:      row.run_at,
+    recurrenceRule: row.recurrence_rule,
+    outputType: row.output_type || 'summary',
+    outputSpec: row.output_spec || '',
+    targetType: row.target_type || 'internal',
+    targetIdentifier: row.target_identifier || '',
+    createdByCommanderId: row.created_by_commander_id,
+    lastRunAt:  row.last_run_at,
+    nextRunAt:  row.next_run_at,
+    estimatedCostCents: row.estimated_cost_cents,
+    actualCostCents: row.actual_cost_cents,
+    progressPercent: row.progress_percent ?? 0,
+    requiresApproval: !!row.requires_approval,
+    startedAt:  row.started_at,
+    cancelledAt: row.cancelled_at,
+    failedAt:   row.failed_at,
+    createdAt:  row.created_at,
+    updatedAt:  row.updated_at,
     durationMs: row.duration_ms || 0,
     costUsd:    parseFloat(row.cost_usd) || 0,
+    resultText: row.result_text || '',
   };
 }
 
@@ -163,6 +188,230 @@ export async function fetchTasks() {
   return data.map(mapTaskRow);
 }
 
+function deriveMissionTitle(intent) {
+  const normalized = String(intent || '').replace(/\s+/g, ' ').trim();
+  if (!normalized) return 'Untitled Mission';
+  if (normalized.length <= 60) return normalized;
+  return `${normalized.slice(0, 57).trimEnd()}...`;
+}
+
+function inferLane(priority, requiresApproval = false, status = 'queued') {
+  if (status === 'needs_approval' || requiresApproval) return 'approvals';
+  if (status === 'done' || status === 'completed') return 'completed';
+  if (['failed', 'error', 'blocked', 'cancelled'].includes(status)) return 'blocked';
+  if (priority >= 8) return 'critical';
+  return 'active';
+}
+
+function buildRecurrenceRule(repeat) {
+  if (!repeat) return null;
+  return {
+    frequency: repeat.frequency,
+    time: repeat.time,
+    endDate: repeat.endDate || null,
+  };
+}
+
+function estimateMissionPlan(payload) {
+  const lower = payload.intent.toLowerCase();
+  const steps = [];
+
+  if (/(research|prospect|find|analyze)/.test(lower)) {
+    steps.push({ title: 'Gather targets', description: 'Search the requested sources and assemble the candidate set for review.' });
+  }
+  if (/(email|draft|outreach)/.test(lower)) {
+    steps.push({ title: 'Draft outreach', description: 'Generate outbound messaging tailored to the selected contacts or accounts.' });
+  }
+  if (/(summary|summarize|notes|call|crm|pipedrive)/.test(lower)) {
+    steps.push({ title: 'Summarize activity', description: 'Condense the raw inputs into clean notes, actions, and structured takeaways.' });
+  }
+  if (/(tracking|shipment|delay|ops|alert)/.test(lower)) {
+    steps.push({ title: 'Check live operations', description: 'Pull current shipment or operations status and identify exceptions that need action.' });
+  }
+  if (!steps.length) {
+    steps.push({ title: 'Parse mission intent', description: 'Break the request into an executable workflow with the selected agent.' });
+    steps.push({ title: 'Execute workflow', description: 'Run the mission against the chosen systems and gather the requested output.' });
+  }
+
+  const complexity = Math.min(4, Math.max(1, Math.ceil(payload.intent.length / 80) + (payload.when === 'repeat' ? 1 : 0)));
+  const durationBase = payload.mode === 'fast' ? 4 : payload.mode === 'efficient' ? 8 : 6;
+  const duration = `${durationBase * complexity}-${durationBase * complexity + 6} min`;
+  const centsBase = payload.mode === 'fast' ? 45 : payload.mode === 'efficient' ? 16 : 28;
+  const costRange = `$${(centsBase * complexity / 100).toFixed(2)}-$${((centsBase * complexity + 35) / 100).toFixed(2)}`;
+
+  return {
+    steps,
+    estimatedDuration: duration,
+    estimatedCostRange: costRange,
+    estimatedCostCents: centsBase * complexity,
+  };
+}
+
+export async function previewMissionPlan(payload) {
+  if (!isSupabaseConfigured) return estimateMissionPlan(payload);
+
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    const res = await fetch(
+      `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/preview-mission-plan`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session?.access_token ?? import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+        },
+        body: JSON.stringify({
+          intent: payload.intent,
+          mode: payload.mode,
+          outputType: payload.outputType,
+          targetType: payload.targetType,
+        }),
+      }
+    );
+
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status}`);
+    }
+
+    const data = await res.json();
+    return {
+      steps: Array.isArray(data.steps) ? data.steps : estimateMissionPlan(payload).steps,
+      estimatedDuration: data.estimatedDuration || estimateMissionPlan(payload).estimatedDuration,
+      estimatedCostRange: data.estimatedCostRange || estimateMissionPlan(payload).estimatedCostRange,
+      estimatedCostCents: data.estimatedCostCents ?? estimateMissionPlan(payload).estimatedCostCents,
+      source: data.source || 'planner_endpoint',
+    };
+  } catch {
+    return estimateMissionPlan(payload);
+  }
+}
+
+export async function createMission(payload, agents = []) {
+  if (!isSupabaseConfigured) {
+    return {
+      success: true,
+      mission: {
+        id: crypto.randomUUID(),
+        title: deriveMissionTitle(payload.intent),
+        name: deriveMissionTitle(payload.intent),
+        description: payload.intent,
+        agentId: payload.agentId,
+        agentName: payload.agentName || '',
+        status: 'queued',
+        lane: inferLane(payload.priorityScore || 5, false, 'queued'),
+        mode: payload.mode,
+        progressPercent: 0,
+        createdAt: new Date().toISOString(),
+      },
+    };
+  }
+
+  const user = (await supabase.auth.getUser()).data?.user;
+  if (!user) throw new Error('Not authenticated');
+
+  const title = deriveMissionTitle(payload.intent);
+  const selectedAgent = agents.find(agent => agent.id === payload.agentId);
+  const commander = agents.find(agent => agent.role === 'commander') || selectedAgent || agents[0] || null;
+  const estimated = estimateMissionPlan(payload);
+  const priorityScore = payload.priorityScore ?? 5;
+  const scheduleType = payload.repeat ? 'recurring' : 'once';
+  const runAt = payload.when === 'now' ? new Date().toISOString() : payload.runAt || null;
+  const recurrenceRule = buildRecurrenceRule(payload.repeat);
+  const lane = inferLane(priorityScore, false, 'queued');
+  const missionId = crypto.randomUUID();
+
+  const row = {
+    id: missionId,
+    user_id: user.id,
+    title,
+    name: title,
+    description: payload.intent,
+    status: 'queued',
+    lane,
+    priority: priorityScore,
+    schedule_type: scheduleType,
+    run_at: runAt,
+    recurrence_rule: recurrenceRule,
+    agent_id: payload.agentId,
+    agent_name: payload.agentName || selectedAgent?.name || 'Unknown',
+    mode: payload.mode,
+    output_type: payload.outputType,
+    output_spec: payload.outputSpec || null,
+    target_type: payload.targetType,
+    target_identifier: payload.targetIdentifier || null,
+    created_by_commander_id: commander?.id || null,
+    estimated_cost_cents: estimated.estimatedCostCents,
+    actual_cost_cents: 0,
+    progress_percent: 0,
+    duration_ms: 0,
+    cost_usd: 0,
+  };
+
+  const { error } = await supabase.from('tasks').insert(row);
+  if (error) {
+    const legacyFallbackCodes = ['42703', '23502'];
+    const missingColumn = /column .* does not exist/i.test(error.message || '');
+    if (!legacyFallbackCodes.includes(error.code || '') && !missingColumn) {
+      console.error('[api] createMission:', error.message);
+      throw error;
+    }
+
+    const legacyRow = {
+      id: missionId,
+      user_id: user.id,
+      name: title,
+      status: 'pending',
+      agent_id: payload.agentId,
+      agent_name: payload.agentName || selectedAgent?.name || 'Unknown',
+      duration_ms: 0,
+      cost_usd: 0,
+      prompt_text: payload.intent,
+    };
+
+    const { error: legacyError } = await supabase.from('tasks').insert(legacyRow);
+    if (legacyError) {
+      console.error('[api] createMission legacy fallback:', legacyError.message);
+      throw legacyError;
+    }
+
+    return {
+      success: true,
+      mission: mapTaskRow({
+        ...legacyRow,
+        title,
+        description: payload.intent,
+        mode: payload.mode,
+        lane,
+        priority: priorityScore,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      }),
+    };
+  }
+
+  const activityMessage = scheduleType === 'recurring'
+    ? `Mission queued: ${title} • recurring ${payload.repeat.frequency} at ${payload.repeat.time}`
+    : `Mission queued: ${title}`;
+
+  const { error: activityError } = await supabase.from('activity_log').insert({
+    user_id: user.id,
+    type: 'SYS',
+    message: activityMessage,
+    agent_id: payload.agentId || null,
+    duration_ms: 0,
+    tokens: 0,
+  });
+
+  if (activityError) {
+    console.error('[api] createMission activity_log:', activityError.message);
+  }
+
+  return {
+    success: true,
+    mission: mapTaskRow({ ...row, created_at: new Date().toISOString(), updated_at: new Date().toISOString() }),
+  };
+}
+
 // ── Activity Log ────────────────────────────────────────────────
 
 export async function fetchActivityLog(agentId = null) {
@@ -193,7 +442,16 @@ export async function retryTask(taskId) {
 
   const { error } = await supabase
     .from('tasks')
-    .update({ status: 'pending', duration_ms: 0, cost_usd: 0 })
+    .update({
+      status: 'queued',
+      lane: 'active',
+      duration_ms: 0,
+      cost_usd: 0,
+      actual_cost_cents: 0,
+      progress_percent: 0,
+      failed_at: null,
+      cancelled_at: null,
+    })
     .eq('id', taskId);
 
   if (error) {
@@ -208,13 +466,90 @@ export async function stopTask(taskId) {
 
   const { error } = await supabase
     .from('tasks')
-    .update({ status: 'error' })
+    .update({ status: 'failed', lane: 'blocked', failed_at: new Date().toISOString() })
     .eq('id', taskId);
 
   if (error) {
     console.error('[api] stopTask:', error.message);
     throw error;
   }
+  return { success: true, taskId };
+}
+
+export async function approveMissionTask(taskId) {
+  if (!isSupabaseConfigured) return { success: true, taskId };
+
+  const user = (await supabase.auth.getUser()).data?.user;
+  if (!user) throw new Error('Not authenticated');
+
+  const { data: task, error: fetchError } = await supabase
+    .from('tasks')
+    .select('id, agent_id, title, priority')
+    .eq('id', taskId)
+    .single();
+
+  if (fetchError) throw fetchError;
+
+  const { error } = await supabase
+    .from('tasks')
+    .update({
+      status: 'queued',
+      lane: inferLane(task.priority ?? 5, false, 'queued'),
+      requires_approval: false,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', taskId);
+
+  if (error) throw error;
+
+  await supabase.from('activity_log').insert({
+    user_id: user.id,
+    type: 'OK',
+    message: `Mission approved: ${task.title || task.id}`,
+    agent_id: task.agent_id,
+    tokens: 0,
+    duration_ms: 0,
+  });
+
+  return { success: true, taskId };
+}
+
+export async function cancelMissionTask(taskId) {
+  if (!isSupabaseConfigured) return { success: true, taskId };
+
+  const user = (await supabase.auth.getUser()).data?.user;
+  if (!user) throw new Error('Not authenticated');
+
+  const { data: task, error: fetchError } = await supabase
+    .from('tasks')
+    .select('id, agent_id, title')
+    .eq('id', taskId)
+    .single();
+
+  if (fetchError) throw fetchError;
+
+  const { error } = await supabase
+    .from('tasks')
+    .update({
+      status: 'cancelled',
+      lane: 'blocked',
+      cancelled_at: new Date().toISOString(),
+      requires_approval: false,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', taskId);
+
+  if (error) throw error;
+
+  await supabase.from('activity_log').insert({
+    user_id: user.id,
+    type: 'ERR',
+    message: `Mission cancelled: ${task.title || task.id}`,
+    agent_id: task.agent_id,
+    tokens: 0,
+    duration_ms: 0,
+  });
+
   return { success: true, taskId };
 }
 
@@ -551,6 +886,29 @@ export function subscribeToPendingReviews(onEvent) {
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'pending_reviews', filter: `user_id=eq.${user.id}` },
+        (payload) => onEvent(payload)
+      )
+      .subscribe();
+  });
+
+  return () => {
+    if (channel) supabase.removeChannel(channel);
+  };
+}
+
+export function subscribeToTasks(onEvent) {
+  if (!isSupabaseConfigured) return () => {};
+
+  let channel = null;
+
+  supabase.auth.getUser().then(({ data: { user } }) => {
+    if (!user) return;
+
+    channel = supabase
+      .channel(`tasks_changes_${user.id}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'tasks', filter: `user_id=eq.${user.id}` },
         (payload) => onEvent(payload)
       )
       .subscribe();

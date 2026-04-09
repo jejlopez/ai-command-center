@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, lazy, Suspense } from 'react';
 import { AnimatePresence } from 'framer-motion';
 import { NavRail } from './components/NavRail';
 import { CommandPalette } from './components/CommandPalette';
@@ -8,13 +8,12 @@ import { NotificationsPanel } from './components/NotificationsPanel';
 import { SettingsPanel } from './components/SettingsPanel';
 import { UserProfilePanel } from './components/UserProfilePanel';
 import { AppErrorBoundary } from './components/AppErrorBoundary';
-import { OverviewView } from './views/OverviewView';
-// FleetOperationsView merged into OverviewView
-import { ReviewRoomView } from './views/ReviewRoomView';
-import { ReportsView } from './views/ReportsView';
-import { IntelligenceView } from './views/IntelligenceView';
+const OverviewView = lazy(() => import('./views/OverviewView').then(mod => ({ default: mod.OverviewView })));
+const ReviewRoomView = lazy(() => import('./views/ReviewRoomView').then(mod => ({ default: mod.ReviewRoomView })));
+const ReportsView = lazy(() => import('./views/ReportsView').then(mod => ({ default: mod.ReportsView })));
+const IntelligenceView = lazy(() => import('./views/IntelligenceView').then(mod => ({ default: mod.IntelligenceView })));
 import { LoginView } from './views/LoginView';
-import { MissionControlView } from './views/MissionControlView';
+const MissionControlView = lazy(() => import('./views/MissionControlView').then(mod => ({ default: mod.MissionControlView })));
 import { TimeRangeProvider } from './utils/useTimeRange';
 import { useSystemState } from './context/SystemStateContext';
 import { AuthProvider, useAuth } from './context/AuthContext';
@@ -129,19 +128,22 @@ function Dashboard() {
 
         {/* Content Area */}
         <div className="flex-1 overflow-y-auto px-8 relative no-scrollbar pb-8">
-          {activeRoute === 'overview' && (
-            <OverviewView
-              agents={agents}
-              tasks={tasks}
-              loading={loadingAgents || loadingTasks}
-              addOptimistic={addOptimistic}
-              onOpenDetail={openAgentWorkspace}
-              onQuickDispatch={(agentId) => openAgentWorkspace(agentId, { mode: 'dispatch' })}
-            />
-          )}
-          {activeRoute === 'missions' && <MissionControlView />}
-          {activeRoute === 'reports' && <ReportsView />}
-          {activeRoute === 'intelligence' && <IntelligenceView />}
+          <Suspense fallback={<div className="flex items-center justify-center h-64"><Loader2 className="w-5 h-5 text-aurora-teal animate-spin" /></div>}>
+            {activeRoute === 'overview' && (
+              <OverviewView
+                agents={agents}
+                tasks={tasks}
+                loading={loadingAgents || loadingTasks}
+                addOptimistic={addOptimistic}
+                onOpenDetail={openAgentWorkspace}
+                onQuickDispatch={(agentId) => openAgentWorkspace(agentId, { mode: 'dispatch' })}
+              />
+            )}
+            {activeRoute === 'missions' && <MissionControlView />}
+            {activeRoute === 'reports' && <ReportsView />}
+            {activeRoute === 'intelligence' && <IntelligenceView />}
+            {activeRoute === 'review' && <ReviewRoomView />}
+          </Suspense>
         </div>
       </main>
 
