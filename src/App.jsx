@@ -21,6 +21,36 @@ import { Bell, Settings, User, Loader2, Search } from 'lucide-react';
 import { cn } from './utils/cn';
 import { ProjectSwitcher } from './components/ProjectSwitcher';
 
+function TacticalTopbarButton({ active, onClick, children, tone = 'teal', pulse = false, ariaLabel }) {
+  const toneMap = {
+    teal: active ? 'border-aurora-teal/35 text-aurora-teal bg-aurora-teal/10' : 'text-text-muted hover:text-text-primary hover:border-aurora-teal/20',
+    amber: active ? 'border-aurora-amber/35 text-aurora-amber bg-aurora-amber/10' : 'text-text-muted hover:text-text-primary hover:border-aurora-amber/20',
+  };
+
+  return (
+    <button
+      onClick={onClick}
+      aria-label={ariaLabel}
+      className={cn(
+        'group relative flex h-11 w-11 items-center justify-center overflow-hidden rounded-2xl border border-white/[0.06] bg-white/[0.03] transition-all duration-200 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]',
+        toneMap[tone] || toneMap.teal
+      )}
+    >
+      <span className="pointer-events-none absolute inset-0 opacity-[0.06] [background-image:repeating-linear-gradient(180deg,rgba(255,255,255,0.18)_0px,rgba(255,255,255,0.18)_1px,transparent_1px,transparent_12px)]" />
+      <span className={cn('pointer-events-none absolute inset-0 rounded-2xl border', active ? 'border-current/20' : 'border-transparent')} />
+      <span className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(255,255,255,0.08),transparent_38%)]" />
+      <span className="pointer-events-none absolute inset-0 opacity-0 transition-opacity duration-300 group-hover:opacity-100 bg-[linear-gradient(90deg,transparent,rgba(255,255,255,0.08),transparent)]" />
+      {pulse && (
+        <>
+          <span className="absolute right-1.5 top-1.5 h-2.5 w-2.5 rounded-full bg-aurora-rose ring-2 ring-canvas" />
+          <span className="absolute right-1.5 top-1.5 h-2.5 w-2.5 animate-ping rounded-full bg-aurora-rose/80" />
+        </>
+      )}
+      {children}
+    </button>
+  );
+}
+
 function Dashboard() {
   const [activeRoute, setActiveRoute] = useState('overview');
   const [cmdOpen, setCmdOpen] = useState(false);
@@ -75,10 +105,17 @@ function Dashboard() {
 
   return (
     <div className="flex w-screen h-screen overflow-hidden bg-canvas text-text-primary relative">
+      <div className="pointer-events-none absolute inset-0 overflow-hidden">
+        <div className="absolute left-[-12%] top-[-8%] h-[380px] w-[380px] rounded-full bg-aurora-teal/10 blur-[140px]" />
+        <div className="absolute right-[-12%] top-[12%] h-[420px] w-[420px] rounded-full bg-aurora-violet/10 blur-[160px]" />
+        <div className="absolute bottom-[-18%] left-[28%] h-[460px] w-[460px] rounded-full bg-aurora-blue/10 blur-[180px]" />
+      </div>
       <main className="flex-1 flex flex-col relative">
         {/* Topbar */}
         <header className="px-8 py-4 shrink-0 z-10 w-full relative">
-          <div className="flex items-center gap-4">
+          <div className="relative flex items-center gap-4 rounded-[28px] border border-white/[0.06] bg-[linear-gradient(180deg,rgba(255,255,255,0.035),rgba(255,255,255,0.015))] px-4 py-3 shadow-[0_24px_80px_rgba(0,0,0,0.24)] backdrop-blur-sm before:pointer-events-none before:absolute before:inset-x-10 before:top-0 before:h-px before:bg-gradient-to-r before:from-transparent before:via-white/20 before:to-transparent">
+            <div className="pointer-events-none absolute inset-0 rounded-[28px] opacity-[0.06] [background-image:repeating-linear-gradient(180deg,rgba(255,255,255,0.18)_0px,rgba(255,255,255,0.18)_1px,transparent_1px,transparent_12px)]" />
+            <div className="pointer-events-none absolute inset-0 rounded-[28px] bg-[radial-gradient(circle_at_12%_0%,rgba(45,212,191,0.08),transparent_24%),radial-gradient(circle_at_88%_0%,rgba(167,139,250,0.08),transparent_22%)]" />
             <div className="shrink-0 min-w-0">
               <ProjectSwitcher compact />
             </div>
@@ -90,7 +127,7 @@ function Dashboard() {
             <div className="flex items-center justify-end gap-1.5 shrink-0">
               <button
                 onClick={() => setCmdOpen(true)}
-                className="flex items-center justify-center w-9 h-9 rounded-xl border border-white/[0.06] bg-white/[0.03] hover:bg-white/[0.055] transition-colors text-text-muted"
+                className="flex items-center justify-center w-10 h-10 rounded-2xl border border-white/[0.06] bg-white/[0.03] hover:bg-white/[0.055] transition-colors text-text-muted shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
                 aria-label="Open search"
               >
                 <Search className="w-3.5 h-3.5" />
@@ -99,38 +136,47 @@ function Dashboard() {
               <div className="w-px h-5 bg-border mx-1" />
 
               {/* Notifications */}
-              <button
+              <TacticalTopbarButton
                 onClick={() => setNotificationsOpen(!notificationsOpen)}
-                className={cn(
-                  "p-2 rounded-xl transition-all duration-200 relative",
-                  notificationsOpen ? "bg-aurora-teal/20 text-aurora-teal" : "text-text-muted hover:text-text-primary hover:bg-white/[0.05]"
-                )}
+                active={notificationsOpen}
+                tone="amber"
+                pulse={reviews.length > 0}
+                ariaLabel="Open command alerts"
               >
-                <Bell className="w-4.5 h-4.5" />
-                <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-aurora-rose rounded-full ring-2 ring-canvas" />
-              </button>
+                <span className="pointer-events-none absolute inset-0 rounded-2xl">
+                  <span className="absolute left-1/2 top-1/2 h-7 w-7 -translate-x-1/2 -translate-y-1/2 rounded-full border border-aurora-amber/20" />
+                  <span className="absolute left-1/2 top-1/2 h-9 w-9 -translate-x-1/2 -translate-y-1/2 rounded-full border border-aurora-amber/10" />
+                </span>
+                <Bell className="relative z-10 h-4.5 w-4.5" />
+              </TacticalTopbarButton>
 
               {/* Settings */}
-              <button
+              <TacticalTopbarButton
                 onClick={() => setSettingsOpen(!settingsOpen)}
-                className={cn(
-                  "p-2 rounded-xl transition-all duration-200",
-                  settingsOpen ? "bg-aurora-teal/20 text-aurora-teal" : "text-text-muted hover:text-text-primary hover:bg-white/[0.05]"
-                )}
+                active={settingsOpen}
+                tone="teal"
+                ariaLabel="Open systems control"
               >
-                <Settings className="w-4.5 h-4.5" />
-              </button>
+                <span className="pointer-events-none absolute inset-0 rounded-2xl">
+                  <span className="absolute left-1/2 top-1/2 h-7 w-7 -translate-x-1/2 -translate-y-1/2 rounded-full border border-aurora-teal/20" />
+                  <span className="absolute left-1/2 top-1/2 h-9 w-9 -translate-x-1/2 -translate-y-1/2 rounded-full border border-aurora-teal/10" />
+                </span>
+                <Settings className="relative z-10 h-4.5 w-4.5" />
+              </TacticalTopbarButton>
 
               {/* User Avatar */}
-              <button
+              <TacticalTopbarButton
                 onClick={() => setProfileOpen(!profileOpen)}
-                className={cn(
-                  "w-9 h-9 rounded-xl border flex items-center justify-center transition-colors",
-                  profileOpen ? "bg-aurora-teal/20 border-aurora-teal/50" : "bg-surface-raised border-border hover:border-aurora-teal/50"
-                )}
+                active={profileOpen}
+                tone="teal"
+                ariaLabel="Open commander identity"
               >
+                <span className="pointer-events-none absolute inset-0 rounded-2xl">
+                  <span className="absolute left-1/2 top-1/2 h-7 w-7 -translate-x-1/2 -translate-y-1/2 rounded-full border border-aurora-teal/20" />
+                  <span className="absolute left-1/2 top-1/2 h-9 w-9 -translate-x-1/2 -translate-y-1/2 rounded-full border border-aurora-blue/10" />
+                </span>
                 <User className="w-4 h-4 text-aurora-teal" />
-              </button>
+              </TacticalTopbarButton>
             </div>
           </div>
         </header>

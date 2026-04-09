@@ -1,6 +1,6 @@
 import React from 'react';
 import { LayoutGrid, BrainCircuit, FileText, Target } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion as Motion, AnimatePresence } from 'framer-motion';
 import { cn } from '../utils/cn';
 import { useSystemState } from '../context/SystemStateContext';
 
@@ -16,7 +16,14 @@ export function NavRail({ activeId, onNavigate }) {
 
   return (
     <nav className="flex items-center justify-center min-w-0">
-      <div className="flex items-center gap-1 px-1.5 py-1.5 rounded-[1.35rem] border border-white/[0.05] bg-white/[0.018] shadow-[inset_0_1px_0_rgba(255,255,255,0.02)] min-w-0 overflow-x-auto no-scrollbar">
+      <div className="relative flex items-center gap-1 px-1.5 py-1.5 rounded-[1.35rem] border border-white/[0.06] bg-[linear-gradient(180deg,rgba(255,255,255,0.04),rgba(255,255,255,0.015))] shadow-[inset_0_1px_0_rgba(255,255,255,0.05),0_20px_60px_rgba(0,0,0,0.25)] min-w-0 overflow-x-auto no-scrollbar before:pointer-events-none before:absolute before:inset-x-6 before:top-0 before:h-px before:bg-gradient-to-r before:from-transparent before:via-white/20 before:to-transparent">
+        <div className="pointer-events-none absolute inset-0 rounded-[1.35rem] bg-[radial-gradient(circle_at_50%_0%,rgba(45,212,191,0.08),transparent_35%)]" />
+        <Motion.div
+          initial={{ opacity: 0.15, x: '-30%' }}
+          animate={{ opacity: 0.28, x: '130%' }}
+          transition={{ duration: 5.5, repeat: Infinity, ease: 'linear' }}
+          className="pointer-events-none absolute top-0 h-full w-16 bg-[linear-gradient(90deg,transparent,rgba(255,255,255,0.08),transparent)] blur-lg"
+        />
         {items.map((item) => {
           const showBadge = item.id === 'missions' && pendingCount > 0;
           const isActive = activeId === item.id;
@@ -30,9 +37,9 @@ export function NavRail({ activeId, onNavigate }) {
               )}
             >
               {isActive && (
-                <motion.div
+                <Motion.div
                   layoutId="nav-indicator"
-                  className="absolute inset-0 rounded-[0.95rem] bg-white/[0.05] ring-1 ring-white/[0.07]"
+                  className="absolute inset-0 rounded-[0.95rem] bg-[linear-gradient(180deg,rgba(255,255,255,0.08),rgba(255,255,255,0.03))] ring-1 ring-aurora-teal/18 shadow-[0_0_24px_rgba(45,212,191,0.08)]"
                   initial={false}
                   transition={{ type: 'spring', stiffness: 300, damping: 30 }}
                 />
@@ -45,16 +52,16 @@ export function NavRail({ activeId, onNavigate }) {
 
               <AnimatePresence>
                 {showBadge && (
-                  <motion.span
+                  <Motion.span
                     key={`${item.id}-badge`}
                     initial={{ scale: 0.85, opacity: 0 }}
                     animate={{ scale: 1, opacity: 1 }}
                     exit={{ scale: 0.85, opacity: 0 }}
                     transition={{ type: 'spring', stiffness: 400, damping: 22 }}
-                    className="relative z-10 min-w-[18px] h-[18px] px-1 flex items-center justify-center rounded-full bg-aurora-amber text-black text-[10px] font-mono font-bold leading-none"
+                    className="relative z-10 min-w-[18px] h-[18px] px-1 flex items-center justify-center rounded-full bg-aurora-amber text-black text-[10px] font-mono font-bold leading-none shadow-[0_0_16px_rgba(251,191,36,0.28)]"
                   >
                     {pendingCount > 9 ? '9+' : pendingCount}
-                  </motion.span>
+                  </Motion.span>
                 )}
               </AnimatePresence>
             </button>

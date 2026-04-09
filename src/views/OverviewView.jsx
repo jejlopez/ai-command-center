@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { motion } from 'framer-motion';
+import { motion as Motion } from 'framer-motion';
 import { container, item } from '../utils/variants';
 import { useActivityLog, useCostData, usePendingReviews, useSchedules } from '../utils/useSupabase';
 import { CreateAgentModal } from '../components/CreateAgentModal';
@@ -10,6 +10,10 @@ import { LiveOpsTable } from '../components/overview/LiveOpsTable';
 import { FleetHealthPanel } from '../components/overview/FleetHealthPanel';
 import { CostControlPanel } from '../components/overview/CostControlPanel';
 import { SchedulesBottlenecksPanel } from '../components/overview/SchedulesBottlenecksPanel';
+import { useLearningMemory } from '../utils/useLearningMemory';
+import { DoctrineCards } from '../components/command/DoctrineCards';
+import { CommandSectionHeader } from '../components/command/CommandSectionHeader';
+import { BrainCircuit } from 'lucide-react';
 
 function formatWaitLabel(ms) {
   if (!ms || ms <= 0) return 'None';
@@ -27,6 +31,7 @@ export function OverviewView({ agents, tasks, loading, addOptimistic, onOpenDeta
   const { schedules, loading: loadingSchedules } = useSchedules();
   const { data: costData } = useCostData();
   const [createModalOpen, setCreateModalOpen] = useState(false);
+  const [referenceNow] = useState(() => new Date().getTime());
 
   const activeAgents = agents.filter(a => a.status === 'processing').length;
   const idleAgents = agents.filter(a => a.status === 'idle').length;
@@ -36,11 +41,11 @@ export function OverviewView({ agents, tasks, loading, addOptimistic, onOpenDeta
   const pendingTasks = tasks.filter((task) => task.status === 'pending');
   const errorLogs = logs.filter((log) => log.type === 'ERR');
 
-  const stalledAgents = agents.filter((agent) => {
+  const stalledAgents = useMemo(() => agents.filter((agent) => {
     if (!agent.lastHeartbeat) return false;
-    const heartbeatAge = Date.now() - new Date(agent.lastHeartbeat).getTime();
+    const heartbeatAge = referenceNow - new Date(agent.lastHeartbeat).getTime();
     return heartbeatAge > 10 * 60 * 1000 && agent.status !== 'idle';
-  });
+  }), [agents, referenceNow]);
 
   const flaggedAgents = useMemo(() => {
     return agents
@@ -93,8 +98,10 @@ export function OverviewView({ agents, tasks, loading, addOptimistic, onOpenDeta
   const longestApprovalWaitMs = approvalWaitTimes.length ? Math.max(...approvalWaitTimes) : 0;
 
   const questionCount = reviews.filter((review) => ['message', 'question'].includes(review.outputType)).length;
-  const now = Date.now();
-  const lateSchedules = schedules.filter((job) => job.status === 'active' && job.nextRunAt && new Date(job.nextRunAt).getTime() < now).length;
+  const lateSchedules = useMemo(
+    () => schedules.filter((job) => job.status === 'active' && job.nextRunAt && new Date(job.nextRunAt).getTime() < referenceNow).length,
+    [referenceNow, schedules]
+  );
   const needsAttention = reviews.length + failedTasks.length + stalledAgents.length + lateSchedules;
   const attentionItems = [
     {
@@ -144,8 +151,8 @@ export function OverviewView({ agents, tasks, loading, addOptimistic, onOpenDeta
     },
   ].filter((item) => ['approvals', 'schedules', 'failures', 'questions'].includes(item.id));
 
-  const reviewAgentIds = new Set(reviews.map((review) => review.agentId).filter(Boolean));
   const prioritizedTasks = useMemo(() => {
+    const reviewAgentIds = new Set(reviews.map((review) => review.agentId).filter(Boolean));
     const priorityMap = { error: 0, pending: 1, running: 2, completed: 3 };
     return tasks
       .filter((task) => task.status !== 'completed')
@@ -169,7 +176,7 @@ export function OverviewView({ agents, tasks, loading, addOptimistic, onOpenDeta
                 ? 'Queued behind current work.'
                 : 'Running normally.',
       }));
-  }, [tasks, reviewAgentIds]);
+  }, [reviews, tasks]);
 
   const overviewSummary = {
     primaryMessage:
@@ -195,6 +202,7 @@ export function OverviewView({ agents, tasks, loading, addOptimistic, onOpenDeta
     lateSchedules,
     scheduledJobs: schedules.length,
   };
+  const learningMemory = useLearningMemory({ agents, tasks, approvals: reviews, logs, costData });
 
   if (loading) {
     return (
@@ -205,21 +213,21 @@ export function OverviewView({ agents, tasks, loading, addOptimistic, onOpenDeta
   }
 
   return (
-    <motion.div
+    <Motion.div
       variants={container}
       initial="hidden"
       animate="show"
       className="grid grid-cols-12 gap-5 pb-8"
     >
-      <motion.div variants={item} className="col-span-12">
+      <Motion.div variants={item} className="col-span-12">
         <OverviewBriefingHeader
           summary={overviewSummary}
           onDeploy={() => setCreateModalOpen(true)}
           onNavigate={onNavigate}
         />
-      </motion.div>
+      </Motion.div>
 
-      <motion.div variants={item} className="col-span-12">
+      <Motion.div variants={item} className="col-span-12">
         <AttentionStrip
           items={attentionItems}
           loading={loadingReviews}
@@ -227,39 +235,52 @@ export function OverviewView({ agents, tasks, loading, addOptimistic, onOpenDeta
             if (itemSelected.id === 'approvals' || itemSelected.id === 'alerts') onNavigate?.('missions');
           }}
         />
-      </motion.div>
+      </Motion.div>
 
-      <motion.div variants={item} className="col-span-12 xl:col-span-8">
+      <Motion.div variants={item} className="col-span-12">
+        <div className="spatial-panel p-5">
+          <CommandSectionHeader
+            eyebrow="Cross-Page Doctrine"
+            title="What the system is learning about how you operate"
+            description="These learned patterns now come from the same local memory engine that powers Mission Control, Reports, and Intelligence."
+            icon={BrainCircuit}
+            tone="teal"
+          />
+          <DoctrineCards items={learningMemory.topThree} compact />
+        </div>
+      </Motion.div>
+
+      <Motion.div variants={item} className="col-span-12 xl:col-span-8">
         <LiveOpsTable
           tasks={prioritizedTasks}
           loading={loading}
           onOpenDetail={onOpenDetail}
           onNavigate={onNavigate}
         />
-      </motion.div>
+      </Motion.div>
 
-      <motion.div variants={item} className="col-span-12 xl:col-span-4">
+      <Motion.div variants={item} className="col-span-12 xl:col-span-4">
         <FleetHealthPanel summary={overviewSummary} onOpenDetail={onOpenDetail} />
-      </motion.div>
+      </Motion.div>
 
-      <motion.div variants={item} className="col-span-12 xl:col-span-6">
+      <Motion.div variants={item} className="col-span-12 xl:col-span-6">
         <CostControlPanel
           summary={{
             ...costData,
             topModel: costData.models[0] || null,
           }}
         />
-      </motion.div>
+      </Motion.div>
 
-      <motion.div variants={item} className="col-span-12 xl:col-span-6">
+      <Motion.div variants={item} className="col-span-12 xl:col-span-6">
         <SchedulesBottlenecksPanel summary={overviewSummary} schedules={schedules} loading={loadingSchedules} />
-      </motion.div>
+      </Motion.div>
 
       <CreateAgentModal
         isOpen={createModalOpen}
         onClose={() => setCreateModalOpen(false)}
         onCreated={(optimisticAgent) => addOptimistic?.(optimisticAgent)}
       />
-    </motion.div>
+    </Motion.div>
   );
 }
