@@ -662,6 +662,7 @@ export function OverviewView({ agents, tasks, loading, addOptimistic, onOpenDeta
             summary={overviewSummary}
             readiness={readiness}
             deltaItems={doctrineDeltas}
+            recoveryItems={recurringRecoveryItems}
             onNavigate={onNavigate}
             onOpenDetail={onOpenDetail}
           />

@@ -31,6 +31,7 @@ export function CommanderHero({
   summary,
   readiness,
   deltaItems = [],
+  recoveryItems = [],
   onOpenDetail,
   onNavigate,
 }) {
@@ -162,6 +163,26 @@ export function CommanderHero({
                       </span>
                     </div>
                   ))}
+                </div>
+              </div>
+            )}
+            {recoveryItems.length > 0 && (
+              <div className="mt-3 rounded-2xl border border-aurora-amber/20 bg-aurora-amber/[0.08] p-3">
+                <div className="text-[10px] uppercase tracking-[0.16em] text-aurora-amber">Recovery posture</div>
+                <div className="mt-2 flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="text-[11px] font-semibold text-text-primary">{recoveryItems[0].title}</div>
+                    <div className="mt-1 text-[10px] text-text-muted">{recoveryItems[0].recoveryLabel}</div>
+                  </div>
+                  <span className={`rounded-full border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] ${
+                    recoveryItems[0].recommendedPaused
+                      ? 'border-aurora-amber/20 bg-aurora-amber/10 text-aurora-amber'
+                      : recoveryItems[0].posture === 'watch'
+                        ? 'border-aurora-violet/20 bg-aurora-violet/10 text-aurora-violet'
+                        : 'border-aurora-teal/20 bg-aurora-teal/10 text-aurora-teal'
+                  }`}>
+                    {recoveryItems[0].recommendedPaused ? 'paused' : recoveryItems[0].posture}
+                  </span>
                 </div>
               </div>
             )}

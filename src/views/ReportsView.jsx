@@ -602,6 +602,18 @@ export function ReportsView() {
       return rightTs - leftTs;
     });
   }, [tasks, outcomes, interventions]);
+  const managedRecurringRecoverySummary = useMemo(() => {
+    const signals = managedRecurringFlows.map((flow) => {
+      const candidateKey = `${flow.domain || 'general'}::${flow.intentType || 'general'}::${flow.title}`;
+      const trustSignals = automationCandidateLookup.get(candidateKey) || null;
+      return trustSignals ? getRecurringAutonomyTuningSummary(trustSignals) : null;
+    }).filter(Boolean);
+    return {
+      pausedCount: signals.filter((entry) => entry.recommendedPaused).length,
+      watchCount: signals.filter((entry) => entry.posture === 'watch').length,
+      tighteningCount: signals.filter((entry) => entry.posture === 'tighten').length,
+    };
+  }, [automationCandidateLookup, managedRecurringFlows]);
 
   function openAutomationDraft(candidate) {
     const trustTuning = getRecurringAutonomyTuningSummary(candidate);
@@ -819,6 +831,19 @@ export function ReportsView() {
             accent="violet"
           >
             <div className="space-y-3">
+              {(managedRecurringRecoverySummary.pausedCount > 0 || managedRecurringRecoverySummary.watchCount > 0 || managedRecurringRecoverySummary.tighteningCount > 0) && (
+                <div className="rounded-[18px] border border-aurora-amber/20 bg-aurora-amber/10 p-3">
+                  <div className="text-[10px] uppercase tracking-[0.16em] text-aurora-amber">Trust recovery board</div>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {managedRecurringRecoverySummary.pausedCount > 0 && <TelemetryTag label="Paused" value={managedRecurringRecoverySummary.pausedCount} tone="amber" />}
+                    {managedRecurringRecoverySummary.tighteningCount > 0 && <TelemetryTag label="Tighten" value={managedRecurringRecoverySummary.tighteningCount} tone="violet" />}
+                    {managedRecurringRecoverySummary.watchCount > 0 && <TelemetryTag label="Watch" value={managedRecurringRecoverySummary.watchCount} tone="blue" />}
+                  </div>
+                  <div className="mt-2 text-[11px] text-text-body">
+                    Commander is now tracking which recurring products need recovery before they can earn autonomy back.
+                  </div>
+                </div>
+              )}
               {managedRecurringFlows.length === 0 && (
                 <div className="text-[12px] text-text-muted">No managed recurring flows yet. Launch one from the automation rack and it will appear here for ongoing tuning.</div>
               )}

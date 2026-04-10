@@ -874,7 +874,16 @@ async function resolveBranchAssignment({
     observedWinningLane
     && (
       observedWinningLane.confidence === 'high'
-      || (observedWinningLane.confidence === 'medium' && Number(observedWinningLane.avgScore || 0) >= 82)
+      || (
+        observedWinningLane.confidence === 'medium'
+        && Number(observedWinningLane.avgScore || 0) >= (
+          observedWinningLane.scopeLabel === 'exact'
+            ? 82
+            : observedWinningLane.scopeLabel === 'domain-pack'
+              ? 85
+              : 88
+        )
+      )
     )
   );
   const modelOverride = branch.modelOverride

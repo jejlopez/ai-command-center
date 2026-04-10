@@ -36,7 +36,7 @@ import { useLearningMemory } from '../utils/useLearningMemory';
 import { DoctrineCards } from '../components/command/DoctrineCards';
 import { TruthAuditStrip } from '../components/command/TruthAuditStrip';
 import { useCommandCenterTruth } from '../utils/useCommandCenterTruth';
-import { promoteAgentToPersistent, useConnectedSystems, useSpecialistLifecycle, useTaskInterventions, useTaskOutcomes } from '../utils/useSupabase';
+import { createPersistentSpecialist, promoteAgentToPersistent, useConnectedSystems, useSpecialistLifecycle, useTaskInterventions, useTaskOutcomes } from '../utils/useSupabase';
 import { ReactorCoreBoard } from '../components/command/ReactorCoreBoard';
 import { CommandTimelineRail } from '../components/command/CommandTimelineRail';
 import { TacticalInterventionConsole } from '../components/command/TacticalInterventionConsole';
@@ -409,6 +409,7 @@ function MissionGraphPanel({ tasks, agents, logs, outcomes, interventions, lifec
   const [dependencyMessage, setDependencyMessage] = useState('');
   const [promotionSavingId, setPromotionSavingId] = useState(null);
   const [promotionMessage, setPromotionMessage] = useState('');
+  const [fleetActionSaving, setFleetActionSaving] = useState(false);
   const selectedRootMissionId = selectedTask?.rootMissionId || selectedTask?.id || null;
   const rootOutcomes = outcomes.filter((entry) => !selectedRootMissionId || entry.rootMissionId === selectedRootMissionId);
   const outcomeMemory = getOutcomeMemorySummary(rootOutcomes);
@@ -513,6 +514,36 @@ function MissionGraphPanel({ tasks, agents, logs, outcomes, interventions, lifec
     }
   };
 
+  const handleCreateRecommendedLane = async (target) => {
+    if (!target?.role) return;
+    setFleetActionSaving(true);
+    setPromotionMessage('');
+    try {
+      const defaultModel = selectedTask?.modelOverride
+        || persistentSpecialists[0]?.model
+        || agents.find((agent) => !agent.isEphemeral && agent.model)?.model
+        || agents.find((agent) => agent.model)?.model
+        || '';
+      if (!defaultModel) throw new Error('No model available for the new persistent lane.');
+      const objective = target.domain
+        ? `Persistent ${target.role} coverage for ${target.domain} mission families.`
+        : `Persistent ${target.role} coverage for durable branch demand in Mission Control.`;
+      const agent = await createPersistentSpecialist({
+        name: `${target.role}-${target.domain || 'mission'}-lane`,
+        objective,
+        role: target.role,
+        model: defaultModel,
+        commanderId: null,
+        skills: [],
+      });
+      setPromotionMessage(`${agent.name} is now live as persistent coverage for ${target.domain || target.role}.`);
+    } catch (error) {
+      setPromotionMessage(error.message || 'Could not create recommended lane.');
+    } finally {
+      setFleetActionSaving(false);
+    }
+  };
+
   if (!graphTaskSet.length) {
     return (
       <div className="rounded-[24px] border border-white/[0.06] bg-black/15 px-5 py-6">
@@ -614,17 +645,20 @@ function MissionGraphPanel({ tasks, agents, logs, outcomes, interventions, lifec
               <p className="mt-2 text-[12px] leading-relaxed text-text-body">{promotionGuidance.recommendation}</p>
               <div className="mt-3 flex flex-wrap gap-2">
                 {promotionGuidance.recommendedActions.slice(0, 3).map((entry) => (
-                  <span
+                  <button
                     key={entry.key}
+                    type="button"
+                    disabled={fleetActionSaving}
+                    onClick={() => handleCreateRecommendedLane(entry)}
                     className={cn(
-                      'rounded-full border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em]',
+                      'rounded-full border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] disabled:opacity-50',
                       entry.tone === 'violet'
                         ? 'border-aurora-violet/20 bg-aurora-violet/10 text-aurora-violet'
                         : 'border-aurora-blue/20 bg-aurora-blue/10 text-aurora-blue'
                     )}
                   >
-                    {entry.label}
-                  </span>
+                    {fleetActionSaving ? 'Working...' : entry.label}
+                  </button>
                 ))}
               </div>
             </div>
