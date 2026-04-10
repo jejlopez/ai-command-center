@@ -21,7 +21,7 @@ import { useCommandCenterTruth } from '../utils/useCommandCenterTruth';
 import { ReactorCoreBoard } from '../components/command/ReactorCoreBoard';
 import { CommandTimelineRail } from '../components/command/CommandTimelineRail';
 import { buildTimelineEntries } from '../utils/buildCommandTimeline';
-import { getAutonomyMetrics, getPrimaryBottleneck } from '../utils/commanderAnalytics';
+import { getAutonomyMetrics, getDoctrineDeltaSummary, getPrimaryBottleneck } from '../utils/commanderAnalytics';
 
 function formatWaitLabel(ms) {
   if (!ms || ms <= 0) return 'None';
@@ -253,6 +253,7 @@ export function OverviewView({ agents, tasks, loading, addOptimistic, onOpenDeta
     scheduledJobs: schedules.length,
   };
   const learningMemory = useLearningMemory({ agents, tasks, approvals: reviews, logs, costData });
+  const doctrineDeltas = useMemo(() => getDoctrineDeltaSummary(learningMemory.doctrine).slice(0, 2), [learningMemory.doctrine]);
   const truth = useCommandCenterTruth();
   const timelineEntries = useMemo(() => buildTimelineEntries({ tasks, reviews, logs }), [logs, reviews, tasks]);
   const autonomyMetrics = useMemo(
@@ -628,6 +629,28 @@ export function OverviewView({ agents, tasks, loading, addOptimistic, onOpenDeta
                 action={<span className="rounded-full border border-aurora-teal/20 bg-aurora-teal/10 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-aurora-teal">Live doctrine</span>}
               />
               <DoctrineCards items={learningMemory.topThree} compact />
+            </div>
+            <div className="rounded-[28px] border border-white/8 bg-[linear-gradient(180deg,rgba(96,165,250,0.06),rgba(255,255,255,0.02))] p-5">
+              <CommandSectionHeader
+                eyebrow="Doctrine Delta"
+                title="What Commander is trusting more or less"
+                description="A compact trust-movement rail so the flagship bridge shows belief changes, not just current state."
+                icon={Sparkles}
+                tone="blue"
+              />
+              <div className="mt-4 grid gap-3">
+                {doctrineDeltas.map((entry) => (
+                  <div key={entry.id} className="rounded-[20px] border border-white/8 bg-black/20 p-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="text-[12px] font-semibold text-text-primary">{entry.title}</div>
+                      <span className="rounded-full border border-white/8 bg-white/[0.03] px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-text-muted">
+                        {entry.trend === 'up' ? `+${entry.delta}` : entry.delta}
+                      </span>
+                    </div>
+                    <div className="mt-2 text-[11px] leading-5 text-text-body">{entry.changeSummary}</div>
+                  </div>
+                ))}
+              </div>
             </div>
             <CostControlPanel
               summary={{

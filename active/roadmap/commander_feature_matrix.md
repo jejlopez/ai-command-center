@@ -136,10 +136,10 @@ Legend:
 
 ## Immediate Next Four
 
-1. Recommendation-rank shifts from pattern and rescue memory
-2. Confidence-to-runtime loop closure
-3. Persistent-lane promotion actions from lifecycle pressure
-4. Doctrine-delta visibility in more operator surfaces
+1. Post-launch confidence closure rails
+2. More recommendation classes weighted by pattern and rescue winners
+3. Promotion actions in more operator surfaces
+4. Doctrine-delta visibility in Mission Control and executive briefs
 
 ## Epic Experience Layer Additions
 
@@ -173,12 +173,12 @@ These are not separate feature IDs yet. They should be implemented as depth adde
 
 ## Updated Immediate Next Order
 
-1. Turn autonomy and rescue signals into recommendation pressure
-2. Promote mission-pattern winners into stronger recommendation rank shifts
-3. Close the confidence rail with actual post-launch outcomes
-4. Use lifecycle pressure to guide persistent-lane promotions automatically
-5. Push doctrine-delta visibility into more operator surfaces
-6. Add one-click actions from promotion guidance and rank pressure
+1. Close the confidence rail with actual post-launch outcomes
+2. Turn autonomy and rescue signals into more recommendation classes
+3. Promote mission-pattern winners into stronger recommendation rank shifts
+4. Push doctrine-delta visibility into Mission Control and executive brief surfaces
+5. Add one-click promotion actions from more operator surfaces
+6. Use lifecycle pressure to create better persistent-lane defaults when no spawned match exists
 
 ## Autodrive Program Rule
 

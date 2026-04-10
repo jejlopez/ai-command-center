@@ -1716,6 +1716,11 @@ function SpecialistFleetTab({ agents, lifecycleEvents, skills, tasks }) {
   const fleetHistory = getSpecialistLifecycleSummary(lifecycleEvents, agents);
   const fleetPosture = getFleetPostureSummary(lifecycleEvents, agents);
   const promotionGuidance = getPersistentPromotionGuidance({ lifecycleEvents, agents, tasks });
+  const recommendedPromotionAgent = useMemo(() => (
+    promotionGuidance.topGap
+      ? spawnedSpecialists.find((agent) => (agent.role || 'specialist') === promotionGuidance.topGap.role) || null
+      : null
+  ), [promotionGuidance.topGap, spawnedSpecialists]);
   const recentLifecycleEvents = fleetHistory.events.slice(0, 6);
   const promotionHistory = fleetHistory.promotions.slice(0, 6);
   const [objective, setObjective] = useState('');
@@ -1828,7 +1833,7 @@ function SpecialistFleetTab({ agents, lifecycleEvents, skills, tasks }) {
             <p className="mt-2 max-w-2xl text-[12px] leading-relaxed text-text-body">{fleetPosture.detail}</p>
             <p className="mt-2 max-w-2xl text-[11px] leading-relaxed text-aurora-blue">{promotionGuidance.recommendation}</p>
           </div>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <span className="rounded-full border border-aurora-blue/20 bg-aurora-blue/10 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-aurora-blue">
               roles {fleetPosture.activeRoles}
             </span>
@@ -1838,6 +1843,16 @@ function SpecialistFleetTab({ agents, lifecycleEvents, skills, tasks }) {
             <span className="rounded-full border border-aurora-teal/20 bg-aurora-teal/10 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-aurora-teal">
               cleanup {fleetPosture.cleanedCount}
             </span>
+            {recommendedPromotionAgent && (
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => handlePromote(recommendedPromotionAgent.id)}
+                className="rounded-full border border-aurora-blue/20 bg-aurora-blue/10 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-aurora-blue transition-colors hover:bg-aurora-blue/14 disabled:opacity-50"
+              >
+                {busy ? 'Working...' : `Promote ${recommendedPromotionAgent.role}`}
+              </button>
+            )}
           </div>
         </div>
       </div>

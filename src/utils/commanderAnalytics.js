@@ -670,7 +670,10 @@ export function rankCommanderRecommendations({
             ? 44
             : 34;
       const keywordBoost = getRecommendationKeywordBoost(recommendation, signals);
-      const score = baseImpact + keywordBoost.score;
+      let score = baseImpact + keywordBoost.score;
+      const id = String(recommendation.id || '');
+      if (id.includes('mission-pattern')) score += Math.round(signals.patternStrength / 3);
+      if (id.includes('rescue') || id.includes('intervention')) score += Math.round((signals.rescueRate + (signals.rescuePressure * 6)) / 3);
       const whyNow = keywordBoost.reasons[0]
         || (signals.failedTasks > 0 ? `${signals.failedTasks} failed branches are still active and keeping pressure on execution quality.` : 'This recommendation is persistent because Commander keeps seeing the same leverage point.');
 
@@ -790,9 +793,13 @@ export function getPreflightAlignmentSummary({
     ? missionGroups.reduce((sum, group) => sum + group.length, 0) / missionGroups.length
     : 1;
   const avgCost = matchingTasks.reduce((sum, task) => sum + Number(task.costUsd || 0), 0) / matchingTasks.length;
+  const avgRuntimeConfidence = matchingTasks.length
+    ? Math.round(matchingTasks.reduce((sum, task) => sum + scoreTaskOutcome(task).score, 0) / matchingTasks.length)
+    : 0;
   const estimatedCostMid = parseCostRangeToMidpoint(estimatedCost);
   const branchDelta = Number((expectedBranches - avgBranches).toFixed(1));
   const costDelta = Number((estimatedCostMid - avgCost).toFixed(2));
+  const confidenceDelta = Number((Number(missionSummary.confidence || 0) - avgRuntimeConfidence).toFixed(0));
   const posture = Math.abs(branchDelta) <= 0.75 && Math.abs(costDelta) <= 0.75
     ? 'aligned'
     : Math.abs(branchDelta) <= 1.5 && Math.abs(costDelta) <= 1.25
@@ -808,6 +815,21 @@ export function getPreflightAlignmentSummary({
     : posture === 'close'
       ? `Matching missions are close enough that the briefing is useful, but the estimate should still be treated as soft guidance.`
       : `Recent matching missions are landing far enough from this estimate that Commander should flag the preflight as a planning guess, not a strong promise.`;
+  const confidencePosture = confidenceDelta >= 12
+    ? 'overconfident'
+    : confidenceDelta <= -12
+      ? 'underselling'
+      : 'grounded';
+  const confidenceLabel = confidencePosture === 'overconfident'
+    ? 'Confidence is optimistic'
+    : confidencePosture === 'underselling'
+      ? 'Confidence is conservative'
+      : 'Confidence is grounded';
+  const confidenceDetail = confidencePosture === 'overconfident'
+    ? `Launch confidence is running ${confidenceDelta} points above recent runtime quality for similar missions, so Commander should frame this as an estimate, not a promise.`
+    : confidencePosture === 'underselling'
+      ? `Launch confidence is ${Math.abs(confidenceDelta)} points below recent runtime quality, so this mission may be safer than the briefing suggests.`
+      : 'Recent runtime quality is close enough to the preflight confidence that the briefing is reading honestly.';
 
   return {
     posture,
@@ -817,6 +839,11 @@ export function getPreflightAlignmentSummary({
     costDelta,
     sampleCount: matchingTasks.length,
     confidence: missionSummary.confidence || 0,
+    runtimeConfidence: avgRuntimeConfidence,
+    confidenceDelta,
+    confidencePosture,
+    confidenceLabel,
+    confidenceDetail,
   };
 }
 

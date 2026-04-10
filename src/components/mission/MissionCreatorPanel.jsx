@@ -993,7 +993,7 @@ export function MissionCreatorPanel({
                         {preflightAlignment.sampleCount > 0 ? `${preflightAlignment.sampleCount} matching runs` : 'forming'}
                       </div>
                     </div>
-                    <div className="mb-3 text-[11px] leading-relaxed text-text-body">{preflightAlignment.detail}</div>
+                  <div className="mb-3 text-[11px] leading-relaxed text-text-body">{preflightAlignment.detail}</div>
                     {preflightAlignment.sampleCount > 0 && (
                       <div className="mb-3 grid grid-cols-2 gap-3">
                         <div className="rounded-2xl border border-white/[0.08] bg-white/[0.03] px-3 py-2">
@@ -1006,6 +1006,21 @@ export function MissionCreatorPanel({
                         </div>
                       </div>
                     )}
+                    <div className="mb-3 rounded-2xl border border-white/[0.08] bg-white/[0.03] px-3 py-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <div className="text-[9px] uppercase tracking-[0.18em] text-text-muted">Confidence closure</div>
+                          <div className="mt-1 text-[12px] font-semibold text-text-primary">{preflightAlignment.confidenceLabel}</div>
+                        </div>
+                        {preflightAlignment.sampleCount > 0 && (
+                          <div className="text-right">
+                            <div className="text-[9px] uppercase tracking-[0.18em] text-text-muted">Runtime baseline</div>
+                            <div className="mt-1 text-[12px] font-semibold text-text-primary">{preflightAlignment.runtimeConfidence}%</div>
+                          </div>
+                        )}
+                      </div>
+                      <div className="mt-2 text-[11px] leading-relaxed text-text-body">{preflightAlignment.confidenceDetail}</div>
+                    </div>
                     <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Top risks before launch</div>
                     <div className="mt-2 space-y-2">
                       {preflight.topRisks.length === 0 && (
