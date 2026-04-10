@@ -11,6 +11,7 @@ const OverviewView = lazy(() => import('./views/OverviewView').then(mod => ({ de
 const ReviewRoomView = lazy(() => import('./views/ReviewRoomView').then(mod => ({ default: mod.ReviewRoomView })));
 const ReportsView = lazy(() => import('./views/ReportsView').then(mod => ({ default: mod.ReportsView })));
 const IntelligenceView = lazy(() => import('./views/IntelligenceView').then(mod => ({ default: mod.IntelligenceView })));
+const ManagedOpsView = lazy(() => import('./views/ManagedOpsView').then(mod => ({ default: mod.ManagedOpsView })));
 import { LoginView } from './views/LoginView';
 const MissionControlView = lazy(() => import('./views/MissionControlView').then(mod => ({ default: mod.MissionControlView })));
 import { TimeRangeProvider } from './utils/useTimeRange';
@@ -23,11 +24,13 @@ import { runCommanderHeartbeat } from './lib/api';
 import { Bell, Settings, User, Loader2, Search } from 'lucide-react';
 import { cn } from './utils/cn';
 import { ProjectSwitcher } from './components/ProjectSwitcher';
+import { WorkspaceProvider, useWorkspaces } from './context/WorkspaceContext';
+import { ensureCommanderAgent } from './utils/useSupabase';
 
 function TacticalTopbarButton({ active, onClick, children, tone = 'teal', pulse = false, ariaLabel }) {
   const toneMap = {
-    teal: active ? 'border-aurora-teal/35 text-aurora-teal bg-aurora-teal/10' : 'text-text-muted hover:text-text-primary hover:border-aurora-teal/20',
-    amber: active ? 'border-aurora-amber/35 text-aurora-amber bg-aurora-amber/10' : 'text-text-muted hover:text-text-primary hover:border-aurora-amber/20',
+    teal: active ? 'border-aurora-teal/30 text-aurora-teal bg-aurora-teal/[0.08]' : 'text-text-muted hover:text-text-primary hover:border-white/[0.1]',
+    amber: active ? 'border-aurora-amber/30 text-aurora-amber bg-aurora-amber/[0.08]' : 'text-text-muted hover:text-text-primary hover:border-white/[0.1]',
   };
 
   return (
@@ -35,14 +38,12 @@ function TacticalTopbarButton({ active, onClick, children, tone = 'teal', pulse 
       onClick={onClick}
       aria-label={ariaLabel}
       className={cn(
-        'group relative flex h-11 w-11 items-center justify-center overflow-hidden rounded-2xl border border-white/[0.06] bg-white/[0.03] transition-all duration-200 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]',
+        'group relative flex h-11 w-11 items-center justify-center overflow-hidden rounded-2xl border border-white/[0.05] bg-black/20 transition-all duration-200 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]',
         toneMap[tone] || toneMap.teal
       )}
     >
-      <span className="pointer-events-none absolute inset-0 opacity-[0.06] [background-image:repeating-linear-gradient(180deg,rgba(255,255,255,0.18)_0px,rgba(255,255,255,0.18)_1px,transparent_1px,transparent_12px)]" />
       <span className={cn('pointer-events-none absolute inset-0 rounded-2xl border', active ? 'border-current/20' : 'border-transparent')} />
-      <span className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(255,255,255,0.08),transparent_38%)]" />
-      <span className="pointer-events-none absolute inset-0 opacity-0 transition-opacity duration-300 group-hover:opacity-100 bg-[linear-gradient(90deg,transparent,rgba(255,255,255,0.08),transparent)]" />
+      <span className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(255,255,255,0.05),transparent_42%)]" />
       {pulse && (
         <>
           <span className="absolute right-1.5 top-1.5 h-2.5 w-2.5 rounded-full bg-aurora-rose ring-2 ring-canvas" />
@@ -78,11 +79,14 @@ function CommandReadinessChip({ truth, onClick }) {
 
 function Dashboard() {
   const [activeRoute, setActiveRoute] = useState('overview');
+  const [managedOpsTab, setManagedOpsTab] = useState('quickstart');
   const [cmdOpen, setCmdOpen] = useState(false);
   const [detailState, setDetailState] = useState(null);
   const { notificationsOpen, setNotificationsOpen, settingsOpen, setSettingsOpen, profileOpen, setProfileOpen, setPendingCount } = useSystemState();
-  const { agents, loading: loadingAgents, addOptimistic } = useAgents();
-  const { tasks, loading: loadingTasks } = useTasks();
+  const { activeWorkspace, setActiveWorkspace } = useWorkspaces();
+  const { user } = useAuth();
+  const { agents, loading: loadingAgents } = useAgents(activeWorkspace?.id);
+  const { tasks, loading: loadingTasks } = useTasks(activeWorkspace?.id);
   const { reviews } = usePendingReviews();
   const { unreadCount, criticalCount } = useDerivedAlerts();
   const truth = useCommandCenterTruth();
@@ -128,21 +132,52 @@ function Dashboard() {
     };
   }, [agents, tasks, reviews, loadingAgents, loadingTasks]);
 
-  function openAgentWorkspace(agentId, options = {}) {
+  async function openAgentWorkspace(agentId, options = {}) {
     if (!agentId) return;
+    let resolvedAgentId = agentId;
+    if (agentId === 'synthetic-commander' && user) {
+      try {
+        const commander = await ensureCommanderAgent(user, activeWorkspace?.id || null);
+        if (commander?.id) resolvedAgentId = commander.id;
+      } catch (err) {
+        console.error('[Dashboard] Failed to resolve synthetic commander:', err);
+      }
+    }
     setDetailState({
-      agentId,
+      agentId: resolvedAgentId,
       mode: options.mode ?? 'setup',
     });
+  }
+
+  async function handleWorkspaceCreated(newWs) {
+    setActiveWorkspace(newWs.id);
+    // Create Commander for the new workspace, then open its setup panel
+    try {
+      const commander = await ensureCommanderAgent(user, newWs.id);
+      if (commander?.id) {
+        // Small delay to let useAgents refetch with the new workspace
+        setTimeout(() => openAgentWorkspace(commander.id, { mode: 'setup' }), 400);
+      }
+    } catch (err) {
+      console.error('[Dashboard] Commander onboarding failed:', err);
+    }
+  }
+
+  function handleNavigate(route, options = {}) {
+    if (!route) return;
+    setActiveRoute(route);
+    if (route === 'managedOps') {
+      setManagedOpsTab(options.tab || 'quickstart');
+    }
   }
 
   function handleAction(action) {
     if (!action) return;
     const { type, route, agentId, panel } = action;
     if (type === 'navigate') {
-      if (route === 'review') setActiveRoute('missions');
-      else if (route === 'operations') setActiveRoute('overview');
-      else setActiveRoute(route);
+      if (route === 'review') handleNavigate('missions');
+      else if (route === 'operations') handleNavigate('overview');
+      else handleNavigate(route, action);
     }
     if (type === 'agent') openAgentWorkspace(agentId);
     if (type === 'panel') {
@@ -153,38 +188,39 @@ function Dashboard() {
   }
 
   const selectedAgent = detailState?.agentId
-    ? agents.find((agent) => agent.id === detailState.agentId) ?? null
+    ? agents.find((agent) => agent.id === detailState.agentId)
+      ?? (detailState.agentId === 'synthetic-commander'
+        ? agents.find((agent) => agent.role === 'commander') ?? null
+        : null)
     : null;
 
   return (
     <div className="flex w-screen h-screen overflow-hidden bg-canvas text-text-primary relative">
       <div className="pointer-events-none absolute inset-0 overflow-hidden">
-        <div className="absolute left-[-12%] top-[-8%] h-[380px] w-[380px] rounded-full bg-aurora-teal/10 blur-[140px]" />
-        <div className="absolute right-[-12%] top-[12%] h-[420px] w-[420px] rounded-full bg-aurora-violet/10 blur-[160px]" />
-        <div className="absolute bottom-[-18%] left-[28%] h-[460px] w-[460px] rounded-full bg-aurora-blue/10 blur-[180px]" />
+        <div className="absolute left-[-12%] top-[-8%] h-[380px] w-[380px] rounded-full bg-aurora-teal/7 blur-[150px]" />
+        <div className="absolute right-[-12%] top-[12%] h-[420px] w-[420px] rounded-full bg-aurora-blue/7 blur-[170px]" />
       </div>
       <main className="flex-1 flex flex-col relative">
         {/* Topbar */}
         <header className="px-8 py-4 shrink-0 z-10 w-full relative">
-          <div className="relative flex items-center gap-4 rounded-[28px] border border-white/[0.06] bg-[linear-gradient(180deg,rgba(255,255,255,0.035),rgba(255,255,255,0.015))] px-4 py-3 shadow-[0_24px_80px_rgba(0,0,0,0.24)] backdrop-blur-sm before:pointer-events-none before:absolute before:inset-x-10 before:top-0 before:h-px before:bg-gradient-to-r before:from-transparent before:via-white/20 before:to-transparent">
-            <div className="pointer-events-none absolute inset-0 rounded-[28px] opacity-[0.06] [background-image:repeating-linear-gradient(180deg,rgba(255,255,255,0.18)_0px,rgba(255,255,255,0.18)_1px,transparent_1px,transparent_12px)]" />
-            <div className="pointer-events-none absolute inset-0 rounded-[28px] bg-[radial-gradient(circle_at_12%_0%,rgba(45,212,191,0.08),transparent_24%),radial-gradient(circle_at_88%_0%,rgba(167,139,250,0.08),transparent_22%)]" />
+          <div className="relative flex items-center gap-3 rounded-[28px] border border-white/[0.05] bg-[linear-gradient(180deg,rgba(12,14,18,0.92),rgba(10,12,15,0.82))] px-3 py-3 shadow-[0_24px_80px_rgba(0,0,0,0.22)] backdrop-blur-sm xl:gap-4 xl:px-4 before:pointer-events-none before:absolute before:inset-x-10 before:top-0 before:h-px before:bg-gradient-to-r before:from-transparent before:via-white/12 before:to-transparent">
+            <div className="pointer-events-none absolute inset-0 rounded-[28px] bg-[radial-gradient(circle_at_12%_0%,rgba(45,212,191,0.05),transparent_24%),radial-gradient(circle_at_88%_0%,rgba(96,165,250,0.05),transparent_22%)]" />
             <div className="shrink-0 min-w-0">
-              <ProjectSwitcher compact />
+              <ProjectSwitcher compact onWorkspaceCreated={handleWorkspaceCreated} />
             </div>
 
-            <div className="flex-1 min-w-0 flex justify-center">
-              <NavRail activeId={activeRoute} onNavigate={setActiveRoute} />
+            <div className="flex-1 min-w-0 flex justify-center px-1">
+              <NavRail activeId={activeRoute} onNavigate={handleNavigate} />
             </div>
 
-            <div className="flex items-center justify-end gap-1.5 shrink-0">
+            <div className="flex items-center justify-end gap-1 shrink-0 xl:gap-1.5">
               <CommandReadinessChip
                 truth={truth}
                 onClick={() => setActiveRoute('overview')}
               />
               <button
                 onClick={() => setCmdOpen(true)}
-                className="flex items-center justify-center w-10 h-10 rounded-2xl border border-white/[0.06] bg-white/[0.03] hover:bg-white/[0.055] transition-colors text-text-muted shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
+                className="flex items-center justify-center w-10 h-10 rounded-2xl border border-white/[0.05] bg-black/20 hover:bg-white/[0.05] transition-colors text-text-muted shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]"
                 aria-label="Open search"
               >
                 <Search className="w-3.5 h-3.5" />
@@ -200,10 +236,6 @@ function Dashboard() {
                 pulse={criticalCount > 0 || unreadCount > 0}
                 ariaLabel="Open command alerts"
               >
-                <span className="pointer-events-none absolute inset-0 rounded-2xl">
-                  <span className="absolute left-1/2 top-1/2 h-7 w-7 -translate-x-1/2 -translate-y-1/2 rounded-full border border-aurora-amber/20" />
-                  <span className="absolute left-1/2 top-1/2 h-9 w-9 -translate-x-1/2 -translate-y-1/2 rounded-full border border-aurora-amber/10" />
-                </span>
                 <Bell className="relative z-10 h-4.5 w-4.5" />
               </TacticalTopbarButton>
 
@@ -214,10 +246,6 @@ function Dashboard() {
                 tone="teal"
                 ariaLabel="Open systems control"
               >
-                <span className="pointer-events-none absolute inset-0 rounded-2xl">
-                  <span className="absolute left-1/2 top-1/2 h-7 w-7 -translate-x-1/2 -translate-y-1/2 rounded-full border border-aurora-teal/20" />
-                  <span className="absolute left-1/2 top-1/2 h-9 w-9 -translate-x-1/2 -translate-y-1/2 rounded-full border border-aurora-teal/10" />
-                </span>
                 <Settings className="relative z-10 h-4.5 w-4.5" />
               </TacticalTopbarButton>
 
@@ -228,10 +256,6 @@ function Dashboard() {
                 tone="teal"
                 ariaLabel="Open commander identity"
               >
-                <span className="pointer-events-none absolute inset-0 rounded-2xl">
-                  <span className="absolute left-1/2 top-1/2 h-7 w-7 -translate-x-1/2 -translate-y-1/2 rounded-full border border-aurora-teal/20" />
-                  <span className="absolute left-1/2 top-1/2 h-9 w-9 -translate-x-1/2 -translate-y-1/2 rounded-full border border-aurora-blue/10" />
-                </span>
                 <User className="w-4 h-4 text-aurora-teal" />
               </TacticalTopbarButton>
             </div>
@@ -246,13 +270,13 @@ function Dashboard() {
                 agents={agents}
                 tasks={tasks}
                 loading={loadingAgents || loadingTasks}
-                addOptimistic={addOptimistic}
-                onNavigate={setActiveRoute}
+                onNavigate={handleNavigate}
                 onOpenDetail={openAgentWorkspace}
                 onQuickDispatch={(agentId) => openAgentWorkspace(agentId, { mode: 'dispatch' })}
               />
             )}
             {activeRoute === 'missions' && <MissionControlView />}
+            {activeRoute === 'managedOps' && <ManagedOpsView initialTab={managedOpsTab} />}
             {activeRoute === 'reports' && <ReportsView />}
             {activeRoute === 'intelligence' && <IntelligenceView />}
             {activeRoute === 'review' && <ReviewRoomView />}
@@ -296,7 +320,9 @@ function AuthGate() {
 
   return (
     <TimeRangeProvider>
-      <Dashboard />
+      <WorkspaceProvider>
+        <Dashboard />
+      </WorkspaceProvider>
     </TimeRangeProvider>
   );
 }

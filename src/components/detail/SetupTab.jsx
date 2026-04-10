@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { motion } from 'framer-motion';
 import {
   ArrowUpRight,
   Cpu,
@@ -19,15 +18,19 @@ import {
 } from 'lucide-react';
 import { cn } from '../../utils/cn';
 import { getTemplateForRole } from '../../utils/agentInstructions';
+import { useAuth } from '../../context/AuthContext';
+import { useWorkspaces } from '../../context/WorkspaceContext';
 import {
   createMcpServer,
   createModelBankEntry,
   createSkillBankEntry,
   deleteMcpServer,
+  ensureCommanderAgent,
   updateAgentConfig,
   updateAgentSkills,
   useMcpServers,
   useModelBank,
+  useProviderCredentials,
   useSkillBank,
 } from '../../utils/useSupabase';
 
@@ -175,8 +178,32 @@ const spawnPatternOptions = [
   },
 ];
 
-export function SetupTab({ agent }) {
+const providerQuickActions = [
+  { id: 'anthropic', label: 'Anthropic default', model: 'Claude Opus 4.6' },
+  { id: 'openai', label: 'OpenAI default', model: 'GPT-5.4' },
+  { id: 'google', label: 'Google default', model: 'Gemini 3.1' },
+];
+
+function inferProviderFromModel(model = '') {
+  const normalized = model.toLowerCase();
+  if (normalized.includes('claude')) return 'anthropic';
+  if (normalized.includes('gpt') || normalized.includes('o1') || normalized.includes('o3') || normalized.includes('o4')) return 'openai';
+  if (normalized.includes('gemini')) return 'google';
+  return 'custom';
+}
+
+function formatProviderLabel(providerKey = 'custom') {
+  if (providerKey === 'anthropic') return 'Anthropic';
+  if (providerKey === 'openai') return 'OpenAI';
+  if (providerKey === 'google') return 'Google';
+  return 'Custom';
+}
+
+export function SetupTab({ agent, onAgentUpdated }) {
+  const { user } = useAuth();
+  const { activeWorkspace } = useWorkspaces();
   const { models, loading: modelsLoading, refetch: refetchModels } = useModelBank();
+  const { credentials: providerCredentials } = useProviderCredentials();
   const { skills: skillBank, loading: skillsLoading, refetch: refetchSkills } = useSkillBank();
   const { servers: mcpServers, loading: mcpLoading, refetch: refetchMcpServers } = useMcpServers();
 
@@ -207,7 +234,7 @@ export function SetupTab({ agent }) {
     setForm(defaultState);
     setSavedState(defaultState);
     setAgentSkillIds(agent.skills || []);
-    setSelectedProvider('All');
+    setSelectedProvider(formatProviderLabel(inferProviderFromModel(defaultState.model || '')));
     setNewModelLabel('');
     setNewModelProvider('');
     setSearchInput('');
@@ -276,6 +303,24 @@ export function SetupTab({ agent }) {
     setSaveError('');
   };
 
+  const providerReadiness = useMemo(
+    () => [
+      { id: 'anthropic', label: 'Anthropic', ready: providerCredentials.anthropic, model: 'Claude Opus 4.6' },
+      { id: 'openai', label: 'OpenAI', ready: providerCredentials.openai, model: 'GPT-5.4' },
+      { id: 'google', label: 'Google', ready: providerCredentials.google, model: 'Gemini 3.1' },
+    ],
+    [providerCredentials]
+  );
+  const activeProvider = useMemo(() => inferProviderFromModel(form.model || ''), [form.model]);
+  const activeProviderLabel = useMemo(
+    () => providerReadiness.find((provider) => provider.id === activeProvider)?.label || 'Custom',
+    [activeProvider, providerReadiness]
+  );
+  const selectedModelEntry = useMemo(
+    () => models.find((modelItem) => modelItem.modelKey === form.model || modelItem.label === form.model) || null,
+    [models, form.model]
+  );
+
   const showFlash = (message) => {
     setFlash(message);
     if (flashTimerRef.current) window.clearTimeout(flashTimerRef.current);
@@ -286,9 +331,38 @@ export function SetupTab({ agent }) {
     setSaving(true);
     setSaveError('');
     try {
-      await updateAgentConfig(agent.id, form);
-      setSavedState(form);
-      showFlash('Configuration saved');
+      let targetAgentId = agent.id;
+      if (agent.isSyntheticCommander) {
+        const commander = await ensureCommanderAgent(user, activeWorkspace?.id || null);
+        targetAgentId = commander?.id || agent.id;
+      }
+
+      let normalizedForm = { ...form };
+      let savedModel = null;
+      if (form.model) {
+        savedModel = await createModelBankEntry({
+          label: form.model,
+          modelKey: form.model,
+        });
+        normalizedForm = { ...normalizedForm, model: savedModel.modelKey };
+      }
+
+      await refetchModels();
+      setSelectedProvider(savedModel?.provider || formatProviderLabel(inferProviderFromModel(normalizedForm.model || '')));
+
+      const updatedAgent = await updateAgentConfig(targetAgentId, normalizedForm);
+      const nextState = {
+        model: updatedAgent.model || normalizedForm.model,
+        temperature: updatedAgent.temperature ?? normalizedForm.temperature,
+        responseLength: updatedAgent.responseLength ?? normalizedForm.responseLength,
+        systemPrompt: updatedAgent.systemPrompt ?? normalizedForm.systemPrompt,
+        canSpawn: updatedAgent.canSpawn ?? normalizedForm.canSpawn,
+        spawnPattern: updatedAgent.spawnPattern ?? normalizedForm.spawnPattern,
+      };
+      setForm(nextState);
+      setSavedState(nextState);
+      onAgentUpdated?.(updatedAgent);
+      showFlash(agent.isSyntheticCommander ? 'Commander saved to durable row' : 'Configuration saved');
     } catch (error) {
       setSaveError(error.message || 'Failed to save configuration');
     } finally {
@@ -317,6 +391,22 @@ export function SetupTab({ agent }) {
       showFlash('Model bank updated');
     } catch (error) {
       setSaveError(error.message || 'Failed to save model');
+    }
+  };
+
+  const handleApplyProviderModel = async (provider) => {
+    try {
+      const saved = await createModelBankEntry({
+        label: provider.model,
+        modelKey: provider.model,
+        provider: provider.label,
+      });
+      await refetchModels();
+      setSelectedProvider(provider.label);
+      updateForm({ model: saved.modelKey });
+      showFlash(`${provider.label} model ready`);
+    } catch (error) {
+      setSaveError(error.message || 'Failed to prepare model');
     }
   };
 
@@ -416,7 +506,77 @@ export function SetupTab({ agent }) {
           >
             <div className="space-y-4">
               <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-4">
-                <div className="flex flex-wrap items-center gap-2">
+                {agent.isSyntheticCommander && (
+                  <div className="mb-4 rounded-2xl border border-aurora-amber/20 bg-aurora-amber/10 px-4 py-3 text-sm leading-6 text-text-body">
+                    You are viewing the fallback commander shell. Saving will first materialize the durable commander row for this workspace, then apply the runtime changes there.
+                  </div>
+                )}
+                <div className="rounded-2xl border border-white/[0.06] bg-black/10 p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-text-muted">Provider shortcuts</div>
+                      <div className="mt-1 text-xs text-text-body">Pick a provider default fast, then fine-tune from the model bank below.</div>
+                    </div>
+                    <CapabilityBadge>Active provider: {activeProviderLabel}</CapabilityBadge>
+                  </div>
+                  <div className="mt-4 grid gap-3 xl:grid-cols-3">
+                    {providerQuickActions.map((provider) => {
+                      const ready = providerCredentials[provider.id];
+                      const selected = form.model === provider.model || activeProvider === provider.id;
+                      return (
+                        <button
+                          key={provider.id}
+                          type="button"
+                          onClick={() => handleApplyProviderModel(provider)}
+                          className={cn(
+                            'rounded-2xl border px-4 py-4 text-left transition-colors',
+                            selected
+                              ? 'border-aurora-teal/30 bg-aurora-teal/12 shadow-[0_0_18px_rgba(0,217,200,0.08)]'
+                              : ready
+                                ? 'border-aurora-teal/20 bg-aurora-teal/10 hover:bg-aurora-teal/15'
+                                : 'border-white/[0.08] bg-white/[0.03] hover:bg-white/[0.05]'
+                          )}
+                        >
+                          <div className="space-y-4">
+                            <div>
+                              <div className="text-sm font-semibold text-text-primary">{provider.label}</div>
+                              <div className="mt-1 text-xs text-text-body">{provider.model}</div>
+                            </div>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className={cn('rounded-full border px-2.5 py-1 text-[9px] font-bold uppercase tracking-[0.14em]', ready ? 'border-aurora-green/20 bg-aurora-green/10 text-aurora-green' : 'border-aurora-amber/20 bg-aurora-amber/10 text-aurora-amber')}>
+                                {ready ? 'connected' : 'needs key'}
+                              </span>
+                              {selected && (
+                                <span className="rounded-full border border-aurora-teal/20 bg-aurora-teal/10 px-2.5 py-1 text-[9px] font-bold uppercase tracking-[0.14em] text-aurora-teal">
+                                  selected
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div className="grid gap-2 md:grid-cols-3">
+                  {providerReadiness.map((provider) => (
+                    <div key={provider.id} className="rounded-xl border border-white/[0.06] bg-black/10 px-3 py-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-text-muted">{provider.label}</span>
+                        <span className={cn('h-2.5 w-2.5 rounded-full', provider.ready ? 'bg-aurora-green' : 'bg-aurora-amber')} />
+                      </div>
+                      <div className={cn('mt-2 text-xs font-medium', provider.ready ? 'text-aurora-green' : 'text-aurora-amber')}>
+                        {provider.ready ? 'Connected' : 'Missing key'}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-text-muted">
+                    Model bank filter
+                  </div>
                   <SegmentedControl
                     options={[{ value: 'All', label: 'All' }, ...providerGroups.map(([provider]) => ({ value: provider, label: provider }))]}
                     value={selectedProvider}
@@ -424,7 +584,7 @@ export function SetupTab({ agent }) {
                   />
                 </div>
                 <div className="mt-4 grid gap-2 md:grid-cols-2">
-                  {visibleModels.map((modelItem) => (
+                  {(visibleModels.length > 0 ? visibleModels : selectedModelEntry ? [selectedModelEntry] : []).map((modelItem) => (
                     <button
                       key={modelItem.id}
                       type="button"
@@ -445,7 +605,7 @@ export function SetupTab({ agent }) {
                       </div>
                     </button>
                   ))}
-                  {!modelsLoading && visibleModels.length === 0 && (
+                  {!modelsLoading && visibleModels.length === 0 && !selectedModelEntry && (
                     <div className="rounded-2xl border border-dashed border-white/[0.08] px-4 py-4 text-sm text-text-body">
                       No saved models for this provider yet.
                     </div>

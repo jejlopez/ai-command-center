@@ -15,27 +15,237 @@ function corsResponse(body: unknown, status = 200): Response {
   });
 }
 
-// ── Cost per token by model family ────────────────────────────────────────────
+type Provider = 'anthropic' | 'openai' | 'google' | 'custom';
 
-function costPerToken(model: string): number {
-  if (model.startsWith('claude-opus-')) return 0.000075;
-  if (model.startsWith('claude-sonnet-')) return 0.000015;
-  return 0.000003; // haiku or unknown claude-* variants
+async function nextSessionSequence(db: ReturnType<typeof createClient>, sessionId: string): Promise<number> {
+  const { data } = await db
+    .from('session_events')
+    .select('sequence')
+    .eq('session_id', sessionId)
+    .order('sequence', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  return Number(data?.sequence ?? -1) + 1;
 }
 
-function normalizeExecutionModel(model: string): string {
+async function writeSessionEvent(
+  db: ReturnType<typeof createClient>,
+  userId: string,
+  sessionId: string | undefined,
+  workerAgentId: string | undefined,
+  event: {
+    eventType: string;
+    title: string;
+    content?: string;
+    status?: string;
+    payload?: Record<string, unknown>;
+    durationMs?: number;
+    tokenDelta?: number;
+    costDelta?: number;
+  },
+) {
+  if (!sessionId) return;
+
+  const sequence = await nextSessionSequence(db, sessionId);
+  await db.from('session_events').insert({
+    user_id: userId,
+    session_id: sessionId,
+    worker_agent_id: workerAgentId ?? null,
+    event_type: event.eventType,
+    title: event.title,
+    content: event.content || '',
+    status: event.status || null,
+    payload: event.payload || {},
+    sequence,
+    duration_ms: event.durationMs || 0,
+    token_delta: event.tokenDelta || 0,
+    cost_delta: event.costDelta || 0,
+  });
+}
+
+// ── Cost per token by model family ────────────────────────────────────────────
+
+function inferProvider(model: string): Provider {
+  const normalized = String(model || '').trim().toLowerCase();
+  if (!normalized) return 'custom';
+  if (normalized.includes('claude')) return 'anthropic';
+  if (normalized.includes('gpt') || normalized.includes('o1') || normalized.includes('o3') || normalized.includes('o4')) return 'openai';
+  if (normalized.includes('gemini')) return 'google';
+  return 'custom';
+}
+
+function providerLabel(provider: Provider): string {
+  if (provider === 'anthropic') return 'Anthropic';
+  if (provider === 'openai') return 'OpenAI';
+  if (provider === 'google') return 'Google';
+  return 'Custom';
+}
+
+function costPerToken(provider: Provider, model: string): number {
+  if (provider === 'anthropic') {
+    if (model.startsWith('claude-opus-')) return 0.000075;
+    if (model.startsWith('claude-sonnet-')) return 0.000015;
+    return 0.000003;
+  }
+  if (provider === 'openai') {
+    if (model.startsWith('gpt-5')) return 0.00002;
+    if (model.startsWith('o3') || model.startsWith('o4')) return 0.00003;
+    return 0.00001;
+  }
+  if (provider === 'google') {
+    if (model.startsWith('gemini-2.5-pro')) return 0.00001;
+    return 0.000005;
+  }
+  return 0.00001;
+}
+
+function normalizeExecutionModel(model: string, provider: Provider): string {
   const normalized = String(model || '').trim().toLowerCase();
 
   if (!normalized) return '';
-  if (normalized.startsWith('claude-')) return normalized;
+  if (provider === 'anthropic') {
+    if (normalized.startsWith('claude-')) return normalized;
+    const aliases: Record<string, string> = {
+      'claude opus 4.6': 'claude-opus-4-6',
+      'claude sonnet 4.6': 'claude-sonnet-4-6',
+      'claude sonnet 4.5': 'claude-sonnet-4-5',
+    };
+    return aliases[normalized] || normalized.replace(/\s+/g, '-');
+  }
+  if (provider === 'openai') {
+    return normalized
+      .replace(/\s+/g, '-')
+      .replace(/gpt[- ]?5\.4/g, 'gpt-5.4')
+      .replace(/gpt[- ]?5/g, 'gpt-5')
+      .replace(/o3[- ]?mini/g, 'o3-mini')
+      .replace(/o4[- ]?mini/g, 'o4-mini');
+  }
+  if (provider === 'google') {
+    return normalized.replace(/\s+/g, '-');
+  }
+  return normalized.replace(/\s+/g, '-');
+}
 
-  const aliases: Record<string, string> = {
-    'claude opus 4.6': 'claude-opus-4-6',
-    'claude sonnet 4.6': 'claude-sonnet-4-6',
-    'claude sonnet 4.5': 'claude-sonnet-4-5',
-  };
+function getProviderCredential(userSettings: Record<string, string | null>, provider: Provider): string {
+  if (provider === 'anthropic') return userSettings.anthropic_api_key || '';
+  if (provider === 'openai') return userSettings.openai_api_key || '';
+  if (provider === 'google') return userSettings.google_api_key || '';
+  return '';
+}
 
-  return aliases[normalized] || normalized.replace(/\s+/g, '-');
+function extractTextFromOpenAIResponse(payload: Record<string, unknown>): string {
+  const choices = Array.isArray(payload.choices) ? payload.choices as Array<Record<string, unknown>> : [];
+  const content = choices[0]?.message as Record<string, unknown> | undefined;
+  const raw = content?.content;
+  if (typeof raw === 'string') return raw;
+  if (Array.isArray(raw)) {
+    return raw
+      .map((item) => (typeof item === 'string' ? item : (item as Record<string, unknown>)?.text))
+      .filter(Boolean)
+      .join('\n');
+  }
+  return '';
+}
+
+function extractTextFromGoogleResponse(payload: Record<string, unknown>): string {
+  const candidates = Array.isArray(payload.candidates) ? payload.candidates as Array<Record<string, unknown>> : [];
+  const parts = (((candidates[0]?.content as Record<string, unknown> | undefined)?.parts) || []) as Array<Record<string, unknown>>;
+  return parts.map((part) => String(part.text || '')).join('\n').trim();
+}
+
+async function executeModel(params: {
+  provider: Provider;
+  apiKey: string;
+  model: string;
+  systemPrompt: string;
+  prompt: string;
+  temperature: number;
+  maxTokens: number;
+}): Promise<{ text: string; tokens: number }> {
+  const { provider, apiKey, model, systemPrompt, prompt, temperature, maxTokens } = params;
+
+  if (provider === 'anthropic') {
+    const anthropic = new Anthropic({ apiKey });
+    const aiResponse = await anthropic.messages.create({
+      model,
+      system: systemPrompt,
+      messages: [{ role: 'user', content: prompt }],
+      temperature,
+      max_tokens: maxTokens,
+    });
+
+    const text = (aiResponse.content[0] as { type: string; text: string }).text;
+    const tokens = aiResponse.usage.input_tokens + aiResponse.usage.output_tokens;
+    return { text, tokens };
+  }
+
+  if (provider === 'openai') {
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model,
+        messages: [
+          { role: 'system', content: systemPrompt || '' },
+          { role: 'user', content: prompt },
+        ],
+        temperature,
+        max_completion_tokens: maxTokens,
+      }),
+    });
+
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(String((payload as Record<string, unknown>)?.error?.message || `OpenAI HTTP ${response.status}`));
+    }
+
+    const text = extractTextFromOpenAIResponse(payload as Record<string, unknown>);
+    const usage = (payload as Record<string, unknown>).usage as Record<string, unknown> | undefined;
+    const tokens = Number(usage?.total_tokens || 0);
+    return { text, tokens };
+  }
+
+  if (provider === 'google') {
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        systemInstruction: systemPrompt
+          ? {
+              parts: [{ text: systemPrompt }],
+            }
+          : undefined,
+        contents: [
+          {
+            role: 'user',
+            parts: [{ text: prompt }],
+          },
+        ],
+        generationConfig: {
+          temperature,
+          maxOutputTokens: maxTokens,
+        },
+      }),
+    });
+
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(String((payload as Record<string, unknown>)?.error?.message || `Google HTTP ${response.status}`));
+    }
+
+    const text = extractTextFromGoogleResponse(payload as Record<string, unknown>);
+    const usage = (payload as Record<string, unknown>).usageMetadata as Record<string, unknown> | undefined;
+    const tokens = Number(usage?.totalTokenCount || 0);
+    return { text, tokens };
+  }
+
+  throw new Error(`Unsupported provider: ${provider}`);
 }
 
 // ── max_tokens by response_length ────────────────────────────────────────────
@@ -56,14 +266,14 @@ Deno.serve(async (req: Request) => {
 
   // ── Parse body ───────────────────────────────────────────────────────────
 
-  let body: { agent_id?: string; task_description?: string; task_id?: string };
+  let body: { agent_id?: string; task_description?: string; task_id?: string; session_id?: string; template_id?: string };
   try {
     body = await req.json();
   } catch {
     return corsResponse({ error: 'Invalid JSON body' }, 400);
   }
 
-  const { agent_id, task_description, task_id } = body;
+  const { agent_id, task_description, task_id, session_id, template_id } = body;
   if (!agent_id || !task_description) {
     return corsResponse({ error: 'Missing required fields: agent_id, task_description' }, 400);
   }
@@ -108,22 +318,61 @@ Deno.serve(async (req: Request) => {
     return corsResponse({ error: 'Forbidden — agent does not belong to this user' }, 403);
   }
 
-  const executionModel = normalizeExecutionModel(agent.model);
+  const provider = inferProvider(agent.model);
+  const executionModel = normalizeExecutionModel(agent.model, provider);
 
-  if (!executionModel.startsWith('claude-')) {
+  if (provider === 'custom') {
+    if (task_id) {
+      await db.from('tasks').update({
+        status: 'failed',
+        lane: 'blocked',
+        failed_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      }).eq('id', task_id).eq('user_id', user.id);
+    }
+    if (session_id) {
+      await db.from('agent_sessions').update({
+        status: 'failed',
+        summary: `Unsupported execution model: ${agent.model}`,
+        completed_at: new Date().toISOString(),
+      }).eq('id', session_id).eq('user_id', user.id);
+      await writeSessionEvent(db, user.id, session_id, agent.id, {
+        eventType: 'error',
+        title: 'Unsupported model',
+        content: `${agent.model} is not yet supported by the current runtime.`,
+        status: 'failed',
+        payload: { model: agent.model, provider, template_id },
+      });
+    }
     return corsResponse({ error: 'Model not yet supported in Phase 1' }, 422);
   }
 
-  // ── Fetch user's Anthropic API key ───────────────────────────────────────
+  // ── Fetch user's provider API keys ───────────────────────────────────────
 
   const { data: userSettings } = await db
     .from('user_settings')
-    .select('anthropic_api_key')
+    .select('anthropic_api_key, openai_api_key, google_api_key')
     .eq('user_id', user.id)
     .single();
 
-  if (!userSettings?.anthropic_api_key) {
-    return corsResponse({ error: 'No Anthropic API key set. Add it in Settings → Integrations.' }, 400);
+  const providerApiKey = getProviderCredential(userSettings || {}, provider);
+
+  if (!providerApiKey) {
+    if (session_id) {
+      await db.from('agent_sessions').update({
+        status: 'failed',
+        summary: `Missing ${providerLabel(provider)} API key`,
+        completed_at: new Date().toISOString(),
+      }).eq('id', session_id).eq('user_id', user.id);
+      await writeSessionEvent(db, user.id, session_id, agent.id, {
+        eventType: 'error',
+        title: 'Missing credentials',
+        content: `No ${providerLabel(provider)} API key set. Add it in Settings -> Connected Systems.`,
+        status: 'failed',
+        payload: { provider },
+      });
+    }
+    return corsResponse({ error: `No ${providerLabel(provider)} API key set. Add it in Settings -> Connected Systems.` }, 400);
   }
 
   // ── Mark processing ──────────────────────────────────────────────────────
@@ -139,26 +388,40 @@ Deno.serve(async (req: Request) => {
       updated_at: new Date().toISOString(),
     }).eq('id', task_id).eq('user_id', user.id);
   }
+  if (session_id) {
+    await db.from('agent_sessions').update({
+      status: 'running',
+      started_at: new Date().toISOString(),
+      worker_agent_id: agent.id,
+      root_agent_id: agent.parent_id || null,
+      summary: 'Execution in progress',
+    }).eq('id', session_id).eq('user_id', user.id);
 
-  // ── Call Anthropic ───────────────────────────────────────────────────────
+    await writeSessionEvent(db, user.id, session_id, agent.id, {
+      eventType: 'tool_call',
+      title: 'dispatch-task',
+      content: 'Managed runtime invoked the task executor.',
+      status: 'running',
+      payload: { model: executionModel, provider, template_id, task_id },
+    });
+  }
+
+  // ── Call model provider ──────────────────────────────────────────────────
 
   const startTime = Date.now();
 
   try {
-    const anthropic = new Anthropic({ apiKey: userSettings.anthropic_api_key });
-
-    const aiResponse = await anthropic.messages.create({
+    const { text: responseText, tokens } = await executeModel({
+      provider,
+      apiKey: providerApiKey,
       model: executionModel,
-      system: agent.system_prompt || '',
-      messages: [{ role: 'user', content: task_description }],
+      systemPrompt: agent.system_prompt || '',
+      prompt: task_description,
       temperature: parseFloat(agent.temperature) ?? 0.7,
-      max_tokens: MAX_TOKENS_MAP[agent.response_length as string] ?? 2048,
+      maxTokens: MAX_TOKENS_MAP[agent.response_length as string] ?? 2048,
     });
-
     const latency = Date.now() - startTime;
-    const responseText = (aiResponse.content[0] as { type: string; text: string }).text;
-    const tokens = aiResponse.usage.input_tokens + aiResponse.usage.output_tokens;
-    const cost = tokens * costPerToken(agent.model);
+    const cost = tokens * costPerToken(provider, executionModel);
 
     const taskId = task_id || crypto.randomUUID();
     const reviewId = crypto.randomUUID();
@@ -189,6 +452,8 @@ Deno.serve(async (req: Request) => {
         prompt_text: task_description,
         result_text: responseText,
         completed_at: completedAt,
+        session_id: session_id || null,
+        template_id: template_id || null,
       });
 
     await Promise.all([
@@ -207,6 +472,7 @@ Deno.serve(async (req: Request) => {
         type: 'OK',
         message: ('Task completed: ' + task_description).substring(0, 120),
         agent_id: agent.id,
+        session_id: session_id || null,
         tokens,
         duration_ms: latency,
       }),
@@ -222,8 +488,40 @@ Deno.serve(async (req: Request) => {
         status: 'awaiting_approval',
         summary: responseText.substring(0, 200),
         payload: JSON.stringify({ content: responseText }),
+        session_id: session_id || null,
       }),
     ]);
+
+    if (session_id) {
+      await db.from('agent_sessions').update({
+        status: 'needs_review',
+        summary: responseText.substring(0, 240),
+        total_tokens: tokens,
+        total_cost: cost,
+        tool_call_count: 1,
+        completed_at: completedAt,
+      }).eq('id', session_id).eq('user_id', user.id);
+
+      await Promise.all([
+        writeSessionEvent(db, user.id, session_id, agent.id, {
+          eventType: 'tool_result',
+          title: 'Model response received',
+          content: responseText.substring(0, 400),
+          status: 'completed',
+          payload: { model: executionModel, provider, task_id, template_id },
+          durationMs: latency,
+          tokenDelta: tokens,
+          costDelta: cost,
+        }),
+        writeSessionEvent(db, user.id, session_id, agent.id, {
+          eventType: 'approval_requested',
+          title: 'Approval requested',
+          content: 'Output was written to the review queue and needs commander approval.',
+          status: 'needs_review',
+          payload: { review_id: reviewId },
+        }),
+      ]);
+    }
 
     return corsResponse({
       success: true,
@@ -254,9 +552,27 @@ Deno.serve(async (req: Request) => {
       type: 'ERR',
       message: error.message.substring(0, 200),
       agent_id: agent_id,
+      session_id: session_id || null,
       tokens: 0,
       duration_ms: latency,
     });
+
+    if (session_id) {
+      await db.from('agent_sessions').update({
+        status: 'failed',
+        summary: error.message.substring(0, 240),
+        completed_at: new Date().toISOString(),
+      }).eq('id', session_id).eq('user_id', user.id);
+
+      await writeSessionEvent(db, user.id, session_id, agent.id, {
+        eventType: 'error',
+        title: 'Execution failed',
+        content: error.message.substring(0, 400),
+        status: 'failed',
+        payload: { task_id, template_id },
+        durationMs: latency,
+      });
+    }
 
     return corsResponse({ error: error.message }, 500);
   }

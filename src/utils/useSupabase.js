@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../lib/supabaseClient';
 import { useAuth } from '../context/AuthContext';
+import { useWorkspaces } from '../context/WorkspaceContext';
 
 function createRealtimeChannelName(prefix, userId) {
   const uniqueSuffix = typeof crypto !== 'undefined' && crypto.randomUUID
@@ -9,14 +10,261 @@ function createRealtimeChannelName(prefix, userId) {
   return `${prefix}-${userId}-${uniqueSuffix}`;
 }
 
+const PROVIDER_KEY_FIELD = {
+  anthropic: 'anthropic_api_key',
+  openai: 'openai_api_key',
+  google: 'google_api_key',
+};
+
+const ACTIVE_WORKSPACE_STORAGE_KEY = 'jarvis_active_workspace';
+
+const PROVIDER_DEFAULT_MODEL = {
+  anthropic: 'Claude Opus 4.6',
+  openai: 'GPT-5.4',
+  google: 'Gemini 3.1',
+};
+
+function getStoredWorkspaceId() {
+  if (typeof window === 'undefined') return null;
+  try {
+    return window.localStorage.getItem(ACTIVE_WORKSPACE_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function sanitizePersistedAgentId(agentId) {
+  if (!agentId || agentId === 'synthetic-commander') return null;
+  return agentId;
+}
+
+function normalizeProviderKey(value = '') {
+  const normalized = value.trim().toLowerCase();
+  if (!normalized) return 'custom';
+  if (normalized.includes('anthropic') || normalized.includes('claude')) return 'anthropic';
+  if (normalized.includes('openai') || normalized.includes('open ai') || normalized === 'gpt') return 'openai';
+  if (normalized.includes('google') || normalized.includes('gemini')) return 'google';
+  return 'custom';
+}
+
+function inferProviderFromModelLabel(value = '') {
+  const normalized = value.trim().toLowerCase();
+  if (!normalized) return 'custom';
+  if (normalized.includes('claude') || normalized.includes('anthropic')) return 'anthropic';
+  if (normalized.includes('gpt') || normalized.includes('openai') || normalized.includes('open ai') || normalized.includes('o1') || normalized.includes('o3') || normalized.includes('o4')) return 'openai';
+  if (normalized.includes('gemini') || normalized.includes('google')) return 'google';
+  return 'custom';
+}
+
+function formatProviderName(providerKey = 'custom') {
+  if (providerKey === 'anthropic') return 'Anthropic';
+  if (providerKey === 'openai') return 'OpenAI';
+  if (providerKey === 'google') return 'Google';
+  return 'Custom';
+}
+
+function resolveModelDraft({ modelKey, label, provider }) {
+  const rawLabel = label?.trim() || modelKey?.trim() || '';
+  const normalizedProvider = normalizeProviderKey(provider || rawLabel);
+  const inferredProvider = normalizedProvider !== 'custom' ? normalizedProvider : inferProviderFromModelLabel(rawLabel);
+  const providerKey = inferredProvider || 'custom';
+  const genericProviderAsk = rawLabel && normalizeProviderKey(rawLabel) !== 'custom' && !/[0-9]/.test(rawLabel) && !rawLabel.includes('-');
+  const resolvedLabel = genericProviderAsk
+    ? (PROVIDER_DEFAULT_MODEL[providerKey] || rawLabel)
+    : rawLabel;
+
+  return {
+    modelKey: resolvedLabel,
+    label: resolvedLabel,
+    provider: formatProviderName(providerKey),
+  };
+}
+
+function useResolvedWorkspaceId(workspaceId = null) {
+  const workspaceContext = useWorkspaces();
+  return workspaceId ?? workspaceContext?.activeWorkspace?.id ?? null;
+}
+
+const DEFAULT_TEMPLATE_SEEDS = [
+  {
+    name: 'Code Reviewer',
+    role: 'qa',
+    description: 'Reviews code changes for bugs, regressions, missing tests, and risky edge cases.',
+    defaultModel: 'Claude Opus 4.6',
+    systemPrompt: 'You are the code review specialist. Focus on correctness, risk, regressions, and missing validation.',
+    allowedTools: ['repo', 'diff', 'lint'],
+    environmentBindings: ['repository', 'pull-request'],
+    vaultRequirements: [],
+    approvalMode: 'review_first',
+    spawnPolicy: 'ephemeral',
+    defaultVisibility: 'shared',
+    canDelegate: false,
+  },
+  {
+    name: 'Frontend Builder',
+    role: 'ui-agent',
+    description: 'Builds polished user-facing surfaces that follow the Jarvis command-center visual language.',
+    defaultModel: 'GPT-5.4',
+    systemPrompt: 'You are the frontend builder. Ship tactile, intentional interfaces that preserve the established design system.',
+    allowedTools: ['repo', 'design-system', 'storybook'],
+    environmentBindings: ['repository'],
+    vaultRequirements: [],
+    approvalMode: 'review_first',
+    spawnPolicy: 'ephemeral',
+    defaultVisibility: 'shared',
+    canDelegate: false,
+  },
+  {
+    name: 'Supabase Operator',
+    role: 'ops',
+    description: 'Owns schema, migrations, policies, and runtime data plumbing for Supabase-backed features.',
+    defaultModel: 'GPT-5.4',
+    systemPrompt: 'You are the Supabase operator. Keep data models, RLS, and backend integrity clean and auditable.',
+    allowedTools: ['supabase', 'sql', 'repo'],
+    environmentBindings: ['supabase'],
+    vaultRequirements: ['Supabase service role'],
+    approvalMode: 'approval_required',
+    spawnPolicy: 'ephemeral',
+    defaultVisibility: 'restricted',
+    canDelegate: false,
+  },
+  {
+    name: 'Research Analyst',
+    role: 'researcher',
+    description: 'Investigates markets, product ideas, and technical options and returns structured findings.',
+    defaultModel: 'Gemini 3.1',
+    systemPrompt: 'You are the research analyst. Gather signal, compare options, and return concise decision support.',
+    allowedTools: ['web', 'documents', 'knowledge'],
+    environmentBindings: ['knowledge-base'],
+    vaultRequirements: [],
+    approvalMode: 'review_first',
+    spawnPolicy: 'ephemeral',
+    defaultVisibility: 'shared',
+    canDelegate: false,
+  },
+  {
+    name: 'Docs and Briefing Writer',
+    role: 'researcher',
+    description: 'Turns messy inputs into launch notes, briefings, and executive updates.',
+    defaultModel: 'Claude Sonnet 4.6',
+    systemPrompt: 'You are the briefing writer. Turn rough context into polished, actionable written output.',
+    allowedTools: ['documents', 'repo', 'knowledge'],
+    environmentBindings: ['workspace'],
+    vaultRequirements: [],
+    approvalMode: 'review_first',
+    spawnPolicy: 'ephemeral',
+    defaultVisibility: 'shared',
+    canDelegate: false,
+  },
+  {
+    name: 'Incident Commander',
+    role: 'ops',
+    description: 'Triages incidents, coordinates response actions, and keeps the human informed.',
+    defaultModel: 'Claude Opus 4.6',
+    systemPrompt: 'You are the incident commander. Triage impact, coordinate next actions, and keep updates crisp.',
+    allowedTools: ['logs', 'alerts', 'repo'],
+    environmentBindings: ['observability', 'workspace'],
+    vaultRequirements: ['Ops pager', 'Incident webhook'],
+    approvalMode: 'approval_required',
+    spawnPolicy: 'ephemeral',
+    defaultVisibility: 'restricted',
+    canDelegate: true,
+  },
+  {
+    name: 'Task Router',
+    role: 'ops',
+    description: 'Routes work to the right specialist template and keeps the execution graph organized.',
+    defaultModel: 'GPT-5.4-mini',
+    systemPrompt: 'You are the task router. Break requests into specialist work and delegate with discipline.',
+    allowedTools: ['planner', 'repo'],
+    environmentBindings: ['workspace'],
+    vaultRequirements: [],
+    approvalMode: 'review_first',
+    spawnPolicy: 'ephemeral',
+    defaultVisibility: 'shared',
+    canDelegate: true,
+  },
+  {
+    name: 'QA Regression Specialist',
+    role: 'qa',
+    description: 'Runs targeted validation passes, regression checks, and acceptance criteria review.',
+    defaultModel: 'GPT-5.4-mini',
+    systemPrompt: 'You are the QA regression specialist. Validate expected behavior and flag regressions clearly.',
+    allowedTools: ['repo', 'tests', 'lint'],
+    environmentBindings: ['repository'],
+    vaultRequirements: [],
+    approvalMode: 'review_first',
+    spawnPolicy: 'ephemeral',
+    defaultVisibility: 'shared',
+    canDelegate: false,
+  },
+  {
+    name: 'Growth and Content Operator',
+    role: 'researcher',
+    description: 'Drafts growth experiments, launch assets, and content operations workflows.',
+    defaultModel: 'Gemini 3.1',
+    systemPrompt: 'You are the growth operator. Produce high-leverage content and experiment ideas tied to business outcomes.',
+    allowedTools: ['documents', 'web', 'knowledge'],
+    environmentBindings: ['workspace'],
+    vaultRequirements: ['Marketing CMS'],
+    approvalMode: 'review_first',
+    spawnPolicy: 'ephemeral',
+    defaultVisibility: 'shared',
+    canDelegate: false,
+  },
+  {
+    name: 'Integration and MCP Technician',
+    role: 'ops',
+    description: 'Configures MCP servers, tool access, credentials, and integration readiness.',
+    defaultModel: 'GPT-5.4',
+    systemPrompt: 'You are the integration technician. Make tools available safely, validate credentials, and surface readiness blockers.',
+    allowedTools: ['mcp', 'credentials', 'repo'],
+    environmentBindings: ['mcp', 'connected-systems'],
+    vaultRequirements: ['Tool secrets'],
+    approvalMode: 'approval_required',
+    spawnPolicy: 'ephemeral',
+    defaultVisibility: 'restricted',
+    canDelegate: false,
+  },
+];
+
+async function ensureDefaultAgentTemplates(user) {
+  if (!user?.id) return [];
+
+  const rows = DEFAULT_TEMPLATE_SEEDS.map((template) => ({
+    user_id: user.id,
+    name: template.name,
+    role: template.role,
+    description: template.description,
+    default_model: template.defaultModel,
+    system_prompt: template.systemPrompt,
+    allowed_tools: template.allowedTools,
+    environment_bindings: template.environmentBindings,
+    vault_requirements: template.vaultRequirements,
+    approval_mode: template.approvalMode,
+    spawn_policy: template.spawnPolicy,
+    default_visibility: template.defaultVisibility,
+    can_delegate: template.canDelegate,
+  }));
+
+  const { data, error } = await supabase
+    .from('agent_templates')
+    .upsert(rows, { onConflict: 'user_id,name' })
+    .select('*');
+
+  if (error) throw error;
+  return (data || []).map(mapAgentTemplateFromDb);
+}
+
 async function ensureModelBankEntry(user, modelKey, provider = 'Custom') {
   if (!user?.id || !modelKey) return null;
+  const normalized = resolveModelDraft({ modelKey, label: modelKey, provider });
 
   const row = {
     user_id: user.id,
-    model_key: modelKey,
-    label: modelKey,
-    provider,
+    model_key: normalized.modelKey,
+    label: normalized.label,
+    provider: normalized.provider,
   };
 
   const { data, error } = await supabase
@@ -29,13 +277,38 @@ async function ensureModelBankEntry(user, modelKey, provider = 'Custom') {
   return data;
 }
 
-async function ensureCommanderAgent(user) {
+async function getUserSettings(userId) {
+  if (!userId) return null;
+  const { data, error } = await supabase
+    .from('user_settings')
+    .select('*')
+    .eq('user_id', userId)
+    .maybeSingle();
+
+  if (error) throw error;
+  return data;
+}
+
+export async function ensureCommanderAgent(user, workspaceId = null) {
   if (!user?.id) return null;
 
   const commanderName = user.user_metadata?.full_name?.trim()
     ? `${user.user_metadata.full_name.trim()} Command`
     : 'Jarvis Commander';
   const commanderModel = 'Claude Opus 4.6';
+
+  const { data: workspaceCommander, error: workspaceError } = await supabase
+    .from('agents')
+    .select('*')
+    .eq('user_id', user.id)
+    .eq('role', 'commander')
+    .eq('workspace_id', workspaceId || null)
+    .order('created_at', { ascending: true })
+    .limit(1)
+    .maybeSingle();
+
+  if (workspaceError && workspaceId) throw workspaceError;
+  if (workspaceCommander) return workspaceCommander;
 
   const { data: existingCommander, error: existingError } = await supabase
     .from('agents')
@@ -62,7 +335,6 @@ async function ensureCommanderAgent(user) {
     can_spawn: true,
     spawn_pattern: 'fan-out',
   };
-
   const { data, error } = await supabase
     .from('agents')
     .insert([row])
@@ -121,8 +393,9 @@ function buildSyntheticCommander(user) {
  * Hook to fetch agents from Supabase with realtime subscription.
  * Scoped to the current authenticated user.
  */
-export function useAgents() {
+export function useAgents(workspaceId = null) {
   const { user } = useAuth();
+  const resolvedWorkspaceId = useResolvedWorkspaceId(workspaceId);
   const [agents, setAgents] = useState([]);
   const [loading, setLoading] = useState(true);
   const commanderBootstrapAttempted = useRef(false);
@@ -135,21 +408,40 @@ export function useAgents() {
     }
 
     try {
-      const { data, error } = await supabase
+      let query = supabase
         .from('agents')
         .select('*')
         .eq('user_id', user.id)
-        .order('created_at', { ascending: true });
+        .is('archived_at', null);
+
+      if (resolvedWorkspaceId) query = query.eq('workspace_id', resolvedWorkspaceId);
+
+      const { data, error } = await query.order('created_at', { ascending: true });
 
       if (error) throw error;
 
-      const rows = data || [];
+      let rows = data || [];
+
+      if (resolvedWorkspaceId && !rows.some((agent) => agent.role === 'commander')) {
+        const { data: globalCommander, error: commanderError } = await supabase
+          .from('agents')
+          .select('*')
+          .eq('user_id', user.id)
+          .eq('role', 'commander')
+          .order('created_at', { ascending: true })
+          .limit(1)
+          .maybeSingle();
+
+        if (commanderError) throw commanderError;
+        if (globalCommander) rows = [globalCommander, ...rows];
+      }
+
       const hasCommander = rows.some((agent) => agent.role === 'commander');
 
       if (!hasCommander && !commanderBootstrapAttempted.current) {
         commanderBootstrapAttempted.current = true;
         try {
-          await ensureCommanderAgent(user);
+          await ensureCommanderAgent(user, resolvedWorkspaceId);
           return fetchAgents();
         } catch (bootstrapError) {
           console.error('[useAgents] Commander bootstrap failed, using fallback commander:', bootstrapError);
@@ -164,7 +456,7 @@ export function useAgents() {
     } finally {
       setLoading(false);
     }
-  }, [user]);
+  }, [user, resolvedWorkspaceId]);
 
   useEffect(() => {
     if (!user) return;
@@ -188,6 +480,12 @@ export function useAgents() {
       supabase.removeChannel(channel);
     };
   }, [user, fetchAgents]);
+
+  useEffect(() => {
+    setAgents([]);
+    setLoading(Boolean(user));
+    commanderBootstrapAttempted.current = false;
+  }, [resolvedWorkspaceId, user]);
 
   const addOptimistic = useCallback((agentData) => {
     if (!user) return;
@@ -221,8 +519,9 @@ export function useAgents() {
 /**
  * Hook to fetch tasks from Supabase with user scoping.
  */
-export function useTasks() {
+export function useTasks(workspaceId = null) {
   const { user } = useAuth();
+  const resolvedWorkspaceId = useResolvedWorkspaceId(workspaceId);
   const [tasks, setTasks] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -232,13 +531,16 @@ export function useTasks() {
       setLoading(false);
       return;
     }
-    
+
     try {
-      const { data, error } = await supabase
+      let query = supabase
         .from('tasks')
         .select('*')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: true });
+        .eq('user_id', user.id);
+
+      if (resolvedWorkspaceId) query = query.eq('workspace_id', resolvedWorkspaceId);
+
+      const { data, error } = await query.order('created_at', { ascending: true });
 
       if (error) throw error;
 
@@ -249,13 +551,13 @@ export function useTasks() {
     } finally {
       setLoading(false);
     }
-  }, [user]);
+  }, [user, resolvedWorkspaceId]);
 
   useEffect(() => {
     if (!user) return;
-    
+
     fetchTasks();
-    
+
     const channel = supabase
       .channel(createRealtimeChannelName('tasks-user', user.id))
       .on('postgres_changes', { 
@@ -272,6 +574,11 @@ export function useTasks() {
       supabase.removeChannel(channel);
     };
   }, [user, fetchTasks]);
+
+  useEffect(() => {
+    setTasks([]);
+    setLoading(Boolean(user));
+  }, [resolvedWorkspaceId, user]);
 
   return { tasks, loading, refetch: fetchTasks };
 }
@@ -455,8 +762,9 @@ export function useSchedules() {
   return { schedules, loading, refetch: fetchSchedules };
 }
 
-export function useConnectedSystems() {
+export function useConnectedSystems(workspaceId = null) {
   const { user } = useAuth();
+  const resolvedWorkspaceId = useResolvedWorkspaceId(workspaceId);
   const [connectedSystems, setConnectedSystems] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -468,11 +776,14 @@ export function useConnectedSystems() {
     }
 
     try {
-      const { data, error } = await supabase
+      let query = supabase
         .from('connected_systems')
         .select('*')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false });
+        .eq('user_id', user.id);
+
+      if (resolvedWorkspaceId) query = query.eq('workspace_id', resolvedWorkspaceId);
+
+      const { data, error } = await query.order('created_at', { ascending: false });
 
       if (error) throw error;
       setConnectedSystems((data || []).map(mapConnectedSystemFromDb));
@@ -482,7 +793,7 @@ export function useConnectedSystems() {
     } finally {
       setLoading(false);
     }
-  }, [user]);
+  }, [user, resolvedWorkspaceId]);
 
   useEffect(() => {
     if (!user) return undefined;
@@ -503,19 +814,24 @@ export function useConnectedSystems() {
     };
   }, [user, fetchConnectedSystems]);
 
+  useEffect(() => {
+    setConnectedSystems([]);
+    setLoading(Boolean(user));
+  }, [resolvedWorkspaceId, user]);
+
   const upsertSystem = useCallback(async (system) => {
     if (!user) throw new Error('Not authenticated');
 
-    const row = mapConnectedSystemToDb(user.id, system);
+    const row = mapConnectedSystemToDb(user.id, system, resolvedWorkspaceId);
     const { data, error } = await supabase
       .from('connected_systems')
-      .upsert(row, { onConflict: 'user_id,integration_key' })
+      .upsert(row, { onConflict: 'workspace_id,integration_key' })
       .select()
       .single();
 
     if (error) throw error;
     return mapConnectedSystemFromDb(data);
-  }, [user]);
+  }, [user, resolvedWorkspaceId]);
 
   const removeSystem = useCallback(async (systemId) => {
     if (!user || !systemId) return;
@@ -555,8 +871,9 @@ export function useConnectedSystems() {
   };
 }
 
-export function useKnowledgeNamespaces() {
+export function useKnowledgeNamespaces(workspaceId = null) {
   const { user } = useAuth();
+  const resolvedWorkspaceId = useResolvedWorkspaceId(workspaceId);
   const [namespaces, setNamespaces] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -568,11 +885,14 @@ export function useKnowledgeNamespaces() {
     }
 
     try {
-      const { data, error } = await supabase
+      let query = supabase
         .from('knowledge_namespaces')
         .select('*')
-        .eq('user_id', user.id)
-        .order('updated_at', { ascending: false });
+        .eq('user_id', user.id);
+
+      if (resolvedWorkspaceId) query = query.eq('workspace_id', resolvedWorkspaceId);
+
+      const { data, error } = await query.order('updated_at', { ascending: false });
 
       if (error) throw error;
       setNamespaces((data || []).map(mapKnowledgeNamespaceFromDb));
@@ -582,7 +902,7 @@ export function useKnowledgeNamespaces() {
     } finally {
       setLoading(false);
     }
-  }, [user]);
+  }, [user, resolvedWorkspaceId]);
 
   useEffect(() => {
     if (!user) return undefined;
@@ -590,11 +910,17 @@ export function useKnowledgeNamespaces() {
     return undefined;
   }, [user, fetchNamespaces]);
 
+  useEffect(() => {
+    setNamespaces([]);
+    setLoading(Boolean(user));
+  }, [resolvedWorkspaceId, user]);
+
   return { namespaces, loading, refetch: fetchNamespaces };
 }
 
-export function useSharedDirectives() {
+export function useSharedDirectives(workspaceId = null) {
   const { user } = useAuth();
+  const resolvedWorkspaceId = useResolvedWorkspaceId(workspaceId);
   const [directives, setDirectives] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -606,10 +932,14 @@ export function useSharedDirectives() {
     }
 
     try {
-      const { data, error } = await supabase
+      let query = supabase
         .from('shared_directives')
         .select('*')
-        .eq('user_id', user.id)
+        .eq('user_id', user.id);
+
+      if (resolvedWorkspaceId) query = query.eq('workspace_id', resolvedWorkspaceId);
+
+      const { data, error } = await query
         .order('priority', { ascending: false })
         .order('updated_at', { ascending: false });
 
@@ -621,13 +951,18 @@ export function useSharedDirectives() {
     } finally {
       setLoading(false);
     }
-  }, [user]);
+  }, [user, resolvedWorkspaceId]);
 
   useEffect(() => {
     if (!user) return undefined;
     fetchDirectives();
     return undefined;
   }, [user, fetchDirectives]);
+
+  useEffect(() => {
+    setDirectives([]);
+    setLoading(Boolean(user));
+  }, [resolvedWorkspaceId, user]);
 
   return { directives, loading, refetch: fetchDirectives };
 }
@@ -884,8 +1219,9 @@ export function useSkillBank() {
   return { skills, loading, refetch: fetchSkills };
 }
 
-export function useMcpServers() {
+export function useMcpServers(workspaceId = null) {
   const { user } = useAuth();
+  const resolvedWorkspaceId = useResolvedWorkspaceId(workspaceId);
   const [servers, setServers] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -897,11 +1233,14 @@ export function useMcpServers() {
     }
 
     try {
-      const { data, error } = await supabase
+      let query = supabase
         .from('mcp_servers')
         .select('*')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: true });
+        .eq('user_id', user.id);
+
+      if (resolvedWorkspaceId) query = query.eq('workspace_id', resolvedWorkspaceId);
+
+      const { data, error } = await query.order('created_at', { ascending: true });
 
       if (error) throw error;
       setServers((data || []).map(mapMcpServerFromDb));
@@ -911,26 +1250,581 @@ export function useMcpServers() {
     } finally {
       setLoading(false);
     }
-  }, [user]);
+  }, [user, resolvedWorkspaceId]);
 
   useEffect(() => {
     fetchServers();
   }, [fetchServers]);
 
+  useEffect(() => {
+    setServers([]);
+    setLoading(Boolean(user));
+  }, [resolvedWorkspaceId, user]);
+
   return { servers, loading, refetch: fetchServers };
+}
+
+export function useAgentTemplates() {
+  const { user } = useAuth();
+  const [templates, setTemplates] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const seededDefaultsRef = useRef(false);
+
+  const fetchTemplates = useCallback(async () => {
+    if (!user) {
+      setTemplates([]);
+      setLoading(false);
+      return;
+    }
+
+    try {
+      let { data, error } = await supabase
+        .from('agent_templates')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: true });
+
+      if (error) throw error;
+
+      if ((data || []).length === 0 && !seededDefaultsRef.current) {
+        seededDefaultsRef.current = true;
+        await ensureDefaultAgentTemplates(user);
+        ({ data, error } = await supabase
+          .from('agent_templates')
+          .select('*')
+          .eq('user_id', user.id)
+          .order('created_at', { ascending: true }));
+        if (error) throw error;
+      }
+
+      setTemplates((data || []).map(mapAgentTemplateFromDb));
+    } catch (error) {
+      console.error('[useAgentTemplates] Fetch error:', error);
+      setTemplates([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) return undefined;
+    fetchTemplates();
+
+    const channel = supabase
+      .channel(createRealtimeChannelName('agent-templates-user', user.id))
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'agent_templates', filter: `user_id=eq.${user.id}` },
+        () => fetchTemplates()
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user, fetchTemplates]);
+
+  return { templates, loading, refetch: fetchTemplates };
+}
+
+export function useAgentSessions({ activeOnly = false } = {}) {
+  const { user } = useAuth();
+  const [sessions, setSessions] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetchSessions = useCallback(async () => {
+    if (!user) {
+      setSessions([]);
+      setLoading(false);
+      return;
+    }
+
+    try {
+      let query = supabase
+        .from('agent_sessions')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('updated_at', { ascending: false });
+
+      if (activeOnly) {
+        query = query.in('status', ['queued', 'running', 'waiting_for_tool', 'needs_review']);
+      }
+
+      const { data, error } = await query;
+      if (error) throw error;
+      setSessions((data || []).map(mapAgentSessionFromDb));
+    } catch (error) {
+      console.error('[useAgentSessions] Fetch error:', error);
+      setSessions([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [user, activeOnly]);
+
+  useEffect(() => {
+    if (!user) return undefined;
+    fetchSessions();
+
+    const channel = supabase
+      .channel(createRealtimeChannelName('agent-sessions-user', user.id))
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'agent_sessions', filter: `user_id=eq.${user.id}` },
+        () => fetchSessions()
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user, fetchSessions]);
+
+  return { sessions, loading, refetch: fetchSessions };
+}
+
+export function useSessionEvents(sessionId) {
+  const { user } = useAuth();
+  const [events, setEvents] = useState([]);
+  const [loading, setLoading] = useState(Boolean(sessionId));
+
+  const fetchEvents = useCallback(async () => {
+    if (!user || !sessionId) {
+      setEvents([]);
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('session_events')
+        .select('*')
+        .eq('user_id', user.id)
+        .eq('session_id', sessionId)
+        .order('sequence', { ascending: true })
+        .order('created_at', { ascending: true });
+
+      if (error) throw error;
+      setEvents((data || []).map(mapSessionEventFromDb));
+    } catch (error) {
+      console.error('[useSessionEvents] Fetch error:', error);
+      setEvents([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [user, sessionId]);
+
+  useEffect(() => {
+    if (!user || !sessionId) {
+      setEvents([]);
+      setLoading(false);
+      return undefined;
+    }
+
+    fetchEvents();
+
+    const channel = supabase
+      .channel(createRealtimeChannelName(`session-events-${sessionId}`, user.id))
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'session_events', filter: `user_id=eq.${user.id}` },
+        (payload) => {
+          if (payload.new?.session_id === sessionId || payload.old?.session_id === sessionId) {
+            fetchEvents();
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user, sessionId, fetchEvents]);
+
+  return { events, loading, refetch: fetchEvents };
+}
+
+export function useCredentialVaults() {
+  const { user } = useAuth();
+  const [vaults, setVaults] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetchVaults = useCallback(async () => {
+    if (!user) {
+      setVaults([]);
+      setLoading(false);
+      return;
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from('credential_vaults')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      setVaults((data || []).map(mapCredentialVaultFromDb));
+    } catch (error) {
+      console.error('[useCredentialVaults] Fetch error:', error);
+      setVaults([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) return undefined;
+    fetchVaults();
+
+    const channel = supabase
+      .channel(createRealtimeChannelName('credential-vaults-user', user.id))
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'credential_vaults', filter: `user_id=eq.${user.id}` },
+        () => fetchVaults()
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user, fetchVaults]);
+
+  return { vaults, loading, refetch: fetchVaults };
+}
+
+export function useVaultBindings(ownerType = null, ownerId = null) {
+  const { user } = useAuth();
+  const [bindings, setBindings] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetchBindings = useCallback(async () => {
+    if (!user) {
+      setBindings([]);
+      setLoading(false);
+      return;
+    }
+
+    try {
+      let query = supabase
+        .from('vault_bindings')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false });
+
+      if (ownerType) query = query.eq('owner_type', ownerType);
+      if (ownerId) query = query.eq('owner_id', ownerId);
+
+      const { data, error } = await query;
+      if (error) throw error;
+      setBindings((data || []).map(mapVaultBindingFromDb));
+    } catch (error) {
+      console.error('[useVaultBindings] Fetch error:', error);
+      setBindings([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [user, ownerType, ownerId]);
+
+  useEffect(() => {
+    if (!user) return undefined;
+    fetchBindings();
+    return undefined;
+  }, [user, fetchBindings]);
+
+  return { bindings, loading, refetch: fetchBindings };
+}
+
+export function useProviderCredentials() {
+  const { user } = useAuth();
+  const [credentials, setCredentials] = useState({
+    anthropic: false,
+    openai: false,
+    google: false,
+  });
+  const [loading, setLoading] = useState(true);
+
+  const fetchCredentials = useCallback(async () => {
+    if (!user) {
+      setCredentials({ anthropic: false, openai: false, google: false });
+      setLoading(false);
+      return;
+    }
+
+    try {
+      const data = await getUserSettings(user.id);
+      setCredentials({
+        anthropic: Boolean(data?.anthropic_api_key),
+        openai: Boolean(data?.openai_api_key),
+        google: Boolean(data?.google_api_key),
+      });
+    } catch (error) {
+      console.error('[useProviderCredentials] Fetch error:', error);
+      setCredentials({ anthropic: false, openai: false, google: false });
+    } finally {
+      setLoading(false);
+    }
+  }, [user]);
+
+  useEffect(() => {
+    fetchCredentials();
+  }, [fetchCredentials]);
+
+  return { credentials, loading, refetch: fetchCredentials };
+}
+
+export async function createAgentTemplate(templateData) {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('Not authenticated');
+
+  const row = mapAgentTemplateToDb(templateData);
+  row.user_id = user.id;
+
+  const { data, error } = await supabase
+    .from('agent_templates')
+    .upsert(row, { onConflict: 'user_id,name' })
+    .select()
+    .single();
+
+  if (error) throw error;
+  return mapAgentTemplateFromDb(data);
+}
+
+export async function saveProviderCredential(provider, apiKey) {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('Not authenticated');
+
+  const field = PROVIDER_KEY_FIELD[provider];
+  if (!field) throw new Error(`Unsupported provider: ${provider}`);
+
+  const payload = {
+    user_id: user.id,
+    [field]: apiKey.trim(),
+  };
+
+  const { error } = await supabase
+    .from('user_settings')
+    .upsert(payload, { onConflict: 'user_id' });
+
+  if (error) throw error;
+  return true;
+}
+
+export async function ensureProviderInfrastructure({ provider, identifier }) {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('Not authenticated');
+
+  const normalizedProvider = (provider || 'custom').toLowerCase();
+  if (!PROVIDER_KEY_FIELD[normalizedProvider]) {
+    return { provider: normalizedProvider, status: 'unsupported', hasCredential: false };
+  }
+
+  const settings = await getUserSettings(user.id);
+  const field = PROVIDER_KEY_FIELD[normalizedProvider];
+  const hasCredential = Boolean(settings?.[field]);
+
+  const displayName = normalizedProvider === 'anthropic'
+    ? 'Anthropic'
+    : normalizedProvider === 'openai'
+      ? 'OpenAI'
+      : 'Google';
+
+  const securityState = hasCredential ? 'Encrypted vault link' : 'Credential missing';
+
+  const { data: connectedSystem, error: systemError } = await supabase
+    .from('connected_systems')
+    .upsert({
+      user_id: user.id,
+      integration_key: normalizedProvider,
+      display_name: displayName,
+      category: 'Models',
+      status: hasCredential ? 'connected' : 'needs_refresh',
+      identifier: identifier || `${normalizedProvider}-primary`,
+      capabilities: ['Read', 'Write', 'Sync'],
+      last_verified_at: hasCredential ? new Date().toISOString() : null,
+      metadata: {
+        tone: normalizedProvider === 'anthropic' ? 'violet' : normalizedProvider === 'openai' ? 'teal' : 'blue',
+        securityState,
+      },
+    }, { onConflict: 'user_id,integration_key' })
+    .select()
+    .single();
+
+  if (systemError) throw systemError;
+
+  const { data: vault, error: vaultError } = await supabase
+    .from('credential_vaults')
+    .upsert({
+      user_id: user.id,
+      name: `${displayName} Provider Vault`,
+      status: hasCredential ? 'active' : 'needs_setup',
+      provider: normalizedProvider,
+      secret_refs: hasCredential ? [`${normalizedProvider}_api_key`] : [`missing:${normalizedProvider}_api_key`],
+      metadata: {
+        source: 'settings_integrations',
+        integrationKey: normalizedProvider,
+      },
+      last_used_at: hasCredential ? new Date().toISOString() : null,
+    }, { onConflict: 'user_id,name' })
+    .select()
+    .single();
+
+  if (vaultError) throw vaultError;
+
+  return {
+    provider: normalizedProvider,
+    status: hasCredential ? 'connected' : 'needs_setup',
+    hasCredential,
+    connectedSystem: mapConnectedSystemFromDb(connectedSystem),
+    vault: mapCredentialVaultFromDb(vault),
+  };
+}
+
+export async function updateAgentTemplate(templateId, patch) {
+  const { data, error } = await supabase
+    .from('agent_templates')
+    .update(mapAgentTemplateToDb(patch))
+    .eq('id', templateId)
+    .select()
+    .single();
+
+  if (error) throw error;
+  return mapAgentTemplateFromDb(data);
+}
+
+export async function createCredentialVault(vaultData) {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('Not authenticated');
+
+  const row = {
+    user_id: user.id,
+    name: vaultData.name?.trim(),
+    status: vaultData.status || 'active',
+    provider: vaultData.provider || 'custom',
+    secret_refs: Array.isArray(vaultData.secretRefs) ? vaultData.secretRefs : [],
+    metadata: vaultData.metadata || {},
+    last_used_at: vaultData.lastUsedAt || null,
+  };
+
+  if (!row.name) throw new Error('Vault name is required');
+
+  const { data, error } = await supabase
+    .from('credential_vaults')
+    .upsert(row, { onConflict: 'user_id,name' })
+    .select()
+    .single();
+
+  if (error) throw error;
+  return mapCredentialVaultFromDb(data);
+}
+
+export async function upsertVaultBinding(bindingData) {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('Not authenticated');
+
+  const row = {
+    user_id: user.id,
+    vault_id: bindingData.vaultId,
+    owner_type: bindingData.ownerType,
+    owner_id: bindingData.ownerId,
+    binding_kind: bindingData.bindingKind || 'runtime',
+    metadata: bindingData.metadata || {},
+  };
+
+  if (!row.vault_id || !row.owner_type || !row.owner_id) {
+    throw new Error('Vault binding requires vault, owner type, and owner id');
+  }
+
+  const { data, error } = await supabase
+    .from('vault_bindings')
+    .upsert(row, { onConflict: 'vault_id,owner_type,owner_id,binding_kind' })
+    .select()
+    .single();
+
+  if (error) throw error;
+  return mapVaultBindingFromDb(data);
+}
+
+export async function createAgentSession(sessionData) {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('Not authenticated');
+
+  const row = {
+    user_id: user.id,
+    template_id: sessionData.templateId || null,
+    root_agent_id: sanitizePersistedAgentId(sessionData.rootAgentId),
+    worker_agent_id: sanitizePersistedAgentId(sessionData.workerAgentId),
+    parent_session_id: sessionData.parentSessionId || null,
+    title: sessionData.title?.trim() || 'Untitled Session',
+    prompt: sessionData.prompt?.trim() || '',
+    launch_mode: sessionData.launchMode || 'delegated_run',
+    status: sessionData.status || 'queued',
+    summary: sessionData.summary || '',
+    requested_model: sessionData.requestedModel || null,
+    active_worker_count: Number(sessionData.activeWorkerCount ?? 0),
+    total_tokens: Number(sessionData.totalTokens ?? 0),
+    total_cost: Number(sessionData.totalCost ?? 0),
+    tool_call_count: Number(sessionData.toolCallCount ?? 0),
+    retry_count: Number(sessionData.retryCount ?? 0),
+    started_at: sessionData.startedAt || null,
+    completed_at: sessionData.completedAt || null,
+  };
+
+  const { data, error } = await supabase
+    .from('agent_sessions')
+    .insert([row])
+    .select()
+    .single();
+
+  if (error) throw error;
+  return mapAgentSessionFromDb(data);
+}
+
+export async function createSessionEvent(eventData) {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('Not authenticated');
+
+  const row = {
+    user_id: user.id,
+    session_id: eventData.sessionId,
+    worker_agent_id: eventData.workerAgentId || null,
+    event_type: eventData.eventType,
+    title: eventData.title || '',
+    content: eventData.content || '',
+    status: eventData.status || null,
+    payload: eventData.payload || {},
+    sequence: Number(eventData.sequence ?? 0),
+    started_at: eventData.startedAt || new Date().toISOString(),
+    completed_at: eventData.completedAt || null,
+    duration_ms: Number(eventData.durationMs ?? 0),
+    token_delta: Number(eventData.tokenDelta ?? 0),
+    cost_delta: Number(eventData.costDelta ?? 0),
+  };
+
+  const { data, error } = await supabase
+    .from('session_events')
+    .insert([row])
+    .select()
+    .single();
+
+  if (error) throw error;
+  return mapSessionEventFromDb(data);
 }
 
 /**
  * Insert a new agent into Supabase.
  */
-export async function createAgent(agentData) {
+export async function createAgent(agentData, workspaceId = null) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error('Not authenticated');
+  const resolvedWorkspaceId = workspaceId ?? agentData.workspaceId ?? getStoredWorkspaceId();
   const row = {
     ...mapAgentToDb(agentData),
     user_id: user.id,
     id: crypto.randomUUID(),
   };
+  if (resolvedWorkspaceId) row.workspace_id = resolvedWorkspaceId;
   const { data, error } = await supabase.from('agents').insert([row]).select().single();
   if (error) throw error;
   return mapAgentFromDb(data);
@@ -939,9 +1833,10 @@ export async function createAgent(agentData) {
 /**
  * Create a temp (ephemeral) agent tied to the Commander.
  */
-export async function createTempAgent({ objective, role, model, commanderId }) {
+export async function createTempAgent({ objective, role, model, commanderId, workspaceId = null }) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error('Not authenticated');
+  const resolvedWorkspaceId = workspaceId ?? getStoredWorkspaceId();
 
   const slug = objective.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 40);
   const row = {
@@ -951,14 +1846,227 @@ export async function createTempAgent({ objective, role, model, commanderId }) {
     model,
     status: 'idle',
     role: role || 'researcher',
-    parent_id: commanderId,
+    parent_id: sanitizePersistedAgentId(commanderId),
     can_spawn: false,
     spawn_pattern: 'sequential',
     is_ephemeral: true,
     system_prompt: `You are a temporary specialist. Objective: ${objective}`,
     color: '#6b7280',
   };
+  if (resolvedWorkspaceId) row.workspace_id = resolvedWorkspaceId;
   const { data, error } = await supabase.from('agents').insert([row]).select().single();
+  if (error) throw error;
+  return mapAgentFromDb(data);
+}
+
+export async function launchEphemeralSession({
+  template,
+  prompt,
+  modelOverride,
+  commanderId,
+  title,
+  workspaceId = null,
+}) {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('Not authenticated');
+  if (!template?.id) throw new Error('Template is required to launch a session');
+  const resolvedWorkspaceId = workspaceId ?? getStoredWorkspaceId();
+
+  const requestedModel = modelOverride?.trim() || template.defaultModel || template.model || '';
+  const effectivePrompt = prompt?.trim() || `Launch ${template.name} on the current objective.`;
+  const sessionTitle = title?.trim() || `${template.name} Run`;
+  const persistedCommanderId = sanitizePersistedAgentId(commanderId);
+
+  const session = await createAgentSession({
+    templateId: template.id,
+    rootAgentId: persistedCommanderId,
+    title: sessionTitle,
+    prompt: effectivePrompt,
+    launchMode: 'ephemeral_worker',
+    status: 'running',
+    summary: `Delegated from ${template.name} template`,
+    requestedModel,
+    activeWorkerCount: 1,
+    startedAt: new Date().toISOString(),
+  });
+
+  const workerRow = {
+    id: crypto.randomUUID(),
+    user_id: user.id,
+    name: `${template.name} · ${sessionTitle}`.slice(0, 90),
+    model: requestedModel,
+    status: 'processing',
+    role: template.role || 'researcher',
+    role_description: template.description || '',
+    parent_id: persistedCommanderId,
+    can_spawn: template.canDelegate ?? false,
+    spawn_pattern: template.spawnPolicy === 'persistent' ? 'persistent' : 'sequential',
+    is_ephemeral: true,
+    system_prompt: template.systemPrompt || '',
+    color: template.color || '#6b7280',
+    skills: template.allowedTools || [],
+    template_id: template.id,
+    session_id: session.id,
+    expires_at: new Date(Date.now() + 6 * 60 * 60 * 1000).toISOString(),
+  };
+  if (resolvedWorkspaceId) workerRow.workspace_id = resolvedWorkspaceId;
+
+  const { data: workerData, error: workerError } = await supabase
+    .from('agents')
+    .insert([workerRow])
+    .select()
+    .single();
+
+  if (workerError) throw workerError;
+
+  const { data: sessionData, error: sessionError } = await supabase
+    .from('agent_sessions')
+    .update({ worker_agent_id: workerData.id })
+    .eq('id', session.id)
+    .select()
+    .single();
+
+  if (sessionError) throw sessionError;
+
+  await createSessionEvent({
+    sessionId: session.id,
+    workerAgentId: workerData.id,
+    eventType: 'status_change',
+    title: 'Delegation launched',
+    content: `Commander launched ${template.name} as an ephemeral worker.`,
+    status: 'running',
+    sequence: 0,
+  });
+  await createSessionEvent({
+    sessionId: session.id,
+    workerAgentId: workerData.id,
+    eventType: 'message',
+    title: template.name,
+    content: effectivePrompt,
+    status: 'running',
+    sequence: 1,
+  });
+
+  const taskId = crypto.randomUUID();
+  const taskRow = {
+    id: taskId,
+    user_id: user.id,
+    title: sessionTitle,
+    name: sessionTitle,
+    description: effectivePrompt,
+    status: 'queued',
+    lane: 'active',
+    mode: 'balanced',
+    priority: 6,
+    schedule_type: 'once',
+    output_type: 'summary',
+    target_type: 'internal',
+    agent_id: workerData.id,
+    agent_name: workerData.name,
+    created_by_commander_id: commanderId || null,
+    progress_percent: 0,
+    session_id: session.id,
+    template_id: template.id,
+  };
+  if (resolvedWorkspaceId) taskRow.workspace_id = resolvedWorkspaceId;
+
+  const { error: taskError } = await supabase.from('tasks').insert([taskRow]);
+  if (taskError) throw taskError;
+
+  await createSessionEvent({
+    sessionId: session.id,
+    workerAgentId: workerData.id,
+    eventType: 'status_change',
+    title: 'Task queued',
+    content: 'Execution task created and handed to runtime.',
+    status: 'queued',
+    sequence: 2,
+  });
+
+  try {
+    const { data: { session: authSession } } = await supabase.auth.getSession();
+    const res = await fetch(
+      `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/dispatch-task`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${authSession?.access_token ?? import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+        },
+        body: JSON.stringify({
+          task_id: taskId,
+          agent_id: workerData.id,
+          task_description: effectivePrompt,
+          session_id: session.id,
+          template_id: template.id,
+        }),
+      }
+    );
+
+    const result = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(result.error || `HTTP ${res.status}`);
+    }
+  } catch (dispatchError) {
+    const message = dispatchError instanceof Error ? dispatchError.message : 'Dispatch failed';
+
+    await supabase
+      .from('agent_sessions')
+      .update({
+        status: 'failed',
+        summary: message,
+        completed_at: new Date().toISOString(),
+      })
+      .eq('id', session.id);
+
+    await supabase
+      .from('tasks')
+      .update({
+        status: 'failed',
+        lane: 'blocked',
+        failed_at: new Date().toISOString(),
+      })
+      .eq('id', taskId);
+
+    await supabase
+      .from('agents')
+      .update({
+        status: 'idle',
+        archived_at: new Date().toISOString(),
+      })
+      .eq('id', workerData.id);
+
+    await createSessionEvent({
+      sessionId: session.id,
+      workerAgentId: workerData.id,
+      eventType: 'error',
+      title: 'Launch failed',
+      content: message,
+      status: 'failed',
+      sequence: 3,
+    });
+
+    throw dispatchError;
+  }
+
+  return {
+    session: mapAgentSessionFromDb(sessionData),
+    worker: mapAgentFromDb(workerData),
+  };
+}
+
+export async function archiveEphemeralAgent(agentId) {
+  const { data, error } = await supabase
+    .from('agents')
+    .update({
+      archived_at: new Date().toISOString(),
+      status: 'idle',
+    })
+    .eq('id', agentId)
+    .eq('is_ephemeral', true)
+    .select()
+    .single();
+
   if (error) throw error;
   return mapAgentFromDb(data);
 }
@@ -972,7 +2080,7 @@ export async function cleanupTempAgents() {
 
   const { data, error } = await supabase
     .from('agents')
-    .delete()
+    .update({ archived_at: new Date().toISOString() })
     .eq('user_id', user.id)
     .eq('is_ephemeral', true)
     .in('status', ['idle', 'error'])
@@ -985,12 +2093,13 @@ export async function cleanupTempAgents() {
 export async function createModelBankEntry(modelData) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error('Not authenticated');
+  const normalized = resolveModelDraft(modelData);
 
   const row = {
     user_id: user.id,
-    model_key: modelData.modelKey?.trim() || modelData.label?.trim(),
-    label: modelData.label?.trim() || modelData.modelKey?.trim(),
-    provider: modelData.provider?.trim() || 'Custom',
+    model_key: normalized.modelKey,
+    label: normalized.label,
+    provider: normalized.provider,
     cost_per_1k: Number(modelData.costPer1k ?? 0),
   };
 
@@ -1072,12 +2181,14 @@ export async function updateAgentConfig(agentId, patch) {
 export async function createMcpServer(serverData) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error('Not authenticated');
+  const resolvedWorkspaceId = serverData.workspaceId ?? getStoredWorkspaceId();
 
   const url = serverData.url?.trim();
   if (!url) throw new Error('Server URL is required');
 
   const row = {
     user_id: user.id,
+    workspace_id: resolvedWorkspaceId,
     name: serverData.name?.trim() || deriveMcpServerName(url),
     url,
     status: serverData.status?.trim() || 'configured',
@@ -1086,7 +2197,7 @@ export async function createMcpServer(serverData) {
 
   const { data, error } = await supabase
     .from('mcp_servers')
-    .upsert(row, { onConflict: 'user_id,url' })
+    .upsert(row, { onConflict: 'workspace_id,url' })
     .select()
     .single();
 
@@ -1139,6 +2250,11 @@ function mapAgentFromDb(row) {
     latencyHistory24h: row.latency_history_24h || [],
     skills:           row.skills || [],
     isEphemeral:      row.is_ephemeral ?? false,
+    templateId:       row.template_id || null,
+    sessionId:        row.session_id || null,
+    expiresAt:        row.expires_at || null,
+    archivedAt:       row.archived_at || null,
+    workspaceId:      row.workspace_id || null,
     subagents:        [],
     createdAt:        row.created_at,
     updatedAt:        row.updated_at,
@@ -1168,6 +2284,11 @@ function mapAgentToDb(agent) {
     skills:           agent.skills || [],
     token_burn:        agent.tokenBurn || [],
     is_ephemeral:      agent.isEphemeral ?? false,
+    template_id:       agent.templateId || null,
+    session_id:        agent.sessionId || null,
+    expires_at:        agent.expiresAt || null,
+    archived_at:       agent.archivedAt || null,
+    workspace_id:      agent.workspaceId || null,
   };
 }
 
@@ -1175,6 +2296,7 @@ function mapTaskFromDb(row) {
   return {
     id:         row.id,
     userId:     row.user_id,
+    workspaceId: row.workspace_id || null,
     name:       row.name,
     status:     row.status,
     parentId:   row.parent_id,
@@ -1182,6 +2304,8 @@ function mapTaskFromDb(row) {
     agentName:  row.agent_name,
     durationMs: row.duration_ms || 0,
     costUsd:    parseFloat(row.cost_usd) || 0,
+    sessionId:  row.session_id || null,
+    templateId: row.template_id || null,
   };
 }
 
@@ -1193,6 +2317,7 @@ function mapLogRow(row) {
     type:        row.type,
     message:     row.message,
     agentId:     row.agent_id,
+    sessionId:   row.session_id || null,
     parentLogId: row.parent_log_id,
     tokens:      row.tokens || 0,
     durationMs:  row.duration_ms || 0,
@@ -1248,6 +2373,7 @@ function mapMcpServerFromDb(row) {
   return {
     id: row.id,
     userId: row.user_id,
+    workspaceId: row.workspace_id || null,
     name: row.name,
     url: row.url,
     status: row.status || 'configured',
@@ -1261,6 +2387,7 @@ function mapConnectedSystemFromDb(row) {
   return {
     id: row.id,
     userId: row.user_id,
+    workspaceId: row.workspace_id || null,
     integrationKey: row.integration_key,
     displayName: row.display_name,
     category: row.category || 'System',
@@ -1274,8 +2401,8 @@ function mapConnectedSystemFromDb(row) {
   };
 }
 
-function mapConnectedSystemToDb(userId, system) {
-  return {
+function mapConnectedSystemToDb(userId, system, workspaceId = null) {
+  const row = {
     user_id: userId,
     integration_key: system.integrationKey,
     display_name: system.displayName,
@@ -1286,11 +2413,14 @@ function mapConnectedSystemToDb(userId, system) {
     metadata: system.metadata || {},
     last_verified_at: system.lastVerifiedAt || new Date().toISOString(),
   };
+  if (workspaceId) row.workspace_id = workspaceId;
+  return row;
 }
 
 function mapKnowledgeNamespaceFromDb(row) {
   return {
     id: row.id,
+    workspaceId: row.workspace_id || null,
     name: row.name,
     vectors: row.vectors || 0,
     sizeLabel: row.size_label || '0 MB',
@@ -1305,6 +2435,7 @@ function mapKnowledgeNamespaceFromDb(row) {
 function mapSharedDirectiveFromDb(row) {
   return {
     id: row.id,
+    workspaceId: row.workspace_id || null,
     name: row.name,
     scope: row.scope || 'all',
     appliedTo: Array.isArray(row.applied_to) ? row.applied_to : [],
@@ -1323,6 +2454,122 @@ function mapSystemRecommendationFromDb(row) {
     description: row.description || '',
     impact: row.impact || 'medium',
     savings: row.savings_label || '',
+    updatedAt: row.updated_at,
+  };
+}
+
+function mapAgentTemplateFromDb(row) {
+  return {
+    id: row.id,
+    userId: row.user_id,
+    name: row.name,
+    role: row.role || 'researcher',
+    description: row.description || '',
+    defaultModel: row.default_model || '',
+    systemPrompt: row.system_prompt || '',
+    allowedTools: Array.isArray(row.allowed_tools) ? row.allowed_tools : [],
+    environmentBindings: Array.isArray(row.environment_bindings) ? row.environment_bindings : [],
+    vaultRequirements: Array.isArray(row.vault_requirements) ? row.vault_requirements : [],
+    approvalMode: row.approval_mode || 'review_first',
+    spawnPolicy: row.spawn_policy || 'ephemeral',
+    defaultVisibility: row.default_visibility || 'shared',
+    canDelegate: row.can_delegate ?? false,
+    metadata: row.metadata || {},
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function mapAgentTemplateToDb(template) {
+  const row = {};
+  if (template.name !== undefined) row.name = template.name?.trim();
+  if (template.role !== undefined) row.role = template.role || 'researcher';
+  if (template.description !== undefined) row.description = template.description || '';
+  if (template.defaultModel !== undefined) row.default_model = template.defaultModel || '';
+  if (template.systemPrompt !== undefined) row.system_prompt = template.systemPrompt || '';
+  if (template.allowedTools !== undefined) row.allowed_tools = Array.isArray(template.allowedTools) ? template.allowedTools : [];
+  if (template.environmentBindings !== undefined) row.environment_bindings = Array.isArray(template.environmentBindings) ? template.environmentBindings : [];
+  if (template.vaultRequirements !== undefined) row.vault_requirements = Array.isArray(template.vaultRequirements) ? template.vaultRequirements : [];
+  if (template.approvalMode !== undefined) row.approval_mode = template.approvalMode || 'review_first';
+  if (template.spawnPolicy !== undefined) row.spawn_policy = template.spawnPolicy || 'ephemeral';
+  if (template.defaultVisibility !== undefined) row.default_visibility = template.defaultVisibility || 'shared';
+  if (template.canDelegate !== undefined) row.can_delegate = template.canDelegate;
+  if (template.metadata !== undefined) row.metadata = template.metadata || {};
+  return row;
+}
+
+function mapAgentSessionFromDb(row) {
+  return {
+    id: row.id,
+    userId: row.user_id,
+    templateId: row.template_id || null,
+    rootAgentId: row.root_agent_id || null,
+    workerAgentId: row.worker_agent_id || null,
+    parentSessionId: row.parent_session_id || null,
+    title: row.title || 'Untitled Session',
+    prompt: row.prompt || '',
+    launchMode: row.launch_mode || 'delegated_run',
+    status: row.status || 'queued',
+    summary: row.summary || '',
+    requestedModel: row.requested_model || '',
+    activeWorkerCount: row.active_worker_count || 0,
+    totalTokens: row.total_tokens || 0,
+    totalCost: Number(row.total_cost || 0),
+    toolCallCount: row.tool_call_count || 0,
+    retryCount: row.retry_count || 0,
+    startedAt: row.started_at,
+    completedAt: row.completed_at,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function mapSessionEventFromDb(row) {
+  return {
+    id: row.id,
+    userId: row.user_id,
+    sessionId: row.session_id,
+    workerAgentId: row.worker_agent_id || null,
+    eventType: row.event_type || 'message',
+    title: row.title || '',
+    content: row.content || '',
+    status: row.status || null,
+    payload: row.payload || {},
+    sequence: row.sequence || 0,
+    startedAt: row.started_at,
+    completedAt: row.completed_at,
+    durationMs: row.duration_ms || 0,
+    tokenDelta: row.token_delta || 0,
+    costDelta: Number(row.cost_delta || 0),
+    createdAt: row.created_at,
+  };
+}
+
+function mapCredentialVaultFromDb(row) {
+  return {
+    id: row.id,
+    userId: row.user_id,
+    name: row.name,
+    status: row.status || 'active',
+    provider: row.provider || 'custom',
+    secretRefs: Array.isArray(row.secret_refs) ? row.secret_refs : [],
+    metadata: row.metadata || {},
+    lastUsedAt: row.last_used_at || null,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function mapVaultBindingFromDb(row) {
+  return {
+    id: row.id,
+    userId: row.user_id,
+    vaultId: row.vault_id,
+    ownerType: row.owner_type,
+    ownerId: row.owner_id,
+    bindingKind: row.binding_kind || 'runtime',
+    metadata: row.metadata || {},
+    createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
 }
