@@ -720,7 +720,7 @@ export function MissionControlView() {
             </button>
           }
           sideContent={
-            <div className="rounded-[24px] border border-white/10 bg-black/25 px-4 py-4 backdrop-blur-sm min-w-[260px]">
+            <div className="deck-panel min-w-[260px] px-4 py-4 backdrop-blur-sm">
               <div className="flex items-center justify-between mb-3">
                 <span className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Command Pulse</span>
                 <span className="text-[10px] font-mono text-aurora-teal">LIVE</span>
@@ -738,13 +738,13 @@ export function MissionControlView() {
                   <span className="text-text-muted">Blocked / failed</span>
                   <span className="text-aurora-rose font-semibold"><AnimatedNumber value={failed} /></span>
                 </div>
-                <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] px-3 py-2.5 mt-1">
+                <div className="deck-panel-soft mt-1 px-3 py-2.5 ring-1 ring-white/[0.05]">
                   <div className="text-[10px] uppercase tracking-[0.14em] text-text-muted mb-1">Readback</div>
                   <p className="text-[12px] leading-relaxed text-text-body">
                     {approvalItems.length > 0
                       ? 'Human gates are the only real drag right now.'
                       : running > 0
-                        ? 'Tony is moving cleanly with no immediate choke point.'
+                        ? 'Execution is moving cleanly with no immediate choke point.'
                         : 'The deck is calm. Good time to launch the next mission.'}
                   </p>
                 </div>
@@ -761,7 +761,7 @@ export function MissionControlView() {
           <ReactorCoreBoard truth={truth} summary={{ burnRate: totalMissionCost }} />
         </div>
 
-        <div className="mt-4 flex items-center gap-1 bg-surface/90 rounded-2xl p-1.5 border border-border backdrop-blur-sm">
+        <div className="mt-4 flex items-center gap-1 rounded-2xl border border-white/[0.06] bg-black/20 p-1.5 backdrop-blur-sm">
           {[
             { id: 'ops', lb: 'Operations', ic: Radio, ct: running },
             { id: 'plan', lb: 'Planner', ic: Calendar, ct: schedules.filter(s => s.enabled).length },
@@ -778,14 +778,13 @@ export function MissionControlView() {
         </div>
       </div>
 
-      {/* Pulse strip */}
       <div className="grid grid-cols-3 gap-3 mb-5">
         {[
           { lb: 'Live Missions', desc: 'Queued or executing now', v: running, c: 'text-aurora-amber' },
-          { lb: 'Needs You', desc: 'Waiting on your judgment', v: approvalItems.length, c: 'text-aurora-amber' },
-          { lb: 'Closed Cleanly', desc: 'Completed without drag', v: completedItems.length, c: 'text-aurora-teal' },
+          { lb: 'Needs Decision', desc: 'Waiting on your judgment', v: approvalItems.length, c: 'text-aurora-amber' },
+          { lb: 'Completed', desc: 'Closed without drag', v: completedItems.length, c: 'text-aurora-teal' },
         ].map(s => (
-          <div key={s.lb} className="rounded-[22px] bg-surface/90 border border-border px-4 py-3.5 backdrop-blur-sm">
+          <div key={s.lb} className="deck-panel-soft px-4 py-3.5 ring-1 ring-white/[0.05]">
             <div className="flex items-center justify-between">
               <span className="text-[10px] font-medium text-text-muted uppercase tracking-[0.18em]">{s.lb}</span>
               <span className={cn("text-2xl font-mono font-bold", s.c)}><AnimatedNumber value={s.v} /></span>
@@ -795,13 +794,12 @@ export function MissionControlView() {
         ))}
       </div>
 
-      {/* Critical lane */}
       {criticalItems.length > 0 && (
         <div className="mb-4">
-          <div className="flex items-center gap-2 mb-2"><div className="w-2 h-2 rounded-full bg-aurora-rose animate-pulse" /><span className="text-[11px] font-bold uppercase text-aurora-rose tracking-wider">Critical lane</span></div>
+          <div className="flex items-center gap-2 mb-2"><div className="w-2 h-2 rounded-full bg-aurora-rose animate-pulse" /><span className="text-[11px] font-bold uppercase text-aurora-rose tracking-wider">Resolve First</span></div>
           <div className="grid grid-cols-3 gap-3">
             {criticalItems.map(item => (
-              <Card key={item.id} onClick={() => setSel(item.id)} className="p-4 bg-[linear-gradient(135deg,rgba(251,113,133,0.06),rgba(255,255,255,0.02))] min-h-[92px]">
+              <Card key={item.id} onClick={() => setSel(item.id)} className="p-4 bg-[linear-gradient(135deg,rgba(251,113,133,0.06),rgba(255,255,255,0.02))] border-aurora-rose/16 min-h-[92px]">
                 <div className="absolute left-0 top-0 bottom-0 w-[3px] bg-aurora-rose rounded-l-2xl" />
                 <div className="flex items-center gap-2 mb-1">
                   <AgentAvatar agent={agents.find(a => a.id === (item.agentId || item.agent_id))} name={item.agentName} />
@@ -816,7 +814,7 @@ export function MissionControlView() {
 
       {/* Main: content + intel sidebar */}
       <div className="flex-1 flex gap-4 overflow-hidden min-h-0">
-        <div className="flex-[3.2] min-w-0 overflow-hidden rounded-[28px] border border-white/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.025),rgba(255,255,255,0.01))] backdrop-blur-sm">
+        <div className="deck-shell flex-[3.2] min-w-0 overflow-hidden backdrop-blur-sm">
           <div className="h-full overflow-y-auto no-scrollbar space-y-2 pr-1 px-4 py-4">
             <div className="flex items-center justify-between mb-2 px-1">
               <CommandSectionHeader
@@ -856,7 +854,7 @@ export function MissionControlView() {
             </AnimatePresence>
           )}
           {tab === 'ops' && operationalTasks.length === 0 && (
-            <div className="rounded-[24px] border border-white/[0.06] bg-black/15 px-6 py-8">
+            <div className="deck-panel-soft px-6 py-8 ring-1 ring-white/[0.05]">
               <div className="grid gap-5 xl:grid-cols-[1.2fr_0.8fr]">
                 <div>
                   <p className="text-base font-semibold text-text-primary">No live missions right now</p>
@@ -879,7 +877,7 @@ export function MissionControlView() {
                     { label: 'Blocked', value: failed },
                     { label: 'Scheduled', value: schedules.filter(s => s.enabled).length },
                   ].map((metric) => (
-                    <div key={metric.label} className="rounded-[18px] border border-white/8 bg-white/[0.02] px-3 py-3">
+                    <div key={metric.label} className="deck-panel-soft px-3 py-3 ring-1 ring-white/[0.05]">
                       <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">{metric.label}</div>
                       <div className="mt-2 text-lg font-semibold text-text-primary">{metric.value}</div>
                     </div>
@@ -956,8 +954,7 @@ export function MissionControlView() {
         </div>
         </div>
 
-        {/* Intel sidebar */}
-        <div className="w-[320px] shrink-0 overflow-y-auto no-scrollbar rounded-[28px] border border-white/8 bg-[linear-gradient(180deg,rgba(96,165,250,0.06),rgba(255,255,255,0.015))] backdrop-blur-sm p-3">
+        <div className="deck-shell w-[320px] shrink-0 overflow-y-auto no-scrollbar p-3 backdrop-blur-sm">
           <IntelSidebar
             tasks={tasks}
             approvals={approvalItems}
