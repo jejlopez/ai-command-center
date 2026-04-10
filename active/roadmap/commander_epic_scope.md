@@ -1,0 +1,144 @@
+# Epic Commander Scope
+
+## Product Thesis
+
+Build a founder-first Jarvis operating system where one Commander understands a task in plain language, chooses the best lane, delegates subtasks to specialists, uses the right models and tools with strict cost discipline, and gives the operator a cinematic but readable control surface.
+
+The system should feel:
+
+- Stark-like at the interface
+- Musk-like in throughput and bottleneck removal
+- disciplined in risk, approvals, and token efficiency
+
+## Product Shape
+
+- `Overview` is the executive bridge.
+- `Mission Control` is the live execution and intervention surface.
+- `Intelligence` is the routing, memory, doctrine, and model strategy surface.
+- `Reports` is the ROI, performance, and trend surface.
+- `Settings` is the command rack for policy, security, integrations, and preferences.
+
+## Phase Plan
+
+### Phase 0: Cleanup and Canonicalization
+
+- Normalize commander architecture into explicit roles:
+  - UI identity
+  - orchestration engine
+  - fallback bootstrap
+- Normalize mission/task semantics into one lifecycle.
+- Normalize provider / model / routing terminology.
+- Normalize connected systems into a capability graph.
+- Normalize memory vs directive vs recommendation vs doctrine semantics.
+- Lock page responsibilities so the app stops overlapping itself.
+
+### Phase 1: Bridge + Intake
+
+- Finish the flagship command bridge.
+- Add one canonical Commander intake flow.
+- Let a plain-language task produce:
+  - mission brief
+  - route recommendation
+  - model / cost / speed posture
+  - systems required
+  - approval posture
+- Make advanced mission form an expert mode, not the default entry.
+
+### Phase 2: Delegation Engine
+
+- Turn Commander into a supervisor, not a lone worker.
+- Add specialist lanes:
+  - Planner
+  - Researcher
+  - Builder
+  - Verifier
+  - Ops / CRM / Finance specialists later
+- Add parent/child mission graph support.
+- Add parallel and sequential subtask execution.
+- Add intervention controls for reroute, retry, stop, escalate, and approve.
+
+### Phase 3: Context + Skills + Memory
+
+- Introduce context packs and selective loading.
+- Add on-demand skill injection.
+- Add domain-aware memory namespaces.
+- Add evidence-first long-context behavior for big tasks.
+- Prevent every agent from seeing everything.
+
+### Phase 4: Adaptive Routing + Learning
+
+- Evaluate every mission after completion.
+- Track:
+  - selected lane
+  - expected vs actual cost
+  - expected vs actual latency
+  - human overrides
+  - failures / retries
+- Promote wins into doctrine.
+- Demote expensive, weak, or failure-prone routes.
+- Surface regression and connector-health recommendations automatically.
+
+### Phase 5: Founder Domain Packs
+
+- Deepen the domains closest to current repo truth:
+  - Build
+  - Research
+  - CRM / Comms
+  - Ops
+- Expand later into:
+  - Money
+  - Personal
+  - Executive planning
+
+### Phase 6: Full Jarvis Experience
+
+- Conversational mission refinement.
+- One-screen all-systems bridge mode.
+- Executive briefings:
+  - what should I do next
+  - what is blocked
+  - what is expensive
+  - what should be automated next
+- Strong explainability on why the system chose each lane.
+- Voice and richer interaction later if still justified.
+
+## Top 20 Must-Have Release Checklist
+
+1. Natural-language Commander intake
+2. Mission brief generation
+3. Cost / speed / risk route preview
+4. Canonical routing doctrine layer
+5. Best-model selection per task type
+6. Local-first / premium-escalation policy
+7. Parent / child mission graph
+8. Planner / Researcher / Builder / Verifier specialist lanes
+9. Parallel subtask execution
+10. Hybrid approval engine
+11. Connected-system capability graph
+12. Context packs
+13. On-demand skill loading
+14. Truth audit and readiness posture
+15. Autonomy posture and bottleneck radar
+16. Launch protocol / next best actions
+17. Run evaluation and learning loop
+18. Routing and regression recommendations
+19. Executive briefings
+20. Clean page boundaries across Overview / Mission Control / Intelligence / Reports / Settings
+
+## Release Gates
+
+- Do not deepen domain automation until Phase 0 cleanup is complete.
+- Do not add broad personal or finance authority before capability metadata, approvals, and auditability are strong.
+- Do not add more “epic” UI surfaces that duplicate responsibility already owned by another page.
+
+## Success Criteria
+
+- One sentence can become one understandable, controllable mission.
+- Commander uses the cheapest good-enough lane by default.
+- Premium models are used deliberately, not habitually.
+- Delegation improves speed and quality instead of creating noise.
+- The operator can always see:
+  - what is happening
+  - why it is happening
+  - what costs it
+  - where to intervene

@@ -574,6 +574,7 @@ export function MissionCreatorPanel({
       agentName: selectedAgent?.name || '',
       agentModel: selectedAgent?.model || '',
       agentExecutionMode: inferAgentModeBadge(selectedAgent),
+      planSteps: Array.isArray(preview?.steps) ? preview.steps : [],
     };
   }
 

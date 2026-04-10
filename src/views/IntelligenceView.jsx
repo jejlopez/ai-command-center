@@ -9,6 +9,7 @@ import {
   Database,
   FileJson,
   Gauge,
+  GitBranch,
   History,
   Layers3,
   Lock,
@@ -28,7 +29,7 @@ import {
   YAxis,
 } from 'recharts';
 import { container, item } from '../utils/variants';
-import { useActivityLog, useAgents, useKnowledgeNamespaces, useModelBank, useSharedDirectives, useSystemRecommendations, useTasks } from '../utils/useSupabase';
+import { useActivityLog, useAgents, useKnowledgeNamespaces, useModelBank, useRoutingPolicies, useSharedDirectives, useSystemRecommendations, useTasks } from '../utils/useSupabase';
 import { CommandDeckHero } from '../components/command/CommandDeckHero';
 import { AnimatedNumber } from '../components/command/AnimatedNumber';
 import { CommandSectionHeader } from '../components/command/CommandSectionHeader';
@@ -38,9 +39,12 @@ import { DoctrineCards } from '../components/command/DoctrineCards';
 import { cn } from '../utils/cn';
 import { TruthAuditStrip } from '../components/command/TruthAuditStrip';
 import { useCommandCenterTruth } from '../utils/useCommandCenterTruth';
+import { normalizeModelProvider } from '../utils/commanderPolicy';
+import { getWorkflowMeta } from '../utils/missionLifecycle';
 
 const tabs = [
   { id: 'models', label: 'Model Command Matrix', icon: Cpu },
+  { id: 'routing', label: 'Routing Doctrine', icon: GitBranch },
   { id: 'knowledge', label: 'Knowledge Terrain', icon: Database },
   { id: 'directives', label: 'Directive Pressure', icon: ShieldCheck },
 ];
@@ -62,14 +66,6 @@ const capabilityMetrics = [
   { key: 'speed', label: 'Speed' },
   { key: 'costDiscipline', label: 'Cost discipline' },
 ];
-
-function normalizeModelProvider(provider = '') {
-  const lower = provider.toLowerCase();
-  if (lower.includes('ollama')) return 'Ollama';
-  if (lower.includes('anthropic')) return 'Anthropic';
-  if (lower.includes('openai')) return 'OpenAI';
-  return provider || 'Custom';
-}
 
 function deriveAvailableModels(models, agents, tasks) {
   const modelKeys = new Map();
@@ -648,6 +644,194 @@ function ModelRegistryTab({ availableModels, agents, tasks }) {
   );
 }
 
+function RoutingDoctrineTab({ routingPolicies, tasks, agents }) {
+  const workflowDistribution = useMemo(() => {
+    const counts = new Map();
+    tasks.forEach((task) => {
+      const key = task.workflowStatus || 'intake';
+      counts.set(key, (counts.get(key) || 0) + 1);
+    });
+
+    return Array.from(counts.entries())
+      .map(([status, count]) => ({
+        status,
+        count,
+        meta: getWorkflowMeta(status),
+      }))
+      .sort((a, b) => b.count - a.count);
+  }, [tasks]);
+
+  const capabilityDemand = useMemo(() => {
+    const counts = new Map();
+    tasks.forEach((task) => {
+      (task.requiredCapabilities || []).forEach((capability) => {
+        counts.set(capability, (counts.get(capability) || 0) + 1);
+      });
+    });
+
+    return Array.from(counts.entries())
+      .map(([capability, count]) => ({ capability, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 6);
+  }, [tasks]);
+
+  const routedTasks = tasks.filter((task) => task.routingReason);
+  const premiumBranches = routedTasks.filter((task) => task.budgetClass === 'premium').length;
+  const humanGates = routedTasks.filter((task) => task.approvalLevel === 'human_required').length;
+  const delegatedBranches = agents.filter((agent) => agent.canSpawn).length;
+
+  return (
+    <div className="space-y-5">
+      <HudPanel
+        eyebrow="Routing Doctrine"
+        title="Canonical routing is live"
+        description="This is the first visible layer of Commander doctrine: what the system is routing, where risk is rising, and which policies own the work."
+        accent="teal"
+      >
+        <CommandSectionHeader
+          eyebrow="Routing Command"
+          title="Policy, workflow, and capability pressure"
+          description="The goal is simple: one routing truth, visible enough to trust."
+          icon={GitBranch}
+          tone="teal"
+        />
+        <div className="mt-5 grid gap-3 md:grid-cols-4">
+          {[
+            { label: 'Policies live', value: routingPolicies.length },
+            { label: 'Routed missions', value: routedTasks.length },
+            { label: 'Human gates', value: humanGates },
+            { label: 'Spawn lanes', value: delegatedBranches },
+          ].map((metric) => (
+            <div key={metric.label} className="rounded-[20px] border border-white/8 bg-black/20 p-4">
+              <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">{metric.label}</div>
+              <div className="mt-2 text-2xl font-semibold text-text-primary">
+                <AnimatedNumber value={metric.value} />
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="mt-3 rounded-2xl border border-aurora-blue/15 bg-aurora-blue/[0.05] px-3 py-2 text-[11px] text-text-body">
+          Routing readback: {premiumBranches > 0
+            ? `${premiumBranches} missions are already marked premium, so cost discipline is now explicit instead of implied.`
+            : 'No premium-only branches are live yet, which is good while doctrine is still being hardened.'}
+        </div>
+      </HudPanel>
+
+      <div className="grid gap-5 xl:grid-cols-[1.15fr_0.85fr]">
+        <div className="rounded-[28px] border border-white/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.015))] p-5">
+          <CommandSectionHeader
+            eyebrow="Policy Stack"
+            title="Routing policies in command"
+            description="Default first, overrides second, all with visible posture."
+            icon={Layers3}
+            tone="blue"
+          />
+          <div className="mt-4 space-y-3">
+            {routingPolicies.length === 0 && (
+              <div className="rounded-[22px] border border-dashed border-white/10 bg-black/10 p-5 text-sm text-text-muted">
+                No routing policies are stored yet. The default policy will appear here after the migration is applied and the next mission is created.
+              </div>
+            )}
+            {routingPolicies.map((policy) => (
+              <div key={policy.id} className="rounded-[22px] border border-white/8 bg-black/20 p-4">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <div className="text-sm font-semibold text-text-primary">{policy.name}</div>
+                      {policy.isDefault && (
+                        <span className="rounded-full border border-aurora-teal/20 bg-aurora-teal/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-aurora-teal">
+                          Default
+                        </span>
+                      )}
+                    </div>
+                    <div className="mt-1 text-[11px] text-text-muted">{policy.description || 'Adaptive Commander doctrine.'}</div>
+                  </div>
+                  <div className="rounded-full border border-white/8 bg-white/[0.03] px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-text-muted">
+                    {policy.preferredProvider} / {policy.preferredAgentRole}
+                  </div>
+                </div>
+                <div className="mt-4 grid grid-cols-2 gap-3 text-[11px] md:grid-cols-4">
+                  <div>
+                    <div className="text-text-disabled">Domain</div>
+                    <div className="mt-1 font-semibold text-text-primary">{policy.taskDomain}</div>
+                  </div>
+                  <div>
+                    <div className="text-text-disabled">Intent</div>
+                    <div className="mt-1 font-semibold text-text-primary">{policy.intentType}</div>
+                  </div>
+                  <div>
+                    <div className="text-text-disabled">Budget</div>
+                    <div className="mt-1 font-semibold text-text-primary">{policy.budgetClass}</div>
+                  </div>
+                  <div>
+                    <div className="text-text-disabled">Approval</div>
+                    <div className="mt-1 font-semibold text-text-primary">{policy.approvalRule}</div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="space-y-5">
+          <HudPanel
+            eyebrow="Workflow Status"
+            title="Canonical mission posture"
+            description="This is the live split between intake, ready, running, blocked, and human-gated work."
+            accent="violet"
+          >
+            <div className="space-y-3">
+              {workflowDistribution.length === 0 && (
+                <div className="rounded-[22px] border border-white/8 bg-black/20 p-4 text-[12px] text-text-muted">
+                  No task workflow data is live yet.
+                </div>
+              )}
+              {workflowDistribution.map((entry) => (
+                <div key={entry.status} className="rounded-[20px] border border-white/8 bg-black/20 p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <div className="text-sm font-semibold text-text-primary">{entry.meta.label}</div>
+                      <div className="mt-1 text-[11px] text-text-muted">Canonical state: `{entry.status}`</div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-xl font-semibold text-text-primary">
+                        <AnimatedNumber value={entry.count} />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </HudPanel>
+
+          <HudPanel
+            eyebrow="Capability Demand"
+            title="What missions are asking for"
+            description="Capability pressure is the first step toward a real system capability graph."
+            accent="amber"
+          >
+            <div className="space-y-3">
+              {capabilityDemand.length === 0 && (
+                <div className="rounded-[22px] border border-white/8 bg-black/20 p-4 text-[12px] text-text-muted">
+                  No required capabilities have been inferred yet.
+                </div>
+              )}
+              {capabilityDemand.map((entry) => (
+                <div key={entry.capability} className="rounded-[20px] border border-white/8 bg-black/20 p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="text-sm font-semibold capitalize text-text-primary">{entry.capability}</div>
+                    <div className="text-sm font-mono text-aurora-amber">{entry.count}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </HudPanel>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function KnowledgeMapTab({ namespaces }) {
   const totalVectors = namespaces.reduce((sum, namespace) => sum + Number(namespace.vectors || 0), 0);
 
@@ -911,6 +1095,7 @@ export function IntelligenceView() {
   const { agents } = useAgents();
   const { models } = useModelBank();
   const { tasks } = useTasks();
+  const { policies: routingPolicies } = useRoutingPolicies();
   const { logs } = useActivityLog();
   const { namespaces: knowledgeNamespaces } = useKnowledgeNamespaces();
   const { directives: sharedDirectives } = useSharedDirectives();
@@ -929,6 +1114,7 @@ export function IntelligenceView() {
     const directivesLive = sharedDirectives.length;
     const recommendationCount = persistedRecommendations.length;
     const liveTraffic = logs.length;
+    const routedMissions = tasks.filter((task) => task.routingPolicyId || task.routingReason).length;
 
     return {
       activeAgents,
@@ -937,8 +1123,9 @@ export function IntelligenceView() {
       directivesLive,
       recommendationCount,
       liveTraffic,
+      routedMissions,
     };
-  }, [agents, availableModels, logs.length, persistedRecommendations.length, sharedDirectives.length]);
+  }, [agents, availableModels, logs.length, persistedRecommendations.length, sharedDirectives.length, tasks]);
 
   const derivedRecommendations = useMemo(() => {
     const runningTasks = tasks.filter((task) => task.status === 'running').length;
@@ -1036,7 +1223,7 @@ export function IntelligenceView() {
             badges={[
               { label: 'models online', value: availableModels.length, tone: 'teal' },
               { label: 'active agents', value: systemSummary.activeAgents, tone: 'blue' },
-              { label: 'directives live', value: systemSummary.directivesLive, tone: 'amber' },
+              { label: 'routed missions', value: systemSummary.routedMissions, tone: 'amber' },
               { label: 'local branches', value: systemSummary.localModels, tone: 'violet' },
             ]}
             sideContent={
@@ -1050,8 +1237,8 @@ export function IntelligenceView() {
                   <div className="mt-2 text-2xl font-semibold text-text-primary"><AnimatedNumber value={systemSummary.errorAgents} /></div>
                 </div>
                 <div className="rounded-2xl border border-white/8 bg-white/[0.02] p-3">
-                  <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Knowledge zones</div>
-                  <div className="mt-2 text-2xl font-semibold text-text-primary"><AnimatedNumber value={knowledgeNamespaces.length} /></div>
+                  <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Routing policies</div>
+                  <div className="mt-2 text-2xl font-semibold text-text-primary"><AnimatedNumber value={routingPolicies.length} /></div>
                 </div>
                 <div className="rounded-2xl border border-white/8 bg-white/[0.02] p-3">
                   <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Live telemetry</div>
@@ -1088,6 +1275,7 @@ export function IntelligenceView() {
 
             <div className="rounded-[28px] border border-white/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.015))] p-5">
               {activeTab === 'models' && <ModelRegistryTab availableModels={availableModels} agents={agents} tasks={tasks} />}
+              {activeTab === 'routing' && <RoutingDoctrineTab routingPolicies={routingPolicies} tasks={tasks} agents={agents} />}
               {activeTab === 'knowledge' && <KnowledgeMapTab namespaces={knowledgeNamespaces} />}
               {activeTab === 'directives' && <DirectivesTab directives={sharedDirectives} agents={agents} tasks={tasks} recommendations={persistedRecommendations} />}
             </div>

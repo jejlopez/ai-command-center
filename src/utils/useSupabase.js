@@ -1,6 +1,15 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../lib/supabaseClient';
 import { useAuth } from '../context/AuthContext';
+import {
+  DEFAULT_MODEL_PROVIDER,
+  SYNTHETIC_COMMANDER_ID,
+  getCommanderDisplayName,
+  getCommanderLane,
+  normalizeModelProvider,
+} from './commanderPolicy';
+import { getTaskGraphShape } from './missionLifecycle';
+import { mapRoutingPolicyFromDb } from './routingPolicy';
 
 function createRealtimeChannelName(prefix, userId) {
   const uniqueSuffix = typeof crypto !== 'undefined' && crypto.randomUUID
@@ -9,14 +18,14 @@ function createRealtimeChannelName(prefix, userId) {
   return `${prefix}-${userId}-${uniqueSuffix}`;
 }
 
-async function ensureModelBankEntry(user, modelKey, provider = 'Custom') {
+async function ensureModelBankEntry(user, modelKey, provider = DEFAULT_MODEL_PROVIDER) {
   if (!user?.id || !modelKey) return null;
 
   const row = {
     user_id: user.id,
     model_key: modelKey,
     label: modelKey,
-    provider,
+    provider: normalizeModelProvider(provider),
   };
 
   const { data, error } = await supabase
@@ -32,10 +41,8 @@ async function ensureModelBankEntry(user, modelKey, provider = 'Custom') {
 async function ensureCommanderAgent(user) {
   if (!user?.id) return null;
 
-  const commanderName = user.user_metadata?.full_name?.trim()
-    ? `${user.user_metadata.full_name.trim()} Command`
-    : 'Jarvis Commander';
-  const commanderModel = 'Claude Opus 4.6';
+  const commanderName = getCommanderDisplayName(user);
+  const commanderLane = getCommanderLane();
 
   const { data: existingCommander, error: existingError } = await supabase
     .from('agents')
@@ -49,13 +56,13 @@ async function ensureCommanderAgent(user) {
   if (existingError) throw existingError;
   if (existingCommander) return existingCommander;
 
-  await ensureModelBankEntry(user, commanderModel, 'Anthropic');
+  await ensureModelBankEntry(user, commanderLane.model, commanderLane.provider);
 
   const row = {
     id: crypto.randomUUID(),
     user_id: user.id,
     name: commanderName,
-    model: commanderModel,
+    model: commanderLane.model,
     status: 'idle',
     role: 'commander',
     color: '#00D9C8',
@@ -74,15 +81,14 @@ async function ensureCommanderAgent(user) {
 }
 
 function buildSyntheticCommander(user) {
-  const commanderName = user?.user_metadata?.full_name?.trim()
-    ? `${user.user_metadata.full_name.trim()} Command`
-    : 'Jarvis Commander';
+  const commanderName = getCommanderDisplayName(user);
+  const commanderLane = getCommanderLane();
 
   return {
-    id: 'synthetic-commander',
+    id: SYNTHETIC_COMMANDER_ID,
     userId: user?.id || null,
     name: commanderName,
-    model: 'Claude Opus 4.6',
+    model: commanderLane.model,
     status: 'idle',
     role: 'commander',
     roleDescription: 'Fallback command agent while the persistent commander record is unavailable.',
@@ -555,6 +561,45 @@ export function useConnectedSystems() {
   };
 }
 
+export function useRoutingPolicies() {
+  const { user } = useAuth();
+  const [policies, setPolicies] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetchPolicies = useCallback(async () => {
+    if (!user) {
+      setPolicies([]);
+      setLoading(false);
+      return;
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from('routing_policies')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('is_default', { ascending: false })
+        .order('updated_at', { ascending: false });
+
+      if (error) throw error;
+      setPolicies((data || []).map(mapRoutingPolicyFromDb));
+    } catch (error) {
+      console.error('[useRoutingPolicies] Fetch error:', error);
+      setPolicies([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) return undefined;
+    fetchPolicies();
+    return undefined;
+  }, [user, fetchPolicies]);
+
+  return { policies, loading, refetch: fetchPolicies };
+}
+
 export function useKnowledgeNamespaces() {
   const { user } = useAuth();
   const [namespaces, setNamespaces] = useState([]);
@@ -954,7 +999,7 @@ export async function createModelBankEntry(modelData) {
     user_id: user.id,
     model_key: modelData.modelKey?.trim() || modelData.label?.trim(),
     label: modelData.label?.trim() || modelData.modelKey?.trim(),
-    provider: modelData.provider?.trim() || 'Custom',
+    provider: normalizeModelProvider(modelData.provider),
     cost_per_1k: Number(modelData.costPer1k ?? 0),
   };
 
@@ -1076,14 +1121,28 @@ function mapAgentToDb(agent) {
 }
 
 function mapTaskFromDb(row) {
+  const taskGraph = getTaskGraphShape(row);
   return {
     id:         row.id,
     userId:     row.user_id,
     name:       row.name,
     status:     row.status,
+    workflowStatus: taskGraph.workflowStatus,
+    nodeType: taskGraph.nodeType,
+    rootMissionId: taskGraph.rootMissionId,
     parentId:   row.parent_id,
+    dependsOn: taskGraph.dependsOn,
     agentId:    row.agent_id,
     agentName:  row.agent_name,
+    routingPolicyId: row.routing_policy_id,
+    routingReason: row.routing_reason || '',
+    domain: row.domain || 'general',
+    intentType: row.intent_type || 'general',
+    budgetClass: row.budget_class || 'balanced',
+    riskLevel: row.risk_level || 'medium',
+    contextPackIds: Array.isArray(row.context_pack_ids) ? row.context_pack_ids : [],
+    requiredCapabilities: Array.isArray(row.required_capabilities) ? row.required_capabilities : [],
+    approvalLevel: row.approval_level || 'risk_weighted',
     durationMs: row.duration_ms || 0,
     costUsd:    parseFloat(row.cost_usd) || 0,
   };
@@ -1108,7 +1167,7 @@ function mapModelFromDb(row) {
     id: row.id,
     modelKey: row.model_key,
     label: row.label,
-    provider: row.provider || 'Custom',
+    provider: normalizeModelProvider(row.provider),
     costPer1k: Number(row.cost_per_1k || 0),
     createdAt: row.created_at,
   };
@@ -1158,6 +1217,11 @@ function mapConnectedSystemFromDb(row) {
     status: row.status || 'connected',
     identifier: row.identifier || '',
     capabilities: Array.isArray(row.capabilities) ? row.capabilities : [],
+    domain: row.domain || 'general',
+    trustLevel: row.trust_level || 'standard',
+    riskLevel: row.risk_level || 'medium',
+    permissionScope: Array.isArray(row.permission_scope) ? row.permission_scope : [],
+    capabilityDetails: row.metadata?.capabilityDetails || {},
     metadata: row.metadata || {},
     lastVerifiedAt: row.last_verified_at,
     createdAt: row.created_at,
@@ -1174,7 +1238,14 @@ function mapConnectedSystemToDb(userId, system) {
     status: system.status || 'connected',
     identifier: system.identifier || '',
     capabilities: system.capabilities || [],
-    metadata: system.metadata || {},
+    domain: system.domain || 'general',
+    trust_level: system.trustLevel || 'standard',
+    risk_level: system.riskLevel || 'medium',
+    permission_scope: system.permissionScope || [],
+    metadata: {
+      ...(system.metadata || {}),
+      capabilityDetails: system.capabilityDetails || system.metadata?.capabilityDetails || {},
+    },
     last_verified_at: system.lastVerifiedAt || new Date().toISOString(),
   };
 }

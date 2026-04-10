@@ -38,6 +38,93 @@ function normalizeExecutionModel(model: string): string {
   return aliases[normalized] || normalized.replace(/\s+/g, '-');
 }
 
+type TaskGraphRow = {
+  id: string;
+  user_id: string;
+  title?: string | null;
+  name?: string | null;
+  description?: string | null;
+  status?: string | null;
+  parent_id?: string | null;
+  root_mission_id?: string | null;
+  node_type?: string | null;
+  workflow_status?: string | null;
+  depends_on?: string[] | null;
+  result_text?: string | null;
+};
+
+function isTaskComplete(task: TaskGraphRow): boolean {
+  return ['completed', 'done'].includes(String(task.status || '').toLowerCase())
+    || String(task.workflow_status || '').toLowerCase() === 'completed';
+}
+
+function isTaskFailed(task: TaskGraphRow): boolean {
+  return ['failed', 'error', 'blocked', 'cancelled'].includes(String(task.status || '').toLowerCase())
+    || ['failed', 'blocked', 'cancelled'].includes(String(task.workflow_status || '').toLowerCase());
+}
+
+async function updateMissionGraphProgress(db: ReturnType<typeof createClient>, task: TaskGraphRow) {
+  if (!task.parent_id || !task.root_mission_id) return;
+
+  const { data: subtaskRows, error } = await db
+    .from('tasks')
+    .select('id,user_id,status,parent_id,root_mission_id,node_type,workflow_status,depends_on,result_text')
+    .eq('root_mission_id', task.root_mission_id)
+    .eq('parent_id', task.parent_id)
+    .order('created_at', { ascending: true });
+
+  if (error || !subtaskRows) return;
+
+  const subtasks = subtaskRows as TaskGraphRow[];
+  const completedIds = new Set(subtasks.filter(isTaskComplete).map((row) => row.id));
+  const completedCount = subtasks.filter(isTaskComplete).length;
+  const failedCount = subtasks.filter(isTaskFailed).length;
+  const totalCount = subtasks.length || 1;
+
+  const nextTask = subtasks.find((row) => {
+    const workflow = String(row.workflow_status || '').toLowerCase();
+    if (!['planned', 'intake'].includes(workflow) && String(row.status || '').toLowerCase() !== 'pending') return false;
+    const dependencies = Array.isArray(row.depends_on) ? row.depends_on : [];
+    return dependencies.every((dependencyId) => completedIds.has(dependencyId));
+  });
+
+  if (nextTask) {
+    await db.from('tasks').update({
+      status: 'queued',
+      workflow_status: 'ready',
+      lane: 'active',
+      updated_at: new Date().toISOString(),
+    }).eq('id', nextTask.id).eq('user_id', task.user_id);
+  }
+
+  const rootUpdate = failedCount > 0
+    ? {
+      status: 'failed',
+      workflow_status: 'blocked',
+      lane: 'blocked',
+      progress_percent: Math.min(99, Math.round((completedCount / totalCount) * 100)),
+      updated_at: new Date().toISOString(),
+    }
+    : completedCount >= totalCount
+      ? {
+        status: 'completed',
+        workflow_status: 'completed',
+        lane: 'completed',
+        progress_percent: 100,
+        completed_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      }
+      : {
+        status: 'running',
+        workflow_status: 'running',
+        lane: 'active',
+        progress_percent: Math.max(10, Math.round((completedCount / totalCount) * 100)),
+        updated_at: new Date().toISOString(),
+      };
+
+  await db.from('tasks').update(rootUpdate).eq('id', task.parent_id).eq('user_id', task.user_id);
+}
+
 // ── max_tokens by response_length ────────────────────────────────────────────
 
 const MAX_TOKENS_MAP: Record<string, number> = {
@@ -92,6 +179,16 @@ Deno.serve(async (req: Request) => {
   // Service role client for all DB writes (bypasses RLS)
   const db = createClient(supabaseUrl, serviceRoleKey);
 
+  let taskRow: TaskGraphRow | null = null;
+  if (task_id) {
+    const { data } = await db
+      .from('tasks')
+      .select('id,user_id,title,name,description,status,parent_id,root_mission_id,node_type,workflow_status,depends_on,result_text')
+      .eq('id', task_id)
+      .single();
+    taskRow = (data as TaskGraphRow) || null;
+  }
+
   // ── Fetch agent ──────────────────────────────────────────────────────────
 
   const { data: agent, error: agentError } = await db
@@ -133,6 +230,7 @@ Deno.serve(async (req: Request) => {
   if (task_id) {
     await db.from('tasks').update({
       status: 'running',
+      workflow_status: 'running',
       lane: 'active',
       started_at: new Date().toISOString(),
       progress_percent: 15,
@@ -166,6 +264,7 @@ Deno.serve(async (req: Request) => {
     const taskWrite = task_id
       ? db.from('tasks').update({
         status: 'completed',
+        workflow_status: 'completed',
         lane: 'completed',
         duration_ms: latency,
         cost_usd: cost,
@@ -182,6 +281,7 @@ Deno.serve(async (req: Request) => {
         user_id: user.id,
         name: task_description.substring(0, 120),
         status: 'completed',
+        workflow_status: 'completed',
         agent_id: agent.id,
         agent_name: agent.name,
         duration_ms: latency,
@@ -225,6 +325,10 @@ Deno.serve(async (req: Request) => {
       }),
     ]);
 
+    if (taskRow) {
+      await updateMissionGraphProgress(db, { ...taskRow, status: 'completed', workflow_status: 'completed', result_text: responseText });
+    }
+
     return corsResponse({
       success: true,
       review_id: reviewId,
@@ -242,11 +346,16 @@ Deno.serve(async (req: Request) => {
     if (task_id) {
       await db.from('tasks').update({
         status: 'failed',
+        workflow_status: 'failed',
         lane: 'blocked',
         failed_at: new Date().toISOString(),
         progress_percent: 0,
         updated_at: new Date().toISOString(),
       }).eq('id', task_id).eq('user_id', user.id);
+    }
+
+    if (taskRow) {
+      await updateMissionGraphProgress(db, { ...taskRow, status: 'failed', workflow_status: 'failed' });
     }
 
     await db.from('activity_log').insert({

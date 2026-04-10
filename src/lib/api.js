@@ -13,6 +13,19 @@
  */
 
 import { supabase } from './supabaseClient';
+import {
+  DEFAULT_MODEL_PROVIDER,
+  SYNTHETIC_COMMANDER_ID,
+  getCommanderDisplayName,
+  getCommanderLane,
+  normalizeModelProvider,
+} from '../utils/commanderPolicy';
+import { WORKFLOW_STATUS, getTaskGraphShape } from '../utils/missionLifecycle';
+import {
+  buildDefaultRoutingPolicy,
+  deriveRoutingDecision,
+  mapRoutingPolicyFromDb,
+} from '../utils/routingPolicy';
 
 // True when real Supabase env vars are set (not the placeholder)
 const isSupabaseConfigured = import.meta.env.VITE_SUPABASE_URL
@@ -78,14 +91,13 @@ function mapAgentRow(row) {
 }
 
 function buildSyntheticCommander(user) {
-  const commanderName = user?.user_metadata?.full_name?.trim()
-    ? `${user.user_metadata.full_name.trim()} Command`
-    : 'Jarvis Commander';
+  const commanderName = getCommanderDisplayName(user);
+  const commanderLane = getCommanderLane();
 
   return {
-    id: 'synthetic-commander',
+    id: SYNTHETIC_COMMANDER_ID,
     name: commanderName,
-    model: 'Claude Opus 4.6',
+    model: commanderLane.model,
     status: 'idle',
     role: 'commander',
     parentId: null,
@@ -116,14 +128,14 @@ function buildSyntheticCommander(user) {
   };
 }
 
-async function ensureModelBankEntry(user, modelKey, provider = 'Custom') {
+async function ensureModelBankEntry(user, modelKey, provider = DEFAULT_MODEL_PROVIDER) {
   if (!user?.id || !modelKey) return null;
 
   const row = {
     user_id: user.id,
     model_key: modelKey,
     label: modelKey,
-    provider,
+    provider: normalizeModelProvider(provider),
   };
 
   const { data, error } = await supabase
@@ -145,10 +157,8 @@ async function ensureCommanderAgentRow() {
   if (authError || !authData?.user) return null;
 
   const user = authData.user;
-  const commanderName = user.user_metadata?.full_name?.trim()
-    ? `${user.user_metadata.full_name.trim()} Command`
-    : 'Jarvis Commander';
-  const commanderModel = 'Claude Opus 4.6';
+  const commanderName = getCommanderDisplayName(user);
+  const commanderLane = getCommanderLane();
 
   const { data: existingCommander, error: existingError } = await supabase
     .from('agents')
@@ -163,13 +173,13 @@ async function ensureCommanderAgentRow() {
     return existingCommander;
   }
 
-  await ensureModelBankEntry(user, commanderModel, 'Anthropic');
+  await ensureModelBankEntry(user, commanderLane.model, commanderLane.provider);
 
   const row = {
     id: crypto.randomUUID(),
     user_id: user.id,
     name: commanderName,
-    model: commanderModel,
+    model: commanderLane.model,
     status: 'idle',
     role: 'commander',
     color: '#00D9C8',
@@ -192,13 +202,18 @@ async function ensureCommanderAgentRow() {
 }
 
 function mapTaskRow(row) {
+  const taskGraph = getTaskGraphShape(row);
   return {
     id:         row.id,
     name:       row.name || row.title,
     title:      row.title || row.name,
     description: row.description || row.prompt_text || '',
     status:     row.status,
+    workflowStatus: taskGraph.workflowStatus,
+    nodeType: taskGraph.nodeType,
+    rootMissionId: taskGraph.rootMissionId,
     parentId:   row.parent_id,
+    dependsOn: taskGraph.dependsOn,
     agentId:    row.agent_id,
     agentName:  row.agent_name,
     mode:       row.mode || 'balanced',
@@ -212,6 +227,15 @@ function mapTaskRow(row) {
     targetType: row.target_type || 'internal',
     targetIdentifier: row.target_identifier || '',
     createdByCommanderId: row.created_by_commander_id,
+    routingPolicyId: row.routing_policy_id || null,
+    routingReason: row.routing_reason || '',
+    domain: row.domain || 'general',
+    intentType: row.intent_type || 'general',
+    budgetClass: row.budget_class || 'balanced',
+    riskLevel: row.risk_level || 'medium',
+    contextPackIds: Array.isArray(row.context_pack_ids) ? row.context_pack_ids : [],
+    requiredCapabilities: Array.isArray(row.required_capabilities) ? row.required_capabilities : [],
+    approvalLevel: row.approval_level || 'risk_weighted',
     lastRunAt:  row.last_run_at,
     nextRunAt:  row.next_run_at,
     estimatedCostCents: row.estimated_cost_cents,
@@ -372,6 +396,73 @@ function estimateMissionPlan(payload) {
   };
 }
 
+function buildMissionSubtasks({
+  missionId,
+  userId,
+  title,
+  payload,
+  steps,
+  assignedAgentId,
+  agentName,
+  commanderId,
+  estimatedCostCents,
+  routingPolicyId,
+  routingDecision,
+  runAt,
+  scheduleType,
+}) {
+  if (!Array.isArray(steps) || steps.length <= 1) return [];
+
+  return steps.map((step, index) => {
+    const stepId = crypto.randomUUID();
+    const first = index === 0;
+    const previousStep = index > 0 ? steps[index - 1] : null;
+    const previousId = previousStep?._generatedId || null;
+    step._generatedId = stepId;
+
+    return {
+      id: stepId,
+      user_id: userId,
+      title: `${title} · ${step.title}`,
+      name: step.title,
+      description: step.description || step.title,
+      status: first ? 'queued' : 'pending',
+      lane: first ? 'active' : 'blocked',
+      priority: Math.max(1, (payload.priorityScore ?? 5) - (first ? 0 : 1)),
+      schedule_type: scheduleType,
+      run_at: runAt,
+      recurrence_rule: buildRecurrenceRule(payload.repeat),
+      agent_id: assignedAgentId,
+      agent_name: agentName,
+      mode: payload.mode,
+      output_type: payload.outputType,
+      output_spec: payload.outputSpec || null,
+      target_type: payload.targetType,
+      target_identifier: payload.targetIdentifier || null,
+      created_by_commander_id: commanderId,
+      estimated_cost_cents: Math.max(1, Math.round((estimatedCostCents || 0) / steps.length)),
+      actual_cost_cents: 0,
+      progress_percent: first ? 5 : 0,
+      duration_ms: 0,
+      cost_usd: 0,
+      node_type: 'subtask',
+      workflow_status: first ? WORKFLOW_STATUS.READY : WORKFLOW_STATUS.PLANNED,
+      root_mission_id: missionId,
+      parent_id: missionId,
+      routing_policy_id: routingPolicyId || null,
+      routing_reason: `${routingDecision.routingReason} | step ${index + 1}/${steps.length}`,
+      domain: routingDecision.domain,
+      intent_type: routingDecision.intentType,
+      budget_class: routingDecision.budgetClass,
+      risk_level: routingDecision.riskLevel,
+      context_pack_ids: [],
+      required_capabilities: routingDecision.requiredCapabilities,
+      approval_level: routingDecision.approvalLevel,
+      depends_on: previousId ? [previousId] : [],
+    };
+  });
+}
+
 export async function previewMissionPlan(payload) {
   if (!isSupabaseConfigured) return estimateMissionPlan(payload);
 
@@ -456,6 +547,32 @@ async function touchAgentHeartbeat(agentId, status) {
   }
 }
 
+async function ensureDefaultRoutingPolicyRow(user) {
+  if (!user?.id) return null;
+
+  const { data: existing, error: existingError } = await supabase
+    .from('routing_policies')
+    .select('*')
+    .eq('user_id', user.id)
+    .eq('is_default', true)
+    .order('created_at', { ascending: true })
+    .limit(1)
+    .maybeSingle();
+
+  if (existingError) throw existingError;
+  if (existing) return existing;
+
+  const row = buildDefaultRoutingPolicy(user.id);
+  const { data, error } = await supabase
+    .from('routing_policies')
+    .insert(row)
+    .select('*')
+    .single();
+
+  if (error) throw error;
+  return data;
+}
+
 export async function createMission(payload, agents = []) {
   if (!isSupabaseConfigured) {
     return {
@@ -480,7 +597,7 @@ export async function createMission(payload, agents = []) {
   if (!user) throw new Error('Not authenticated');
 
   const title = deriveMissionTitle(payload.intent);
-  const requestedSyntheticCommander = !payload.agentId || payload.agentId === 'synthetic-commander';
+  const requestedSyntheticCommander = !payload.agentId || payload.agentId === SYNTHETIC_COMMANDER_ID;
   let selectedAgent = agents.find(agent => agent.id === payload.agentId) || null;
   let commander = agents.find(agent => agent.role === 'commander' && !agent.isSyntheticCommander) || null;
 
@@ -505,12 +622,22 @@ export async function createMission(payload, agents = []) {
   const assignedAgentId = selectedAgent?.isSyntheticCommander ? null : selectedAgent?.id || null;
   const commanderId = commander?.isSyntheticCommander ? null : commander?.id || null;
   const estimated = estimateMissionPlan(payload);
+  const planSteps = Array.isArray(payload.planSteps) && payload.planSteps.length ? payload.planSteps : estimated.steps;
   const priorityScore = payload.priorityScore ?? 5;
   const scheduleType = payload.repeat ? 'recurring' : 'once';
   const runAt = payload.when === 'now' ? new Date().toISOString() : payload.runAt || null;
   const recurrenceRule = buildRecurrenceRule(payload.repeat);
   const lane = inferLane(priorityScore, false, 'queued');
   const missionId = crypto.randomUUID();
+  const routingPolicy = await ensureDefaultRoutingPolicyRow(user).catch((error) => {
+    console.error('[api] ensureDefaultRoutingPolicyRow:', error.message);
+    return null;
+  });
+  const routingDecision = deriveRoutingDecision(payload, selectedAgent, routingPolicy);
+  const hasDelegatedSteps = planSteps.length > 1;
+  const workflowStatus = hasDelegatedSteps
+    ? (payload.when === 'now' ? WORKFLOW_STATUS.RUNNING : WORKFLOW_STATUS.PLANNED)
+    : (payload.when === 'now' ? WORKFLOW_STATUS.READY : WORKFLOW_STATUS.PLANNED);
 
   const row = {
     id: missionId,
@@ -518,8 +645,8 @@ export async function createMission(payload, agents = []) {
     title,
     name: title,
     description: payload.intent,
-    status: 'queued',
-    lane,
+    status: hasDelegatedSteps && payload.when === 'now' ? 'running' : (hasDelegatedSteps ? 'pending' : 'queued'),
+    lane: hasDelegatedSteps && payload.when === 'now' ? 'active' : lane,
     priority: priorityScore,
     schedule_type: scheduleType,
     run_at: runAt,
@@ -534,10 +661,39 @@ export async function createMission(payload, agents = []) {
     created_by_commander_id: commanderId,
     estimated_cost_cents: estimated.estimatedCostCents,
     actual_cost_cents: 0,
-    progress_percent: 0,
+    progress_percent: hasDelegatedSteps ? 5 : 0,
     duration_ms: 0,
     cost_usd: 0,
+    node_type: 'mission',
+    workflow_status: workflowStatus,
+    root_mission_id: missionId,
+    routing_policy_id: routingPolicy?.id || null,
+    routing_reason: routingDecision.routingReason,
+    domain: routingDecision.domain,
+    intent_type: routingDecision.intentType,
+    budget_class: routingDecision.budgetClass,
+    risk_level: routingDecision.riskLevel,
+    context_pack_ids: [],
+    required_capabilities: routingDecision.requiredCapabilities,
+    approval_level: routingDecision.approvalLevel,
+    depends_on: [],
   };
+
+  const subtaskRows = buildMissionSubtasks({
+    missionId,
+    userId: user.id,
+    title,
+    payload: { ...payload, priorityScore },
+    steps: planSteps.map((step) => ({ ...step })),
+    assignedAgentId,
+    agentName: payload.agentName || selectedAgent?.name || 'Unknown',
+    commanderId,
+    estimatedCostCents: estimated.estimatedCostCents,
+    routingPolicyId: routingPolicy?.id || null,
+    routingDecision,
+    runAt,
+    scheduleType,
+  });
 
   const { error } = await supabase.from('tasks').insert(row);
   if (error) {
@@ -575,13 +731,34 @@ export async function createMission(payload, agents = []) {
         mode: payload.mode,
         lane,
         priority: priorityScore,
+        workflow_status: workflowStatus,
+        node_type: 'mission',
+        root_mission_id: missionId,
+        routing_policy_id: routingPolicy?.id || null,
+        routing_reason: routingDecision.routingReason,
+        domain: routingDecision.domain,
+        intent_type: routingDecision.intentType,
+        budget_class: routingDecision.budgetClass,
+        risk_level: routingDecision.riskLevel,
+        context_pack_ids: [],
+        required_capabilities: routingDecision.requiredCapabilities,
+        approval_level: routingDecision.approvalLevel,
+        depends_on: [],
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       }),
     };
   }
 
-  if (payload.when === 'now' && assignedAgentId) {
+  if (subtaskRows.length > 0) {
+    const { error: subtaskError } = await supabase.from('tasks').insert(subtaskRows);
+    if (subtaskError) {
+      console.error('[api] createMission subtasks:', subtaskError.message);
+      throw subtaskError;
+    }
+  }
+
+  if (payload.when === 'now' && assignedAgentId && subtaskRows.length === 0) {
     try {
       await dispatchMissionNow({
         taskId: missionId,
@@ -590,6 +767,19 @@ export async function createMission(payload, agents = []) {
       });
     } catch (dispatchError) {
       console.error('[api] createMission dispatch:', dispatchError.message);
+      throw dispatchError;
+    }
+  }
+
+  if (payload.when === 'now' && assignedAgentId && subtaskRows.length > 0) {
+    try {
+      await dispatchMissionNow({
+        taskId: subtaskRows[0].id,
+        agentId: assignedAgentId,
+        taskDescription: subtaskRows[0].description || subtaskRows[0].title || subtaskRows[0].name || payload.intent,
+      });
+    } catch (dispatchError) {
+      console.error('[api] createMission subtask dispatch:', dispatchError.message);
       throw dispatchError;
     }
   }
@@ -616,6 +806,7 @@ export async function createMission(payload, agents = []) {
   return {
     success: true,
     mission: mapTaskRow({ ...row, created_at: new Date().toISOString(), updated_at: new Date().toISOString() }),
+    subtasks: subtaskRows.map((subtask) => mapTaskRow({ ...subtask, created_at: new Date().toISOString(), updated_at: new Date().toISOString() })),
   };
 }
 
@@ -670,6 +861,7 @@ export async function runCommanderHeartbeat(agents = [], tasks = [], reviews = [
         agent_id: effectiveAgentId,
         created_by_commander_id: task.createdByCommanderId || commander.id,
         status: 'running',
+        workflow_status: WORKFLOW_STATUS.RUNNING,
         lane: 'active',
         started_at: task.startedAt || claimTimestamp,
         progress_percent: Math.max(10, Number(task.progressPercent || 0)),
@@ -702,6 +894,7 @@ export async function runCommanderHeartbeat(agents = [], tasks = [], reviews = [
         .from('tasks')
         .update({
           status: 'failed',
+          workflow_status: WORKFLOW_STATUS.FAILED,
           lane: 'blocked',
           failed_at: new Date().toISOString(),
           progress_percent: 0,
@@ -747,6 +940,7 @@ export async function retryTask(taskId) {
     .from('tasks')
     .update({
       status: 'queued',
+      workflow_status: WORKFLOW_STATUS.READY,
       lane: 'active',
       duration_ms: 0,
       cost_usd: 0,
@@ -769,7 +963,12 @@ export async function stopTask(taskId) {
 
   const { error } = await supabase
     .from('tasks')
-    .update({ status: 'failed', lane: 'blocked', failed_at: new Date().toISOString() })
+    .update({
+      status: 'failed',
+      workflow_status: WORKFLOW_STATUS.FAILED,
+      lane: 'blocked',
+      failed_at: new Date().toISOString(),
+    })
     .eq('id', taskId);
 
   if (error) {
@@ -797,6 +996,7 @@ export async function approveMissionTask(taskId) {
     .from('tasks')
     .update({
       status: 'queued',
+      workflow_status: WORKFLOW_STATUS.READY,
       lane: inferLane(task.priority ?? 5, false, 'queued'),
       requires_approval: false,
       updated_at: new Date().toISOString(),
@@ -835,6 +1035,7 @@ export async function cancelMissionTask(taskId) {
     .from('tasks')
     .update({
       status: 'cancelled',
+      workflow_status: WORKFLOW_STATUS.CANCELLED,
       lane: 'blocked',
       cancelled_at: new Date().toISOString(),
       requires_approval: false,
@@ -983,13 +1184,17 @@ export async function dispatchFromSchedule(schedule, agents) {
   if (!user) throw new Error('Not authenticated');
 
   const agent = agents.find(a => a.id === schedule.agentId);
+  const taskId = crypto.randomUUID();
   const { error } = await supabase
     .from('tasks')
     .insert({
-      id: crypto.randomUUID(),
+      id: taskId,
       user_id: user.id,
       name: schedule.name,
       status: 'pending',
+      workflow_status: WORKFLOW_STATUS.READY,
+      node_type: 'mission',
+      root_mission_id: taskId,
       agent_id: schedule.agentId,
       agent_name: agent?.name || 'Unknown',
       duration_ms: 0,
@@ -1332,6 +1537,27 @@ export async function fetchKnowledgeNamespaces() {
   }));
 }
 
+export async function fetchRoutingPolicies() {
+  if (!isSupabaseConfigured) return [];
+
+  const userId = await getCurrentUserId();
+  if (!userId) return [];
+
+  const { data, error } = await supabase
+    .from('routing_policies')
+    .select('*')
+    .eq('user_id', userId)
+    .order('is_default', { ascending: false })
+    .order('updated_at', { ascending: false });
+
+  if (error) {
+    console.error('[api] fetchRoutingPolicies:', error.message);
+    return [];
+  }
+
+  return (data || []).map(mapRoutingPolicyFromDb);
+}
+
 export async function fetchDirectives() {
   if (!isSupabaseConfigured) return [];
 
@@ -1391,7 +1617,7 @@ export async function fetchModelBenchmarks() {
   return (models || []).map((row) => ({
     id: row.id,
     name: row.label,
-    provider: row.provider || 'Custom',
+    provider: normalizeModelProvider(row.provider),
     load: usageByModel[row.label] || usageByModel[row.model_key] || 0,
     costPer1k: Number(row.cost_per_1k || 0),
   }));

@@ -41,6 +41,8 @@ import { ReactorCoreBoard } from '../components/command/ReactorCoreBoard';
 import { CommandTimelineRail } from '../components/command/CommandTimelineRail';
 import { TacticalInterventionConsole } from '../components/command/TacticalInterventionConsole';
 import { buildTimelineEntries } from '../utils/buildCommandTimeline';
+import { TaskDAG } from '../components/TaskDAG';
+import { getWorkflowMeta } from '../utils/missionLifecycle';
 
 // ═══════════════════════════════════════════════════════════════
 // UI ATOMS
@@ -108,6 +110,14 @@ const stColor = {
 };
 
 const urgColors = { critical: '#fb7185', high: '#fbbf24', normal: '#00D9C8' };
+const workflowTone = {
+  teal: 'bg-aurora-teal/10 text-aurora-teal border-aurora-teal/20',
+  amber: 'bg-aurora-amber/10 text-aurora-amber border-aurora-amber/20',
+  blue: 'bg-aurora-blue/10 text-aurora-blue border-aurora-blue/20',
+  rose: 'bg-aurora-rose/10 text-aurora-rose border-aurora-rose/20',
+  green: 'bg-aurora-green/10 text-aurora-green border-aurora-green/20',
+  slate: 'bg-white/5 text-text-muted border-white/10',
+};
 
 function Card({ children, className, onClick, selected }) {
   return (
@@ -130,6 +140,7 @@ function Card({ children, className, onClick, selected }) {
 
 function ItemRow({ item, agents, selected, onClick }) {
   const cfg = stColor[item.status] || stColor.pending;
+  const workflow = getWorkflowMeta(item.workflowStatus);
   const isRun = item.status === 'running';
   const agent = agents.find(a => a.id === (item.agentId || item.agent_id));
   const urgC = item.urgency ? urgColors[item.urgency] : null;
@@ -156,7 +167,11 @@ function ItemRow({ item, agents, selected, onClick }) {
 
       <div className="flex items-center gap-3 ml-8 flex-wrap">
         {agent?.model && <ModelChip model={agent.model} />}
+        <span className={cn("rounded-full border px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.14em]", workflowTone[workflow.tone])}>
+          {workflow.label}
+        </span>
         {item.mode && <span className="px-2 py-0.5 rounded-full text-[9px] font-mono font-semibold bg-surface-raised text-text-muted border border-border uppercase">{item.mode}</span>}
+        {item.domain && <span className="px-2 py-0.5 rounded-full text-[9px] font-mono font-semibold bg-white/[0.04] text-text-muted border border-border uppercase">{item.domain}</span>}
         {item.durationMs > 0 && <span className="text-[10px] font-mono text-text-disabled flex items-center gap-1"><Timer className="w-3 h-3" />{item.durationMs < 1000 ? `${item.durationMs}ms` : `${(item.durationMs/1000).toFixed(1)}s`}</span>}
         {costLabel && <span className="text-[10px] font-mono text-text-disabled">{costLabel}</span>}
         {item.waitingMs > 0 && <span className="text-[10px] font-mono text-text-disabled flex items-center gap-1"><Clock className="w-3 h-3" />{Math.round(item.waitingMs/60000)}m waiting</span>}
@@ -167,6 +182,7 @@ function ItemRow({ item, agents, selected, onClick }) {
 
       {item.summary && <p className="text-[10px] text-text-muted mt-1.5 ml-8 leading-relaxed line-clamp-1">{item.summary}</p>}
       {!item.summary && item.description && <p className="text-[10px] text-text-muted mt-1.5 ml-8 leading-relaxed line-clamp-1">{item.description}</p>}
+      {item.routingReason && <p className="ml-8 mt-1 text-[10px] font-mono text-text-disabled line-clamp-1">Route: {item.routingReason}</p>}
       {progress && (
         <div className="ml-8 mt-2">
           <div className="w-full h-1.5 rounded-full bg-surface-raised overflow-hidden">
@@ -221,6 +237,93 @@ function ApprovalCard({ item, agents, onClick, onApprove, onReject }) {
   );
 }
 
+function MissionGraphPanel({ tasks, selectedId, onSelect }) {
+  const graphTaskSet = useMemo(() => {
+    if (!tasks.length) return [];
+    const selectedTask = tasks.find((task) => task.id === selectedId) || tasks[0];
+    const rootMissionId = selectedTask?.rootMissionId || selectedTask?.id;
+    return tasks.filter((task) => (task.rootMissionId || task.id) === rootMissionId);
+  }, [selectedId, tasks]);
+
+  const dagTasks = useMemo(() => (
+    graphTaskSet.map((task) => ({
+      ...task,
+      status: getWorkflowMeta(task.workflowStatus).dagStatus,
+    }))
+  ), [graphTaskSet]);
+
+  const branchSummary = useMemo(() => {
+    const running = graphTaskSet.filter((task) => task.workflowStatus === 'running').length;
+    const waiting = graphTaskSet.filter((task) => task.workflowStatus === 'waiting_on_human').length;
+    const blocked = graphTaskSet.filter((task) => ['blocked', 'failed', 'cancelled'].includes(task.workflowStatus)).length;
+    return { running, waiting, blocked };
+  }, [graphTaskSet]);
+
+  if (!graphTaskSet.length) {
+    return (
+      <div className="rounded-[24px] border border-white/[0.06] bg-black/15 px-5 py-6">
+        <div className="text-sm font-semibold text-text-primary">No mission graph yet</div>
+        <p className="mt-2 text-[12px] leading-relaxed text-text-muted">
+          Launch a mission or create the first delegated branch to see the parent/child execution graph appear here.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-[24px] border border-white/[0.06] bg-black/15 p-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Mission Graph</div>
+          <div className="mt-2 text-lg font-semibold text-text-primary">Parent / child execution map</div>
+          <p className="mt-2 text-[12px] leading-relaxed text-text-muted">
+            First canonical graph view for the selected mission root. Click a node to open the mission drawer.
+          </p>
+        </div>
+        <div className="grid grid-cols-3 gap-2">
+          {[
+            { label: 'Nodes', value: graphTaskSet.length, tone: 'text-text-primary' },
+            { label: 'Running', value: branchSummary.running, tone: 'text-aurora-amber' },
+            { label: 'Waiting', value: branchSummary.waiting + branchSummary.blocked, tone: branchSummary.blocked > 0 ? 'text-aurora-rose' : 'text-aurora-blue' },
+          ].map((metric) => (
+            <div key={metric.label} className="rounded-[18px] border border-white/8 bg-white/[0.02] px-3 py-3">
+              <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">{metric.label}</div>
+              <div className={cn('mt-2 text-lg font-semibold', metric.tone)}>{metric.value}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className="mt-4 h-[320px] rounded-[22px] border border-white/8 bg-[radial-gradient(circle_at_top,rgba(45,212,191,0.06),transparent_40%),rgba(255,255,255,0.02)] p-3">
+        <TaskDAG tasks={dagTasks} onNodeClick={(task) => onSelect(task.id)} />
+      </div>
+      <div className="mt-4 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+        {graphTaskSet.map((task) => {
+          const workflow = getWorkflowMeta(task.workflowStatus);
+          return (
+            <button
+              key={task.id}
+              type="button"
+              onClick={() => onSelect(task.id)}
+              className={cn(
+                'rounded-[18px] border bg-black/20 px-3 py-3 text-left transition-colors',
+                selectedId === task.id ? 'border-aurora-teal/30 shadow-glow-teal' : 'border-white/8 hover:border-white/12'
+              )}
+            >
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0 text-[12px] font-semibold text-text-primary truncate">{task.name || task.title}</div>
+                <span className={cn('rounded-full border px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.14em]', workflowTone[workflow.tone])}>
+                  {workflow.label}
+                </span>
+              </div>
+              <div className="mt-2 text-[10px] font-mono text-text-disabled truncate">{task.routingReason || 'Awaiting deeper routing readback'}</div>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 // ═══════════════════════════════════════════════════════════════
 // DETAIL DRAWER
 // ═══════════════════════════════════════════════════════════════
@@ -258,6 +361,7 @@ function Drawer({ item, agents, tasks, logs, onClose, onApprove, onReject, onRet
   if (!item) return null;
   const agent = agents.find(a => a.id === (item.agentId || item.agent_id));
   const cfg = stColor[item.status] || stColor.pending;
+  const workflow = getWorkflowMeta(item.workflowStatus);
   const isMissionApproval = item.status === 'needs_approval';
   const isReviewApproval = item.urgency != null || (item.outputType != null && !item.mode);
   const isApproval = isMissionApproval || isReviewApproval;
@@ -283,6 +387,7 @@ function Drawer({ item, agents, tasks, logs, onClose, onApprove, onReject, onRet
             <h3 className="text-lg font-semibold text-text-primary truncate">{item.name || item.title}</h3>
             <div className="flex items-center gap-3 mt-1">
               <span className={cn("text-xs font-mono font-bold", cfg.tx)}>{cfg.lb}</span>
+              <span className={cn("rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em]", workflowTone[workflow.tone])}>{workflow.label}</span>
               {item.durationMs > 0 && <span className="text-xs text-text-disabled font-mono flex items-center gap-1"><Clock className="w-3 h-3" />{item.durationMs < 1000 ? `${item.durationMs}ms` : `${(item.durationMs/1000).toFixed(1)}s`}</span>}
               {item.mode && <span className="text-xs text-text-disabled font-mono uppercase">{item.mode}</span>}
               {item.actualCostCents != null && <span className="text-xs text-text-disabled font-mono">${(item.actualCostCents / 100).toFixed(2)}</span>}
@@ -294,11 +399,21 @@ function Drawer({ item, agents, tasks, logs, onClose, onApprove, onReject, onRet
       </div>
 
       {(item.summary || item.description) && <div className="px-5 py-3 border-b border-border bg-surface"><p className="text-[12px] text-text-body leading-relaxed">{item.summary || item.description}</p></div>}
+      <div className="grid grid-cols-2 gap-2 border-b border-border bg-surface px-5 py-3">
+        <div className="rounded-xl border border-white/8 bg-black/20 px-3 py-2">
+          <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Routing</div>
+          <div className="mt-1 text-[11px] font-mono text-text-primary">{item.routingReason || 'Legacy route or not yet inferred'}</div>
+        </div>
+        <div className="rounded-xl border border-white/8 bg-black/20 px-3 py-2">
+          <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Graph</div>
+          <div className="mt-1 text-[11px] font-mono text-text-primary">{item.rootMissionId || item.id}</div>
+        </div>
+      </div>
 
       {actionError && <div className="px-5 py-2 border-b border-aurora-rose/10 bg-aurora-rose/5 flex items-center gap-2"><AlertTriangle className="w-3.5 h-3.5 text-aurora-rose shrink-0" /><span className="text-[11px] text-aurora-rose flex-1">{actionError}</span><button onClick={() => setActionError(null)} className="text-[10px] text-aurora-rose font-bold">Dismiss</button></div>}
 
       <div className="flex border-b border-border px-5 shrink-0">
-        {['timeline', 'history', 'output', 'notes'].map(t => (
+        {['timeline', 'routing', 'history', 'output', 'notes'].map(t => (
           <button key={t} onClick={() => setTab(t)} className={cn("px-4 py-3 text-sm font-medium border-b-2 transition-colors capitalize", tab === t ? "border-aurora-teal text-aurora-teal" : "border-transparent text-text-muted hover:text-text-primary")}>{t}</button>
         ))}
       </div>
@@ -346,6 +461,34 @@ function Drawer({ item, agents, tasks, logs, onClose, onApprove, onReject, onRet
             </div>
           );
         })()}
+        {tab === 'routing' && (
+          <div className="space-y-3">
+            {[
+              { label: 'Domain', value: item.domain || 'general' },
+              { label: 'Intent', value: item.intentType || 'general' },
+              { label: 'Budget class', value: item.budgetClass || 'balanced' },
+              { label: 'Risk level', value: item.riskLevel || 'medium' },
+              { label: 'Approval level', value: item.approvalLevel || 'risk_weighted' },
+              { label: 'Policy', value: item.routingPolicyId || 'Default adaptive lane' },
+            ].map((entry) => (
+              <div key={entry.label} className="rounded-xl border border-white/8 bg-black/20 px-3 py-3">
+                <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">{entry.label}</div>
+                <div className="mt-1 text-[12px] font-mono text-text-primary">{entry.value}</div>
+              </div>
+            ))}
+            <div className="rounded-xl border border-white/8 bg-black/20 px-3 py-3">
+              <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Required capabilities</div>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {(item.requiredCapabilities || []).length === 0 && <span className="text-[12px] text-text-muted">No explicit capabilities inferred yet.</span>}
+                {(item.requiredCapabilities || []).map((capability) => (
+                  <span key={capability} className="rounded-full border border-white/10 bg-white/[0.03] px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-text-primary">
+                    {capability}
+                  </span>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
         {tab === 'output' && (item.payload || item.resultText) && <div className={cn("p-4 rounded-lg text-sm font-mono leading-relaxed whitespace-pre-wrap border", item.outputType === 'error' ? "bg-aurora-rose/5 border-aurora-rose/20 text-aurora-rose/90" : item.outputType === 'code' ? "bg-black/40 border-white/5 text-text-primary" : "bg-white/[0.02] border-white/5 text-text-body")}>{item.payload || item.resultText}</div>}
         {tab === 'output' && !item.payload && !item.resultText && <p className="text-sm text-text-disabled text-center py-8">No output payload.</p>}
         {tab === 'notes' && (
@@ -610,7 +753,7 @@ export function MissionControlView() {
   const reload = useCallback(async () => {
     const [a, t, l, p, c, s] = await Promise.all([fetchAgents(), fetchTasks(), fetchActivityLog(), fetchPendingReviews(), fetchCompletedOutputs(), fetchSchedules()]);
     setAgents(a); setTasks(t); setLogs(l); setApprovals(p); setCompleted(c); setSchedules(s);
-    setPendingCount(p.length + t.filter(task => task.status === 'needs_approval').length);
+    setPendingCount(p.length + t.filter(task => task.workflowStatus === 'waiting_on_human' || task.status === 'needs_approval').length);
   }, [setPendingCount]);
 
   // Initial mission data load for the screen.
@@ -620,19 +763,23 @@ export function MissionControlView() {
   useEffect(() => { const u = subscribeToTasks(() => reload()); return u; }, [reload]);
 
   const missionApprovals = useMemo(
-    () => tasks.filter(task => task.status === 'needs_approval' || task.lane === 'approvals'),
+    () => tasks.filter(task => !task.parentId && (task.workflowStatus === 'waiting_on_human' || task.status === 'needs_approval' || task.lane === 'approvals')),
     [tasks]
   );
   const approvalItems = useMemo(() => [...missionApprovals, ...approvals], [missionApprovals, approvals]);
   const completedItems = useMemo(
     () => [
-      ...tasks.filter(task => ['done', 'completed'].includes(task.status)),
+      ...tasks.filter(task => task.workflowStatus === 'completed' || ['done', 'completed'].includes(task.status)),
       ...completed,
     ],
     [tasks, completed]
   );
   const operationalTasks = useMemo(
-    () => tasks.filter(task => !['done', 'completed'].includes(task.status) && task.status !== 'needs_approval'),
+    () => tasks.filter(task => !task.parentId && task.workflowStatus !== 'completed' && task.workflowStatus !== 'waiting_on_human' && !['done', 'completed'].includes(task.status) && task.status !== 'needs_approval'),
+    [tasks]
+  );
+  const graphTasks = useMemo(
+    () => tasks.filter(task => task.nodeType === 'mission' || task.nodeType === 'subtask'),
     [tasks]
   );
   const totalMissionCost = useMemo(
@@ -646,13 +793,13 @@ export function MissionControlView() {
     costData: { total: totalMissionCost, models: [] },
   });
 
-  const running = tasks.filter(t => t.status === 'running' || t.status === 'queued').length;
-  const failed = tasks.filter(t => ['failed', 'error', 'blocked', 'cancelled'].includes(t.status)).length;
+  const running = tasks.filter(t => ['running', 'ready'].includes(t.workflowStatus) || t.status === 'running' || t.status === 'queued').length;
+  const failed = tasks.filter(t => ['failed', 'blocked', 'cancelled'].includes(t.workflowStatus) || ['failed', 'error', 'blocked', 'cancelled'].includes(t.status)).length;
 
   const criticalItems = useMemo(() => {
     const c = [];
     approvalItems.filter(a => a.urgency === 'critical' || a.status === 'needs_intervention' || a.priority >= 8).forEach(a => c.push(a));
-    tasks.filter(t => ['failed', 'error', 'blocked'].includes(t.status)).slice(0, 2).forEach(t => c.push(t));
+    tasks.filter(t => ['failed', 'blocked'].includes(t.workflowStatus) || ['failed', 'error', 'blocked'].includes(t.status)).slice(0, 2).forEach(t => c.push(t));
     return c.slice(0, 3);
   }, [approvalItems, tasks]);
 
@@ -839,20 +986,23 @@ export function MissionControlView() {
             </div>
 
           {tab === 'ops' && (
-            <AnimatePresence mode="popLayout">
-              {operationalTasks.map(t => (
-                <Motion.div
-                  key={t.id}
-                  layout
-                  initial={{ opacity: 0, y: 16, scale: 0.98 }}
-                  animate={{ opacity: 1, y: 0, scale: 1 }}
-                  exit={{ opacity: 0, y: -14, scale: 0.98 }}
-                  transition={{ duration: 0.24, ease: 'easeOut' }}
-                >
-                  <ItemRow item={t} agents={agents} selected={sel === t.id} onClick={() => setSel(t.id)} />
-                </Motion.div>
-              ))}
-            </AnimatePresence>
+            <div className="space-y-4">
+              <MissionGraphPanel tasks={graphTasks} selectedId={sel} onSelect={setSel} />
+              <AnimatePresence mode="popLayout">
+                {operationalTasks.map(t => (
+                  <Motion.div
+                    key={t.id}
+                    layout
+                    initial={{ opacity: 0, y: 16, scale: 0.98 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: -14, scale: 0.98 }}
+                    transition={{ duration: 0.24, ease: 'easeOut' }}
+                  >
+                    <ItemRow item={t} agents={agents} selected={sel === t.id} onClick={() => setSel(t.id)} />
+                  </Motion.div>
+                ))}
+              </AnimatePresence>
+            </div>
           )}
           {tab === 'ops' && operationalTasks.length === 0 && (
             <div className="rounded-[24px] border border-white/[0.06] bg-black/15 px-6 py-8">

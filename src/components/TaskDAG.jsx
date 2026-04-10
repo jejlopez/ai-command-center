@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion as Motion } from 'framer-motion';
 // Active parents pass live task data as props.
 
 const statusColors = {
@@ -302,9 +302,8 @@ function formatDuration(ms) {
 }
 
 export function TaskDAG({ onNodeClick, tasks }) {
-  const taskList = tasks || [];
   const [hoveredId, setHoveredId] = useState(null);
-  const { nodes, edges } = useMemo(() => computeLayout(taskList), [taskList]);
+  const { nodes, edges } = useMemo(() => computeLayout(tasks || []), [tasks]);
 
   return (
     <div className="w-full h-full flex justify-center items-center overflow-visible relative">
@@ -350,20 +349,20 @@ export function TaskDAG({ onNodeClick, tasks }) {
           const bobDur = 3 + (i % 3) * 0.5;
 
           return (
-            <motion.g
+            <Motion.g
               key={node.id}
               initial={{ opacity: 0, scale: 0 }}
               animate={{ opacity: 1, scale: 1 }}
               whileHover={{ scale: 1.12 }}
               onMouseEnter={() => setHoveredId(node.id)}
               onMouseLeave={() => setHoveredId(null)}
-              onClick={() => node.agentId && onNodeClick?.(node.agentId)}
+              onClick={() => onNodeClick?.(node)}
               className="cursor-pointer"
               transition={{ delay: i * 0.12, type: 'spring', stiffness: 200, damping: 20 }}
               style={{ transformOrigin: `${node.cx}px ${node.cy}px` }}
             >
               {/* Floating bob via Framer Motion */}
-              <motion.g
+              <Motion.g
                 animate={isError
                   ? { x: [-1.5, 1.5, -1, 1, 0], y: 0 }
                   : { y: [0, -3, 0], x: 0 }
@@ -424,8 +423,8 @@ export function TaskDAG({ onNodeClick, tasks }) {
                 >
                   {node.name}
                 </text>
-              </motion.g>
-            </motion.g>
+              </Motion.g>
+            </Motion.g>
           );
         })}
 
