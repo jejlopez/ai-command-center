@@ -1550,6 +1550,8 @@ function mapTaskFromDb(row) {
   const taskGraph = getTaskGraphShape(row);
   return {
     id:         row.id,
+    title:      row.title || row.name,
+    description: row.description || row.prompt_text || '',
     userId:     row.user_id,
     name:       row.name,
     status:     row.status,
@@ -1572,8 +1574,19 @@ function mapTaskFromDb(row) {
     agentRole: row.agent_role || 'executor',
     executionStrategy: row.execution_strategy || 'sequential',
     branchLabel: row.branch_label || '',
+    mode: row.mode || 'balanced',
+    scheduleType: row.schedule_type || 'once',
+    runAt: row.run_at || null,
+    recurrenceRule: row.recurrence_rule || null,
+    outputType: row.output_type || 'summary',
+    outputSpec: row.output_spec || '',
     providerOverride: row.provider_override || null,
     modelOverride: row.model_override || null,
+    requiresApproval: !!row.requires_approval,
+    lastRunAt: row.last_run_at || null,
+    nextRunAt: row.next_run_at || null,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
     durationMs: row.duration_ms || 0,
     costUsd:    parseFloat(row.cost_usd) || 0,
   };

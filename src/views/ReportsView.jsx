@@ -34,7 +34,7 @@ import { DoctrineCards } from '../components/command/DoctrineCards';
 import { TruthAuditStrip } from '../components/command/TruthAuditStrip';
 import { useCommandCenterTruth } from '../utils/useCommandCenterTruth';
 import { buildPolicyDemotionSummary, buildProviderEscalationExplanation, getAutomationCandidates, getAutomationRoiSummary, getObservedModelBenchmarks, parseAutomationGuardrailEvents, parseDoctrineFeedbackLogs, parseOutcomeScoreLogs, scoreTaskOutcome } from '../utils/commanderAnalytics';
-import { createMission } from '../lib/api';
+import { createMission, updateRecurringMissionFlow } from '../lib/api';
 
 const PERIOD_OPTIONS = ['30d', '90d', 'QTD'];
 const STATUS_COLORS = {
@@ -532,14 +532,77 @@ export function ReportsView() {
     };
   }, [automationDraft, interventions, logs, tasks]);
 
+  const managedRecurringFlows = useMemo(() => {
+    const recurringRoots = tasks.filter((task) => task.scheduleType === 'recurring' && (task.rootMissionId || task.id) === task.id);
+
+    return recurringRoots.map((task) => {
+      const recurrence = task.recurrenceRule || {};
+      const rootId = task.rootMissionId || task.id;
+      const latestOutcome = outcomes
+        .filter((entry) => (entry.rootMissionId || entry.taskId) === rootId)
+        .sort((left, right) => new Date(right.createdAt || 0).getTime() - new Date(left.createdAt || 0).getTime())[0] || null;
+      const latestIntervention = interventions
+        .filter((entry) => (entry.rootMissionId || entry.taskId) === rootId)
+        .sort((left, right) => new Date(right.createdAt || 0).getTime() - new Date(left.createdAt || 0).getTime())[0] || null;
+      const latestGuardrail = interventions
+        .filter((entry) => entry.eventType === 'guardrail' && (entry.rootMissionId || entry.taskId) === rootId)
+        .sort((left, right) => new Date(right.createdAt || 0).getTime() - new Date(left.createdAt || 0).getTime())[0] || null;
+
+      return {
+        id: task.id,
+        rootMissionId: rootId,
+        title: task.title || task.name,
+        domain: task.domain || 'general',
+        intentType: task.intentType || 'general',
+        frequency: recurrence.frequency || 'weekly',
+        time: recurrence.time || '09:00',
+        missionMode: recurrence.missionMode || (task.workflowStatus === 'planned' ? 'plan_first' : task.requiresApproval || task.approvalLevel === 'human_required' ? 'watch_and_approve' : 'do_now'),
+        approvalPosture: recurrence.approvalPosture || task.approvalLevel || 'risk_weighted',
+        paused: recurrence.paused ?? (String(task.status || '').toLowerCase() === 'paused'),
+        nextRunAt: task.runAt || null,
+        lastRunAt: task.lastRunAt || latestOutcome?.createdAt || null,
+        latestOutcome,
+        latestIntervention,
+        latestGuardrail,
+      };
+    }).sort((left, right) => {
+      const leftTs = new Date(left.nextRunAt || left.lastRunAt || 0).getTime();
+      const rightTs = new Date(right.nextRunAt || right.lastRunAt || 0).getTime();
+      return rightTs - leftTs;
+    });
+  }, [tasks, outcomes, interventions]);
+
   function openAutomationDraft(candidate) {
     setAutomationMessage('');
     setAutomationDraft({
+      mode: 'create',
       candidate,
       frequency: candidate.runs >= 4 ? 'daily' : 'weekly',
       time: '09:00',
       outputType: candidate.intentType === 'report' ? 'summary' : 'action_plan',
       missionMode: candidate.roi >= 3 ? 'plan_first' : 'watch_and_approve',
+      approvalPosture: ['finance', 'money', 'billing'].includes(String(candidate.domain || '').toLowerCase()) ? 'human_required' : 'risk_weighted',
+    });
+  }
+
+  function openManagedFlowDraft(flow) {
+    setAutomationMessage('');
+    setAutomationDraft({
+      mode: 'manage',
+      taskId: flow.id,
+      candidate: {
+        title: flow.title,
+        domain: flow.domain,
+        intentType: flow.intentType,
+        runs: tasks.filter((task) => task.domain === flow.domain && task.intentType === flow.intentType).length,
+        roi: getAutomationCandidates(tasks, humanHourlyRate).find((entry) => entry.domain === flow.domain && entry.intentType === flow.intentType && entry.title === flow.title)?.roi || 0,
+      },
+      frequency: flow.frequency,
+      time: flow.time,
+      outputType: 'summary',
+      missionMode: flow.missionMode,
+      approvalPosture: flow.approvalPosture,
+      paused: flow.paused,
     });
   }
 
@@ -556,33 +619,54 @@ export function ReportsView() {
   async function handleLaunchRecurring() {
     if (!automationDraft?.candidate) return;
     const candidate = automationDraft.candidate;
-    const commander = agents.find((agent) => agent.role === 'commander' && !agent.isSyntheticCommander) || agents.find((agent) => agent.role === 'commander') || agents[0] || null;
-    const cadence = { frequency: automationDraft.frequency, time: automationDraft.time };
     try {
       setAutomationLaunching(true);
-      const result = await createMission({
-        intent: candidate.title,
-        agentId: commander?.id || null,
-        agentName: commander?.name || 'Commander',
-        missionMode: automationDraft.missionMode,
-        mode: 'normal',
-        when: 'repeat',
-        repeat: cadence,
-        targetType: candidate.domain,
-        outputType: automationDraft.outputType,
-        priority: 'normal',
-        priorityScore: 5,
-        automationCandidate: {
-          runs: candidate.runs,
-          roi: candidate.roi,
-          domain: candidate.domain,
-        },
-      }, agents);
-      setAutomationMessage(
-        result?.guardrails?.length
-          ? `Recurring flow launched for ${candidate.title}. Guardrails applied: ${result.guardrails.join(' ')}`
-          : `Recurring flow launched for ${candidate.title}.`
-      );
+      if (automationDraft.mode === 'manage' && automationDraft.taskId) {
+        const result = await updateRecurringMissionFlow(automationDraft.taskId, {
+          frequency: automationDraft.frequency,
+          time: automationDraft.time,
+          missionMode: automationDraft.missionMode,
+          approvalPosture: automationDraft.approvalPosture,
+          paused: automationDraft.paused ?? false,
+          outputType: automationDraft.outputType,
+          automationCandidate: {
+            runs: candidate.runs,
+            roi: candidate.roi,
+            domain: candidate.domain,
+          },
+        });
+        setAutomationMessage(
+          result?.guardrails?.length
+            ? `Recurring flow updated for ${candidate.title}. Guardrails applied: ${result.guardrails.join(' ')}`
+            : `Recurring flow updated for ${candidate.title}.`
+        );
+      } else {
+        const commander = agents.find((agent) => agent.role === 'commander' && !agent.isSyntheticCommander) || agents.find((agent) => agent.role === 'commander') || agents[0] || null;
+        const cadence = { frequency: automationDraft.frequency, time: automationDraft.time, approvalPosture: automationDraft.approvalPosture, missionMode: automationDraft.missionMode, paused: automationDraft.paused ?? false };
+        const result = await createMission({
+          intent: candidate.title,
+          agentId: commander?.id || null,
+          agentName: commander?.name || 'Commander',
+          missionMode: automationDraft.missionMode,
+          mode: 'normal',
+          when: 'repeat',
+          repeat: cadence,
+          targetType: candidate.domain,
+          outputType: automationDraft.outputType,
+          priority: 'normal',
+          priorityScore: 5,
+          automationCandidate: {
+            runs: candidate.runs,
+            roi: candidate.roi,
+            domain: candidate.domain,
+          },
+        }, agents);
+        setAutomationMessage(
+          result?.guardrails?.length
+            ? `Recurring flow launched for ${candidate.title}. Guardrails applied: ${result.guardrails.join(' ')}`
+            : `Recurring flow launched for ${candidate.title}.`
+        );
+      }
       setAutomationDraft(null);
     } catch (error) {
       setAutomationMessage(error.message || 'Could not launch recurring flow.');
@@ -651,6 +735,61 @@ export function ReportsView() {
             tone="blue"
             icon={DollarSign}
           />
+        </Motion.section>
+
+        <Motion.section variants={item}>
+          <HudFrame
+            eyebrow="Managed Automations"
+            title="Recurring flows under command"
+            detail="These are live recurring products now: tune cadence, posture, and approval instead of relaunching from scratch."
+            accent="violet"
+          >
+            <div className="space-y-3">
+              {managedRecurringFlows.length === 0 && (
+                <div className="text-[12px] text-text-muted">No managed recurring flows yet. Launch one from the automation rack and it will appear here for ongoing tuning.</div>
+              )}
+              {managedRecurringFlows.map((flow) => (
+                <div key={flow.id} className="rounded-[18px] border border-white/8 bg-[#111827] p-3">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <div className="text-[12px] font-semibold text-text-primary">{flow.title}</div>
+                      <div className="mt-1 text-[11px] text-text-muted">{flow.domain} / {flow.intentType}</div>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <TelemetryTag label="Cadence" value={`${flow.frequency} ${flow.time}`} tone="blue" />
+                      <TelemetryTag label="Mode" value={flow.missionMode.replaceAll('_', ' ')} tone="teal" />
+                      <TelemetryTag label="Approval" value={flow.approvalPosture.replaceAll('_', ' ')} tone={flow.approvalPosture === 'human_required' ? 'amber' : 'violet'} />
+                      {flow.paused && <TelemetryTag label="State" value="Paused" tone="amber" />}
+                    </div>
+                  </div>
+                  <div className="mt-3 grid gap-3 md:grid-cols-3">
+                    <div className="rounded-[14px] border border-white/8 bg-black/20 px-3 py-2 text-[11px] text-text-body">
+                      <div className="text-[10px] uppercase tracking-[0.14em] text-text-muted">Latest outcome</div>
+                      <div className="mt-1 font-semibold text-text-primary">{flow.latestOutcome ? `${flow.latestOutcome.outcomeStatus} · ${flow.latestOutcome.score}` : 'No outcome yet'}</div>
+                    </div>
+                    <div className="rounded-[14px] border border-white/8 bg-black/20 px-3 py-2 text-[11px] text-text-body">
+                      <div className="text-[10px] uppercase tracking-[0.14em] text-text-muted">Latest intervention</div>
+                      <div className="mt-1 font-semibold text-text-primary">{flow.latestIntervention ? flow.latestIntervention.eventType : 'No intervention yet'}</div>
+                    </div>
+                    <div className="rounded-[14px] border border-white/8 bg-black/20 px-3 py-2 text-[11px] text-text-body">
+                      <div className="text-[10px] uppercase tracking-[0.14em] text-text-muted">Latest guardrail</div>
+                      <div className="mt-1 font-semibold text-text-primary">{flow.latestGuardrail ? 'Triggered' : 'Quiet'}</div>
+                    </div>
+                  </div>
+                  <div className="mt-3 flex flex-wrap justify-between gap-3 text-[11px] text-text-muted">
+                    <div>{flow.nextRunAt ? `Next run ${new Date(flow.nextRunAt).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}` : 'No next run scheduled yet'}</div>
+                    <button
+                      type="button"
+                      onClick={() => openManagedFlowDraft(flow)}
+                      className="rounded-xl border border-aurora-violet/20 bg-aurora-violet/10 px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-aurora-violet transition-colors hover:bg-aurora-violet/14"
+                    >
+                      Tune recurring flow
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </HudFrame>
         </Motion.section>
 
         <Motion.section variants={item}>
@@ -737,6 +876,18 @@ export function ReportsView() {
                       </select>
                     </label>
                     <label>
+                      <div className="text-[10px] uppercase tracking-[0.14em] text-text-muted">Approval posture</div>
+                      <select
+                        value={automationDraft.approvalPosture}
+                        onChange={(event) => setAutomationDraft((current) => ({ ...current, approvalPosture: event.target.value }))}
+                        className="mt-2 w-full rounded-xl border border-white/8 bg-black/20 px-3 py-2 text-[12px] text-text-primary outline-none"
+                      >
+                        <option value="risk_weighted">Risk weighted</option>
+                        <option value="auto_low_risk">Auto low risk</option>
+                        <option value="human_required">Human required</option>
+                      </select>
+                    </label>
+                    <label>
                       <div className="text-[10px] uppercase tracking-[0.14em] text-text-muted">Output</div>
                       <select
                         value={automationDraft.outputType}
@@ -748,6 +899,18 @@ export function ReportsView() {
                         <option value="report">Report</option>
                         <option value="email_drafts">Email drafts</option>
                       </select>
+                    </label>
+                    <label className="flex items-center gap-3 rounded-xl border border-white/8 bg-black/20 px-3 py-2">
+                      <input
+                        type="checkbox"
+                        checked={automationDraft.paused ?? false}
+                        onChange={(event) => setAutomationDraft((current) => ({ ...current, paused: event.target.checked }))}
+                        className="h-4 w-4 rounded border-white/20 bg-transparent"
+                      />
+                      <div>
+                        <div className="text-[10px] uppercase tracking-[0.14em] text-text-muted">Paused</div>
+                        <div className="mt-1 text-[11px] text-text-body">Keep the recurring flow configured but not runnable.</div>
+                      </div>
                     </label>
                   </div>
                   <div className="mt-4 rounded-[16px] border border-white/8 bg-black/20 p-3">
@@ -800,7 +963,7 @@ export function ReportsView() {
                       disabled={automationLaunching}
                       className="rounded-xl border border-aurora-blue/20 bg-aurora-blue/10 px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-aurora-blue transition-colors hover:bg-aurora-blue/14 disabled:opacity-50"
                     >
-                      {automationLaunching ? 'Launching...' : 'Launch recurring flow'}
+                      {automationLaunching ? (automationDraft.mode === 'manage' ? 'Saving...' : 'Launching...') : (automationDraft.mode === 'manage' ? 'Save recurring flow' : 'Launch recurring flow')}
                     </button>
                   </div>
                 </div>

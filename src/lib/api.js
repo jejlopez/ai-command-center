@@ -367,6 +367,70 @@ function buildRecurrenceRule(repeat) {
     frequency: repeat.frequency,
     time: repeat.time,
     endDate: repeat.endDate || null,
+    missionMode: repeat.missionMode || null,
+    approvalPosture: repeat.approvalPosture || null,
+    paused: repeat.paused ?? false,
+  };
+}
+
+function computeNextRecurringRunAt(repeat) {
+  if (!repeat?.time) return null;
+
+  const [hourText, minuteText] = String(repeat.time || '09:00').split(':');
+  const hour = Number(hourText);
+  const minute = Number(minuteText);
+  if (Number.isNaN(hour) || Number.isNaN(minute)) return null;
+
+  const now = new Date();
+  const next = new Date(now);
+  next.setSeconds(0, 0);
+  next.setHours(hour, minute, 0, 0);
+
+  const frequency = String(repeat.frequency || 'weekly').toLowerCase();
+  if (next.getTime() <= now.getTime()) {
+    next.setDate(next.getDate() + (frequency === 'daily' ? 1 : 7));
+  }
+
+  return next.toISOString();
+}
+
+function deriveRecurringFlowState({ missionMode = 'watch_and_approve', approvalPosture = 'risk_weighted', paused = false, priority = 5 }) {
+  if (paused) {
+    return {
+      status: 'paused',
+      workflowStatus: WORKFLOW_STATUS.PLANNED,
+      lane: 'blocked',
+      requiresApproval: false,
+      approvalLevel: approvalPosture,
+    };
+  }
+
+  if (missionMode === 'plan_first') {
+    return {
+      status: 'pending',
+      workflowStatus: WORKFLOW_STATUS.PLANNED,
+      lane: 'blocked',
+      requiresApproval: false,
+      approvalLevel: approvalPosture,
+    };
+  }
+
+  if (missionMode === 'watch_and_approve' || approvalPosture === 'human_required') {
+    return {
+      status: 'needs_approval',
+      workflowStatus: WORKFLOW_STATUS.WAITING_ON_HUMAN,
+      lane: 'approvals',
+      requiresApproval: true,
+      approvalLevel: 'human_required',
+    };
+  }
+
+  return {
+    status: 'queued',
+    workflowStatus: WORKFLOW_STATUS.READY,
+    lane: inferLane(priority, false, 'queued'),
+    requiresApproval: false,
+    approvalLevel: approvalPosture,
   };
 }
 
@@ -1776,6 +1840,148 @@ export async function cancelMissionTask(taskId) {
   });
 
   return { success: true, taskId };
+}
+
+export async function updateRecurringMissionFlow(taskId, updates = {}) {
+  if (!isSupabaseConfigured) return { success: true, taskId, guardrails: [] };
+
+  const user = (await supabase.auth.getUser()).data?.user;
+  if (!user) throw new Error('Not authenticated');
+
+  const { data: currentTask, error: fetchError } = await supabase
+    .from('tasks')
+    .select('id,title,name,priority,root_mission_id,agent_id,domain,intent_type,provider_override,model_override,schedule_type,recurrence_rule,approval_level,requires_approval')
+    .eq('id', taskId)
+    .single();
+
+  if (fetchError) throw fetchError;
+
+  const existingRepeat = currentTask.recurrence_rule || {};
+  const requestedRepeat = {
+    frequency: updates.frequency || existingRepeat.frequency || 'weekly',
+    time: updates.time || existingRepeat.time || '09:00',
+    endDate: updates.endDate ?? existingRepeat.endDate ?? null,
+    missionMode: updates.missionMode || existingRepeat.missionMode || 'watch_and_approve',
+    approvalPosture: updates.approvalPosture || existingRepeat.approvalPosture || currentTask.approval_level || 'risk_weighted',
+    paused: updates.paused ?? existingRepeat.paused ?? false,
+  };
+
+  const { payload: guardedPayload, guardrails } = enforceRecurringMissionGuardrails({
+    repeat: requestedRepeat,
+    missionMode: requestedRepeat.missionMode,
+    targetType: currentTask.domain || 'general',
+    outputType: updates.outputType || 'summary',
+    automationCandidate: updates.automationCandidate || {
+      domain: currentTask.domain || 'general',
+      roi: updates.roi || 0,
+      runs: updates.runs || 0,
+    },
+  });
+
+  const effectiveRepeat = {
+    ...requestedRepeat,
+    frequency: guardedPayload.repeat?.frequency || requestedRepeat.frequency,
+    time: guardedPayload.repeat?.time || requestedRepeat.time,
+    endDate: guardedPayload.repeat?.endDate ?? requestedRepeat.endDate,
+    missionMode: guardedPayload.missionMode || requestedRepeat.missionMode,
+    approvalPosture: requestedRepeat.approvalPosture,
+    paused: requestedRepeat.paused,
+  };
+  const nextState = deriveRecurringFlowState({
+    missionMode: effectiveRepeat.missionMode,
+    approvalPosture: effectiveRepeat.approvalPosture,
+    paused: effectiveRepeat.paused,
+    priority: currentTask.priority ?? 5,
+  });
+  const nextRunAt = effectiveRepeat.paused || nextState.status !== 'queued'
+    ? null
+    : computeNextRecurringRunAt(effectiveRepeat);
+
+  const patch = {
+    schedule_type: 'recurring',
+    recurrence_rule: buildRecurrenceRule(effectiveRepeat),
+    run_at: nextRunAt,
+    status: nextState.status,
+    workflow_status: nextState.workflowStatus,
+    lane: nextState.lane,
+    requires_approval: nextState.requiresApproval,
+    approval_level: nextState.approvalLevel,
+    updated_at: new Date().toISOString(),
+  };
+
+  const { error } = await supabase
+    .from('tasks')
+    .update(patch)
+    .eq('id', taskId);
+
+  if (error) throw error;
+
+  const message = `[automation-tuning] ${(currentTask.title || currentTask.name || taskId)} (${taskId}) on root ${currentTask.root_mission_id || taskId} -> ${effectiveRepeat.frequency} at ${effectiveRepeat.time}, mission mode ${effectiveRepeat.missionMode.replaceAll('_', ' ')}, approval ${effectiveRepeat.approvalPosture}, ${effectiveRepeat.paused ? 'paused' : 'active'}.`;
+  await logBranchEvent({
+    userId: user.id,
+    agentId: currentTask.agent_id || null,
+    message,
+  });
+  await persistTaskIntervention({
+    userId: user.id,
+    taskId,
+    rootMissionId: currentTask.root_mission_id || taskId,
+    agentId: currentTask.agent_id || null,
+    eventType: 'tuning',
+    eventSource: 'manual',
+    tone: 'blue',
+    message,
+    domain: currentTask.domain || 'general',
+    intentType: currentTask.intent_type || 'general',
+    provider: currentTask.provider_override || null,
+    model: currentTask.model_override || null,
+    scheduleType: 'recurring',
+    metadata: {
+      frequency: effectiveRepeat.frequency,
+      time: effectiveRepeat.time,
+      missionMode: effectiveRepeat.missionMode,
+      approvalPosture: effectiveRepeat.approvalPosture,
+      paused: effectiveRepeat.paused,
+      nextRunAt,
+      guardrails,
+    },
+  });
+
+  if (guardrails.length) {
+    const guardrailMessage = `[automation-guardrail] ${(currentTask.title || currentTask.name || taskId)} on root ${currentTask.root_mission_id || taskId} -> ${guardrails.join(' ')}`;
+    await logBranchEvent({
+      userId: user.id,
+      agentId: currentTask.agent_id || null,
+      message: guardrailMessage,
+    });
+    await persistTaskIntervention({
+      userId: user.id,
+      taskId,
+      rootMissionId: currentTask.root_mission_id || taskId,
+      agentId: currentTask.agent_id || null,
+      eventType: 'guardrail',
+      eventSource: 'manual',
+      tone: 'amber',
+      message: guardrailMessage,
+      domain: currentTask.domain || 'general',
+      intentType: currentTask.intent_type || 'general',
+      provider: currentTask.provider_override || null,
+      model: currentTask.model_override || null,
+      scheduleType: 'recurring',
+      metadata: {
+        guardrails,
+      },
+    });
+  }
+
+  return {
+    success: true,
+    taskId,
+    guardrails,
+    nextRunAt,
+    recurrenceRule: patch.recurrence_rule,
+    status: patch.status,
+  };
 }
 
 // ── Task Notes ──────────────────────────────────────────────────
