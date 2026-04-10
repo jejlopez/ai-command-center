@@ -131,24 +131,37 @@ function SectionCard({ eyebrow, title, description, action, children }) {
     <section className="ui-panel p-4">
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
-          <div className="ui-kicker text-[10px] font-semibold uppercase">{eyebrow}</div>
-          <h3 className="mt-2 text-lg font-semibold text-text-primary text-balance">{title}</h3>
-          {description ? <p className="mt-2 max-w-2xl text-[13px] leading-6 text-text-muted">{description}</p> : null}
+          <div className="flex items-center gap-2">
+            <div className="ui-kicker text-[10px] font-semibold uppercase">{eyebrow}</div>
+            {action}
+          </div>
+          <h3 className="mt-1 text-base font-semibold text-text-primary tracking-tight">{title}</h3>
+          {description ? <p className="mt-1 max-w-2xl text-[12px] leading-5 text-text-muted opacity-70">{description}</p> : null}
         </div>
-        {action}
       </div>
-      <div className="my-4 h-px bg-gradient-to-r from-transparent via-white/10 to-transparent" />
-      {children}
+      <div className="my-3 h-px bg-gradient-to-r from-transparent via-white/5 to-transparent" />
+      <div className="space-y-1">
+        {children}
+      </div>
     </section>
   );
 }
 
 function ControlRow({ label, description, children }) {
   return (
-    <div className="flex flex-col gap-3 py-3 first:pt-0 last:pb-0 md:flex-row md:items-start md:justify-between">
-      <div className="min-w-0 max-w-md">
-        <div className="text-sm font-medium text-text-primary">{label}</div>
-        {description ? <p className="mt-1 text-[12px] leading-5 text-text-muted">{description}</p> : null}
+    <div className="flex items-center justify-between py-2 group">
+      <div className="min-w-0 flex-1 pr-4">
+        <div className="text-[13px] font-medium text-text-primary group-hover:text-aurora-teal transition-colors flex items-center gap-2">
+          {label}
+          {description && (
+            <div className="group/info relative inline-block">
+              <div className="h-1 w-1 rounded-full bg-white/20" />
+              <div className="absolute left-0 top-full mt-2 w-48 rounded-lg bg-black/90 p-2 text-[11px] text-text-muted opacity-0 backdrop-blur-md transition-opacity group-hover/info:opacity-100 pointer-events-none z-50 border border-white/10 shadow-xl">
+                {description}
+              </div>
+            </div>
+          )}
+        </div>
       </div>
       <div className="shrink-0">{children}</div>
     </div>
@@ -212,11 +225,10 @@ function PreferencesTab() {
   return (
     <div className="space-y-4">
       <SectionCard
-        eyebrow="Commander Voice"
-        title="Choose how the deck feels and what it escalates"
-        description="These are the controls that actually shape the command loop: voice, persona, alert pressure, and where urgent traffic lands."
+        eyebrow="Voice & Persona"
+        title="Tone and escalation doctrine"
       >
-        <ControlRow label="Commander style" description="Tune the system voice between operator inventiveness and tighter executive compression.">
+        <ControlRow label="Commander style" description="Tune the system voice between operator inventiveness and executive compression.">
           <SegmentedControl
             options={[{ value: 'tony', label: 'Tony' }, { value: 'hybrid', label: 'Hybrid' }, { value: 'elon', label: 'Elon' }]}
             value={commandStyle}
@@ -248,44 +260,46 @@ function PreferencesTab() {
 
       <SectionCard
         eyebrow="Quiet Hours"
-        title="Reduce noise without hiding real problems"
-        description="Quiet hours only matter if the rule is obvious. Keep the toggle, window, and route together."
+        title="Active schedule"
       >
-        <ControlRow label="Quiet hours" description="Non-critical traffic stays out of the way during your off window.">
-          <Toggle
-            enabled={quietHoursEnabled}
-            onChange={setQuietHoursEnabled}
-            color="bg-aurora-violet"
-            label="Toggle quiet hours"
-          />
-        </ControlRow>
-        <ControlRow label="Quiet window" description="Critical alerts can still break through.">
-          <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
+        <div className="flex items-center justify-between gap-4 py-1">
+          <div className="flex items-center gap-3">
+            <Toggle
+              enabled={quietHoursEnabled}
+              onChange={setQuietHoursEnabled}
+              color="bg-aurora-violet"
+              label="Toggle quiet hours"
+            />
+            <span className="text-[13px] font-medium text-text-primary">Suppress non-critical traffic</span>
+          </div>
+          <div className="flex items-center gap-2">
             <TextInput
               type="time"
               name="quiet_hours_start"
               aria-label="Quiet hours start"
               value={quietHoursStart}
               onChange={(event) => setQuietHoursStart(event.target.value)}
+              className="w-20 px-2 py-1 text-xs"
             />
-            <span className="text-xs text-text-muted">to</span>
+            <span className="text-[10px] text-text-muted uppercase tracking-wider">to</span>
             <TextInput
               type="time"
               name="quiet_hours_end"
               aria-label="Quiet hours end"
               value={quietHoursEnd}
               onChange={(event) => setQuietHoursEnd(event.target.value)}
+              className="w-20 px-2 py-1 text-xs"
             />
           </div>
-        </ControlRow>
+        </div>
       </SectionCard>
 
       <SectionCard
         eyebrow="Economics"
-        title="Keep the cost comparison honest"
-        description="This baseline is used in Intelligence when the app compares human labor to agent spend."
+        title="Labor baseline"
       >
-        <ControlRow label="Human hourly baseline" description="Use the number you actually care about, not a vanity estimate.">
+        <div className="flex items-center justify-between py-1">
+          <span className="text-[13px] font-medium text-text-primary">Human hourly rate</span>
           <div className="flex items-center gap-2">
             <span className="text-sm text-text-muted">$</span>
             <TextInput
@@ -296,11 +310,11 @@ function PreferencesTab() {
               aria-label="Human hourly rate"
               value={String(humanHourlyRate)}
               onChange={(event) => setHumanHourlyRate(event.target.value.replace(/[^0-9.]/g, '') || 42)}
-              className="w-24 text-right font-mono"
+              className="w-16 text-right font-mono px-2 py-1 text-xs"
             />
-            <span className="text-sm text-text-muted">/ hr</span>
+            <span className="text-xs text-text-muted">/ hr</span>
           </div>
-        </ControlRow>
+        </div>
       </SectionCard>
     </div>
   );
@@ -317,9 +331,8 @@ function RoutingTab() {
   return (
     <div className="space-y-4">
       <SectionCard
-        eyebrow="Execution Doctrine"
-        title="Set how much autonomy the system gets before it asks for help"
-        description="This tab keeps only the routing controls that actually affect flow. The decorative settings and local-only toggles are gone."
+        eyebrow="Routing"
+        title="Execution doctrine"
       >
         <ControlRow label="Trusted-write mode" description="How much autonomy agents get before a human checkpoint is required.">
           <SegmentedControl
@@ -338,20 +351,17 @@ function RoutingTab() {
       </SectionCard>
 
       <SectionCard
-        eyebrow="What Matters"
-        title="A tighter routing surface"
-        description="Useful routing controls should answer two questions immediately: who can write, and when should the machine stop to ask."
+        eyebrow="Summary"
+        title="Active posture"
       >
         <div className="grid gap-3 md:grid-cols-2">
-          <div className="deck-panel-soft p-4 ring-1 ring-white/[0.05]">
-            <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Current write posture</div>
-            <div className="mt-2 text-base font-semibold text-text-primary">{trustedWriteMode.replace('_', ' ')}</div>
-            <p className="mt-2 text-[12px] leading-5 text-text-muted">This is the strongest control over how much the system can do before a human checkpoint.</p>
+          <div className="ui-panel-soft p-3 ring-1 ring-white/[0.03]">
+            <div className="text-[9px] uppercase tracking-[0.18em] text-text-muted">Write posture</div>
+            <div className="mt-1 text-sm font-semibold text-text-primary">{trustedWriteMode.replace('_', ' ')}</div>
           </div>
-          <div className="deck-panel-soft p-4 ring-1 ring-white/[0.05]">
-            <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Current approval doctrine</div>
-            <div className="mt-2 text-base font-semibold text-text-primary">{approvalDoctrine.replace('_', ' ')}</div>
-            <p className="mt-2 text-[12px] leading-5 text-text-muted">This decides whether interruptions are constant, risk-driven, or reserved for genuine exceptions.</p>
+          <div className="ui-panel-soft p-3 ring-1 ring-white/[0.03]">
+            <div className="text-[9px] uppercase tracking-[0.18em] text-text-muted">Approval doctrine</div>
+            <div className="mt-1 text-sm font-semibold text-text-primary">{approvalDoctrine.replace('_', ' ')}</div>
           </div>
         </div>
       </SectionCard>
@@ -453,9 +463,8 @@ function IntegrationsTab() {
   return (
     <div className="space-y-4">
       <SectionCard
-        eyebrow="Connected Systems"
-        title="Authorize the services the deck actually needs"
-        description="This is now one flow: pick an integration, authorize it, and see the live connection below. The redundant recommendation and filler sections are gone."
+        eyebrow="Connections"
+        title="Authorized systems"
         action={(
           <div className="rounded-full border border-aurora-green/20 bg-aurora-green/10 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-aurora-green">
             {connected.length} live
@@ -541,8 +550,7 @@ function IntegrationsTab() {
 
       <SectionCard
         eyebrow="Live Dock"
-        title="See what is actually connected"
-        description="This list is the only one that matters after setup: what is connected, when it was last verified, and whether it should stay."
+        title="Active connections"
       >
         {loading ? (
           <div className="ui-panel-soft p-4 text-[12px] text-text-muted">

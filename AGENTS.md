@@ -27,16 +27,18 @@ Ship focused, low-risk changes quickly while conserving tokens, protecting stabl
 - Return: objective, plan, files involved, risks, next action.
 - When context gets too large, provide a compact handoff instead of re-sending full history.
 
-## Model Routing
+### Agent Fleet (Antigravity/Hermes)
 
-Choose the cheapest model that can complete the task safely.
+This project uses a specialized multi-agent fleet for end-to-end orchestration:
 
-### Primary cloud models
+- **Manager (`manager-claude`):** Primary agent using **Claude Opus**. Responsible for planning, high-level reasoning, and directing workers.
+- **Alternative Manager (`manager-gpt`):** Fallback agent using **GPT 5.4**. Use this if Claude capacity is exhausted.
+- **UI Worker (`worker-ui`):** Specialized **Gemini 3 Flash** agent for frontend construction, styling, and UI components.
+- **Backend Worker (`worker-coder`):** Specialized **OpenAI Codex** agent for API design, business logic, and database management.
+- **Local Worker (`worker-local`):** Specialized **Ollama (Qwen)** agent for small tasks, testing, and formatting.
 
-- `gpt-5.4`: use for architecture, complex debugging, high-risk edits, final review, multi-step reasoning, and ambiguous tasks.
-- `gpt-5.4-mini`: default for bounded implementation, scoped subagents, repo exploration, and routine verification.
-- `gpt-5.3-codex`: use for long-running coding loops when sustained code editing is the main job.
-- `gpt-5.2`: use when steadiness matters more than raw speed for professional, multi-step work.
+#### Orchestration Rule
+All complex tasks in this repository should be initiated via the **`manager-claude`** profile. The manager is instructed to delegate UI tasks to `worker-ui` and backend tasks to `worker-coder` by default.
 
 ### Local Ollama models
 
@@ -217,15 +219,12 @@ Use `gemma4:e4b` as a local reasoning and review worker.
 
 ## Delegation Rules
 
+- **Default Orchestrator:** Use the `@manager-claude` profile for all non-trivial tasks.
+- **Specialization Routing:**
+    - Delegate **Frontend/UI** work to `@worker-ui`.
+    - Delegate **Backend/Logic** work to `@worker-coder`.
+    - Delegate **Tests/Documentation** work to `@worker-local`.
 - Do not spawn agents for simple or tightly coupled edits.
-- Delegate only when the task is parallelizable and the output is clearly bounded.
-- Every delegated task must include:
-  - objective
-  - owned files
-  - deliverable
-  - verification target
-- Never assign the same file to multiple agents at once.
-- For small edits, do the work directly. Delegation overhead can cost more than it saves.
 
 ## Token Efficiency Rules
 
@@ -290,12 +289,39 @@ Run the lightest verification that still meaningfully reduces risk.
 - Test command: not currently defined in `package.json`
 - Main folders: `src`, `public`, `supabase`, `active`
 
+## Agent Platform & Authentication
+
+- **Fleet Environment**: All agent profiles and credentials are managed via **Hermes** at `~/.hermes/`.
+- **API Keys**: Shared project files (`.env`) should NOT contain LLM provider keys. Each collaborator must document their personal `ANTHROPIC_API_KEY` and `OPENAI_API_KEY` in their global `~/.hermes/.env` file.
+- **Local Fleet**: Workers utilize **Ollama** for reasoning. While documentation recommends specific "ideal" models (e.g., `qwen3`), local variants (e.g., `qwen2.5-coder`) are acceptable for development.
+
 ## Supabase Sync Memory
 
-- Command Center real-state sync should follow [`/Users/Jjarvis/ai-command-center/active/verification/supabase_sync_playbook.md`](/Users/Jjarvis/ai-command-center/active/verification/supabase_sync_playbook.md).
+- Command Center real-state sync should follow [`./active/verification/supabase_sync_playbook.md`](./active/verification/supabase_sync_playbook.md).
 - Live operational surfaces must prefer real Supabase-backed state or clean empty states.
 - Do not reintroduce `staticCatalog` as the live source for command truth.
 - After schema changes, run the truth audit in the UI and verify matching values across shell, profile, notifications, mission control, reports, and intelligence.
+
+## Operational Workflows
+
+### 🚀 Starting a New Feature
+To ensure the fleet is correctly commissioned for a new feature build, use one of the following triggers. Note that these commands require a **clean git workspace** and will automatically create a new **`feature/`** branch.
+
+1. **Terminal (Global context)**: Run this from the project root.
+   ```bash
+   npm run start-feature -- "Feature Name"
+   ```
+
+2. **Hermes Chat (Slash command)**: Use this in any Antigravity or Hermes chat turn. It is now a native Skill in your **`/`** menu.
+   ```text
+   /start-feature "Feature Name"
+   ```
+
+These triggers automatically:
+- **Clean Check**: Verify no uncommitted changes exist.
+- **Branch Creation**: Create and checkout a git-safe `feature/` branch.
+- **Manager-GPT**: Invoke the lead orchestrator with the `AGENTS.md` persona.
+- **Analysis First**: Force the fleet to begin with an "Analysis and Implementation Plan" phase.
 
 ## Output Format
 
@@ -317,10 +343,6 @@ When handing off or compressing context, return:
 - decisions made
 - open risks
 - exact next action
-
-## Current Local Blocker
-
-- The local `ollama` CLI is crashing in this environment before model listing succeeds, so Ollama usage should be treated as optional until the runtime is fixed.
 
 ## References
 

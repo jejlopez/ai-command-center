@@ -1,5 +1,5 @@
 -- ══════════════════════════════════════════════════════════════
--- Nexus Dashboard — Supabase Schema (Part 1: Tables)
+-- Jarvis Dashboard — Supabase Schema (Part 1: Tables)
 -- Run this FIRST in your Supabase SQL Editor
 -- ══════════════════════════════════════════════════════════════
 

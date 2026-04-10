@@ -1,4 +1,4 @@
-Build a complete, production-quality React dashboard for an AI agent orchestration platform called Nexus — a dark spatial command center that feels like peering into a living neural network. Matte black surfaces, aurora-colored light bleeding through frosted glass panels, every metric animated, every interaction instant. The system should feel alive even when idle.
+Build a complete, production-quality React dashboard for an AI agent orchestration platform called Jarvis — a dark spatial command center that feels like peering into a living neural network. Matte black surfaces, aurora-colored light bleeding through frosted glass panels, every metric animated, every interaction instant. The system should feel alive even when idle.
 
 Tech Stack (Hard Constraints)
 React 19 + Vite + Tailwind CSS 3 + Framer Motion 12 + Recharts 3 + Lucide React. No additional packages. All data is mock data in src/utils/mockData.js. Every file must be complete and importable — no // ...rest, no missing imports, no TODO comments. Functional components + hooks throughout.

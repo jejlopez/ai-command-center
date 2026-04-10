@@ -1000,3 +1000,11 @@ body::after {
   -ms-overflow-style: none;  /* IE and Edge */
   scrollbar-width: none;  /* Firefox */
 }
+
+.text-glow-teal {
+  text-shadow: 0 0 10px rgba(0, 217, 200, 0.5), 0 0 20px rgba(0, 217, 200, 0.2);
+}
+
+.shadow-glow-teal {
+  box-shadow: 0 0 15px rgba(0, 217, 200, 0.35), 0 0 30px rgba(0, 217, 200, 0.15);
+}

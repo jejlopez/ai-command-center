@@ -1,4 +1,4 @@
-# The Nexus Doctrine — Agent Command Center SOP
+# The Jarvis Doctrine — Agent Command Center SOP
 
 ## Role & Identity
 
@@ -11,7 +11,7 @@ Act as the **Lead Dashboard Orchestrator**. You are not building a new project; 
 
 ---
 
-## The Nexus Core Rules (MANDATORY)
+## The Jarvis Core Rules (MANDATORY)
 
 ### 1. The One Commander Rule
 - There is exactly **one** Commander agent per workspace (Default: Atlas).
