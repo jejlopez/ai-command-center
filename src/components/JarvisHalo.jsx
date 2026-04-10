@@ -9,7 +9,7 @@ export function JarvisHalo({ className }) {
       <motion.div
         animate={{ rotate: 360 }}
         transition={{ duration: 30, repeat: Infinity, ease: 'linear' }}
-        className="absolute inset-0 rounded-full border border-white/10"
+        className="absolute inset-0 rounded-full border border-hairline"
       />
 
       <motion.div
@@ -30,7 +30,7 @@ export function JarvisHalo({ className }) {
       <motion.div
         animate={{ rotate: [0, 8, -8, 0] }}
         transition={{ duration: 7, repeat: Infinity, ease: 'easeInOut' }}
-        className="absolute inset-[11%] rounded-full bg-[radial-gradient(circle,rgba(255,255,255,0.3)_1px,transparent_1.5px)] [background-size:18px_18px] opacity-[0.22]"
+        className="absolute inset-[11%] rounded-full bg-[radial-gradient(circle,var(--color-text-dim)_1px,transparent_1.5px)] [background-size:18px_18px] opacity-[0.22]"
       />
 
       <motion.div
@@ -47,9 +47,9 @@ export function JarvisHalo({ className }) {
         <div className="absolute left-1/2 top-0 h-1/2 w-px -translate-x-1/2 origin-bottom bg-gradient-to-t from-transparent via-aurora-teal to-aurora-blue shadow-[0_0_18px_rgba(0,217,200,0.35)]" />
       </motion.div>
 
-      <div className="relative flex h-[86px] w-[86px] flex-col items-center justify-center rounded-full border border-white/10 bg-black/45 backdrop-blur-xl shadow-[0_0_50px_rgba(96,165,250,0.15)]">
+      <div className="relative flex h-[86px] w-[86px] flex-col items-center justify-center rounded-full border border-hairline bg-panel backdrop-blur-xl shadow-xl">
         <span className="text-[9px] uppercase tracking-[0.35em] text-text-muted">Core</span>
-        <span className="mt-1 font-mono text-lg font-semibold tracking-[0.3em] text-white">JARVIS</span>
+        <span className="mt-1 font-mono text-lg font-semibold tracking-[0.3em] text-text-primary">JARVIS</span>
       </div>
     </div>
   );

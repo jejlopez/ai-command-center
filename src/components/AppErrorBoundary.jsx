@@ -51,7 +51,7 @@ function ErrorFallback({ error, errorInfo, onReset }) {
             <button
               type="button"
               onClick={() => window.location.assign('/')}
-              className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3 text-xs font-semibold uppercase tracking-[0.16em] text-text-muted transition-colors hover:text-text-primary"
+              className="inline-flex items-center gap-2 rounded-xl border border-hairline ui-panel-soft px-4 py-3 text-xs font-semibold uppercase tracking-[0.16em] text-text-muted transition-colors hover:text-text-primary shadow-sm"
             >
               <Home className="h-4 w-4" />
               Reload App
@@ -59,7 +59,7 @@ function ErrorFallback({ error, errorInfo, onReset }) {
           </div>
 
           {error?.message && (
-            <div className="mt-6 rounded-2xl border border-white/[0.08] bg-black/20 p-4">
+            <div className="mt-6 ui-well p-4">
               <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-text-disabled">
                 Error Summary
               </div>
@@ -68,7 +68,7 @@ function ErrorFallback({ error, errorInfo, onReset }) {
           )}
 
           {isDev && details && (
-            <div className="mt-4 rounded-2xl border border-white/[0.08] bg-black/30 p-4">
+            <div className="mt-4 rounded-2xl border border-hairline bg-panel-strong p-4">
               <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-text-disabled">
                 Dev Details
               </div>

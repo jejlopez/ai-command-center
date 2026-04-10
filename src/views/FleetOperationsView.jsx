@@ -14,8 +14,8 @@ const statusStyles = {
   completed: 'row-success text-aurora-green border-aurora-green/20',
   error: 'row-error text-aurora-rose border-aurora-rose/20',
   running: 'row-running text-aurora-amber border-aurora-amber/20',
-  idle: 'row-idle text-text-muted border-white/5',
-  pending: 'row-idle text-text-muted border-white/5'
+  idle: 'row-idle text-text-muted border-hairline',
+  pending: 'row-idle text-text-muted border-hairline'
 };
 
 const MapWidget = () => {
@@ -109,11 +109,8 @@ export function FleetOperationsView({ agents, tasks, logData, loading, usingMock
                   <span className="text-sm font-mono text-text-muted">{idle} Idle</span>
                 </div>
                 {errored > 0 && (
-                  <div className="flex items-center gap-2 px-4 py-2 ui-card-row border border-aurora-rose/30 shadow-[0_0_12px_rgba(251,113,133,0.1)]">
-                    <span className="relative flex h-2 w-2">
-                      <span className="animate-pulse absolute inline-flex h-full w-full rounded-full bg-aurora-rose opacity-75" />
-                      <span className="relative inline-flex rounded-full h-2 w-2 bg-aurora-rose" />
-                    </span>
+                  <div className="flex items-center gap-2 px-4 py-2 ui-card-row border border-aurora-rose/30 shadow-elevated">
+                    <span className="w-2 h-2 rounded-full bg-aurora-rose" />
                     <span className="text-sm font-mono text-aurora-rose font-semibold">{errored} Error</span>
                   </div>
                 )}
@@ -173,7 +170,7 @@ export function FleetOperationsView({ agents, tasks, logData, loading, usingMock
                  <span className="text-text-muted font-medium">Pipeline Saturation</span>
                  <span className="text-aurora-blue font-mono">62%</span>
                </div>
-               <div className="w-full h-1.5 bg-surface-raised rounded-full overflow-hidden border border-white/5">
+               <div className="w-full h-1.5 ui-surface-dim rounded-full overflow-hidden border border-hairline">
                  <motion.div initial={{ width: 0 }} animate={{ width: '62%' }} transition={{ duration: 1.5, delay: 0.2 }} className="h-full bg-aurora-blue shadow-glow-blue" />
                </div>
             </div>
@@ -188,7 +185,7 @@ export function FleetOperationsView({ agents, tasks, logData, loading, usingMock
                 key={run.id}
                 variants={itemVariant}
                 layout
-                whileHover={{ x: 4, backgroundColor: 'rgba(255,255,255,0.03)' }}
+                whileHover={{ x: 4, backgroundColor: 'var(--color-panel-soft)' }}
                 onClick={() => run.agentId && onOpenDetail(run.agentId)}
                 className={cn(
                   "ui-card-row p-4 flex items-center justify-between group mb-2 border hover:shadow-card transition-all cursor-pointer",
@@ -198,7 +195,7 @@ export function FleetOperationsView({ agents, tasks, logData, loading, usingMock
                 <div className="flex items-center gap-6 flex-1">
                   <span className="font-mono text-xs text-text-disabled w-16 opacity-50">10:0{4 + i}:22</span>
                   <span className="font-medium text-sm text-text-primary w-32 truncate tracking-wide">{run.agentName}</span>
-                  <span className="px-3 py-1 text-[10px] font-mono text-text-muted bg-canvas border border-white/5 rounded">
+                  <span className="px-3 py-1 text-[10px] font-mono text-text-muted bg-canvas border border-hairline rounded">
                     claude-opus-4-6
                   </span>
                   <span className="text-sm font-medium w-64 text-text-primary truncate">{run.name}</span>
@@ -218,10 +215,10 @@ export function FleetOperationsView({ agents, tasks, logData, loading, usingMock
                     ${run.costUsd.toFixed(3)}
                   </span>
 
-                  <div className="flex items-center gap-2 border-l border-white/10 pl-4 ml-4 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <button onClick={(e) => { e.stopPropagation(); }} className="p-1.5 text-text-muted hover:text-[#a78bfa] hover:bg-white/5 rounded transition-all" title="Edit Task Config"><Edit2 className="w-3.5 h-3.5" /></button>
-                    <button onClick={(e) => { e.stopPropagation(); }} className="p-1.5 text-text-muted hover:text-aurora-amber hover:bg-white/5 rounded transition-all" title="Force Restart"><RotateCcw className="w-3.5 h-3.5" /></button>
-                    <button onClick={(e) => { e.stopPropagation(); }} className="p-1.5 text-text-muted hover:text-aurora-rose hover:bg-white/5 rounded transition-all" title="Terminate Data"><Trash2 className="w-3.5 h-3.5" /></button>
+                  <div className="flex items-center gap-2 border-l border-hairline pl-4 ml-4 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button onClick={(e) => { e.stopPropagation(); }} className="p-1.5 text-text-muted hover:text-[#a78bfa] hover:ui-panel-soft rounded transition-all" title="Edit Task Config"><Edit2 className="w-3.5 h-3.5" /></button>
+                    <button onClick={(e) => { e.stopPropagation(); }} className="p-1.5 text-text-muted hover:text-aurora-amber hover:ui-panel-soft rounded transition-all" title="Force Restart"><RotateCcw className="w-3.5 h-3.5" /></button>
+                    <button onClick={(e) => { e.stopPropagation(); }} className="p-1.5 text-text-muted hover:text-aurora-rose hover:ui-panel-soft rounded transition-all" title="Terminate Data"><Trash2 className="w-3.5 h-3.5" /></button>
                   </div>
                 </div>
               </motion.div>

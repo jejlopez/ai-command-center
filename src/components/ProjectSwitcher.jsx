@@ -35,13 +35,13 @@ export function ProjectSwitcher({ compact = false }) {
         onClick={() => setOpen((prev) => !prev)}
         className={cn(
           compact
-            ? 'relative flex items-center gap-2 rounded-xl px-2.5 py-2 text-left transition-all duration-200 text-white hover:bg-white/[0.05] overflow-hidden'
+            ? 'relative flex items-center gap-2 rounded-xl px-2.5 py-2 text-left transition-all duration-200 text-white hover:bg-panel-soft overflow-hidden'
             : 'flex items-center gap-2 rounded-xl px-2.5 py-2 text-left transition-all duration-200 border min-w-[120px] max-w-[120px]',
           compact
-            ? open && 'bg-white/[0.05]'
+            ? open && 'bg-panel-soft/50'
             : open
-              ? 'bg-aurora-teal/10 border-aurora-teal/30 text-white'
-              : 'bg-white/[0.03] border-white/6 text-white hover:bg-white/[0.06] hover:border-aurora-teal/16'
+              ? 'bg-aurora-teal/10 border-aurora-teal/30 text-text-primary'
+              : 'bg-panel-soft border-hairline text-text-primary hover:bg-panel-hover hover:border-aurora-teal/16'
         )}
       >
         {compact && (
@@ -94,7 +94,7 @@ export function ProjectSwitcher({ compact = false }) {
             transition={{ type: 'spring', damping: 25, stiffness: 300 }}
             className="absolute left-0 top-full mt-2 w-[280px] rounded-2xl border border-border bg-surface shadow-lg z-[60] overflow-hidden"
           >
-            <div className="px-4 pt-3 pb-3 border-b border-white/[0.06] flex items-center justify-between">
+            <div className="px-4 pt-3 pb-3 border-b border-hairline flex items-center justify-between">
               <div>
                 <span className="text-[10px] uppercase tracking-wider text-text-muted font-medium">Workspaces</span>
                 <p className="text-sm font-semibold text-text-primary mt-1">Select Operations Center</p>
@@ -106,7 +106,7 @@ export function ProjectSwitcher({ compact = false }) {
                   setShowModal(true);
                   setOpen(false);
                 }}
-                className="rounded-lg border border-white/[0.08] bg-white/[0.03] p-1.5 text-text-muted transition-all hover:bg-aurora-teal/10 hover:text-aurora-teal hover:border-aurora-teal/20"
+                className="rounded-lg border border-hairline bg-panel-soft p-1.5 text-text-muted transition-all hover:bg-aurora-teal/10 hover:text-aurora-teal hover:border-aurora-teal/20"
                 title="New Workspace"
               >
                 <Plus className="h-4 w-4" />
@@ -123,7 +123,7 @@ export function ProjectSwitcher({ compact = false }) {
                       "group flex items-center gap-3 rounded-xl px-3 py-2.5 transition-all cursor-pointer",
                       isActive
                         ? "bg-aurora-teal/10 shadow-[inset_0_0_20px_rgba(0,217,200,0.05)]"
-                        : "hover:bg-white/[0.04]"
+                        : "hover:bg-panel-soft/50"
                     )}
                     onClick={() => {
                       setActiveWorkspace(ws.id);
@@ -156,7 +156,7 @@ export function ProjectSwitcher({ compact = false }) {
                           setShowModal(true);
                           setOpen(false);
                         }}
-                        className="opacity-0 group-hover:opacity-100 p-1.5 rounded-lg text-text-muted hover:text-text-primary hover:bg-white/[0.08] transition-all"
+                        className="opacity-0 group-hover:opacity-100 p-1.5 rounded-lg text-text-muted hover:text-text-primary hover:bg-panel-soft transition-all"
                       >
                         <Settings2 className="h-3.5 w-3.5" />
                       </button>
@@ -166,16 +166,16 @@ export function ProjectSwitcher({ compact = false }) {
               })}
             </div>
 
-            <div className="mt-1 border-t border-white/[0.06] bg-black/10 px-3 py-3">
+            <div className="mt-1 border-t border-hairline bg-panel-soft/30 px-3 py-3">
               <div className="grid grid-cols-2 gap-2">
-                <div className="rounded-xl border border-white/[0.06] bg-white/5 px-3 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.02)]">
+                <div className="rounded-xl border border-hairline bg-panel-soft px-3 py-3 shadow-inner">
                   <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.16em] text-text-muted">
                     <Cpu className="h-3.5 w-3.5 text-aurora-blue" />
                     Agents
                   </div>
                   <div className="mt-2 text-lg font-semibold text-text-primary font-mono">{agents.length}</div>
                 </div>
-                <div className="rounded-xl border border-white/[0.06] bg-white/5 px-3 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.02)]">
+                <div className="rounded-xl border border-hairline bg-panel-soft px-3 py-3 shadow-inner">
                   <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.16em] text-text-muted">
                     <Plug className="h-3.5 w-3.5 text-aurora-teal" />
                     Systems

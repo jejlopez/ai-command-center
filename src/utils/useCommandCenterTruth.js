@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { useDerivedAlerts } from './useDerivedAlerts';
-import { useCommanderPreferences } from './useCommanderPreferences';
+import { usePreferences } from '../context/PreferenceContext';
 import {
   useAgents,
   useConnectedSystems,
@@ -27,7 +27,7 @@ export function useCommandCenterTruth() {
     alertPosture,
     trustedWriteMode,
     approvalDoctrine,
-  } = useCommanderPreferences();
+  } = usePreferences();
 
   return useMemo(() => {
     const commander = agents.find((agent) => agent.role === 'commander') || null;

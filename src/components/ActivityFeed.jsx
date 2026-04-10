@@ -4,10 +4,10 @@ import { useAgents, useActivityLog } from '../utils/useSupabase';
 import { ArrowDown, Search, Copy, Pin, Minimize2, Maximize2, DollarSign, AlertCircle } from 'lucide-react';
 
 const tagStyles = {
-  OK:  { color: '#00D9C8', label: 'OK' },
-  ERR: { color: '#F43F5E', label: 'ERR' },
-  NET: { color: '#60a5fa', label: 'NET' },
-  SYS: { color: '#a1a1aa', label: 'SYS' },
+  OK:  { color: 'var(--color-aurora-teal)', label: 'OK' },
+  ERR: { color: 'var(--color-aurora-rose)', label: 'ERR' },
+  NET: { color: 'var(--color-aurora-blue)', label: 'NET' },
+  SYS: { color: 'var(--color-text-dim)', label: 'SYS' },
 };
 
 export function ActivityFeed({ agentFilter = null }) {
@@ -89,21 +89,21 @@ export function ActivityFeed({ agentFilter = null }) {
       onMouseLeave={() => setIsHovered(false)}
     >
       {/* Sticky header: accumulator + filters */}
-      <div className="shrink-0 z-20 border-b border-white/[0.05]">
+      <div className="shrink-0 z-20 border-b border-hairline">
         {/* Accumulator strip */}
-        <div className="flex justify-between items-center px-4 py-2 bg-canvas/80 backdrop-blur-sm text-xs font-mono border-b border-white/[0.03]">
+        <div className="flex justify-between items-center px-4 py-2 bg-panel/80 backdrop-blur-sm text-xs font-mono border-b border-hairline-soft">
           <div className="flex gap-3">
-            <span className="flex items-center gap-1.5 text-text-primary px-2 py-0.5 bg-white/[0.03] rounded border border-white/[0.05]">
+            <span className="flex items-center gap-1.5 text-text-primary px-2 py-0.5 ui-well">
               <DollarSign className="w-3 h-3 text-aurora-teal" /> {totalTokens.toLocaleString()} tok
             </span>
-            <span className="flex items-center gap-1.5 text-text-primary px-2 py-0.5 bg-white/[0.03] rounded border border-white/[0.05]">
+            <span className="flex items-center gap-1.5 text-text-primary px-2 py-0.5 ui-well">
               <AlertCircle className="w-3 h-3 text-aurora-rose" /> {errorCount} errors
             </span>
           </div>
         </div>
 
         {/* Filter bar */}
-        <div className="px-4 py-2 flex items-center gap-3 bg-surface/50">
+        <div className="px-4 py-2 flex items-center gap-3 ui-surface-dim">
           <div className="relative flex-1 max-w-[200px]">
             <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-text-muted" />
             <input
@@ -111,7 +111,7 @@ export function ActivityFeed({ agentFilter = null }) {
               placeholder="Filter..."
               value={searchTerm}
               onChange={e => setSearchTerm(e.target.value)}
-              className="w-full bg-white/[0.04] border border-white/[0.07] rounded-full pl-8 pr-3 py-1.5 text-[11px] text-text-primary focus:border-aurora-teal/40 outline-none transition-colors"
+              className="w-full bg-panel border border-hairline rounded-full pl-8 pr-3 py-1.5 text-[11px] text-text-primary focus:border-aurora-teal/40 outline-none transition-colors"
             />
           </div>
           <div className="flex gap-1">
@@ -125,8 +125,8 @@ export function ActivityFeed({ agentFilter = null }) {
                   color: style.color,
                   backgroundColor: `${style.color}15`,
                 } : {
-                  borderColor: 'rgba(255,255,255,0.05)',
-                  color: 'rgba(255,255,255,0.2)',
+                  borderColor: 'var(--color-hairline)',
+                  color: 'var(--color-text-dim)',
                 }}
               >
                 {style.label}
@@ -155,16 +155,16 @@ export function ActivityFeed({ agentFilter = null }) {
             const tag = tagStyles[entry.type] || tagStyles.SYS;
 
             return (
-              <div key={entry.id} className="group border-b border-white/[0.02]">
+              <div key={entry.id} className="group border-b border-hairline-soft">
                 <div
-                  className="px-4 py-1.5 flex items-start gap-2 hover:bg-white/[0.02] cursor-pointer transition-colors"
+                  className="px-4 py-1.5 flex items-start gap-2 hover:bg-panel-soft cursor-pointer transition-colors"
                   onClick={() => setExpandedRow(isExpanded ? null : entry.id)}
                 >
                   {/* Indent for causal chains */}
                   {depth > 0 && (
                     <div className="shrink-0 relative" style={{ width: depth * 12 }}>
-                      <div className="absolute right-0 top-0 bottom-0 w-px bg-white/[0.06]" />
-                      <div className="absolute right-0 top-1/2 w-2 h-px bg-white/[0.06]" />
+                      <div className="absolute right-0 top-0 bottom-0 w-px bg-hairline" />
+                      <div className="absolute right-0 top-1/2 w-2 h-px bg-hairline" />
                     </div>
                   )}
 
@@ -182,12 +182,11 @@ export function ActivityFeed({ agentFilter = null }) {
                   <div className="flex-1 min-w-0 mt-[1px]">
                     <span className="inline-flex gap-1.5 items-baseline flex-wrap">
                       <span
-                        className="inline-block px-1 rounded text-[9px] font-mono font-bold uppercase shrink-0"
-                        style={{ backgroundColor: agentInfo.color + '18', color: agentInfo.color }}
+                        className="inline-block px-1 rounded text-[9px] font-mono font-bold uppercase shrink-0 bg-accent/10 text-accent transition-colors"
                       >
                         {agentInfo.name}
                       </span>
-                      <span className="text-[11px] text-text-body font-mono leading-tight break-all">
+                      <span className="text-[11px] text-text-body font-mono leading-tight break-all transition-colors">
                         {entry.message}
                       </span>
                     </span>
@@ -209,12 +208,12 @@ export function ActivityFeed({ agentFilter = null }) {
                       exit={{ height: 0, opacity: 0 }}
                       className="overflow-hidden"
                     >
-                      <div className="mx-4 mb-2 p-3 bg-canvas/60 border border-white/[0.05] rounded-lg">
+                      <div className="mx-4 mb-2 p-3 ui-well shadow-inner">
                         <div className="flex gap-2 mb-2">
-                          <button className="flex items-center gap-1 text-[10px] font-bold text-text-muted hover:text-white px-2 py-1 bg-white/[0.04] rounded transition-colors">
+                          <button className="flex items-center gap-1 text-[10px] font-bold text-text-dim hover:text-text px-2 py-1 ui-surface-dim rounded transition-colors">
                             <Copy className="w-3 h-3" /> Copy
                           </button>
-                          <button className="flex items-center gap-1 text-[10px] font-bold text-text-muted hover:text-white px-2 py-1 bg-white/[0.04] rounded transition-colors">
+                          <button className="flex items-center gap-1 text-[10px] font-bold text-text-dim hover:text-text px-2 py-1 ui-surface-dim rounded transition-colors">
                             <Pin className="w-3 h-3" /> Pin
                           </button>
                         </div>

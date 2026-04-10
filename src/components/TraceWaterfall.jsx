@@ -34,7 +34,7 @@ export function TraceWaterfall({ spans }) {
         <div className="text-[10px] uppercase tracking-[0.15em] text-text-muted font-semibold">
           Execution Trace
         </div>
-        <div className="ui-card-row px-2 py-1 text-[10px] font-mono text-text-muted border-none bg-white/[0.02]">
+        <div className="ui-card-row px-2 py-1 text-[10px] font-mono text-text-muted border-none ui-well">
           Total: {totalMs}ms
         </div>
       </div>
@@ -56,7 +56,7 @@ export function TraceWaterfall({ spans }) {
               >
                 {/* Text Label Area */}
                 <div 
-                  className="w-1/3 shrink-0 py-1 truncate text-[11px] font-mono text-text-primary transition-colors group-hover:text-white"
+                  className="w-1/3 shrink-0 py-1 truncate text-[11px] font-mono text-text-primary transition-colors group-hover:text-aurora-teal"
                   style={{ paddingLeft: `${depth * 12}px` }}
                 >
                   <span className="opacity-50 mr-1.5" style={{ color }}>●</span>
@@ -64,7 +64,7 @@ export function TraceWaterfall({ spans }) {
                 </div>
                 
                 {/* Gantt Bar Area */}
-                <div className="flex-1 h-5 relative mx-2 rounded-[2px] bg-white/[0.02]">
+                <div className="flex-1 h-5 relative mx-2 rounded-[2px] ui-well overflow-hidden">
                   <motion.div
                     initial={{ width: 0 }}
                     animate={{ width: `${widthPct}%` }}
@@ -88,7 +88,7 @@ export function TraceWaterfall({ spans }) {
       </div>
 
       {hoveredSpan && (
-        <div className="absolute bottom-6 right-6 ui-shell p-3 text-xs bg-surface/90 border-border shadow-2xl z-10 w-48 pointer-events-none">
+        <div className="absolute bottom-6 right-6 ui-shell p-3 text-xs bg-panel/90 backdrop-blur-md border-hairline shadow-2xl z-10 w-48 pointer-events-none">
           <div className="font-semibold text-text-primary truncate mb-1">{hoveredSpan.name}</div>
           <div className="flex justify-between items-center text-[10px] text-text-muted font-mono mb-2">
             <span>{hoveredSpan.type}</span>

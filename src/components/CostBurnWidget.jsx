@@ -30,7 +30,7 @@ export function CostBurnWidget() {
               <span className="text-xs font-medium text-text-primary">{m.name}</span>
               <span className="font-mono text-[11px] text-text-muted font-tabular">${m.cost.toFixed(2)}</span>
             </div>
-            <div className="h-1.5 rounded-full bg-white/5 overflow-hidden w-full">
+            <div className="h-1.5 rounded-full ui-well overflow-hidden w-full">
               <Motion.div 
                 className="h-full rounded-full"
                 style={{ backgroundColor: colors[m.name] || '#fff' }}

@@ -20,7 +20,7 @@ function getInitialTab(agent) {
 const urgencyStyles = {
   critical: 'border-aurora-rose/20 bg-aurora-rose/10 text-aurora-rose',
   high: 'border-aurora-amber/20 bg-aurora-amber/10 text-aurora-amber',
-  normal: 'border-white/10 bg-white/[0.04] text-text-muted',
+  normal: 'border-hairline ui-well text-text-dim',
 };
 
 function AgentApprovals({ agent }) {
@@ -51,7 +51,7 @@ function AgentApprovals({ agent }) {
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ delay: 0.06, duration: 0.22 }}
-      className="shrink-0 border-b border-white/[0.06] px-5 py-4"
+      className="shrink-0 border-b border-hairline px-5 py-4"
     >
       <div className="mb-3 flex items-center gap-2">
         <CheckCircle2 className="h-3.5 w-3.5 text-aurora-amber" />
@@ -104,7 +104,7 @@ function AgentApprovals({ agent }) {
                   whileHover={{ scale: 1.03 }}
                   whileTap={{ scale: 0.97 }}
                   onClick={() => setDismissed((prev) => new Set([...prev, rv.id]))}
-                  className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-text-muted transition-colors hover:border-white/[0.18] hover:text-text-primary"
+                  className="rounded-lg border border-hairline bg-panel-soft px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-text-dim transition-colors hover:border-hairline-strong hover:text-text"
                 >
                   Reject
                 </Motion.button>
@@ -132,18 +132,18 @@ function KebabMenu({ onClose }) {
       initial={{ opacity: 0, scale: 0.95, y: -4 }}
       animate={{ opacity: 1, scale: 1, y: 0 }}
       exit={{ opacity: 0, scale: 0.95, y: -4 }}
-      className="absolute right-0 top-full z-50 mt-1 w-48 overflow-hidden rounded-lg border border-white/10 bg-surface shadow-2xl"
+      className="absolute right-0 top-full z-50 mt-1 w-48 overflow-hidden rounded-lg border border-hairline bg-panel shadow-xl"
     >
       {items.map((item) => (
         <button
           key={item.label}
           onClick={onClose}
-          className="w-full px-3 py-2 text-left text-xs text-text-primary transition-colors hover:bg-white/[0.05]"
+          className="w-full px-3 py-2 text-left text-xs text-text-primary transition-colors hover:bg-panel-soft"
         >
           {item.label}
         </button>
       ))}
-      <div className="border-t border-white/[0.07]">
+      <div className="border-t border-hairline">
         {showTerminate ? (
           <div className="space-y-2 p-3">
             <div className="flex items-center gap-1.5 text-[10px] font-bold text-aurora-rose">
@@ -151,7 +151,7 @@ function KebabMenu({ onClose }) {
             </div>
             <div className="flex gap-2">
               <button onClick={onClose} className="flex-1 rounded-md bg-aurora-rose py-1.5 text-[10px] font-bold text-white">Confirm</button>
-              <button onClick={() => setShowTerminate(false)} className="flex-1 rounded-md border border-white/10 py-1.5 text-[10px] text-text-muted">Cancel</button>
+              <button onClick={() => setShowTerminate(false)} className="flex-1 rounded-md border border-hairline py-1.5 text-[10px] text-text-dim">Cancel</button>
             </div>
           </div>
         ) : (
@@ -252,7 +252,7 @@ export function DetailPanel({ agent, initialMode = 'setup', onClose }) {
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
         onClick={onClose}
-        className="fixed inset-0 z-40 bg-black/42 backdrop-blur-sm"
+        className="fixed inset-0 z-40 bg-black/25 backdrop-blur-sm"
       />
 
       <Motion.aside
@@ -260,14 +260,14 @@ export function DetailPanel({ agent, initialMode = 'setup', onClose }) {
         animate={{ x: 0, opacity: 1 }}
         exit={{ x: 20, opacity: 0 }}
         transition={{ type: 'spring', stiffness: 220, damping: 28, mass: 0.95 }}
-        className="fixed bottom-0 right-0 top-0 z-50 flex w-[620px] flex-col border-l border-border bg-surface shadow-[-14px_0_40px_rgba(0,0,0,0.48)]"
+        className="fixed bottom-0 right-0 top-0 z-50 flex w-[620px] flex-col border-l border-hairline bg-canvas shadow-[-14px_0_40px_rgba(0,0,0,0.15)]"
       >
         <Motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           transition={{ delay: 0.05, duration: 0.18, ease: 'easeOut' }}
-          className="shrink-0 border-b border-border bg-[radial-gradient(circle_at_top_left,rgba(0,217,200,0.14),transparent_32%),linear-gradient(180deg,rgba(255,255,255,0.04),rgba(255,255,255,0.02))]"
+          className="shrink-0 border-b border-hairline bg-[radial-gradient(circle_at_top_left,var(--color-aurora-teal-soft),transparent_32%),linear-gradient(180deg,var(--color-panel),var(--color-panel-soft))]"
         >
           <Motion.div
             initial={{ opacity: 0, y: 6 }}
@@ -277,15 +277,15 @@ export function DetailPanel({ agent, initialMode = 'setup', onClose }) {
           >
             <div className="min-w-0">
               <div className="mb-2 flex items-center gap-3">
-                <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-black/20 px-2.5 py-1 font-mono text-[10px] text-text-body">
-                  <span className={cn('h-2 w-2 rounded-full', isProcessing ? 'bg-aurora-teal animate-pulse' : liveAgent.status === 'error' ? 'bg-aurora-rose' : 'bg-text-muted')} />
+                <div className="inline-flex items-center gap-2 rounded-full border border-hairline bg-panel-soft px-2.5 py-1 font-mono text-[10px] text-text-body">
+                  <span className={cn('h-2 w-2 rounded-full', isProcessing ? 'bg-aurora-teal animate-pulse' : liveAgent.status === 'error' ? 'bg-aurora-rose' : 'bg-text-dim')} />
                   {liveAgent.id?.slice?.(0, 8) || liveAgent.id}
                 </div>
-                <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-black/20 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-text-body">
+                <div className="inline-flex items-center gap-2 rounded-full border border-hairline bg-panel-soft px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-text-body">
                   <span className="h-2 w-2 rounded-full" style={{ backgroundColor: liveAgent.color }} />
                   {liveAgent.status}
                 </div>
-                <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-black/20 px-2.5 py-1 text-[10px] font-mono text-text-body">
+                <div className="inline-flex items-center gap-2 rounded-full border border-hairline bg-panel-soft px-2.5 py-1 text-[10px] font-mono text-text-body">
                   {liveAgent.role}
                 </div>
               </div>
@@ -310,16 +310,16 @@ export function DetailPanel({ agent, initialMode = 'setup', onClose }) {
                 <Send className="h-3.5 w-3.5" />
                 Dispatch
               </button>
-              <button onClick={() => restartAgent(liveAgent.id).catch(console.error)} className="rounded-lg p-2 text-text-body transition-colors hover:bg-white/[0.05] hover:text-aurora-teal" title="Restart">
+              <button onClick={() => restartAgent(liveAgent.id).catch(console.error)} className="rounded-lg p-2 text-text-body transition-colors hover:bg-panel-soft hover:text-aurora-teal" title="Restart">
                 <RefreshCw className="h-4 w-4" />
               </button>
-              <button className="rounded-lg p-2 text-text-body transition-colors hover:bg-white/[0.05] hover:text-aurora-amber" title={isProcessing ? 'Pause' : 'Resume'}>
+              <button className="rounded-lg p-2 text-text-body transition-colors hover:bg-panel-soft hover:text-aurora-amber" title={isProcessing ? 'Pause' : 'Resume'}>
                 {isProcessing ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
               </button>
               <div className="relative">
                 <button
                   onClick={(e) => { e.stopPropagation(); setShowKebab(!showKebab); }}
-                  className="rounded-lg p-2 text-text-body transition-colors hover:bg-white/[0.05] hover:text-text-primary"
+                  className="rounded-lg p-2 text-text-body transition-colors hover:bg-panel-soft hover:text-text-primary"
                 >
                   <MoreVertical className="h-4 w-4" />
                 </button>
@@ -327,8 +327,8 @@ export function DetailPanel({ agent, initialMode = 'setup', onClose }) {
                   {showKebab && <KebabMenu onClose={() => setShowKebab(false)} />}
                 </AnimatePresence>
               </div>
-              <div className="mx-1 h-4 w-px bg-border" />
-              <button onClick={onClose} className="rounded-lg p-2 text-text-body transition-colors hover:bg-white/[0.05] hover:text-white">
+              <div className="mx-1 h-4 w-px bg-hairline" />
+              <button onClick={onClose} className="rounded-lg p-2 text-text-body transition-colors hover:bg-panel-soft hover:text-text-primary">
                 <X className="h-5 w-5" />
               </button>
             </div>
@@ -339,7 +339,7 @@ export function DetailPanel({ agent, initialMode = 'setup', onClose }) {
               initial={{ opacity: 0, y: 4 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.12, duration: 0.16, ease: 'easeOut' }}
-              className="flex items-center justify-between gap-4 border-t border-white/[0.05] px-5 py-3"
+              className="flex items-center justify-between gap-4 border-t border-hairline px-5 py-3"
             >
               <div className="inline-flex items-center gap-2 text-[11px] text-text-muted">
                 <Sparkles className="h-3.5 w-3.5 text-aurora-teal" />
@@ -358,10 +358,10 @@ export function DetailPanel({ agent, initialMode = 'setup', onClose }) {
             initial={{ opacity: 0, y: 4 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.15, duration: 0.16, ease: 'easeOut' }}
-            className="shrink-0 border-b border-border px-5"
+            className="shrink-0 border-b border-hairline px-5"
           >
             <div className="flex py-3">
-              <div className="flex rounded-2xl border border-white/[0.06] bg-white/[0.02] p-1">
+              <div className="flex rounded-2xl ui-well p-1">
               {tabs.map((tab) => (
                 <button
                   key={tab.id}
@@ -369,7 +369,7 @@ export function DetailPanel({ agent, initialMode = 'setup', onClose }) {
                   className={cn(
                     'rounded-xl px-4 py-2 text-sm font-medium transition-all focus:outline-none',
                     activeTab === tab.id
-                      ? 'bg-[linear-gradient(135deg,rgba(0,217,200,0.18),rgba(96,165,250,0.12))] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_0_0_1px_rgba(0,217,200,0.16)]'
+                      ? 'bg-panel-strong text-text shadow-sm border border-hairline'
                       : 'text-text-body hover:text-text-primary',
                   )}
                 >

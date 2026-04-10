@@ -72,7 +72,7 @@ export function DispatchTaskModal({ isOpen, agent, onClose }) {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             onClick={handleClose}
-            className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50"
+            className="fixed inset-0 bg-black/25 backdrop-blur-sm z-50"
           />
 
           {/* Panel — slides from right */}
@@ -81,10 +81,10 @@ export function DispatchTaskModal({ isOpen, agent, onClose }) {
             animate={{ x: 0 }}
             exit={{ x: '100%' }}
             transition={{ type: 'spring', damping: 30, stiffness: 300 }}
-            className="fixed right-0 top-0 h-full w-[440px] bg-[#0a0a0a]/95 backdrop-blur-xl border-l border-white/[0.06] z-50 flex flex-col"
+            className="fixed right-0 top-0 h-full w-[440px] bg-canvas/95 backdrop-blur-xl border-l border-hairline z-50 flex flex-col"
           >
             {/* Header */}
-            <div className="flex items-center justify-between px-6 py-5 border-b border-white/[0.06]">
+            <div className="flex items-center justify-between px-6 py-5 border-b border-hairline">
               <div className="flex items-center gap-3">
                 <div className="w-9 h-9 rounded-xl bg-aurora-teal/10 flex items-center justify-center border border-aurora-teal/20">
                   <Play className="w-4 h-4 text-aurora-teal" />
@@ -96,7 +96,7 @@ export function DispatchTaskModal({ isOpen, agent, onClose }) {
               </div>
               <button
                 onClick={handleClose}
-                className="p-2 rounded-lg hover:bg-white/[0.05] transition-colors text-text-muted hover:text-text-primary"
+                className="p-2 rounded-lg hover:bg-panel-soft transition-colors text-text-muted hover:text-text-primary"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -136,10 +136,10 @@ export function DispatchTaskModal({ isOpen, agent, onClose }) {
                     rows={6}
                     disabled={status === 'loading'}
                     className={cn(
-                      'w-full bg-white/[0.03] border rounded-xl px-4 py-3 text-xs text-text-primary placeholder:text-text-disabled focus:outline-none transition-colors font-mono resize-none',
+                      'w-full ui-well border rounded-xl px-4 py-3 text-xs text-text-primary placeholder:text-text-disabled focus:outline-none transition-colors font-mono resize-none',
                       status === 'loading'
-                        ? 'border-white/[0.05] opacity-50 cursor-not-allowed'
-                        : 'border-white/[0.08] focus:border-aurora-teal/50'
+                        ? 'border-hairline opacity-50 cursor-not-allowed'
+                        : 'border-hairline-strong focus:border-aurora-teal/50'
                     )}
                   />
 
@@ -158,11 +158,11 @@ export function DispatchTaskModal({ isOpen, agent, onClose }) {
 
             {/* Footer — hidden on success */}
             {status !== 'success' && (
-              <div className="px-6 py-4 border-t border-white/[0.06] flex items-center gap-3">
+              <div className="px-6 py-4 border-t border-hairline flex items-center gap-3">
                 <button
                   type="button"
                   onClick={handleClose}
-                  className="flex-1 py-3 rounded-xl border border-white/[0.08] text-xs text-text-muted hover:text-text-primary hover:bg-white/[0.03] transition-all font-medium"
+                  className="flex-1 py-3 rounded-xl border border-hairline text-xs text-text-dim hover:text-text-primary hover:bg-panel-soft transition-all font-medium"
                 >
                   Cancel
                 </button>
@@ -173,7 +173,7 @@ export function DispatchTaskModal({ isOpen, agent, onClose }) {
                     'flex-1 py-3 rounded-xl text-xs font-semibold transition-all flex items-center justify-center gap-2',
                     canSubmit
                       ? 'bg-aurora-teal text-black hover:bg-aurora-teal/90 active:scale-[0.98]'
-                      : 'bg-white/[0.05] text-text-disabled cursor-not-allowed'
+                      : 'ui-well text-text-disabled cursor-not-allowed'
                   )}
                 >
                   {status === 'loading' ? (

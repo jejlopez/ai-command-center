@@ -99,7 +99,7 @@ export function WorkspaceFormModal({ open, onClose, mode = 'create', workspace =
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[70] bg-black/50 backdrop-blur-sm"
+            className="fixed inset-0 z-[70] bg-black/25 backdrop-blur-sm"
             onClick={onClose}
           />
           <Motion.div
@@ -107,10 +107,10 @@ export function WorkspaceFormModal({ open, onClose, mode = 'create', workspace =
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: 320 }}
             transition={{ type: 'spring', damping: 28, stiffness: 320 }}
-            className="fixed right-0 top-0 bottom-0 z-[71] flex w-[400px] max-w-[96vw] flex-col border-l border-border bg-surface shadow-[-18px_0_60px_rgba(0,0,0,0.45)]"
+            className="fixed right-0 top-0 bottom-0 z-[71] flex w-[400px] max-w-[96vw] flex-col border-l border-hairline bg-canvas shadow-[-18px_0_60px_rgba(0,0,0,0.1)]"
           >
             {/* Header */}
-            <div className="shrink-0 flex items-center justify-between px-6 py-5 border-b border-white/[0.06]">
+            <div className="shrink-0 flex items-center justify-between px-6 py-5 border-b border-hairline">
               <div className="flex items-center gap-3">
                 <div className={cn(
                   'flex h-8 w-8 items-center justify-center rounded-xl border',
@@ -124,12 +124,12 @@ export function WorkspaceFormModal({ open, onClose, mode = 'create', workspace =
                   {mode === 'create' ? 'New Workspace' : 'Edit Workspace'}
                 </h2>
               </div>
-              <button onClick={onClose} className="rounded-lg p-1.5 text-text-muted hover:text-text-primary hover:bg-white/[0.06] transition-colors">
+              <button onClick={onClose} className="rounded-lg p-1.5 text-text-muted hover:text-text-primary hover:bg-panel-soft transition-colors">
                 <X className="h-4 w-4" />
               </button>
             </div>
 
-            <div className="shrink-0 border-b border-white/[0.06] px-6 py-3 text-[11px] text-text-muted">
+            <div className="shrink-0 border-b border-hairline px-6 py-3 text-[11px] text-text-muted">
               Scroll to edit colors, description, and delete options.
             </div>
 
@@ -152,7 +152,7 @@ export function WorkspaceFormModal({ open, onClose, mode = 'create', workspace =
                   value={name}
                   onChange={(e) => setName(e.target.value.slice(0, 40))}
                   placeholder="e.g. Production Ops"
-                  className="w-full rounded-xl border border-white/[0.08] bg-white/[0.03] px-3.5 py-2.5 text-sm text-text-primary placeholder:text-text-muted/50 outline-none focus:border-aurora-teal/30 focus:ring-1 focus:ring-aurora-teal/20 transition-all"
+                  className="w-full rounded-xl border border-hairline-strong ui-well px-3.5 py-2.5 text-sm text-text-primary placeholder:text-text-muted/50 outline-none focus:border-aurora-teal/30 focus:ring-1 focus:ring-aurora-teal/20 transition-all"
                   autoFocus
                   required
                 />
@@ -172,7 +172,7 @@ export function WorkspaceFormModal({ open, onClose, mode = 'create', workspace =
                         'h-8 w-8 rounded-full transition-all duration-200 flex items-center justify-center',
                         preset.className,
                         color === preset.value
-                          ? 'ring-2 ring-offset-2 ring-offset-canvas ring-white/40 scale-110'
+                          ? 'ring-2 ring-offset-2 ring-offset-canvas ring-white scale-110'
                           : 'opacity-60 hover:opacity-100 hover:scale-105'
                       )}
                       title={preset.label}
@@ -191,7 +191,7 @@ export function WorkspaceFormModal({ open, onClose, mode = 'create', workspace =
                   onChange={(e) => setDescription(e.target.value.slice(0, 200))}
                   placeholder="What is this workspace for?"
                   rows={3}
-                  className="w-full rounded-xl border border-white/[0.08] bg-white/[0.03] px-3.5 py-2.5 text-sm text-text-primary placeholder:text-text-muted/50 outline-none focus:border-aurora-teal/30 focus:ring-1 focus:ring-aurora-teal/20 transition-all resize-none"
+                  className="w-full rounded-xl border border-hairline-strong ui-well px-3.5 py-2.5 text-sm text-text-primary placeholder:text-text-muted/50 outline-none focus:border-aurora-teal/30 focus:ring-1 focus:ring-aurora-teal/20 transition-all resize-none"
                 />
                 <p className="text-[10px] text-text-muted">{description.length}/200</p>
               </div>
@@ -206,7 +206,7 @@ export function WorkspaceFormModal({ open, onClose, mode = 'create', workspace =
                   <select
                     value={cloneFromId}
                     onChange={(e) => setCloneFromId(e.target.value)}
-                    className="w-full rounded-xl border border-white/[0.08] bg-white/[0.03] px-3.5 py-2.5 text-sm text-text-primary outline-none focus:border-aurora-teal/30 transition-all"
+                    className="w-full rounded-xl border border-hairline-strong ui-well px-3.5 py-2.5 text-sm text-text-primary outline-none focus:border-aurora-teal/30 transition-all"
                   >
                     <option value="">Start fresh (no clone)</option>
                     {cloneableWorkspaces.map((w) => (

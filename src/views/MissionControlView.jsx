@@ -53,8 +53,8 @@ function AgentAvatar({ agent, name, size = 'sm' }) {
   const big = size === 'lg';
   return (
     <div className="flex items-center gap-2">
-      <div className={cn("rounded-full flex items-center justify-center font-bold shrink-0 relative ring-1 ring-white/10", big ? 'w-8 h-8 text-sm' : 'w-6 h-6 text-[10px]')}
-        style={{ backgroundColor: `${c}15`, color: c }}>
+      <div className={cn("rounded-full flex items-center justify-center font-bold shrink-0 relative border border-hairline", big ? 'w-8 h-8 text-sm' : 'w-6 h-6 text-[10px]')}
+        style={{ backgroundColor: `${c}12`, color: c }}>
         {n[0]}
         <div className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-canvas" style={{ backgroundColor: c }} />
       </div>
@@ -94,17 +94,16 @@ const stColor = {
   done:                { bg: 'bg-aurora-green/10', tx: 'text-aurora-green', lb: 'Done' },
   completed:           { bg: 'bg-aurora-green/10', tx: 'text-aurora-green', lb: 'Done' },
   blocked:             { bg: 'bg-aurora-rose/10', tx: 'text-aurora-rose', lb: 'Blocked' },
-  cancelled:           { bg: 'bg-white/5', tx: 'text-text-muted', lb: 'Cancelled' },
-  failed:              { bg: 'bg-aurora-rose/10', tx: 'text-aurora-rose', lb: 'Failed' },
-  error:               { bg: 'bg-aurora-rose/10', tx: 'text-aurora-rose', lb: 'Failed' },
+  cancelled:           { bg: 'bg-panel-soft', tx: 'text-text-muted', lb: 'Cancelled' },
+  idle:                { bg: 'bg-panel-soft', tx: 'text-text-muted', lb: 'Idle' },
+  paused:              { bg: 'bg-panel-soft', tx: 'text-text-muted', lb: 'Paused' },
   pending:             { bg: 'bg-aurora-blue/10', tx: 'text-aurora-blue', lb: 'Queued' },
   needs_approval:      { bg: 'bg-aurora-amber/10', tx: 'text-aurora-amber', lb: 'Approval' },
-  idle:                { bg: 'bg-white/5', tx: 'text-text-muted', lb: 'Idle' },
   awaiting_approval:   { bg: 'bg-aurora-amber/10', tx: 'text-aurora-amber', lb: 'Review' },
   needs_intervention:  { bg: 'bg-aurora-rose/10', tx: 'text-aurora-rose', lb: 'Alert' },
   approved:            { bg: 'bg-aurora-green/10', tx: 'text-aurora-green', lb: 'Approved' },
   enabled:             { bg: 'bg-aurora-teal/10', tx: 'text-aurora-teal', lb: 'Active' },
-  paused:              { bg: 'bg-white/5', tx: 'text-text-muted', lb: 'Paused' },
+  paused:              { bg: 'bg-panel-soft', tx: 'text-text-muted', lb: 'Paused' },
   success:             { bg: 'bg-aurora-green/10', tx: 'text-aurora-green', lb: 'Pass' },
 };
 
@@ -117,7 +116,7 @@ function Card({ children, className, onClick, selected }) {
       whileTap={{ scale: 0.995 }}
       onClick={onClick}
       className={cn("w-full text-left rounded-2xl border transition-all duration-200 relative overflow-hidden",
-        selected ? "bg-surface-raised border-aurora-teal/30 shadow-glow-teal ring-1 ring-aurora-teal/20" : "bg-surface border-border hover:bg-surface-raised hover:border-border-strong",
+        selected ? "ui-panel border-aurora-teal/30 shadow-glow-teal ring-1 ring-aurora-teal/20" : "ui-panel-soft border-hairline hover:border-hairline-strong",
         className)}
     >
       {children}
@@ -188,7 +187,7 @@ function ApprovalCard({ item, agents, onClick, onApprove, onReject }) {
       initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
       whileHover={{ y: -2, scale: 1.005 }}
-      className="rounded-[24px] border border-aurora-amber/20 bg-[linear-gradient(135deg,rgba(251,191,36,0.08),rgba(255,255,255,0.02))] p-4 shadow-[0_0_24px_rgba(251,191,36,0.08)]"
+      className="spatial-panel p-4 border-aurora-amber/20 bg-[linear-gradient(135deg,var(--color-aurora-amber-soft),rgba(255,255,255,0.01))]"
     >
       <div className="flex items-center gap-3 mb-2">
         <AgentAvatar agent={agent} name={item.agentName} />
@@ -199,7 +198,7 @@ function ApprovalCard({ item, agents, onClick, onApprove, onReject }) {
           </div>
           <div className="flex items-center gap-2 mt-1 flex-wrap">
             {agent?.model && <ModelChip model={agent.model} />}
-            {item.mode && <span className="px-2 py-0.5 rounded-full text-[9px] font-mono font-semibold bg-white/[0.04] text-text-muted border border-border uppercase">{item.mode}</span>}
+            {item.mode && <span className="px-2 py-0.5 rounded-full text-[9px] font-mono font-semibold ui-well text-text-muted border border-hairline uppercase">{item.mode}</span>}
             <span className="text-[10px] font-mono text-text-disabled">{formatTaskMoment(item) || 'Awaiting review'}</span>
           </div>
         </div>
@@ -273,9 +272,9 @@ function Drawer({ item, agents, tasks, logs, onClose, onApprove, onReject, onRet
   }
 
   return (<>
-    <Motion.div key="dbg" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 bg-black/50 backdrop-blur-sm z-40" onClick={onClose} />
+    <Motion.div key="dbg" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 bg-black/25 backdrop-blur-sm z-40" onClick={onClose} />
     <Motion.div key="dpn" initial={{ x: '100%' }} animate={{ x: '0%' }} exit={{ x: '100%' }} transition={{ type: 'spring', stiffness: 300, damping: 35 }}
-      className="fixed top-0 right-0 bottom-0 w-[480px] bg-canvas border-l border-border z-50 flex flex-col shadow-[-10px_0_40px_rgba(0,0,0,0.6)]">
+      className="fixed top-0 right-0 bottom-0 w-[480px] bg-panel-strong border-l border-hairline z-50 flex flex-col shadow-2xl">
 
       <div className="p-5 border-b border-border shrink-0">
         <div className="flex items-start justify-between">
@@ -290,7 +289,7 @@ function Drawer({ item, agents, tasks, logs, onClose, onApprove, onReject, onRet
               {item.actualCostCents == null && item.costUsd > 0 && <span className="text-xs text-text-disabled font-mono">${item.costUsd.toFixed(3)}</span>}
             </div>
           </div>
-          <button onClick={onClose} className="p-2 text-text-muted hover:text-white hover:bg-white/[0.05] rounded-lg"><X className="w-5 h-5" /></button>
+          <button onClick={onClose} className="p-2 text-text-muted hover:text-text-primary hover:bg-panel-soft rounded-lg"><X className="w-5 h-5" /></button>
         </div>
       </div>
 
@@ -347,7 +346,7 @@ function Drawer({ item, agents, tasks, logs, onClose, onApprove, onReject, onRet
             </div>
           );
         })()}
-        {tab === 'output' && (item.payload || item.resultText) && <div className={cn("p-4 rounded-lg text-sm font-mono leading-relaxed whitespace-pre-wrap border", item.outputType === 'error' ? "bg-aurora-rose/5 border-aurora-rose/20 text-aurora-rose/90" : item.outputType === 'code' ? "bg-black/40 border-white/5 text-text-primary" : "bg-white/[0.02] border-white/5 text-text-body")}>{item.payload || item.resultText}</div>}
+        {tab === 'output' && (item.payload || item.resultText) && <div className={cn("p-4 rounded-lg text-sm font-mono leading-relaxed whitespace-pre-wrap border", item.outputType === 'error' ? "bg-aurora-rose/5 border-aurora-rose/20 text-aurora-rose/90" : item.outputType === 'code' ? "bg-canvas-elevated border-hairline text-text-primary" : "ui-well text-text-body")}>{item.payload || item.resultText}</div>}
         {tab === 'output' && !item.payload && !item.resultText && <p className="text-sm text-text-disabled text-center py-8">No output payload.</p>}
         {tab === 'notes' && (
           <div className="space-y-3">
@@ -478,8 +477,8 @@ function IntelSidebar({ tasks, approvals, completed, agents, schedules, logs, le
           { label: 'Completed', value: completed.length, tone: 'text-aurora-teal' },
           { label: 'Failed', value: failedCount, tone: 'text-aurora-rose' },
         ].map((item) => (
-          <div key={item.label} className="rounded-2xl border border-white/[0.06] bg-black/20 px-3 py-2.5">
-            <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">{item.label}</div>
+          <div key={item.label} className="ui-well px-3 py-2.5">
+            <div className="etched-label text-[10px] uppercase tracking-[0.16em] text-text-muted">{item.label}</div>
             <div className={cn("mt-2 text-xl font-mono font-bold", item.tone)}><AnimatedNumber value={item.value} /></div>
           </div>
         ))}
@@ -503,7 +502,7 @@ function IntelSidebar({ tasks, approvals, completed, agents, schedules, logs, le
           'bg-aurora-teal/[0.03] border-aurora-teal/20 border-l-aurora-teal'
         )}>
           <div className="flex items-center justify-between gap-2 mb-2">
-            <span className="text-[9px] font-mono font-bold uppercase px-1.5 py-0.5 rounded-full bg-white/[0.04] text-text-muted">{recs[0].type}</span>
+            <span className="etched-label text-[9px] font-mono font-bold uppercase px-1.5 py-0.5 rounded-full ui-well text-text-muted">{recs[0].type}</span>
             <span className="text-[10px] font-mono text-text-disabled">{avgApprovalWait > 0 ? `${avgApprovalWait}m wait` : 'Live'}</span>
           </div>
           <p className="text-[12px] text-text-body leading-relaxed">{recs[0].text}</p>
@@ -578,7 +577,7 @@ function PlannerTab({ schedules, agents, onToggle, onDispatch }) {
                 <div className="flex items-center gap-3">
                   <AgentAvatar agent={agent} name={agent?.name || '?'} />
                   <span className="text-[12px] font-semibold text-text-body flex-1 truncate">{s.name}</span>
-                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-white/5 text-text-muted">Paused</span>
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold ui-well text-text-muted">Paused</span>
                 </div>
                 <div className="flex items-center gap-2 mt-2 ml-8">
                   <button onClick={() => onToggle(s.id, true)} className="flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-bold text-aurora-teal bg-aurora-teal/5 border border-aurora-teal/20 rounded-lg hover:bg-aurora-teal/10">Enable</button>
@@ -738,7 +737,7 @@ export function MissionControlView() {
                   <span className="text-text-muted">Blocked / failed</span>
                   <span className="text-aurora-rose font-semibold"><AnimatedNumber value={failed} /></span>
                 </div>
-                <div className="ui-panel-soft mt-1 px-3 py-2.5">
+                <div className="ui-well mt-1 px-3 py-2.5">
                   <div className="text-[10px] uppercase tracking-[0.14em] text-text-muted mb-1">Readback</div>
                   <p className="text-[12px] leading-relaxed text-text-body">
                     {approvalItems.length > 0
@@ -769,7 +768,7 @@ export function MissionControlView() {
           ].map(t => (
             <button key={t.id} onClick={() => setTab(t.id)} className={cn(
               "flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-[13px] font-semibold transition-all",
-              tab === t.id ? "bg-surface-raised text-text-primary shadow-sm border border-white/10" : "text-text-muted hover:text-text-primary"
+              tab === t.id ? "bg-panel-soft text-text-primary shadow-sm border border-hairline" : "text-text-muted hover:text-text-primary"
             )}>
               <t.ic className="w-4 h-4" />{t.lb}
               {t.ct > 0 && <span className={cn("px-2 py-0.5 rounded-full text-[10px] font-bold", tab === t.id ? "bg-aurora-teal/10 text-aurora-teal" : "bg-surface-raised text-text-disabled")}>{t.ct}</span>}
@@ -863,10 +862,10 @@ export function MissionControlView() {
                     <button onClick={() => setCreatorOpen(true)} className="ui-button-secondary rounded-xl border-aurora-teal/20 bg-aurora-teal/10 px-3 py-2 text-[11px] font-semibold text-aurora-teal transition-colors hover:bg-aurora-teal/14">
                       Launch mission
                     </button>
-                    <button onClick={() => setTab('app')} className="ui-button-secondary rounded-xl px-3 py-2 text-[11px] font-semibold text-text-primary transition-colors hover:bg-white/[0.06]">
+                    <button onClick={() => setTab('app')} className="ui-button-secondary rounded-xl px-3 py-2 text-[11px] font-semibold text-text-primary transition-colors hover:bg-panel-soft">
                       Review approvals
                     </button>
-                    <button onClick={() => setTab('plan')} className="ui-button-secondary rounded-xl px-3 py-2 text-[11px] font-semibold text-text-primary transition-colors hover:bg-white/[0.06]">
+                    <button onClick={() => setTab('plan')} className="ui-button-secondary rounded-xl px-3 py-2 text-[11px] font-semibold text-text-primary transition-colors hover:bg-panel-soft">
                       Open planner
                     </button>
                   </div>

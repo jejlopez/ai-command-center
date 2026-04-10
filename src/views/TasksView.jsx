@@ -12,8 +12,8 @@ const statusStyles = {
   completed: 'row-success text-aurora-green border-aurora-green/20',
   error: 'row-error text-aurora-rose border-aurora-rose/20',
   running: 'row-running text-aurora-amber border-aurora-amber/20',
-  idle: 'row-idle text-text-muted border-white/5',
-  pending: 'row-idle text-text-muted border-white/5'
+  idle: 'row-idle text-text-dim border-hairline',
+  pending: 'row-idle text-text-dim border-hairline'
 };
 
 export function TasksView({ onOpenDetail }) {
@@ -69,7 +69,7 @@ export function TasksView({ onOpenDetail }) {
                  <span className="text-text-muted font-medium">Pipeline Saturation</span>
                  <span className="text-aurora-blue font-mono">62%</span>
                </div>
-               <div className="w-full h-1.5 bg-surface-raised rounded-full overflow-hidden border border-white/5">
+               <div className="w-full h-1.5 ui-well rounded-full overflow-hidden">
                  <motion.div initial={{ width: 0 }} animate={{ width: '62%' }} transition={{ duration: 1.5, delay: 0.2 }} className="h-full bg-aurora-blue shadow-glow-blue" />
                </div>
             </div>
@@ -97,7 +97,7 @@ export function TasksView({ onOpenDetail }) {
                 <div className="flex items-center gap-6 flex-1">
                   <span className="font-mono text-xs text-text-disabled w-16 opacity-50">10:0{4 + i}:22</span>
                   <span className="font-medium text-sm text-text-primary w-32 truncate tracking-wide">{run.agentName}</span>
-                  <span className="px-3 py-1 text-[10px] font-mono text-text-muted bg-canvas border border-white/5 rounded">
+                  <span className="px-3 py-1 text-[10px] font-mono text-text-dim ui-well">
                     claude-opus-4-6
                   </span>
                   <span className="text-sm font-medium w-64 text-text-primary truncate">{run.name}</span>
@@ -118,10 +118,10 @@ export function TasksView({ onOpenDetail }) {
                   </span>
 
                   {/* Action buttons */}
-                  <div className="flex items-center gap-2 border-l border-white/10 pl-4 ml-4 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <button onClick={(e) => { e.stopPropagation(); }} className="p-1.5 text-text-muted hover:text-[#a78bfa] hover:bg-white/5 rounded transition-all" title="Edit Task Config"><Edit2 className="w-3.5 h-3.5" /></button>
-                    <button onClick={(e) => { e.stopPropagation(); }} className="p-1.5 text-text-muted hover:text-aurora-amber hover:bg-white/5 rounded transition-all" title="Force Restart"><RotateCcw className="w-3.5 h-3.5" /></button>
-                    <button onClick={(e) => { e.stopPropagation(); }} className="p-1.5 text-text-muted hover:text-aurora-rose hover:bg-white/5 rounded transition-all" title="Terminate"><Trash2 className="w-3.5 h-3.5" /></button>
+                  <div className="flex items-center gap-2 border-l border-hairline pl-4 ml-4 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button onClick={(e) => { e.stopPropagation(); }} className="p-1.5 text-text-dim hover:text-aurora-violet hover:bg-panel rounded transition-all" title="Edit Task Config"><Edit2 className="w-3.5 h-3.5" /></button>
+                    <button onClick={(e) => { e.stopPropagation(); }} className="p-1.5 text-text-dim hover:text-aurora-amber hover:bg-panel rounded transition-all" title="Force Restart"><RotateCcw className="w-3.5 h-3.5" /></button>
+                    <button onClick={(e) => { e.stopPropagation(); }} className="p-1.5 text-text-dim hover:text-aurora-rose hover:bg-panel rounded transition-all" title="Terminate"><Trash2 className="w-3.5 h-3.5" /></button>
                   </div>
                 </div>
               </motion.div>

@@ -14,6 +14,7 @@ import {
   Layers3,
   Lock,
   Radar as RadarIcon,
+  Search,
   ShieldCheck,
   Sparkles,
   TrendingUp,
@@ -32,7 +33,7 @@ import { container, item } from '../utils/variants';
 import { cleanupTempAgents, createPersistentSpecialist, createTempAgent, promoteAgentToPersistent, useActivityLog, useAgents, useKnowledgeNamespaces, useModelBank, useRoutingPolicies, useSharedDirectives, useSkillBank, useSpecialistLifecycle, useSystemRecommendations, useTaskInterventions, useTaskOutcomes, useTasks } from '../utils/useSupabase';
 import { AnimatedNumber } from '../components/command/AnimatedNumber';
 import { CommandSectionHeader } from '../components/command/CommandSectionHeader';
-import { useCommanderPreferences } from '../utils/useCommanderPreferences';
+import { usePreferences } from '../context/PreferenceContext';
 import { useLearningMemory } from '../utils/useLearningMemory';
 import { DoctrineCards } from '../components/command/DoctrineCards';
 import { cn } from '../utils/cn';
@@ -148,12 +149,12 @@ function HudPanel({ eyebrow, title, description, accent = 'teal', children, clas
       className={`ui-panel relative overflow-hidden p-5 ${className}`}
     >
       <div className={`pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r ${accents[accent] || accents.teal}`} />
-      <div className="pointer-events-none absolute inset-0 opacity-[0.06] [background-image:repeating-linear-gradient(180deg,rgba(255,255,255,0.16)_0px,rgba(255,255,255,0.16)_1px,transparent_1px,transparent_12px)]" />
+      <div className="pointer-events-none absolute inset-0 opacity-[0.04] [background-image:repeating-linear-gradient(180deg,var(--color-text-dim)_0px,var(--color-text-dim)_1px,transparent_1px,transparent_12px)]" />
       <Motion.div
-        initial={{ opacity: 0.12, x: '-30%' }}
-        animate={{ opacity: 0.28, x: '135%' }}
+        initial={{ opacity: 0.1, x: '-30%' }}
+        animate={{ opacity: 0.22, x: '135%' }}
         transition={{ duration: 5.6, repeat: Infinity, ease: 'linear' }}
-        className="pointer-events-none absolute top-0 h-full w-16 bg-[linear-gradient(90deg,transparent,rgba(255,255,255,0.08),transparent)] blur-lg"
+        className="pointer-events-none absolute top-0 h-full w-16 bg-[linear-gradient(90deg,transparent,var(--color-panel-soft),transparent)] blur-lg"
       />
       <div className="mb-4">
         <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">{eyebrow}</div>
@@ -348,6 +349,26 @@ function StrategyRail({ derivedRecommendations, learningMemory, humanHourlyRate,
                 </div>
               </div>
             </div>
+
+            <div className="mt-2 ui-well p-4">
+              <div className="flex items-center justify-between gap-4">
+                <div className="min-w-0">
+                  <div className="text-[10px] font-black uppercase tracking-[0.2em] text-aurora-amber">Baseline Adjustment</div>
+                  <div className="mt-1 text-[11px] text-text-muted italic">Tune the human equivalent rate to refine accuracy across the stack.</div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-bold text-text-muted">$</span>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={String(humanHourlyRate)}
+                    onChange={(e) => setHumanHourlyRate(e.target.value.replace(/[^0-9.]/g, '') || 42)}
+                    className="w-16 rounded-xl border border-hairline bg-panel-soft px-2.5 py-1.5 text-right font-mono text-xs text-text-primary outline-none focus:border-aurora-amber/40"
+                  />
+                  <span className="text-[10px] font-black uppercase tracking-widest text-text-disabled">/ hr</span>
+                </div>
+              </div>
+            </div>
           </div>
         </HudPanel>
       )}
@@ -472,7 +493,7 @@ function CollapsedPanel({ eyebrow, title, summary, children }) {
         <button
           type="button"
           onClick={() => setOpen((value) => !value)}
-          className="ui-button-secondary rounded-xl px-3 py-2 text-[11px] font-semibold text-text-primary transition-colors hover:bg-white/[0.06]"
+          className="ui-button-secondary rounded-xl px-3 py-2 text-[11px] font-semibold text-text-primary transition-colors hover:bg-panel-soft"
         >
           {open ? 'Hide' : 'Open'}
         </button>
@@ -498,12 +519,13 @@ function IntelligenceHeaderChip({ label, value, tone = 'teal' }) {
 
 function IntelligenceHeader({ activeTab, setActiveTab, systemSummary, availableModels, truth }) {
   return (
-    <div className="ui-shell p-5">
+    <div className="perspective-1200 p-5">
+      <div className="spatial-panel tilt-scale p-6">
       <div className="grid gap-5 xl:grid-cols-[1.2fr_0.8fr] xl:items-start">
         <div>
-          <div className="text-[10px] uppercase tracking-[0.22em] text-text-muted">Strategic Systems</div>
+          <div className="etched-label text-[10px] uppercase tracking-[0.22em] text-text-muted">Strategic Systems</div>
           <h1 className="mt-2 text-[clamp(1.8rem,2.5vw,2.55rem)] font-semibold tracking-[-0.04em] text-text-primary">Strategic Systems</h1>
-          <p className="mt-2 max-w-xl text-[13px] leading-5 text-text-muted">A clean board for models, routing, and system efficiency.</p>
+          <p className="mt-2 max-w-xl text-[13px] leading-6 text-text-dim">A clean board for models, routing, and system efficiency.</p>
           <div className="mt-4 flex flex-wrap gap-2">
             <IntelligenceHeaderChip label="models online" value={availableModels.length} tone="teal" />
             <IntelligenceHeaderChip label="active agents" value={systemSummary.activeAgents} tone="blue" />
@@ -531,13 +553,14 @@ function IntelligenceHeader({ activeTab, setActiveTab, systemSummary, availableM
             ))}
           </div>
           <div className="mt-4 grid grid-cols-2 gap-3">
-            <div className="ui-stat p-3">
-              <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Recommendations</div>
+            <div className="ui-well p-3">
+              <div className="etched-label text-[10px] uppercase tracking-[0.16em] text-text-muted">Recommendations</div>
               <div className="mt-2 text-2xl font-semibold text-text-primary"><AnimatedNumber value={systemSummary.recommendationCount} /></div>
             </div>
-            <div className="ui-stat p-3">
-              <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Connected systems</div>
+            <div className="ui-well p-3">
+              <div className="etched-label text-[10px] uppercase tracking-[0.16em] text-text-muted">Connected systems</div>
               <div className="mt-2 text-2xl font-semibold text-text-primary"><AnimatedNumber value={truth.connectedSystemsCount} /></div>
+            </div>
             </div>
           </div>
         </div>
@@ -548,7 +571,18 @@ function IntelligenceHeader({ activeTab, setActiveTab, systemSummary, availableM
 
 function ModelRegistryTab({ availableModels, agents, tasks, logs, interventions }) {
   const [detailView, setDetailView] = useState('constellation');
-  const radarSelection = availableModels.slice(0, 4);
+  const [modelSearch, setModelSearch] = useState('');
+
+  const filteredModels = useMemo(() => {
+    const s = modelSearch.trim().toLowerCase();
+    if (!s) return availableModels;
+    return availableModels.filter(m => 
+      m.model.toLowerCase().includes(s) || 
+      m.provider.toLowerCase().includes(s)
+    );
+  }, [availableModels, modelSearch]);
+
+  const radarSelection = filteredModels.slice(0, 4);
   const observedBenchmarks = useMemo(() => getObservedModelBenchmarks(tasks, agents, logs, interventions).slice(0, 6), [tasks, agents, logs, interventions]);
 
   const groupedComparisonData = useMemo(() => (
@@ -642,19 +676,19 @@ function ModelRegistryTab({ availableModels, agents, tasks, logs, interventions 
               <div className="relative h-[320px]">
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={groupedComparisonData} layout="vertical" margin={{ top: 10, right: 12, left: 8, bottom: 4 }} barCategoryGap={16}>
-                    <CartesianGrid stroke="rgba(255,255,255,0.05)" strokeDasharray="3 6" horizontal={true} vertical={false} />
-                    <XAxis type="number" domain={[0, 100]} axisLine={false} tickLine={false} tick={{ fill: '#8f96a3', fontSize: 11 }} />
+                    <CartesianGrid stroke="var(--color-hairline)" strokeDasharray="3 6" horizontal={true} vertical={false} />
+                    <XAxis type="number" domain={[0, 100]} axisLine={false} tickLine={false} tick={{ fill: 'var(--color-text-dim)', fontSize: 11 }} />
                     <YAxis
                       type="category"
                       dataKey="metric"
                       axisLine={false}
                       tickLine={false}
-                      tick={{ fill: '#a1a1aa', fontSize: 11 }}
+                      tick={{ fill: 'var(--color-text-dim)', fontSize: 11 }}
                       width={110}
                     />
                     <Tooltip
-                      cursor={{ fill: 'rgba(255,255,255,0.02)' }}
-                      contentStyle={{ background: '#101114', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 14 }}
+                      cursor={{ fill: 'var(--color-panel-soft)' }}
+                      contentStyle={{ background: 'var(--color-panel-strong)', backdropFilter: 'blur(20px)', border: '1px solid var(--color-hairline)', borderRadius: 14 }}
                     />
                     {radarSelection.map((model) => (
                       <Bar
@@ -723,7 +757,7 @@ function ModelRegistryTab({ availableModels, agents, tasks, logs, interventions 
                       <div className="text-[10px] uppercase tracking-[0.16em] text-text-disabled">Share</div>
                     </div>
                   </div>
-                  <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/[0.05]">
+                  <div className="mt-3 h-2 overflow-hidden rounded-full bg-surface-dim">
                     <Motion.div
                       initial={{ width: 0, opacity: 0.7 }}
                       animate={{ width: `${Math.max(8, entry.share)}%`, opacity: 1 }}
@@ -823,26 +857,40 @@ function ModelRegistryTab({ availableModels, agents, tasks, logs, interventions 
 
         {detailView === 'registry' && (
         <div className="ui-panel p-5">
-          <CommandSectionHeader
-            eyebrow="Registry"
-            title="Model command matrix"
-            description="Keep the strongest lanes visible and the rest behind the curtain."
-            icon={Cpu}
-            tone="teal"
-          />
-          <div className="mt-4 space-y-3">
-            {availableModels.length === 0 && (
-              <div className="ui-panel p-4 text-sm text-text-muted">
-                Your model bank is empty. Add models from agent creation or config before using the registry.
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+            <CommandSectionHeader
+              eyebrow="Registry"
+              title="Model command matrix"
+              description="Orchestrate backbone providers and specialists."
+              icon={Cpu}
+              tone="teal"
+            />
+            <div className="relative group w-full md:w-80">
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-text-muted group-focus-within:text-aurora-teal transition-colors" />
+              <input
+                type="text"
+                autoComplete="off"
+                placeholder="Find Models (OpenAI, Gemini, Claude...)"
+                className="w-full bg-panel-soft border border-hairline rounded-2xl pl-12 pr-4 py-3 text-sm text-text-primary placeholder:text-text-disabled outline-none focus:border-aurora-teal/40 transition-all shadow-inner"
+                value={modelSearch}
+                onChange={(e) => setModelSearch(e.target.value)}
+              />
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            {filteredModels.length === 0 && (
+              <div className="ui-panel p-8 text-center text-sm text-text-muted italic border-dashed border-hairline">
+                {modelSearch ? `No backbone match found for "${modelSearch}"` : "Your model bank is empty. Add specialists via protocol configuration."}
               </div>
             )}
-            {availableModels.slice(0, 6).map((model) => (
-              <div key={model.model} className="ui-panel p-4">
+            {filteredModels.slice(0, 12).map((model) => (
+              <div key={model.model} className="ui-panel p-4 group/model hover:border-aurora-teal/20 transition-all">
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <div className="flex items-center gap-2">
-                      <CircleDot className="h-3.5 w-3.5" style={{ color: modelColors[model.model] || '#2dd4bf' }} />
-                      <span className="text-sm font-semibold text-text-primary">{model.model}</span>
+                      <div className="w-2 h-2 rounded-full" style={{ backgroundColor: modelColors[model.model] || '#2dd4bf', boxShadow: `0 0 8px ${modelColors[model.model] || '#2dd4bf'}40` }} />
+                      <span className="text-sm font-bold text-text-primary group-hover/model:text-aurora-teal transition-colors">{model.model}</span>
                     </div>
                     <div className="mt-1 text-[11px] text-text-muted">{model.provider}</div>
                   </div>
@@ -1228,7 +1276,7 @@ function RoutingDoctrineTab({ routingPolicies, tasks, agents, logs, intervention
                       className="ui-input mt-2 w-full bg-transparent px-3 py-2 text-sm font-semibold text-text-primary"
                     >
                       {['general', 'build', 'research', 'ops', 'crm', 'finance', 'personal'].map((domain) => (
-                        <option key={domain} value={domain} className="bg-[#0d1015]">{domain}</option>
+                        <option key={domain} value={domain} className="bg-canvas-elevated">{domain}</option>
                       ))}
                     </select>
                   </label>
@@ -1240,7 +1288,7 @@ function RoutingDoctrineTab({ routingPolicies, tasks, agents, logs, intervention
                       className="ui-input mt-2 w-full bg-transparent px-3 py-2 text-sm font-semibold text-text-primary"
                     >
                       {['general', 'planning', 'research', 'execution', 'verification', 'reporting'].map((intent) => (
-                        <option key={intent} value={intent} className="bg-[#0d1015]">{intent}</option>
+                        <option key={intent} value={intent} className="bg-canvas-elevated">{intent}</option>
                       ))}
                     </select>
                   </label>
@@ -1260,7 +1308,7 @@ function RoutingDoctrineTab({ routingPolicies, tasks, agents, logs, intervention
                       className="ui-input mt-2 w-full bg-transparent px-3 py-2 text-sm font-semibold text-text-primary"
                     >
                       {['commander', 'planner', 'researcher', 'builder', 'verifier', 'executor'].map((role) => (
-                        <option key={role} value={role} className="bg-[#0d1015]">{role}</option>
+                        <option key={role} value={role} className="bg-canvas-elevated">{role}</option>
                       ))}
                     </select>
                   </label>
@@ -1272,7 +1320,7 @@ function RoutingDoctrineTab({ routingPolicies, tasks, agents, logs, intervention
                       className="ui-input mt-2 w-full bg-transparent px-3 py-2 text-sm font-semibold text-text-primary"
                     >
                       {['Anthropic', 'OpenAI', 'Google', 'Ollama', 'Custom'].map((provider) => (
-                        <option key={provider} value={provider} className="bg-[#0d1015]">{provider}</option>
+                        <option key={provider} value={provider} className="bg-canvas-elevated">{provider}</option>
                       ))}
                     </select>
                   </label>
@@ -1283,9 +1331,9 @@ function RoutingDoctrineTab({ routingPolicies, tasks, agents, logs, intervention
                       onChange={(event) => updateDraft('preferredModel', event.target.value)}
                       className="ui-input mt-2 w-full bg-transparent px-3 py-2 text-sm font-semibold text-text-primary"
                     >
-                      <option value="" className="bg-[#0d1015]">No hard override</option>
+                      <option value="" className="bg-canvas-elevated">No hard override</option>
                       {modelOptions.map((model) => (
-                        <option key={model.model} value={model.model} className="bg-[#0d1015]">{model.model}</option>
+                        <option key={model.model} value={model.model} className="bg-canvas-elevated">{model.model}</option>
                       ))}
                     </select>
                   </label>
@@ -1297,7 +1345,7 @@ function RoutingDoctrineTab({ routingPolicies, tasks, agents, logs, intervention
                       className="ui-input mt-2 w-full bg-transparent px-3 py-2 text-sm font-semibold text-text-primary"
                     >
                       {['risk_weighted', 'human_required', 'auto_low_risk'].map((rule) => (
-                        <option key={rule} value={rule} className="bg-[#0d1015]">{rule}</option>
+                        <option key={rule} value={rule} className="bg-canvas-elevated">{rule}</option>
                       ))}
                     </select>
                   </label>
@@ -1309,7 +1357,7 @@ function RoutingDoctrineTab({ routingPolicies, tasks, agents, logs, intervention
                       className="ui-input mt-2 w-full bg-transparent px-3 py-2 text-sm font-semibold text-text-primary"
                     >
                       {['adaptive', 'parallel_first', 'sequential_first'].map((policy) => (
-                        <option key={policy} value={policy} className="bg-[#0d1015]">{policy}</option>
+                        <option key={policy} value={policy} className="bg-canvas-elevated">{policy}</option>
                       ))}
                     </select>
                   </label>
@@ -1321,7 +1369,7 @@ function RoutingDoctrineTab({ routingPolicies, tasks, agents, logs, intervention
                       className="ui-input mt-2 w-full bg-transparent px-3 py-2 text-sm font-semibold text-text-primary"
                     >
                       {['minimal', 'balanced', 'max_context'].map((policy) => (
-                        <option key={policy} value={policy} className="bg-[#0d1015]">{policy}</option>
+                        <option key={policy} value={policy} className="bg-canvas-elevated">{policy}</option>
                       ))}
                     </select>
                   </label>
@@ -1333,7 +1381,7 @@ function RoutingDoctrineTab({ routingPolicies, tasks, agents, logs, intervention
                       className="ui-input mt-2 w-full bg-transparent px-3 py-2 text-sm font-semibold text-text-primary"
                     >
                       {['lean', 'balanced', 'premium'].map((budget) => (
-                        <option key={budget} value={budget} className="bg-[#0d1015]">{budget}</option>
+                        <option key={budget} value={budget} className="bg-canvas-elevated">{budget}</option>
                       ))}
                     </select>
                   </label>
@@ -1345,7 +1393,7 @@ function RoutingDoctrineTab({ routingPolicies, tasks, agents, logs, intervention
                       className="mt-2 w-full bg-transparent text-sm font-semibold text-text-primary outline-none"
                     >
                       {['low', 'medium', 'high'].map((level) => (
-                        <option key={level} value={level} className="bg-[#0d1015]">{level}</option>
+                        <option key={level} value={level} className="bg-canvas-elevated">{level}</option>
                       ))}
                     </select>
                   </label>
@@ -1363,7 +1411,7 @@ function RoutingDoctrineTab({ routingPolicies, tasks, agents, logs, intervention
                     type="checkbox"
                     checked={draft.evidenceRequired ?? false}
                     onChange={(event) => updateDraft('evidenceRequired', event.target.checked)}
-                    className="h-4 w-4 rounded border-white/20 bg-transparent"
+                    className="h-4 w-4 rounded border-hairline bg-transparent"
                   />
                   <div>
                     <div className="text-sm font-semibold text-text-primary">Require evidence before execution</div>
@@ -1379,7 +1427,7 @@ function RoutingDoctrineTab({ routingPolicies, tasks, agents, logs, intervention
                       { label: 'Parallel bias', value: draft.parallelizationPolicy || 'adaptive', hint: 'execution posture' },
                     ].map((entry) => (
                       <div key={entry.label} className="ui-card-row px-3 py-3">
-                        <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">{entry.label}</div>
+                      <div className="etched-label text-[10px] uppercase tracking-[0.16em] text-text-muted">{entry.label}</div>
                         <div className="mt-2 text-sm font-semibold text-text-primary">{entry.value}</div>
                         <div className="mt-1 text-[10px] text-text-disabled">{entry.hint}</div>
                       </div>
@@ -1417,7 +1465,7 @@ function RoutingDoctrineTab({ routingPolicies, tasks, agents, logs, intervention
                               className="ui-input mt-2 w-full bg-transparent px-3 py-2 text-[12px] font-semibold text-text-primary"
                             >
                               {['commander', 'planner', 'researcher', 'builder', 'verifier', 'executor'].map((role) => (
-                                <option key={role} value={role} className="bg-[#0d1015]">{role}</option>
+                        <option key={role} value={role} className="bg-canvas-elevated">{role}</option>
                               ))}
                             </select>
                           </label>
@@ -1429,7 +1477,7 @@ function RoutingDoctrineTab({ routingPolicies, tasks, agents, logs, intervention
                               className="ui-input mt-2 w-full bg-transparent px-3 py-2 text-[12px] font-semibold text-text-primary"
                             >
                               {['Anthropic', 'OpenAI', 'Google', 'Ollama', 'Custom'].map((provider) => (
-                                <option key={provider} value={provider} className="bg-[#0d1015]">{provider}</option>
+                        <option key={provider} value={provider} className="bg-canvas-elevated">{provider}</option>
                               ))}
                             </select>
                           </label>
@@ -1440,9 +1488,9 @@ function RoutingDoctrineTab({ routingPolicies, tasks, agents, logs, intervention
                               onChange={(event) => updateFallback(index, 'model', event.target.value)}
                               className="ui-input mt-2 w-full bg-transparent px-3 py-2 text-[12px] font-semibold text-text-primary"
                             >
-                              <option value="" className="bg-[#0d1015]">No hard override</option>
+                              <option value="" className="bg-canvas-elevated">No hard override</option>
                               {modelOptions.map((model) => (
-                                <option key={model.model} value={model.model} className="bg-[#0d1015]">{model.model}</option>
+                                <option key={model.model} value={model.model} className="bg-canvas-elevated">{model.model}</option>
                               ))}
                             </select>
                           </label>
@@ -2228,7 +2276,7 @@ function KnowledgeMapTab({ namespaces }) {
                   <span className="text-text-body">Vector density</span>
                   <span className="font-mono text-text-muted">{namespace.vectors.toLocaleString()}</span>
                 </div>
-                <div className="h-1.5 overflow-hidden rounded-full bg-white/[0.05]">
+                <div className="h-1.5 overflow-hidden rounded-full bg-panel-soft">
                   <div
                     className="h-full rounded-full bg-gradient-to-r from-aurora-teal to-aurora-blue"
                     style={{ width: `${Math.max(12, Math.min(100, totalVectors > 0 ? (Number(namespace.vectors || 0) / totalVectors) * 220 : 12))}%` }}
@@ -2311,7 +2359,7 @@ function DirectivesTab({ directives, agents, tasks, recommendations }) {
                     <span className="text-text-body">Constraint weight</span>
                     <span className="font-mono text-text-muted">{directive.drag}%</span>
                   </div>
-                  <div className="h-1.5 overflow-hidden rounded-full bg-white/[0.05]">
+                  <div className="h-1.5 overflow-hidden rounded-full bg-panel-soft">
                     <div
                       className={`h-full rounded-full ${
                         directive.priority === 'critical'
@@ -2396,7 +2444,7 @@ export function IntelligenceView() {
   const { namespaces: knowledgeNamespaces } = useKnowledgeNamespaces();
   const { directives: sharedDirectives } = useSharedDirectives();
   const { recommendations: persistedRecommendations } = useSystemRecommendations();
-  const { humanHourlyRate } = useCommanderPreferences();
+  const { humanHourlyRate } = usePreferences();
   const truth = useCommandCenterTruth();
 
   const availableModels = useMemo(() => {

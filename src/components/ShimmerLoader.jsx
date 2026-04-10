@@ -3,6 +3,6 @@ import { cn } from '../utils/cn';
 
 export function ShimmerLoader({ className }) {
   return (
-    <div className={cn('shimmer rounded-xl bg-white/[0.03]', className)} />
+    <div className={cn('shimmer rounded-xl bg-panel-soft', className)} />
   );
 }

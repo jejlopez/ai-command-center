@@ -77,3 +77,34 @@ create policy "Owners can fully manage their own tasks"
 on tasks for all 
 using (auth.uid() = user_id) 
 with check (auth.uid() = user_id);
+
+create table if not exists user_settings (
+  user_id           uuid primary key references auth.users(id) on delete cascade,
+  human_hourly_rate real not null default 42,
+  command_style     text not null default 'hybrid',
+  alert_posture     text not null default 'balanced',
+  quiet_hours_enabled boolean not null default false,
+  quiet_hours_start text not null default '22:00',
+  quiet_hours_end   text not null default '07:00',
+  notification_route text not null default 'command_center',
+  slack_webhook_url text default '',
+  notification_email text default '',
+  theme_preference  text not null default 'obsidian',
+  commander_persona text not null default 'founder',
+  trusted_write_mode text not null default 'review_first',
+  approval_doctrine text not null default 'risk_weighted',
+  created_at        timestamptz default now(),
+  updated_at        timestamptz default now()
+);
+
+-- Indexing
+create index if not exists idx_user_settings_user on user_settings(user_id);
+
+-- Enable RLS
+alter table user_settings enable row level security;
+
+-- Restricted Isolation Policy
+create policy "Users can manage their own settings"
+on user_settings for all
+using (auth.uid() = user_id)
+with check (auth.uid() = user_id);

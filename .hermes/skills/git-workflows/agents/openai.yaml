@@ -1,0 +1,4 @@
+interface:
+  display_name: "Git Workflows"
+  short_description: "Safe git workflow guidance for Codex"
+  default_prompt: "Use $git-workflows to handle a safe repository workflow for this task."

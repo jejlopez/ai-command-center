@@ -23,7 +23,7 @@ export function MetricsTab({ agent }) {
     <div className="h-full space-y-6 overflow-y-auto no-scrollbar p-6">
       <div className="grid grid-cols-2 gap-3">
         {stats.map((stat) => (
-          <div key={stat.label} className="rounded-lg border border-white/[0.05] bg-white/[0.02] p-3.5">
+          <div key={stat.label} className="rounded-lg border border-hairline bg-panel-soft p-3.5">
             <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.15em] text-text-disabled">{stat.label}</div>
             <div className="font-mono text-xl font-semibold text-text-primary">{stat.value}</div>
             <div className="mt-0.5 font-mono text-[10px] text-text-disabled">{stat.sub}</div>
@@ -33,7 +33,7 @@ export function MetricsTab({ agent }) {
 
       <div>
         <label className="mb-3 block text-[10px] font-semibold uppercase tracking-[0.15em] text-text-muted">Token Usage (24h)</label>
-        <div className="h-24 rounded-lg border border-white/[0.05] bg-white/[0.02] p-2">
+        <div className="h-24 rounded-lg border border-hairline bg-panel-soft p-2">
           <ResponsiveContainer width="100%" height="100%">
             <AreaChart data={tokenHistory}>
               <defs>
@@ -57,7 +57,7 @@ export function MetricsTab({ agent }) {
                 <span className="text-text-primary">{tool.name}</span>
                 <span className="font-mono text-text-disabled">{tool.calls}</span>
               </div>
-              <div className="h-1.5 overflow-hidden rounded-full bg-white/[0.05]">
+              <div className="h-1.5 overflow-hidden rounded-full bg-panel-soft">
                 <motion.div
                   className="h-full rounded-full"
                   style={{ backgroundColor: agent.color }}

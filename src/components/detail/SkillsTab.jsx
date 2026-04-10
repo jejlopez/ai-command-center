@@ -26,7 +26,7 @@ function InfoBubble({ text }) {
             initial={{ opacity: 0, y: 4 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 4 }}
-            className="absolute bottom-full left-1/2 z-50 mb-2 w-56 -translate-x-1/2 rounded-lg border border-white/10 bg-surface p-3 text-[11px] leading-relaxed text-text-body shadow-2xl pointer-events-none"
+            className="absolute bottom-full left-1/2 z-50 mb-2 w-56 -translate-x-1/2 rounded-lg border border-hairline bg-panel-elevated p-3 text-[11px] leading-relaxed text-text-body shadow-elevated pointer-events-none"
           >
             {text}
           </Motion.div>
@@ -119,7 +119,7 @@ export function SkillsTab({ agent }) {
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
               placeholder="Search skills, paste path, or GitHub URL..."
-              className="w-full rounded-lg border border-white/[0.07] bg-white/[0.03] py-2.5 pl-9 pr-3 text-xs font-mono text-text-primary outline-none transition-colors placeholder:text-text-disabled focus:border-aurora-teal/40"
+              className="w-full rounded-lg border border-hairline bg-panel-soft py-2.5 pl-9 pr-3 text-xs font-mono text-text-primary outline-none transition-colors placeholder:text-text-disabled focus:border-aurora-teal/40"
             />
           </div>
 
@@ -142,18 +142,18 @@ export function SkillsTab({ agent }) {
             </div>
           )}
           {searchInput && !isPath && !isGithub && filteredAvailable.length === 0 && (
-            <div className="mt-2 flex items-center justify-between rounded-lg border border-white/[0.07] bg-white/[0.02] p-3">
+            <div className="mt-2 flex items-center justify-between rounded-lg border border-hairline bg-panel-soft p-3">
               <div className="text-[11px] text-text-muted">Create a new skill bank entry for "{searchInput}"</div>
               <button onClick={handleCreateSkill} className="shrink-0 rounded-md bg-aurora-teal px-3 py-1.5 text-[10px] font-bold text-black">Save + Attach</button>
             </div>
           )}
 
           {filteredAvailable.length > 0 && (
-            <div className="mt-2 overflow-hidden rounded-lg border border-white/[0.07]">
+            <div className="mt-2 overflow-hidden rounded-lg border border-hairline">
               {filteredAvailable.map((skill) => {
                 const Icon = iconMap[skill.icon] || Zap;
                 return (
-                  <div key={skill.id} className="flex items-center justify-between border-b border-white/[0.03] px-3 py-2.5 transition-colors hover:bg-white/[0.03] last:border-0">
+                  <div key={skill.id} className="flex items-center justify-between border-b border-hairline px-3 py-2.5 transition-colors hover:bg-panel-soft last:border-0">
                     <div className="flex min-w-0 items-center gap-2.5">
                       <Icon className="h-3.5 w-3.5 shrink-0 text-text-muted" />
                       <div className="min-w-0">
@@ -182,7 +182,7 @@ export function SkillsTab({ agent }) {
             {agentSkills.map((skill) => {
               const Icon = iconMap[skill.icon] || Zap;
               return (
-                <div key={skill.id} className="group flex items-center justify-between rounded-lg border border-white/[0.05] bg-white/[0.02] px-3 py-2.5">
+                <div key={skill.id} className="group flex items-center justify-between rounded-lg border border-hairline bg-panel-soft px-3 py-2.5">
                   <div className="flex min-w-0 items-center gap-2.5">
                     <Icon className="h-3.5 w-3.5 shrink-0 text-text-muted" />
                     <div className="min-w-0">
@@ -191,7 +191,7 @@ export function SkillsTab({ agent }) {
                     </div>
                   </div>
                   <div className="ml-2 flex shrink-0 items-center gap-2">
-                    <span className="rounded bg-white/[0.03] px-1.5 py-0.5 font-mono text-[9px] text-text-disabled">{skill.source}</span>
+                    <span className="rounded bg-panel-soft px-1.5 py-0.5 font-mono text-[9px] text-text-disabled">{skill.source}</span>
                     <button
                       onClick={() => syncAgentSkills((agent.skills || []).filter((skillId) => skillId !== skill.id))}
                       className="text-text-disabled opacity-0 transition-opacity group-hover:opacity-100 hover:text-aurora-rose"
@@ -203,7 +203,7 @@ export function SkillsTab({ agent }) {
               );
             })}
             {agentSkills.length === 0 && (
-              <div className="rounded-lg border border-white/[0.05] bg-white/[0.02] px-3 py-4 text-xs text-text-muted">
+              <div className="rounded-lg border border-hairline bg-panel-soft px-3 py-4 text-xs text-text-muted">
                 No skills attached to this agent yet.
               </div>
             )}
@@ -219,7 +219,7 @@ export function SkillsTab({ agent }) {
             {availableSkills.map((skill) => {
               const Icon = iconMap[skill.icon] || Zap;
               return (
-                <div key={skill.id} className="flex items-center justify-between rounded-lg border border-white/[0.03] bg-white/[0.01] px-3 py-2 transition-colors hover:border-white/[0.07]">
+                <div key={skill.id} className="flex items-center justify-between rounded-lg border border-hairline bg-panel-soft px-3 py-2 transition-colors hover:border-hairline">
                   <div className="flex items-center gap-2.5">
                     <Icon className="h-3.5 w-3.5 text-text-disabled" />
                     <span className="text-xs text-text-muted">{skill.name}</span>
@@ -234,7 +234,7 @@ export function SkillsTab({ agent }) {
               );
             })}
             {availableSkills.length === 0 && (
-              <div className="rounded-lg border border-white/[0.03] bg-white/[0.01] px-3 py-4 text-xs text-text-muted">
+              <div className="rounded-lg border border-hairline bg-panel-soft px-3 py-4 text-xs text-text-muted">
                 Your skill bank is empty. Add a local path, GitHub URL, or custom skill above.
               </div>
             )}
@@ -260,7 +260,7 @@ export function SkillsTab({ agent }) {
                 className="space-y-2 overflow-hidden"
               >
                 {mcpServers.map((server) => (
-                  <div key={server.id} className="flex items-center justify-between rounded-lg border border-white/[0.05] bg-white/[0.02] px-3 py-2.5">
+                  <div key={server.id} className="flex items-center justify-between rounded-lg border border-hairline bg-panel-soft px-3 py-2.5">
                     <div className="flex items-center gap-2.5">
                       <div className={cn('h-2 w-2 rounded-full', server.status === 'connected' ? 'bg-aurora-green' : 'bg-aurora-rose')} />
                       <div>
@@ -272,7 +272,7 @@ export function SkillsTab({ agent }) {
                   </div>
                 ))}
                 {!systemsLoading && mcpServers.length === 0 && (
-                  <div className="rounded-lg border border-dashed border-white/[0.08] bg-white/[0.02] px-3 py-4 text-xs text-text-muted">
+                  <div className="rounded-lg border border-dashed border-hairline bg-panel-soft px-3 py-4 text-xs text-text-muted">
                     No MCP servers are wired yet. Connect one below and it will appear everywhere the systems dock is used.
                   </div>
                 )}
@@ -283,7 +283,7 @@ export function SkillsTab({ agent }) {
                       value={serverUrl}
                       onChange={(e) => setServerUrl(e.target.value)}
                       placeholder="Server URL (e.g., localhost:3001)"
-                      className="flex-1 rounded-lg border border-white/[0.07] bg-white/[0.03] px-3 py-2 text-xs font-mono text-text-primary outline-none focus:border-aurora-teal/40"
+                      className="flex-1 rounded-lg border border-hairline bg-panel-soft px-3 py-2 text-xs font-mono text-text-primary outline-none focus:border-aurora-teal/40"
                     />
                     <button
                       onClick={handleConnectMcpServer}
@@ -295,7 +295,7 @@ export function SkillsTab({ agent }) {
                 ) : (
                   <button
                     onClick={() => setShowAddServer(true)}
-                    className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-white/10 py-2.5 text-[10px] text-text-muted transition-colors hover:border-aurora-teal/30 hover:text-aurora-teal"
+                    className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-hairline py-2.5 text-[10px] text-text-muted transition-colors hover:border-aurora-teal/30 hover:text-aurora-teal shadow-sm"
                   >
                     <Server className="h-3 w-3" /> Connect MCP Server
                   </button>

@@ -21,26 +21,27 @@ export function AttentionStrip({ items, loading, onSelect }) {
             key={item.id}
             onClick={() => onSelect?.(item)}
             className={cn(
-              'ui-card-row min-h-[96px] p-4 text-left transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aurora-teal/35',
-              item.tone === 'critical' && 'border-aurora-rose/30 bg-aurora-rose/5',
-              item.tone === 'warning' && 'border-aurora-amber/30 bg-aurora-amber/5',
-              item.clickable && 'hover:-translate-y-0.5 hover:bg-white/[0.05]'
+              'ui-card-row min-h-[110px] p-6 text-left transition-all border shadow-sm group bg-panel',
+              item.tone === 'critical' ? 'border-aurora-rose/35 bg-aurora-rose/5' : 'border-hairline',
+              item.tone === 'warning' ? 'border-aurora-amber/35 bg-aurora-amber/5' : '',
+              item.clickable && 'hover:-translate-y-1 hover:bg-panel-soft hover:shadow-main focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aurora-teal/35'
             )}
           >
             <div className="flex items-center justify-between">
-              <div className="ui-panel-soft rounded-lg p-2">
+              <div className="ui-panel-soft rounded-xl p-2.5 bg-canvas border border-hairline shadow-inner">
                 <Icon className={cn(
-                  'h-4 w-4',
-                  item.tone === 'critical' ? 'text-aurora-rose' : item.tone === 'warning' ? 'text-aurora-amber' : 'text-aurora-blue'
+                  'h-5 w-5',
+                  item.tone === 'critical' ? 'text-aurora-rose shadow-[0_0_10px_-2px_var(--color-aurora-rose)]' : 
+                  item.tone === 'warning' ? 'text-aurora-amber shadow-[0_0_10px_-2px_var(--color-aurora-amber)]' : 
+                  'text-aurora-blue shadow-[0_0_10px_-2px_var(--color-aurora-blue)]'
                 )} />
               </div>
-              <span className="text-[10px] uppercase tracking-[0.18em] text-text-disabled">{item.badge}</span>
+              <span className="text-[9px] font-black uppercase tracking-[0.2em] text-text-dim opacity-70 group-hover:opacity-100 transition-opacity">{item.badge}</span>
             </div>
-            <div className="mt-4 font-mono text-3xl text-text-primary">
+            <div className="mt-5 font-mono text-4xl font-black text-text tracking-tighter">
               {loading ? '--' : item.value}
             </div>
-            <div className="mt-1 text-sm font-medium text-text-primary">{item.label}</div>
-            <div className="mt-1 text-[11px] leading-5 text-text-muted">{item.badge}</div>
+            <div className="mt-1 text-xs font-black text-text uppercase tracking-widest">{item.label}</div>
           </button>
         );
       })}

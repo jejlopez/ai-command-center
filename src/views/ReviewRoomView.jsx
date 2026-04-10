@@ -44,8 +44,8 @@ function OutputRenderer({ item }) {
     <div className={cn(
       "p-5 rounded-lg text-sm font-mono leading-relaxed whitespace-pre-wrap overflow-x-auto border",
       isError  ? "bg-aurora-rose/5 border-aurora-rose/20 text-aurora-rose/90"
-      : isCode ? "bg-black/40 border-white/5 text-text-primary shadow-inner"
-               : "bg-white/[0.02] border-white/5 text-text-body"
+      : isCode ? "ui-well text-text shadow-inner"
+               : "ui-well text-text-dim"
     )}>
       {item.payload}
     </div>
@@ -68,8 +68,8 @@ function QueueCard({ item, isActive, onClick }) {
       className={cn(
         "ui-card-row p-4 flex flex-col gap-2 text-left transition-all border w-full",
         isActive
-          ? "border-aurora-teal/40 bg-aurora-teal/5 shadow-[0_0_15px_rgba(0,217,200,0.1)]"
-          : "border-white/5 opacity-70 hover:opacity-100 hover:border-white/15"
+          ? "border-aurora-teal/40 bg-aurora-teal/5 shadow-md scale-[1.01]"
+          : "border-hairline bg-panel-soft opacity-70 hover:opacity-100 hover:border-hairline-strong"
       )}
     >
       <div className="flex items-start justify-between gap-2">
@@ -107,8 +107,8 @@ function FilterPills({ label, options, active, onChange }) {
             className={cn(
               "px-2 py-0.5 text-[10px] font-mono rounded transition-colors",
               active === opt.value
-                ? "bg-white/[0.08] text-text-primary"
-                : "text-text-muted hover:text-text-primary hover:bg-white/[0.04]"
+                ? "bg-panel text-text shadow-sm"
+                : "text-text-dim hover:text-text hover:bg-panel-soft"
             )}
           >
             {opt.label}
@@ -347,9 +347,9 @@ export function ReviewRoomView() {
           {/* Keyboard hint */}
           {activeTab === 'approvals' && approvals.length > 0 && (
             <div className="hidden lg:flex items-center gap-2 text-[10px] font-mono text-text-disabled">
-              <kbd className="px-1 py-0.5 bg-white/5 border border-border rounded text-[9px]">↑↓</kbd> navigate
-              <kbd className="px-1.5 py-0.5 bg-white/5 border border-border rounded text-[9px]">↵</kbd> approve
-              <kbd className="px-1 py-0.5 bg-white/5 border border-border rounded text-[9px]">Esc</kbd> cancel
+              <kbd className="px-1 py-0.5 bg-panel border border-hairline rounded text-[9px] text-text-primary shadow-sm">↑↓</kbd> navigate
+              <kbd className="px-1.5 py-0.5 bg-panel border border-hairline rounded text-[9px] text-text-primary shadow-sm">↵</kbd> approve
+              <kbd className="px-1 py-0.5 bg-panel border border-hairline rounded text-[9px] text-text-primary shadow-sm">Esc</kbd> cancel
             </div>
           )}
         </div>
@@ -368,8 +368,8 @@ export function ReviewRoomView() {
             className={cn(
               "flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-all",
               activeTab === tab.id
-                ? "bg-white/[0.08] text-text-primary border border-white/10"
-                : "text-text-muted hover:text-text-primary hover:bg-white/[0.03]"
+                ? "bg-panel text-text border border-hairline shadow-sm"
+                : "text-text-dim hover:text-text hover:bg-panel-soft"
             )}
           >
             <tab.icon className="w-4 h-4" />
@@ -379,8 +379,8 @@ export function ReviewRoomView() {
               tab.urgent && activeTab !== tab.id
                 ? "bg-aurora-rose/20 text-aurora-rose"
                 : activeTab === tab.id
-                  ? "bg-white/10 text-text-primary"
-                  : "bg-white/5 text-text-disabled"
+                  ? "bg-panel-soft text-text"
+                  : "bg-panel-soft text-text-dim"
             )}>
               {tab.count}
             </span>
@@ -538,7 +538,7 @@ export function ReviewRoomView() {
 
             {/* Action bar — approvals only */}
             {activeTab === 'approvals' && (
-              <div className="shrink-0 bg-canvas/70 border-t border-hairline p-5 z-20 shadow-[0_-10px_30px_rgba(0,0,0,0.5)]">
+            <div className="shrink-0 bg-panel/80 backdrop-blur-md border-t border-hairline p-5 z-20 shadow-elevated">
                 <AnimatePresence mode="wait">
                   {!showReviseForm ? (
                     <motion.div
@@ -558,7 +558,7 @@ export function ReviewRoomView() {
                         onClick={handleApprove}
                         className="ui-button-primary flex-[2] h-12 flex items-center justify-center gap-2 rounded-xl font-bold tracking-wider uppercase text-sm transition-all shadow-[0_0_20px_rgba(0,217,200,0.4)] hover:shadow-[0_0_30px_rgba(0,217,200,0.6)]"
                       >
-                        <CheckCircle2 className="w-4 h-4" /> Approve <kbd className="ml-1 px-1 py-0.5 bg-black/20 rounded text-[10px] font-mono normal-case tracking-normal">↵</kbd>
+                        <CheckCircle2 className="w-4 h-4" /> Approve <kbd className="ml-1 px-1 py-0.5 bg-panel rounded text-[10px] font-mono normal-case tracking-normal border border-hairline shadow-sm">↵</kbd>
                       </button>
                     </motion.div>
                   ) : (
@@ -580,7 +580,7 @@ export function ReviewRoomView() {
                           onChange={e => setFeedback(e.target.value)}
                           onKeyDown={e => { if (e.key === 'Enter' && feedback.trim()) handleReject(); }}
                           placeholder="e.g. 'Reduce batch size', 'Extract styles to variables'..."
-                          className="flex-1 h-12 bg-panel-soft border border-aurora-amber/50 rounded-xl px-4 text-sm font-mono text-text-primary focus:outline-none focus:shadow-[0_0_20px_rgba(251,191,36,0.15)] transition-all placeholder:text-text-disabled"
+                          className="flex-1 h-12 bg-panel-soft border border-aurora-amber/50 rounded-xl px-4 text-sm font-mono text-text focus:outline-none focus:shadow-[0_0_20px_rgba(251,191,36,0.15)] transition-all placeholder:text-text-disabled"
                         />
                         <button
                           onClick={() => { setShowReviseForm(false); setFeedback(''); }}

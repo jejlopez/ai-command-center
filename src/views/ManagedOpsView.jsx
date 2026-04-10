@@ -59,13 +59,13 @@ const infrastructureTabs = [
 ];
 
 const sessionTone = {
-  queued: 'text-aurora-blue border-aurora-blue/20 bg-aurora-blue/10',
-  running: 'text-aurora-teal border-aurora-teal/20 bg-aurora-teal/10',
-  waiting_for_tool: 'text-aurora-amber border-aurora-amber/20 bg-aurora-amber/10',
-  needs_review: 'text-aurora-amber border-aurora-amber/20 bg-aurora-amber/10',
-  completed: 'text-aurora-green border-aurora-green/20 bg-aurora-green/10',
-  failed: 'text-aurora-rose border-aurora-rose/20 bg-aurora-rose/10',
-  cancelled: 'text-text-muted border-white/10 bg-white/[0.04]',
+  queued: 'text-aurora-blue border-aurora-blue/30 bg-aurora-blue/10',
+  running: 'text-aurora-teal border-aurora-teal/30 bg-aurora-teal/10',
+  waiting_for_tool: 'text-aurora-amber border-aurora-amber/30 bg-aurora-amber/10',
+  needs_review: 'text-aurora-amber border-aurora-amber/30 bg-aurora-amber/10',
+  completed: 'text-aurora-green border-aurora-green/30 bg-aurora-green/10',
+  failed: 'text-aurora-rose border-aurora-rose/30 bg-aurora-rose/10',
+  cancelled: 'text-text-dim border-hairline bg-panel-soft',
 };
 
 function inferProvider(modelLabel) {
@@ -202,17 +202,17 @@ function WorkflowButton({ active, item, onClick }) {
       className={cn(
         'w-full rounded-[24px] border px-4 py-4 text-left transition-colors',
         active
-          ? 'border-aurora-teal/25 bg-aurora-teal/10'
-          : 'border-white/10 bg-white/[0.03] hover:bg-white/[0.05]'
+          ? 'border-aurora-teal/25 bg-aurora-teal/10 active-shadow'
+          : 'border-hairline bg-panel-soft hover:bg-panel'
       )}
     >
       <div className="flex items-start gap-3">
-        <div className={cn('mt-0.5 rounded-2xl border p-2.5', active ? 'border-aurora-teal/30 bg-aurora-teal/10 text-aurora-teal' : 'border-white/10 bg-black/20 text-text-muted')}>
+        <div className={cn('mt-0.5 rounded-2xl border p-2.5', active ? 'border-aurora-teal/30 bg-aurora-teal/10 text-aurora-teal' : 'border-hairline bg-panel text-text-dim')}>
           <item.icon className="h-4 w-4" />
         </div>
         <div>
-          <div className="text-sm font-semibold text-text-primary">{item.label}</div>
-          <div className="mt-1 text-xs leading-5 text-text-muted">{item.description}</div>
+          <div className="text-sm font-semibold text-text">{item.label}</div>
+          <div className="mt-1 text-xs leading-5 text-text-dim opacity-80">{item.description}</div>
         </div>
       </div>
     </button>
@@ -228,7 +228,7 @@ function SegmentedButton({ active, label, onClick }) {
         'rounded-full border px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.16em] transition-colors',
         active
           ? 'border-aurora-teal/25 bg-aurora-teal/10 text-aurora-teal'
-          : 'border-white/10 bg-white/[0.03] text-text-muted hover:text-text-primary'
+          : 'border-hairline bg-panel-soft text-text-dim hover:text-text'
       )}
     >
       {label}
@@ -238,7 +238,7 @@ function SegmentedButton({ active, label, onClick }) {
 
 function StatusPill({ label, value, tone = 'text-text-primary' }) {
   return (
-    <div className="rounded-[20px] border border-white/10 bg-black/20 px-4 py-3">
+    <div className="ui-well px-4 py-3">
       <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">{label}</div>
       <div className={cn('mt-2 text-base font-semibold', tone)}>{value}</div>
     </div>
@@ -263,12 +263,12 @@ function InlineAlert({ message, tone = 'error' }) {
 
 function Surface({ eyebrow, title, description, action, className = '', children }) {
   return (
-    <section className={cn('rounded-[30px] border border-white/[0.08] bg-[linear-gradient(180deg,rgba(255,255,255,0.032),rgba(255,255,255,0.014))] p-5 shadow-[0_18px_60px_rgba(0,0,0,0.2)]', className)}>
+    <section className={cn('ui-shell p-5 shadow-xl', className)}>
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          {eyebrow && <div className="text-[10px] font-semibold uppercase tracking-[0.22em] text-text-muted">{eyebrow}</div>}
-          <h2 className="mt-2 text-xl font-semibold tracking-[-0.03em] text-text-primary">{title}</h2>
-          {description && <p className="mt-2 max-w-3xl text-sm leading-6 text-text-body">{description}</p>}
+          {eyebrow && <div className="text-[10px] font-semibold uppercase tracking-[0.22em] text-text-dim">{eyebrow}</div>}
+          <h2 className="mt-2 text-xl font-semibold tracking-[-0.03em] text-text">{title}</h2>
+          {description && <p className="mt-2 max-w-3xl text-sm leading-6 text-text-dim font-medium italic opacity-80">{description}</p>}
         </div>
         {action}
       </div>
@@ -279,7 +279,7 @@ function Surface({ eyebrow, title, description, action, className = '', children
 
 function ReadinessItem({ label, ready, detail }) {
   return (
-    <div className="rounded-[20px] border border-white/10 bg-black/20 px-4 py-3">
+    <div className="ui-well px-4 py-3">
       <div className="flex items-center justify-between gap-3">
         <div className="text-sm font-semibold text-text-primary">{label}</div>
         <span className={cn('rounded-full border px-2.5 py-1 text-[10px] uppercase tracking-[0.16em]', ready ? 'border-aurora-green/20 bg-aurora-green/10 text-aurora-green' : 'border-aurora-amber/20 bg-aurora-amber/10 text-aurora-amber')}>
@@ -595,7 +595,7 @@ export function ManagedOpsView({ initialTab = 'create' }) {
               <WorkflowButton key={item.id} item={item} active={activeTab === item.id} onClick={() => setActiveTab(item.id)} />
             ))}
           </div>
-          <div className="mt-5 rounded-[24px] border border-white/10 bg-black/20 p-4">
+          <div className="mt-5 ui-well p-4">
             <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Status rail</div>
             <div className="mt-3 space-y-3">
               <StatusPill label="Templates" value={templatesLoading ? 'Loading...' : templates.length} tone="text-aurora-teal" />
@@ -624,7 +624,7 @@ export function ManagedOpsView({ initialTab = 'create' }) {
                 <button
                   type="button"
                   onClick={() => setActiveTab('runs')}
-                  className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] px-4 py-2.5 text-sm font-semibold text-text-primary"
+                  className="inline-flex items-center gap-2 rounded-xl border border-hairline bg-panel px-4 py-2.5 text-sm font-semibold text-text"
                 >
                   <Workflow className="h-4 w-4 text-aurora-blue" />
                   View Runs
@@ -650,7 +650,7 @@ export function ManagedOpsView({ initialTab = 'create' }) {
                 >
                   <div className="space-y-4">
                     <InlineAlert message={errorState.scope === 'create' ? errorState.message : ''} />
-                    <div className="rounded-[24px] border border-white/10 bg-black/20 p-4">
+                    <div className="ui-well p-4">
                       <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.18em] text-text-muted">
                         <Command className="h-3.5 w-3.5 text-aurora-teal" />
                         Step 1 · describe the task
@@ -658,11 +658,11 @@ export function ManagedOpsView({ initialTab = 'create' }) {
                       <textarea
                         value={quickstartPrompt}
                         onChange={(event) => setQuickstartPrompt(event.target.value)}
-                        className="mt-4 min-h-[200px] w-full rounded-[22px] border border-white/10 bg-black/30 px-4 py-4 text-sm leading-6 text-text-primary outline-none transition-colors focus:border-aurora-teal/30"
+                        className="mt-4 min-h-[200px] w-full rounded-[22px] border border-hairline bg-panel px-4 py-4 text-sm leading-6 text-text outline-none transition-colors focus:border-aurora-teal/30"
                       />
                     </div>
 
-                    <div className="rounded-[24px] border border-white/10 bg-black/20 p-4">
+                    <div className="ui-well p-4">
                       <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.18em] text-text-muted">
                         <Layers3 className="h-3.5 w-3.5 text-aurora-blue" />
                         Step 2 · choose launch source
@@ -672,7 +672,7 @@ export function ManagedOpsView({ initialTab = 'create' }) {
                         <select
                           value={selectedTemplateId}
                           onChange={(event) => setSelectedTemplateId(event.target.value)}
-                          className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2.5 text-text-primary outline-none"
+                          className="w-full ui-input px-3 py-2.5 text-text-primary outline-none"
                         >
                           <option value="">Use parsed draft</option>
                           {templates.map((template) => (
@@ -682,7 +682,7 @@ export function ManagedOpsView({ initialTab = 'create' }) {
                       </label>
                     </div>
 
-                    <div className="rounded-[24px] border border-white/10 bg-black/20 p-4">
+                    <div className="ui-well p-4">
                       <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.18em] text-text-muted">
                         <CheckCircle2 className="h-3.5 w-3.5 text-aurora-green" />
                         Step 3 · save or launch
@@ -701,7 +701,7 @@ export function ManagedOpsView({ initialTab = 'create' }) {
                           type="button"
                           onClick={handleLaunchSession}
                           disabled={saving}
-                          className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm font-semibold text-text-primary transition-colors hover:bg-white/[0.06] disabled:opacity-60"
+                          className="inline-flex items-center gap-2 rounded-xl border border-hairline bg-panel-soft px-4 py-3 text-sm font-semibold text-text-primary transition-colors hover:bg-panel disabled:opacity-60"
                         >
                           {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4 text-aurora-blue" />}
                           Launch Worker
@@ -727,7 +727,7 @@ export function ManagedOpsView({ initialTab = 'create' }) {
                         tone={quickstartProvider === 'custom' || providerConnected ? 'text-aurora-green' : 'text-aurora-amber'}
                       />
                     </div>
-                    <div className="mt-4 rounded-[22px] border border-white/10 bg-black/20 p-4">
+                    <div className="ui-well p-4">
                       <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">System prompt</div>
                       <p className="mt-3 text-sm leading-6 text-text-body">{quickstartDraft.systemPrompt}</p>
                     </div>
@@ -757,21 +757,21 @@ export function ManagedOpsView({ initialTab = 'create' }) {
                           ? 'Durable commander row is available for session lineage.'
                           : 'Launch still works, but the session will safely skip the commander foreign key until the durable commander record is available.'}
                       />
-                      <div className="rounded-[20px] border border-white/10 bg-black/20 p-4">
+                      <div className="rounded-[20px] border border-hairline bg-panel-soft p-4 shadow-sm">
                         <div className="text-sm font-semibold text-text-primary">Required access</div>
                         <div className="mt-3 flex flex-wrap gap-2">
                           {(quickstartDraft.vaultRequirements.length ? quickstartDraft.vaultRequirements : ['No required vaults']).map((requirement) => (
-                            <span key={requirement} className={cn('rounded-full border px-2.5 py-1 text-[10px] uppercase tracking-[0.16em]', quickstartDraft.vaultRequirements.length ? 'border-aurora-amber/20 bg-aurora-amber/10 text-aurora-amber' : 'border-white/10 bg-white/[0.04] text-text-body')}>
+                            <span key={requirement} className={cn('rounded-full border px-2.5 py-1 text-[10px] uppercase tracking-[0.16em]', quickstartDraft.vaultRequirements.length ? 'border-aurora-amber/20 bg-aurora-amber/10 text-aurora-amber' : 'border-hairline bg-panel-soft text-text-dim')}>
                               {requirement}
                             </span>
                           ))}
                         </div>
                       </div>
-                      <div className="rounded-[20px] border border-white/10 bg-black/20 p-4">
+                      <div className="rounded-[20px] border border-hairline bg-panel-soft p-4">
                         <div className="text-sm font-semibold text-text-primary">Allowed tools</div>
                         <div className="mt-3 flex flex-wrap gap-2">
                           {quickstartDraft.allowedTools.map((tool) => (
-                            <span key={tool} className="rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 text-[10px] uppercase tracking-[0.16em] text-text-body">
+                            <span key={tool} className="rounded-full border border-hairline bg-panel-soft px-2.5 py-1 text-[10px] uppercase tracking-[0.16em] text-text-dim">
                               {tool}
                             </span>
                           ))}
@@ -822,8 +822,8 @@ export function ManagedOpsView({ initialTab = 'create' }) {
                             className={cn(
                               'w-full rounded-[22px] border px-4 py-4 text-left transition-colors',
                               selectedTemplateEditId === template.id
-                                ? 'border-aurora-teal/25 bg-aurora-teal/10'
-                                : 'border-white/10 bg-white/[0.03] hover:bg-white/[0.05]'
+                                ? 'border-aurora-teal/25 bg-aurora-teal/10 shadow-sm'
+                                : 'ui-panel-soft hover:bg-panel'
                             )}
                           >
                             <div className="flex items-center justify-between gap-3">
@@ -837,7 +837,7 @@ export function ManagedOpsView({ initialTab = 'create' }) {
                         ))}
                       </div>
 
-                      <div className="rounded-[26px] border border-white/10 bg-black/20 p-5">
+                      <div className="rounded-[26px] ui-well p-5">
                         {templateDraft ? (
                           <div className="space-y-4">
                             <div className="flex flex-wrap items-start justify-between gap-4">
@@ -858,21 +858,21 @@ export function ManagedOpsView({ initialTab = 'create' }) {
                             <div className="grid gap-4 md:grid-cols-2">
                               <label className="space-y-2 text-sm text-text-body">
                                 <span>Name</span>
-                                <input value={templateDraft.name} onChange={(event) => patchTemplateDraft('name', event.target.value)} className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2.5 text-text-primary outline-none" />
+                                <input value={templateDraft.name} onChange={(event) => patchTemplateDraft('name', event.target.value)} className="w-full rounded-xl border border-hairline bg-panel px-3 py-2.5 text-text outline-none focus:border-aurora-teal/50 transition-colors" />
                               </label>
                               <label className="space-y-2 text-sm text-text-body">
                                 <span>Default model</span>
-                                <input value={templateDraft.defaultModel} onChange={(event) => patchTemplateDraft('defaultModel', event.target.value)} className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2.5 text-text-primary outline-none" />
+                                 <input value={templateDraft.defaultModel} onChange={(event) => patchTemplateDraft('defaultModel', event.target.value)} className="w-full ui-input px-3 py-2.5 text-text-primary outline-none" />
                               </label>
                             </div>
                             <label className="space-y-2 text-sm text-text-body">
                               <span>Description</span>
-                              <textarea value={templateDraft.description} onChange={(event) => patchTemplateDraft('description', event.target.value)} className="min-h-[100px] w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2.5 text-text-primary outline-none" />
+                               <textarea value={templateDraft.description} onChange={(event) => patchTemplateDraft('description', event.target.value)} className="min-h-[100px] w-full ui-input px-3 py-2.5 text-text-primary outline-none" />
                             </label>
                             <div className="grid gap-4 md:grid-cols-2">
                               <label className="space-y-2 text-sm text-text-body">
                                 <span>Approval mode</span>
-                                <select value={templateDraft.approvalMode} onChange={(event) => patchTemplateDraft('approvalMode', event.target.value)} className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2.5 text-text-primary outline-none">
+                                 <select value={templateDraft.approvalMode} onChange={(event) => patchTemplateDraft('approvalMode', event.target.value)} className="w-full ui-input px-3 py-2.5 text-text-primary outline-none bg-canvas-elevated">
                                   <option value="review_first">Review first</option>
                                   <option value="approval_required">Approval required</option>
                                   <option value="autonomous">Autonomous</option>
@@ -880,7 +880,7 @@ export function ManagedOpsView({ initialTab = 'create' }) {
                               </label>
                               <label className="space-y-2 text-sm text-text-body">
                                 <span>Spawn policy</span>
-                                <select value={templateDraft.spawnPolicy} onChange={(event) => patchTemplateDraft('spawnPolicy', event.target.value)} className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2.5 text-text-primary outline-none">
+                                 <select value={templateDraft.spawnPolicy} onChange={(event) => patchTemplateDraft('spawnPolicy', event.target.value)} className="w-full ui-input px-3 py-2.5 text-text-primary outline-none bg-canvas-elevated">
                                   <option value="ephemeral">Ephemeral</option>
                                   <option value="persistent">Persistent</option>
                                 </select>
@@ -888,22 +888,22 @@ export function ManagedOpsView({ initialTab = 'create' }) {
                             </div>
                             <label className="space-y-2 text-sm text-text-body">
                               <span>System prompt</span>
-                              <textarea value={templateDraft.systemPrompt} onChange={(event) => patchTemplateDraft('systemPrompt', event.target.value)} className="min-h-[140px] w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2.5 text-text-primary outline-none" />
+                               <textarea value={templateDraft.systemPrompt} onChange={(event) => patchTemplateDraft('systemPrompt', event.target.value)} className="min-h-[140px] w-full ui-input px-3 py-2.5 text-text-primary outline-none" />
                             </label>
-                            <div className="rounded-[22px] border border-white/10 bg-black/30 p-4">
+                             <div className="ui-well p-4">
                               <div className="flex flex-wrap items-center justify-between gap-3">
                                 <div>
                                   <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Vault inheritance</div>
                                   <div className="mt-1 text-sm text-text-body">Attach a vault that this template can inherit at runtime.</div>
                                 </div>
                                 <div className="flex gap-2">
-                                  <select value={selectedVaultId} onChange={(event) => setSelectedVaultId(event.target.value)} className="rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm text-text-primary outline-none">
+                                   <select value={selectedVaultId} onChange={(event) => setSelectedVaultId(event.target.value)} className="ui-input px-3 py-2 text-sm text-text-primary outline-none bg-canvas-elevated">
                                     <option value="">Select vault</option>
                                     {vaults.map((vault) => (
                                       <option key={vault.id} value={vault.id}>{vault.name}</option>
                                     ))}
                                   </select>
-                                  <button type="button" onClick={() => handleBindVaultToTemplate(templateDraft.id, selectedVaultId)} className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-sm font-semibold text-text-primary">
+                                   <button type="button" onClick={() => handleBindVaultToTemplate(templateDraft.id, selectedVaultId)} className="rounded-xl border border-hairline bg-panel-soft px-3 py-2 text-sm font-semibold text-text-primary hover:bg-panel transition-colors">
                                     Bind
                                   </button>
                                 </div>
@@ -921,14 +921,14 @@ export function ManagedOpsView({ initialTab = 'create' }) {
                             </div>
                           </div>
                         ) : (
-                          <div className="rounded-[22px] border border-dashed border-white/10 px-4 py-10 text-center text-text-muted">Select a template to edit.</div>
+                          <div className="rounded-[22px] border border-dashed border-hairline px-4 py-10 text-center text-text-muted">Select a template to edit.</div>
                         )}
                       </div>
                     </div>
                   ) : (
                     <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
                       {durableAgents.map((agent) => (
-                        <div key={agent.id} className="rounded-[24px] border border-white/10 bg-black/20 p-4">
+                        <div key={agent.id} className="ui-well p-4">
                           <div className="flex items-start justify-between gap-3">
                             <div>
                               <div className="text-lg font-semibold text-text-primary">{agent.name}</div>
@@ -938,7 +938,7 @@ export function ManagedOpsView({ initialTab = 'create' }) {
                               {agent.status}
                             </span>
                           </div>
-                          <div className="mt-4 rounded-[18px] border border-white/10 bg-white/[0.03] px-3 py-3 text-sm text-text-body">
+                          <div className="mt-4 rounded-[18px] border border-hairline bg-panel-soft px-3 py-3 text-sm text-text-dim">
                             <div className="font-medium text-text-primary">{agent.model}</div>
                             <div className="mt-1">{agent.roleDescription || 'Durable operator in the command layer.'}</div>
                           </div>
@@ -963,8 +963,8 @@ export function ManagedOpsView({ initialTab = 'create' }) {
                         className={cn(
                           'w-full rounded-[22px] border px-4 py-4 text-left transition-colors',
                           selectedSessionId === session.id
-                            ? 'border-aurora-teal/25 bg-aurora-teal/10'
-                            : 'border-white/10 bg-white/[0.03] hover:bg-white/[0.05]'
+                             ? 'border-aurora-teal/25 bg-aurora-teal/10 shadow-sm'
+                             : 'ui-panel-soft hover:bg-panel'
                         )}
                       >
                         <div className="flex items-center justify-between gap-3">
@@ -990,10 +990,10 @@ export function ManagedOpsView({ initialTab = 'create' }) {
                         <StatusPill label="Tool Calls" value={selectedSession.toolCallCount} tone="text-aurora-amber" />
                         <StatusPill label="Retries" value={selectedSession.retryCount} tone="text-aurora-rose" />
                       </div>
-                      <div className="rounded-[24px] border border-white/10 bg-black/20 p-2">
+                       <div className="ui-well p-2">
                         <TraceWaterfall spans={sessionSpans} />
                       </div>
-                      <div className="rounded-[24px] border border-white/10 bg-black/20 p-4">
+                       <div className="ui-well p-4">
                         <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.18em] text-text-muted">
                           <BrainCircuit className="h-3.5 w-3.5 text-aurora-blue" />
                           Transcript and debug
@@ -1001,7 +1001,7 @@ export function ManagedOpsView({ initialTab = 'create' }) {
                         <div className="mt-4 space-y-3">
                           {eventsLoading && <Loader2 className="h-4 w-4 animate-spin text-aurora-teal" />}
                           {!eventsLoading && sessionEvents.map((event) => (
-                            <div key={event.id} className="rounded-[18px] border border-white/10 bg-white/[0.03] px-3 py-3">
+                            <div key={event.id} className="rounded-[18px] border border-hairline bg-panel-soft px-3 py-3">
                               <div className="flex items-center justify-between gap-3">
                                 <div className="text-sm font-semibold text-text-primary">{event.title || event.eventType}</div>
                                 <span className="text-[10px] uppercase tracking-[0.16em] text-text-muted">{event.eventType}</span>
@@ -1013,32 +1013,32 @@ export function ManagedOpsView({ initialTab = 'create' }) {
                       </div>
                     </div>
                   ) : (
-                    <div className="rounded-[22px] border border-dashed border-white/10 px-4 py-10 text-center text-text-muted">Select a session to load transcript and debug events.</div>
+                    <div className="rounded-[22px] border border-dashed border-hairline px-4 py-10 text-center text-text-muted">Select a session to load transcript and debug events.</div>
                   )}
                 </Surface>
 
                 <Surface eyebrow="Inspector" title="Jarvis guidance" description="Keep recommendations and blocking context separate from the main execution surface.">
                   {selectedSession ? (
                     <div className="space-y-3">
-                      <div className="rounded-[20px] border border-white/10 bg-black/20 px-4 py-4 text-sm leading-6 text-text-body">
+                      <div className="ui-well px-4 py-4 text-sm leading-6 text-text-body">
                         {selectedSession.status === 'needs_review'
                           ? 'Approval gate is active. Commander should inspect tool writes and confirm before continuing.'
                           : selectedSession.status === 'running'
                             ? 'Session is actively executing. Event loading stays scoped to this run so the app remains responsive.'
                             : 'Session is no longer live. Historical detail is available without keeping the worker in the active fleet.'}
                       </div>
-                      <div className="rounded-[20px] border border-white/10 bg-black/20 px-4 py-4 text-sm leading-6 text-text-body">
+                      <div className="ui-well px-4 py-4 text-sm leading-6 text-text-body">
                         Bound template: <span className="font-semibold text-text-primary">{templateById.get(selectedSession.templateId)?.name || 'Detached'}</span>
                       </div>
-                      <div className="rounded-[20px] border border-white/10 bg-black/20 px-4 py-4 text-sm leading-6 text-text-body">
+                      <div className="ui-well px-4 py-4 text-sm leading-6 text-text-body">
                         Provider: <span className="font-semibold text-text-primary">{formatProviderLabel(inferProvider(selectedSession.requestedModel || ''))}</span>
                       </div>
-                      <div className="rounded-[20px] border border-white/10 bg-black/20 px-4 py-4 text-sm leading-6 text-text-body">
+                      <div className="ui-well px-4 py-4 text-sm leading-6 text-text-body">
                         Prompt: {selectedSession.prompt}
                       </div>
                     </div>
                   ) : (
-                    <div className="rounded-[22px] border border-dashed border-white/10 px-4 py-10 text-center text-text-muted">Pick a run to inspect status, model, and operator guidance.</div>
+                    <div className="rounded-[22px] border border-dashed border-hairline px-4 py-10 text-center text-text-muted">Pick a run to inspect status, model, and operator guidance.</div>
                   )}
                 </Surface>
               </Motion.div>
@@ -1062,7 +1062,7 @@ export function ManagedOpsView({ initialTab = 'create' }) {
                   {activeInfrastructureTab === 'overview' ? (
                     <div className="mt-4 grid gap-5 xl:grid-cols-2">
                       <div className="space-y-5">
-                        <div className="rounded-[26px] border border-white/10 bg-black/20 p-5">
+                        <div className="rounded-[26px] ui-well p-5">
                           <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Providers</div>
                           <div className="mt-4 grid gap-3">
                             {providerStatuses.map((provider) => (
@@ -1075,11 +1075,11 @@ export function ManagedOpsView({ initialTab = 'create' }) {
                             ))}
                           </div>
                         </div>
-                        <div className="rounded-[26px] border border-white/10 bg-black/20 p-5">
+                        <div className="rounded-[26px] ui-well p-5">
                           <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">MCP servers</div>
                           <div className="mt-4 space-y-3">
                             {servers.map((server) => (
-                              <div key={server.id} className="rounded-[20px] border border-white/10 bg-white/[0.03] px-4 py-4">
+                              <div key={server.id} className="rounded-[20px] border border-hairline bg-panel-soft px-4 py-4">
                                 <div className="text-sm font-semibold text-text-primary">{server.name}</div>
                                 <div className="mt-1 text-xs text-text-muted">{server.url}</div>
                                 <div className="mt-3 text-[10px] uppercase tracking-[0.16em] text-aurora-teal">{server.toolCount} tools · {server.status}</div>
@@ -1090,27 +1090,27 @@ export function ManagedOpsView({ initialTab = 'create' }) {
                       </div>
 
                       <div className="space-y-5">
-                        <div className="rounded-[26px] border border-white/10 bg-black/20 p-5">
+                        <div className="rounded-[26px] ui-well p-5">
                           <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Connected systems</div>
                           <div className="mt-4 space-y-3">
                             {connectedSystems.map((system) => (
-                              <div key={system.id} className="rounded-[20px] border border-white/10 bg-white/[0.03] px-4 py-4">
+                              <div key={system.id} className="rounded-[20px] border border-hairline bg-panel-soft px-4 py-4">
                                 <div className="text-sm font-semibold text-text-primary">{system.displayName}</div>
                                 <div className="mt-1 text-xs text-text-muted">{system.category}</div>
                                 <div className="mt-3 flex flex-wrap gap-2">
                                   {system.capabilities.map((capability) => (
-                                    <span key={capability} className="rounded-full border border-white/10 bg-black/20 px-2.5 py-1 text-[10px] uppercase tracking-[0.16em] text-text-body">{capability}</span>
+                                     <span key={capability} className="etched-label rounded-full border border-hairline ui-well px-2.5 py-1 text-[10px] uppercase tracking-[0.16em] text-text-body">{capability}</span>
                                   ))}
                                 </div>
                               </div>
                             ))}
                           </div>
                         </div>
-                        <div className="rounded-[26px] border border-white/10 bg-black/20 p-5">
+                        <div className="rounded-[26px] ui-well p-5">
                           <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Knowledge surfaces</div>
                           <div className="mt-4 space-y-3">
                             {namespaces.map((namespace) => (
-                              <div key={namespace.id} className="rounded-[20px] border border-white/10 bg-white/[0.03] px-4 py-4">
+                              <div key={namespace.id} className="rounded-[20px] border border-hairline bg-panel-soft/30 px-4 py-4">
                                 <div className="text-sm font-semibold text-text-primary">{namespace.name}</div>
                                 <div className="mt-1 text-xs text-text-muted">{namespace.sizeLabel} · {namespace.vectors} vectors</div>
                                 <div className="mt-3 text-[10px] uppercase tracking-[0.16em] text-aurora-blue">{namespace.status}</div>
@@ -1124,7 +1124,7 @@ export function ManagedOpsView({ initialTab = 'create' }) {
                     <div className="mt-4 grid gap-5 xl:grid-cols-[0.82fr_1.18fr]">
                       <div className="space-y-3">
                         {vaults.map((vault) => (
-                          <div key={vault.id} className="rounded-[22px] border border-white/10 bg-black/20 px-4 py-4">
+                           <div key={vault.id} className="ui-well px-4 py-4">
                             <div className="flex items-center justify-between gap-3">
                               <div>
                                 <div className="text-sm font-semibold text-text-primary">{vault.name}</div>
@@ -1136,7 +1136,7 @@ export function ManagedOpsView({ initialTab = 'create' }) {
                             </div>
                             <div className="mt-3 flex flex-wrap gap-2">
                               {vault.secretRefs.map((item) => (
-                                <span key={item} className="rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 text-[10px] uppercase tracking-[0.16em] text-text-body">
+                                 <span key={item} className="etched-label rounded-full border border-hairline ui-well px-2.5 py-1 text-[10px] uppercase tracking-[0.16em] text-text-body">
                                   {item}
                                 </span>
                               ))}
@@ -1144,7 +1144,7 @@ export function ManagedOpsView({ initialTab = 'create' }) {
                           </div>
                         ))}
                       </div>
-                      <div className="rounded-[26px] border border-white/10 bg-black/20 p-5">
+                      <div className="rounded-[26px] ui-well p-5">
                         <div className="flex flex-wrap items-start justify-between gap-4">
                           <div>
                             <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Create vault</div>
@@ -1159,16 +1159,16 @@ export function ManagedOpsView({ initialTab = 'create' }) {
                         <div className="mt-5 grid gap-4 md:grid-cols-2">
                           <label className="space-y-2 text-sm text-text-body">
                             <span>Vault name</span>
-                            <input value={vaultDraft.name} onChange={(event) => setVaultDraft((current) => ({ ...current, name: event.target.value }))} className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2.5 text-text-primary outline-none" />
+                             <input value={vaultDraft.name} onChange={(event) => setVaultDraft((current) => ({ ...current, name: event.target.value }))} className="w-full ui-input px-3 py-2.5 text-text-primary outline-none" />
                           </label>
                           <label className="space-y-2 text-sm text-text-body">
                             <span>Provider</span>
-                            <input value={vaultDraft.provider} onChange={(event) => setVaultDraft((current) => ({ ...current, provider: event.target.value }))} className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2.5 text-text-primary outline-none" />
+                             <input value={vaultDraft.provider} onChange={(event) => setVaultDraft((current) => ({ ...current, provider: event.target.value }))} className="w-full ui-input px-3 py-2.5 text-text-primary outline-none" />
                           </label>
                         </div>
                         <label className="mt-4 block space-y-2 text-sm text-text-body">
                           <span>Secret references</span>
-                          <input value={vaultDraft.secretRefs} onChange={(event) => setVaultDraft((current) => ({ ...current, secretRefs: event.target.value }))} className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2.5 text-text-primary outline-none" />
+                           <input value={vaultDraft.secretRefs} onChange={(event) => setVaultDraft((current) => ({ ...current, secretRefs: event.target.value }))} className="w-full ui-input px-3 py-2.5 text-text-primary outline-none" />
                         </label>
                         <div className="mt-4 rounded-[22px] border border-aurora-blue/20 bg-aurora-blue/10 p-4 text-sm leading-6 text-text-body">
                           Vault bindings are inherited by spawned workers through template relationships. Missing required vaults should block launch until the template is ready.
@@ -1182,7 +1182,7 @@ export function ManagedOpsView({ initialTab = 'create' }) {
           </AnimatePresence>
 
           <div className="grid gap-4 md:grid-cols-3">
-            <div className="rounded-[20px] border border-white/10 bg-black/20 p-4">
+                    <div className="ui-well p-4">
               <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.16em] text-text-muted">
                 <CheckCircle2 className="h-3.5 w-3.5 text-aurora-green" />
                 Runtime posture
@@ -1191,7 +1191,7 @@ export function ManagedOpsView({ initialTab = 'create' }) {
                 Templates load eagerly because they are small. Sessions stay live. Events load only for the session you open so the runtime surface stays responsive as history grows.
               </p>
             </div>
-            <div className="rounded-[20px] border border-white/10 bg-black/20 p-4">
+                    <div className="ui-well p-4">
               <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.16em] text-text-muted">
                 <Clock3 className="h-3.5 w-3.5 text-aurora-amber" />
                 Ephemeral lifecycle
@@ -1200,7 +1200,7 @@ export function ManagedOpsView({ initialTab = 'create' }) {
                 Workers are linked to sessions, marked ephemeral, and prepared for archival so the default agent queries do not accumulate stale execution clutter.
               </p>
             </div>
-            <div className="rounded-[20px] border border-white/10 bg-black/20 p-4">
+                    <div className="ui-well p-4">
               <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.16em] text-text-muted">
                 <ShieldCheck className="h-3.5 w-3.5 text-aurora-blue" />
                 Vault discipline

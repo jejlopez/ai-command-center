@@ -329,7 +329,7 @@ export function TaskDAG({ onNodeClick, onDependencyConnect, tasks, editable = fa
   return (
     <div className="w-full h-full flex justify-center items-center overflow-visible relative">
       {editable && (
-        <div className="absolute left-3 top-3 z-10 rounded-full border border-aurora-blue/20 bg-black/40 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-aurora-blue">
+        <div className="absolute left-3 top-3 z-10 rounded-full border border-hairline ui-panel-soft px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-aurora-blue shadow-sm">
           {activeConnectSourceId ? 'Drag to another branch to create dependency' : 'Shift + drag from a branch to wire a dependency'}
         </div>
       )}
@@ -566,7 +566,7 @@ export function TaskDAG({ onNodeClick, onDependencyConnect, tasks, editable = fa
                 transition={{ duration: 0.15 }}
                 style={{ pointerEvents: 'none' }}
               >
-                <div className="bg-[#1a1a1a] border border-white/10 rounded-lg p-3 shadow-xl text-[10px]">
+                <div className="bg-panel-elevated backdrop-blur-md border border-hairline rounded-lg p-3 shadow-elevated text-[10px]">
                   <div className="font-semibold text-text-primary text-xs mb-2">{node.name}</div>
                   <div className="grid grid-cols-2 gap-y-1.5 gap-x-3 font-mono">
                     <span className="text-text-muted">Agent</span>

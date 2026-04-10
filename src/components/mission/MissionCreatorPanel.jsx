@@ -805,7 +805,7 @@ export function MissionCreatorPanel({
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black/50 backdrop-blur-sm z-40"
+            className="fixed inset-0 bg-black/25 backdrop-blur-sm z-40"
             onClick={onClose}
           />
 
@@ -817,7 +817,7 @@ export function MissionCreatorPanel({
             className="fixed top-0 right-0 bottom-0 w-[520px] max-w-[92vw] bg-[linear-gradient(180deg,rgba(7,12,18,0.98),rgba(8,10,14,0.98))] border-l border-aurora-teal/15 z-50 flex flex-col shadow-[-16px_0_48px_rgba(0,0,0,0.55)]"
             aria-label="Tell Commander what you want"
           >
-            <div className="relative flex items-start justify-between px-6 py-5 border-b border-white/[0.08] shrink-0 bg-black/20 backdrop-blur overflow-hidden">
+            <div className="relative flex items-start justify-between px-6 py-5 border-b border-hairline shrink-0 bg-panel-soft/30 backdrop-blur overflow-hidden">
               <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(0,217,200,0.14),transparent_38%),linear-gradient(180deg,rgba(96,165,250,0.06),transparent_60%)] pointer-events-none" />
               <div>
                 <div className="flex items-center gap-2 text-aurora-teal mb-2">
@@ -827,11 +827,11 @@ export function MissionCreatorPanel({
                 <h2 className="text-xl font-semibold text-text-primary">Tell Commander what you want</h2>
                 <p className="text-[12px] text-text-muted mt-1">Describe the outcome naturally. Commander will translate it into a mission, route the lanes, and stage the right posture.</p>
                 <div className="mt-4 flex flex-wrap gap-2">
-                  <div className="px-3 py-2 rounded-2xl border border-white/[0.08] bg-black/20">
+                  <div className="px-3 py-2 rounded-2xl border border-hairline-strong bg-panel-soft">
                     <div className="text-[9px] uppercase tracking-[0.18em] text-text-muted">Primary Lane</div>
                     <div className="text-[12px] font-semibold text-text-primary mt-1">{selectedAgent?.name || 'Auto-selecting'}</div>
                   </div>
-                  <div className="px-3 py-2 rounded-2xl border border-white/[0.08] bg-black/20">
+                  <div className="px-3 py-2 rounded-2xl border border-hairline-strong bg-panel-soft">
                     <div className="text-[9px] uppercase tracking-[0.18em] text-text-muted">Mission Posture</div>
                     <div className="text-[12px] font-semibold text-text-primary mt-1">{MISSION_MODE_OPTIONS.find((option) => option.value === form.missionMode)?.label || 'Do now'}</div>
                   </div>
@@ -840,14 +840,14 @@ export function MissionCreatorPanel({
               <button
                 type="button"
                 onClick={onClose}
-                className="p-2 rounded-lg text-text-muted hover:text-text-primary hover:bg-white/[0.05] transition-colors"
+                className="p-2 rounded-lg text-text-muted hover:text-text-primary hover:bg-panel-soft transition-colors"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
             <div className="flex-1 overflow-y-auto no-scrollbar px-6 py-5 space-y-6">
-              <section className="rounded-[24px] border border-white/[0.08] bg-white/[0.02] px-4 py-4">
+              <section className="rounded-[24px] border border-hairline ui-well px-4 py-4">
                 <SectionLabel>Tell Commander what you want</SectionLabel>
                 <textarea
                   ref={textareaRef}
@@ -855,7 +855,7 @@ export function MissionCreatorPanel({
                   onChange={(event) => updateField('intent', event.target.value)}
                   rows={6}
                   placeholder={'Research 10 new 3PL prospects and draft intro emails.\n\nSummarize today’s calls and post notes to Pipedrive.\n\nCheck tracking on all shipments delayed more than 2 days and alert customers.'}
-                  className="w-full rounded-2xl border border-white/[0.08] bg-black/20 px-4 py-4 text-sm text-text-primary placeholder:text-text-disabled focus:outline-none focus:border-aurora-teal/40 resize-none leading-relaxed"
+                  className="w-full rounded-2xl border border-hairline-strong bg-panel px-4 py-4 text-sm text-text-primary placeholder:text-text-disabled focus:outline-none focus:border-aurora-teal/40 resize-none leading-relaxed"
                 />
                 <div className="flex justify-between items-center mt-2">
                   <span className="text-[10px] text-text-disabled">Cmd+Enter to launch or stage the mission</span>
@@ -875,15 +875,15 @@ export function MissionCreatorPanel({
                   </div>
 
                   <div className="grid grid-cols-2 gap-3">
-                    <div className="rounded-2xl border border-white/[0.08] bg-black/20 px-3 py-3">
+                    <div className="rounded-2xl border border-hairline-strong bg-panel px-3 py-3">
                       <div className="text-[9px] uppercase tracking-[0.18em] text-text-muted">Inferred result</div>
                       <div className="text-[12px] font-semibold text-text-primary mt-1">{missionSummary.inferredOutput}</div>
                     </div>
-                    <div className="rounded-2xl border border-white/[0.08] bg-black/20 px-3 py-3">
+                    <div className="rounded-2xl border border-hairline-strong bg-panel px-3 py-3">
                       <div className="text-[9px] uppercase tracking-[0.18em] text-text-muted">Execution path</div>
                       <div className="text-[12px] font-semibold text-text-primary mt-1">{selectedAgent?.name || 'Auto-selecting'} • {selectedAgentIsPersistent ? 'Persistent lane' : inferAgentModeBadge(selectedAgent)}</div>
                     </div>
-                    <div className="rounded-2xl border border-white/[0.08] bg-black/20 px-3 py-3 col-span-2">
+                    <div className="rounded-2xl border border-hairline-strong bg-panel px-3 py-3 col-span-2">
                       <div className="text-[9px] uppercase tracking-[0.18em] text-text-muted">Commander posture</div>
                       <div className="text-[12px] font-semibold text-text-primary mt-1">{MISSION_MODE_OPTIONS.find((option) => option.value === form.missionMode)?.label || 'Do now'}</div>
                       <div className="mt-1 text-[11px] leading-relaxed text-text-body">{missionModeRationale}</div>
@@ -892,7 +892,7 @@ export function MissionCreatorPanel({
 
                   <div className="mt-3 flex flex-wrap gap-2">
                     {missionSummary.cues.map(cue => (
-                      <span key={cue} className="px-2.5 py-1 rounded-full text-[10px] font-semibold border border-white/[0.08] bg-white/[0.03] text-text-body">
+                      <span key={cue} className="px-2.5 py-1 rounded-full text-[10px] font-semibold border border-hairline-strong ui-well text-text-body">
                         {cue}
                       </span>
                     ))}
@@ -914,26 +914,26 @@ export function MissionCreatorPanel({
                   </div>
 
                   <div className="mt-4 grid grid-cols-2 gap-3">
-                    <div className="rounded-2xl border border-white/[0.08] bg-black/20 px-3 py-3">
+                    <div className="rounded-2xl border border-hairline-strong bg-panel px-3 py-3">
                       <div className="text-[9px] uppercase tracking-[0.18em] text-text-muted">Expected branches</div>
                       <div className="mt-1 text-[12px] font-semibold text-text-primary">{preflight.expectedBranches}</div>
                     </div>
-                    <div className="rounded-2xl border border-white/[0.08] bg-black/20 px-3 py-3">
+                    <div className="rounded-2xl border border-hairline-strong bg-panel px-3 py-3">
                       <div className="text-[9px] uppercase tracking-[0.18em] text-text-muted">Likely cost</div>
                       <div className="mt-1 text-[12px] font-semibold text-text-primary">{preflight.estimatedCost}</div>
                     </div>
-                    <div className="rounded-2xl border border-white/[0.08] bg-black/20 px-3 py-3">
+                    <div className="rounded-2xl border border-hairline-strong bg-panel px-3 py-3">
                       <div className="text-[9px] uppercase tracking-[0.18em] text-text-muted">Approval posture</div>
                       <div className="mt-1 text-[12px] font-semibold text-text-primary">{formatApprovalLabel(preflight.approvalPosture)}</div>
                     </div>
-                    <div className="rounded-2xl border border-white/[0.08] bg-black/20 px-3 py-3">
+                    <div className="rounded-2xl border border-hairline-strong bg-panel px-3 py-3">
                       <div className="text-[9px] uppercase tracking-[0.18em] text-text-muted">Expected duration</div>
                       <div className="mt-1 text-[12px] font-semibold text-text-primary">{preflight.expectedDuration}</div>
                     </div>
                   </div>
 
                   <div className="mt-3 grid gap-3 xl:grid-cols-2">
-                    <div className="rounded-2xl border border-white/[0.08] bg-black/20 px-3 py-3">
+                    <div className="rounded-2xl border border-hairline-strong bg-panel px-3 py-3">
                       <div className="flex items-center gap-2">
                         <ShieldCheck className="h-4 w-4 text-aurora-teal" />
                         <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Context loaded</div>
@@ -947,7 +947,7 @@ export function MissionCreatorPanel({
                       </div>
                       <div className="mt-3 flex flex-wrap gap-2">
                         {preflight.requiredCapabilities.length > 0 ? preflight.requiredCapabilities.map((capability) => (
-                          <span key={capability} className="rounded-full border border-white/[0.08] bg-white/[0.03] px-2 py-1 text-[10px] font-semibold text-text-body">
+                          <span key={capability} className="rounded-full border border-hairline bg-panel-soft px-2 py-1 text-[10px] font-semibold text-text-body">
                             {capability}
                           </span>
                         )) : (
@@ -956,7 +956,7 @@ export function MissionCreatorPanel({
                       </div>
                     </div>
 
-                    <div className="rounded-2xl border border-white/[0.08] bg-black/20 px-3 py-3">
+                    <div className="rounded-2xl border border-hairline-strong bg-panel px-3 py-3">
                       <div className="flex items-center gap-2">
                         <CircleAlert className="h-4 w-4 text-aurora-amber" />
                         <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Confidence + uncertainty rail</div>
@@ -976,7 +976,7 @@ export function MissionCreatorPanel({
                     </div>
                   </div>
 
-                  <div className="mt-3 rounded-2xl border border-white/[0.08] bg-black/20 px-3 py-3">
+                  <div className="mt-3 ui-well px-3 py-3">
                     <div className="mb-3 flex items-center justify-between gap-3">
                       <div>
                         <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Preflight alignment</div>
@@ -996,17 +996,17 @@ export function MissionCreatorPanel({
                   <div className="mb-3 text-[11px] leading-relaxed text-text-body">{preflightAlignment.detail}</div>
                     {preflightAlignment.sampleCount > 0 && (
                       <div className="mb-3 grid grid-cols-2 gap-3">
-                        <div className="rounded-2xl border border-white/[0.08] bg-white/[0.03] px-3 py-2">
+                        <div className="rounded-2xl border border-hairline bg-panel-soft px-3 py-2">
                           <div className="text-[9px] uppercase tracking-[0.18em] text-text-muted">Branch delta</div>
                           <div className="mt-1 text-[12px] font-semibold text-text-primary">{preflightAlignment.branchDelta > 0 ? '+' : ''}{preflightAlignment.branchDelta}</div>
                         </div>
-                        <div className="rounded-2xl border border-white/[0.08] bg-white/[0.03] px-3 py-2">
+                        <div className="rounded-2xl border border-hairline bg-panel-soft px-3 py-2">
                           <div className="text-[9px] uppercase tracking-[0.18em] text-text-muted">Cost delta</div>
                           <div className="mt-1 text-[12px] font-semibold text-text-primary">{preflightAlignment.costDelta > 0 ? '+' : ''}${Math.abs(preflightAlignment.costDelta).toFixed(2)}</div>
                         </div>
                       </div>
                     )}
-                    <div className="mb-3 rounded-2xl border border-white/[0.08] bg-white/[0.03] px-3 py-3">
+                    <div className="mb-3 rounded-2xl border border-hairline bg-panel-soft px-3 py-3">
                       <div className="flex items-center justify-between gap-3">
                         <div>
                           <div className="text-[9px] uppercase tracking-[0.18em] text-text-muted">Confidence closure</div>
@@ -1029,7 +1029,7 @@ export function MissionCreatorPanel({
                         </div>
                       )}
                       {preflight.topRisks.map((risk) => (
-                        <div key={risk} className="rounded-2xl border border-white/[0.08] bg-white/[0.03] px-3 py-2 text-[11px] text-text-body">
+                        <div key={risk} className="rounded-2xl border border-hairline bg-panel-soft px-3 py-2 text-[11px] text-text-body">
                           {risk}
                         </div>
                       ))}
@@ -1037,7 +1037,7 @@ export function MissionCreatorPanel({
                   </div>
                 </div>
 
-                <div className="mt-4 rounded-[20px] border border-white/[0.08] bg-black/20 px-4 py-4">
+                <div className="mt-4 ui-well px-4 py-4">
                   <div className="flex items-center justify-between gap-3">
                     <div>
                       <div className="text-[10px] uppercase tracking-[0.18em] text-aurora-violet font-semibold">Doctrine Suggests</div>
@@ -1048,22 +1048,22 @@ export function MissionCreatorPanel({
                     </div>
                   </div>
                   <div className="mt-4 grid grid-cols-3 gap-3">
-                    <div className="rounded-2xl border border-white/[0.08] bg-white/[0.03] px-3 py-3">
+                    <div className="rounded-2xl border border-hairline bg-panel-soft px-3 py-3">
                       <div className="text-[9px] uppercase tracking-[0.18em] text-text-muted">Agent</div>
                       <div className="mt-1 text-[12px] font-semibold text-text-primary">{doctrineDefaults.agent?.name || selectedAgent?.name || 'Auto-selecting'}</div>
                     </div>
-                    <div className="rounded-2xl border border-white/[0.08] bg-white/[0.03] px-3 py-3">
+                    <div className="rounded-2xl border border-hairline bg-panel-soft px-3 py-3">
                       <div className="text-[9px] uppercase tracking-[0.18em] text-text-muted">Output</div>
                       <div className="mt-1 text-[12px] font-semibold text-text-primary">{doctrineDefaults.outputType.replaceAll('_', ' ')}</div>
                     </div>
-                    <div className="rounded-2xl border border-white/[0.08] bg-white/[0.03] px-3 py-3">
+                    <div className="rounded-2xl border border-hairline bg-panel-soft px-3 py-3">
                       <div className="text-[9px] uppercase tracking-[0.18em] text-text-muted">Mode</div>
                       <div className="mt-1 text-[12px] font-semibold text-text-primary">{doctrineDefaults.mode}</div>
                     </div>
                   </div>
                   <div className="mt-3 space-y-2">
                     {doctrineDefaults.notes.map((note) => (
-                      <div key={note} className="rounded-2xl border border-white/[0.08] bg-white/[0.02] px-3 py-2 text-[11px] leading-relaxed text-text-body">
+                      <div key={note} className="rounded-2xl border border-hairline bg-panel-soft px-3 py-2 text-[11px] leading-relaxed text-text-body">
                         {note}
                       </div>
                     ))}
@@ -1071,7 +1071,7 @@ export function MissionCreatorPanel({
                 </div>
               </section>
 
-              <section className="rounded-[24px] border border-white/[0.08] bg-white/[0.02] px-4 py-4">
+              <section className="rounded-[24px] border border-hairline ui-well px-4 py-4">
                 <div className="flex items-center justify-between mb-3">
                   <div>
                     <h3 className="text-sm font-semibold text-text-primary">Mission details</h3>
@@ -1112,7 +1112,7 @@ export function MissionCreatorPanel({
 
                   <div>
                     <SectionLabel>Agent</SectionLabel>
-                    <div className="rounded-2xl border border-white/[0.08] bg-black/20 overflow-hidden">
+                    <div className="ui-well overflow-hidden">
                       {agents.map(agent => {
                         const selected = agent.id === form.agentId;
                         return (
@@ -1125,7 +1125,7 @@ export function MissionCreatorPanel({
                             }}
                             className={cn(
                               'w-full px-4 py-3 flex items-center justify-between border-b border-border last:border-b-0 transition-colors text-left',
-                              selected ? 'bg-aurora-teal/8' : 'hover:bg-white/[0.03]'
+                              selected ? 'bg-aurora-teal/8' : 'hover:bg-panel-soft'
                             )}
                           >
                             <div className="min-w-0">
@@ -1133,7 +1133,7 @@ export function MissionCreatorPanel({
                                 <span className="text-sm font-semibold text-text-primary">{agent.name}</span>
                                 <span className={cn(
                                   'px-2 py-0.5 rounded-full text-[9px] font-bold',
-                                  selected ? 'bg-aurora-teal/15 text-aurora-teal' : 'bg-white/[0.04] text-text-muted'
+                                  selected ? 'bg-aurora-teal/15 text-aurora-teal' : 'bg-panel-soft text-text-muted'
                                 )}>
                                   {!agent.isEphemeral && !agent.isSyntheticCommander ? 'PERSIST' : inferAgentModeBadge(agent)}
                                 </span>
@@ -1265,7 +1265,7 @@ export function MissionCreatorPanel({
                 </div>
               </section>
 
-              <section className="rounded-[24px] border border-white/[0.08] bg-[linear-gradient(180deg,rgba(96,165,250,0.05),rgba(255,255,255,0.02))] px-4 py-4">
+              <section className="rounded-[24px] border border-hairline bg-[linear-gradient(180deg,rgba(96,165,250,0.05),rgba(255,255,255,0.02))] px-4 py-4">
                 <div className="flex items-center justify-between mb-3">
                   <div>
                     <h3 className="text-sm font-semibold text-text-primary">Commander templates</h3>
@@ -1286,7 +1286,7 @@ export function MissionCreatorPanel({
                       key={preset.id}
                       type="button"
                       onClick={() => applyPreset(preset)}
-                      className="px-3 py-1.5 rounded-full border border-white/[0.08] bg-black/20 text-[11px] font-semibold text-text-body hover:text-text-primary hover:bg-white/[0.04] transition-colors"
+                      className="px-3 py-1.5 etched-label rounded-full border border-hairline ui-well text-[11px] font-semibold text-text-body hover:text-text-primary hover:bg-panel transition-colors"
                     >
                       {preset.label}
                     </button>
@@ -1313,7 +1313,7 @@ export function MissionCreatorPanel({
                 )}
               </section>
 
-              <section className="rounded-[24px] border border-white/[0.08] bg-white/[0.02] overflow-hidden">
+              <section className="rounded-[24px] border border-hairline bg-panel-soft overflow-hidden">
                 <button
                   type="button"
                   onClick={() => setPreviewOpen(prev => !prev)}
@@ -1368,7 +1368,7 @@ export function MissionCreatorPanel({
                                 <p className="text-sm font-semibold text-text-primary mt-1">{systemsReadback.length ? systemsReadback.map((system) => system.label).join(', ') : 'Internal lane'}</p>
                               </div>
                             </div>
-                            <div className="rounded-[20px] border border-white/[0.08] bg-black/20 p-3">
+                            <div className="ui-well p-3">
                               <div className="flex items-center justify-between mb-3">
                                 <div>
                                   <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Flight Path</div>
@@ -1380,7 +1380,7 @@ export function MissionCreatorPanel({
                                 {flightPlan.map((step, index) => (
                                   <div key={`${step.title}-flight-${index}`} className="grid grid-cols-[72px_1fr_52px] gap-3 items-center">
                                     <div className="text-[10px] font-mono uppercase text-text-muted">{step.phase}</div>
-                                    <div className="h-10 rounded-2xl border border-white/[0.08] bg-[linear-gradient(90deg,rgba(0,217,200,0.12),rgba(96,165,250,0.06))] overflow-hidden relative">
+                                    <div className="h-10 rounded-2xl border border-hairline bg-[linear-gradient(90deg,rgba(0,217,200,0.12),rgba(96,165,250,0.06))] overflow-hidden relative">
                                       <div className="absolute inset-y-0 left-0 rounded-2xl bg-[linear-gradient(90deg,rgba(0,217,200,0.3),rgba(96,165,250,0.16))]" style={{ width: `${step.intensity}%` }} />
                                       <div className="relative h-full px-3 flex items-center justify-between text-[11px]">
                                         <span className="text-text-primary font-semibold truncate">{step.title}</span>
@@ -1404,7 +1404,7 @@ export function MissionCreatorPanel({
                               ))}
                             </div>
                             {branchPreview.length > 0 && (
-                              <div className="rounded-[20px] border border-white/[0.08] bg-black/20 p-3">
+                              <div className="ui-well p-3">
                                 <div className="flex items-center justify-between gap-3">
                                   <div>
                                     <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Delegation Graph</div>
@@ -1414,11 +1414,12 @@ export function MissionCreatorPanel({
                                 </div>
                                 <div className="mt-3 space-y-2">
                                   {branchPreview.map((branch, index) => (
-                                    <div key={branch.id} className="rounded-2xl border border-white/[0.08] bg-white/[0.03] px-3 py-3">
+                                    <div key={branch.id} className="rounded-2xl border border-hairline bg-panel-soft px-3 py-3">
                                       <div className="flex flex-wrap items-center gap-2">
                                         <span className="flex h-5 w-5 items-center justify-center rounded-full bg-aurora-violet/10 text-[10px] font-bold text-aurora-violet">{index + 1}</span>
                                         <span className="text-[12px] font-semibold text-text-primary">{branch.branchLabel || branch.title}</span>
-                                        <span className="rounded-full border border-white/[0.08] bg-black/20 px-2 py-0.5 text-[9px] font-mono uppercase text-text-muted">{branch.roleLabel}</span>
+                                        <span className="etched-label rounded-full border border-hairline ui-well px-2 py-0.5 text-[9px] font-mono uppercase text-text-muted">
+{branch.roleLabel}</span>
                                         <span className="rounded-full border border-aurora-blue/20 bg-aurora-blue/10 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.14em] text-aurora-blue">{branch.strategyLabel}</span>
                                       </div>
                                       <div className="mt-2 text-[11px] leading-relaxed text-text-body">{branch.description || branch.title}</div>
@@ -1429,7 +1430,7 @@ export function MissionCreatorPanel({
                                           </span>
                                         ) : (
                                           branch.dependencies.map((dependency) => (
-                                            <span key={`${branch.id}-${dependency}`} className="rounded-full border border-white/[0.08] bg-black/20 px-2 py-1 text-[10px] font-semibold text-text-muted">
+                                            <span key={`${branch.id}-${dependency}`} className="etched-label rounded-full border border-hairline ui-well px-2 py-1 text-[10px] font-semibold text-text-muted">
                                               depends on {dependency}
                                             </span>
                                           ))
@@ -1457,15 +1458,15 @@ export function MissionCreatorPanel({
                     </p>
                   </div>
                   <div className="mt-3 grid grid-cols-1 gap-2">
-                    <div className="rounded-2xl border border-white/[0.08] bg-black/15 px-3 py-2.5">
+                    <div className="rounded-2xl border border-hairline bg-panel-soft px-3 py-2.5">
                       <div className="text-[9px] uppercase tracking-[0.18em] text-text-muted">Why this agent</div>
                       <div className="text-[12px] text-text-body mt-1">{agentRationale}</div>
                     </div>
-                    <div className="rounded-2xl border border-white/[0.08] bg-black/15 px-3 py-2.5">
+                    <div className="rounded-2xl border border-hairline bg-panel-soft px-3 py-2.5">
                       <div className="text-[9px] uppercase tracking-[0.18em] text-text-muted">Why these defaults</div>
                       <div className="text-[12px] text-text-body mt-1">{modeRationale} {missionModeRationale} {scheduleRationale}</div>
                     </div>
-                    <div className="rounded-2xl border border-white/[0.08] bg-black/15 px-3 py-2.5">
+                    <div className="rounded-2xl border border-hairline bg-panel-soft px-3 py-2.5">
                       <div className="text-[9px] uppercase tracking-[0.18em] text-text-muted">Systems Commander expects to touch</div>
                       <div className="mt-2 flex flex-wrap gap-2">
                         {(systemsReadback.length ? systemsReadback : [{ label: 'Internal lane', connected: true }]).map((system) => (
@@ -1494,7 +1495,7 @@ export function MissionCreatorPanel({
               )}
             </div>
 
-            <div className="shrink-0 border-t border-white/[0.08] px-6 py-4 flex items-center gap-3 bg-black/20 backdrop-blur">
+            <div className="shrink-0 border-t border-hairline px-6 py-4 flex items-center gap-3 bg-panel/60 backdrop-blur shadow-elevated">
               <button
                 type="button"
                 onClick={handleLaunch}
@@ -1512,7 +1513,7 @@ export function MissionCreatorPanel({
                 type="button"
                 onClick={handlePreview}
                 disabled={previewLoading}
-                className="h-11 px-4 rounded-xl border border-white/[0.08] bg-black/20 text-sm font-semibold text-text-primary hover:bg-white/[0.04] transition-colors flex items-center gap-2"
+                className="h-11 px-4 ui-button-secondary text-sm font-semibold flex items-center gap-2"
               >
                 {previewLoading ? <Loader2 className="w-4 h-4 animate-spin text-aurora-teal" /> : <Calendar className="w-4 h-4" />}
                 Preview plan

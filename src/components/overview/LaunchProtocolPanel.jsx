@@ -1,4 +1,5 @@
 import { ArrowRight, Bot, Clock3, Rocket, ShieldCheck, Sparkles } from 'lucide-react';
+import { cn } from "../../utils/cn";
 import { CommandSectionHeader } from '../command/CommandSectionHeader';
 
 const iconMap = {
@@ -17,16 +18,16 @@ export function LaunchProtocolPanel({ actions, onNavigate, onOpenDetail, onAddOp
   }
 
   return (
-    <div className="ui-panel p-5">
+    <div className="ui-panel p-6 shadow-main border-hairline bg-panel">
       <CommandSectionHeader
         eyebrow="Launch Protocol"
-        title="What the commander should do next"
-        description="The next actions that improve throughput, reduce drag, or open the cleanest lane."
+        title="Command Directives"
+        description="The next actions that improve throughput, reduce drag, or open the cleanest mission lane."
         icon={Rocket}
         tone="teal"
       />
 
-      <div className="space-y-3">
+      <div className="mt-6 space-y-3">
         {actions.map((action, index) => {
           const Icon = iconMap[action.icon] || Rocket;
           return (
@@ -34,21 +35,21 @@ export function LaunchProtocolPanel({ actions, onNavigate, onOpenDetail, onAddOp
               key={`${action.label}-${index}`}
               type="button"
               onClick={() => handleAction(action)}
-              className="ui-card-row flex w-full items-start gap-4 p-4 text-left transition-colors hover:bg-white/[0.04] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aurora-teal/35"
+              className="ui-card-row group flex w-full items-center gap-5 p-5 text-left transition-all hover:bg-panel-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aurora-teal/35 shadow-sm border border-hairline bg-panel"
             >
-              <div className="ui-panel-soft flex h-11 w-11 shrink-0 items-center justify-center">
-                <Icon className={`h-4.5 w-4.5 ${action.tone}`} />
+              <div className="ui-panel-soft flex h-12 w-12 shrink-0 items-center justify-center rounded-[18px] bg-canvas border border-hairline shadow-inner">
+                <Icon className={cn("h-5 w-5", action.tone)} />
               </div>
               <div className="min-w-0 flex-1">
                 <div className="flex items-center justify-between gap-3">
-                  <div className="text-sm font-semibold text-text-primary">{action.label}</div>
-                  <div className="ui-chip px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em]">
+                  <div className="text-sm font-black text-text uppercase tracking-tight">{action.label}</div>
+                  <div className="ui-chip px-3 py-1 text-[9px] font-black uppercase tracking-[0.2em] bg-panel-soft border border-hairline">
                     {action.badge}
                   </div>
                 </div>
-                <p className="mt-2 text-[12px] leading-relaxed text-text-muted">{action.detail}</p>
+                <p className="mt-2 text-[12px] leading-relaxed text-text-dim font-medium italic opacity-80">"{action.detail}"</p>
               </div>
-              <ArrowRight className="mt-1 h-4 w-4 shrink-0 text-text-muted" />
+              <ArrowRight className="h-5 w-5 shrink-0 text-text-dim opacity-40 transition-transform group-hover:translate-x-1" />
             </button>
           );
         })}

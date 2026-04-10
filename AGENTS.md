@@ -17,6 +17,18 @@ Ship focused, low-risk changes quickly while conserving tokens, protecting stabl
 7. Optimize every response for speed, clarity, and token efficiency.
 8. Do not merge or open a PR unless the user asks.
 
+## Thematic Materiality & Variable Protocol (MANDATORY)
+
+To ensure high-fidelity support for both **Obsidian Dark** and **Aurora Light** themes, all agents MUST adhere to the following styling rules:
+
+1. **Zero Hardcoded Colors**: Never use HEX codes (`bg-[#0A0A0A]`) or static Tailwind overrides for backgrounds, borders, or text colors.
+2. **Semantic Variables**: Always use the system’s CSS variables. 
+   - Backgrounds: `var(--color-canvas)` or `var(--color-panel)`
+   - Borders: `var(--color-hairline)`
+   - Text: `var(--color-text)` or `var(--color-text-dim)`
+3. **Glassmorphism**: Use `backdrop-blur` with variable-based background opacities. Do not hardcode `bg-white/5` as it is invisible in light mode.
+4. **Elevation**: Use standardized shadows (`shadow-xl`) to define depth, especially in light themes where dark gradients are ineffective.
+
 ## Default Working Style
 
 - Be concise, direct, and action-oriented.
@@ -317,11 +329,13 @@ To ensure the fleet is correctly commissioned for a new feature build, use one o
    /start-feature "Feature Name"
    ```
 
-These triggers automatically:
-- **Clean Check**: Verify no uncommitted changes exist.
+This trigger automatically:
+- **Phase 0: Requirement Synthesis**: The agent stops and asks the user for the feature's core objectives, visual preferences, and functional edge cases.
+- **Phase 0.5: Workspace Guard**: If uncommitted changes exist, Jarvis proactively offers to **Commit (WIP)**, **Move**, or **Stash** them to preserve developer flow.
+- **Clean Check**: Once workspace safety is confirmed (by the user's choice), proceed.
 - **Branch Creation**: Create and checkout a git-safe `feature/` branch.
 - **Manager-GPT**: Invoke the lead orchestrator with the `AGENTS.md` persona.
-- **Analysis First**: Force the fleet to begin with an "Analysis and Implementation Plan" phase.
+- **Analysis First**: Force the fleet to begin with an "Analysis and Implementation Plan" phase based on the synthesized requirements.
 
 ## Output Format
 

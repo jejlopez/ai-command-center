@@ -144,7 +144,7 @@ export function CommandPalette({ isOpen, onClose, onExecute }) {
                           onClick={() => handleExecute(item)}
                           className={cn(
                             "flex items-center gap-3 px-3 py-2.5 rounded-lg cursor-pointer transition-colors",
-                            isSelected ? "bg-white/[0.06] text-aurora-teal" : "text-text-primary hover:bg-white/[0.03]"
+                            isSelected ? "bg-panel-hover text-aurora-teal" : "text-text-primary hover:bg-panel-soft/50"
                           )}
                         >
                           <Icon className={cn("w-4 h-4 shrink-0", isSelected ? "text-aurora-teal" : "text-text-muted")} />
@@ -162,9 +162,9 @@ export function CommandPalette({ isOpen, onClose, onExecute }) {
                 )}
               </div>
               <div className="px-4 py-2 border-t border-border flex items-center gap-4 text-[10px] text-text-disabled font-mono">
-                <span className="flex items-center gap-1"><kbd className="bg-white/5 px-1 rounded">↑↓</kbd> navigate</span>
-                <span className="flex items-center gap-1"><kbd className="bg-white/5 px-1 rounded">↵</kbd> select</span>
-                <span className="flex items-center gap-1"><kbd className="bg-white/5 px-1 rounded">esc</kbd> close</span>
+                <span className="flex items-center gap-1"><kbd className="bg-panel-soft px-1 rounded">↑↓</kbd> navigate</span>
+                <span className="flex items-center gap-1"><kbd className="bg-panel-soft px-1 rounded">↵</kbd> select</span>
+                <span className="flex items-center gap-1"><kbd className="bg-panel-soft px-1 rounded">esc</kbd> close</span>
               </div>
             </Motion.div>
           </div>

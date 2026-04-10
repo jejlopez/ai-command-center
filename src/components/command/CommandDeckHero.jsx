@@ -3,15 +3,15 @@ import { cn } from '../../utils/cn';
 
 function ToneBadge({ children, tone = 'teal' }) {
   const tones = {
-    teal: 'border-aurora-teal/18 bg-aurora-teal/[0.09] text-aurora-teal',
-    amber: 'border-aurora-amber/18 bg-aurora-amber/[0.09] text-aurora-amber',
-    rose: 'border-aurora-rose/18 bg-aurora-rose/[0.09] text-aurora-rose',
-    blue: 'border-aurora-blue/18 bg-aurora-blue/[0.09] text-aurora-blue',
-    violet: 'border-aurora-violet/18 bg-aurora-violet/[0.09] text-aurora-violet',
+    teal: 'border-aurora-teal/25 bg-aurora-teal/10 text-aurora-teal',
+    amber: 'border-aurora-amber/25 bg-aurora-amber/10 text-aurora-amber',
+    rose: 'border-aurora-rose/25 bg-aurora-rose/10 text-aurora-rose',
+    blue: 'border-aurora-blue/25 bg-aurora-blue/10 text-aurora-blue',
+    violet: 'border-aurora-violet/25 bg-aurora-violet/10 text-aurora-violet',
   };
 
   return (
-    <span className={cn('ui-chip rounded-full border px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.18em]', tones[tone])}>
+    <span className={cn('ui-chip rounded-full border px-3 py-1.5 text-[11px] font-black uppercase tracking-[0.18em] shadow-sm', tones[tone])}>
       {children}
     </span>
   );
@@ -33,51 +33,53 @@ export function CommandDeckHero({
   chrome = 'default',
 }) {
   const glowClass = {
-    teal: 'bg-[radial-gradient(circle_at_top_left,rgba(45,212,191,0.12),transparent_28%),radial-gradient(circle_at_82%_0%,rgba(96,165,250,0.08),transparent_24%)]',
-    violet: 'bg-[radial-gradient(circle_at_top_left,rgba(167,139,250,0.12),transparent_28%),radial-gradient(circle_at_82%_0%,rgba(45,212,191,0.08),transparent_24%)]',
-    blue: 'bg-[radial-gradient(circle_at_top_left,rgba(96,165,250,0.12),transparent_28%),radial-gradient(circle_at_82%_0%,rgba(167,139,250,0.08),transparent_24%)]',
+    teal: 'bg-[radial-gradient(circle_at_top_left,var(--color-aurora-teal),transparent_35%)]',
+    violet: 'bg-[radial-gradient(circle_at_top_left,var(--color-aurora-violet),transparent_35%)]',
+    blue: 'bg-[radial-gradient(circle_at_top_left,var(--color-aurora-blue),transparent_35%)]',
   };
-  const chromeClass = chrome === 'epic'
-    ? 'before:pointer-events-none before:absolute before:inset-x-8 before:top-0 before:h-px before:bg-gradient-to-r before:from-transparent before:via-white/16 before:to-transparent'
+  
+  const chromeClass = chrome === 'epic' 
+    ? 'before:pointer-events-none before:absolute before:inset-x-8 before:top-0 before:h-px before:bg-gradient-to-r before:from-transparent before:via-aurora-teal/20 before:to-transparent'
     : '';
 
   return (
     <section
       className={cn(
-        'ui-shell',
+        'ui-shell relative overflow-hidden',
         chromeClass,
         className
       )}
     >
-      <div className={cn('pointer-events-none absolute inset-0', glowClass[glow] || glowClass.teal)} />
-      <div className="pointer-events-none absolute inset-0 opacity-[0.08] [background-image:linear-gradient(rgba(255,255,255,0.05)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.04)_1px,transparent_1px)] [background-size:140px_140px]" />
+      <div className={cn('pointer-events-none absolute inset-0 opacity-[0.08]', glowClass[glow] || glowClass.teal)} />
+      <div className="pointer-events-none absolute inset-0 opacity-[0.03] [background-image:linear-gradient(var(--color-text)_1px,transparent_1px),linear-gradient(90deg,var(--color-text)_1px,transparent_1px)] [background-size:140px_140px]" />
+      
       {chrome === 'epic' && (
-        <>
-          <Motion.div
-            initial={{ opacity: 0.12, x: '-35%' }}
-            animate={{ opacity: 0.24, x: '140%' }}
-            transition={{ duration: 7.2, repeat: Infinity, ease: 'linear' }}
-            className="pointer-events-none absolute top-0 h-full w-24 bg-[linear-gradient(90deg,transparent,rgba(214,199,161,0.08),transparent)] blur-xl"
-          />
-        </>
+        <Motion.div
+          initial={{ opacity: 0.05, x: '-35%' }}
+          animate={{ opacity: 0.15, x: '140%' }}
+          transition={{ duration: 7.2, repeat: Infinity, ease: 'linear' }}
+          className="pointer-events-none absolute top-0 h-full w-24 bg-[linear-gradient(90deg,transparent,var(--color-panel-soft),transparent)] blur-2xl"
+        />
       )}
+
       <Motion.div
         initial={{ opacity: 0, y: 18 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.55, ease: 'easeOut' }}
-        className="relative flex flex-col gap-6 px-6 py-6 xl:flex-row xl:items-end xl:justify-between"
+        className="relative flex flex-col gap-6 px-8 py-8 xl:flex-row xl:items-end xl:justify-between"
       >
         <div className="max-w-3xl">
-          <div className="ui-kicker inline-flex items-center gap-2 rounded-full border border-hairline bg-panel-soft px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.22em] text-text-muted">
-            {EyebrowIcon ? <EyebrowIcon className="h-3.5 w-3.5 text-[#d6c7a1]" /> : null}
+          <div className="ui-kicker inline-flex items-center gap-2 rounded-full border border-hairline bg-panel-soft px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.25em] text-text-dim">
+            {EyebrowIcon ? <EyebrowIcon className="h-3.5 w-3.5 opacity-60" /> : null}
             {eyebrow}
           </div>
-          <h1 className={cn('mt-4 max-w-4xl text-4xl font-semibold tracking-tight text-text-primary', titleClassName)}>
+          <h1 className={cn('mt-6 max-w-4xl text-text font-black tracking-tight leading-[0.95]', titleClassName)}>
             {title}
           </h1>
-          <p className={cn('mt-3 max-w-2xl text-sm leading-6 text-text-muted', descriptionClassName)}>{description}</p>
+          <p className={cn('mt-4 max-w-2xl text-[15px] leading-relaxed text-text-dim', descriptionClassName)}>{description}</p>
+          
           {badges.length > 0 && (
-            <div className="mt-5 flex flex-wrap gap-3">
+            <div className="mt-8 flex flex-wrap gap-3">
               {badges.map((badge) => (
                 <ToneBadge key={`${badge.label}-${badge.value}`} tone={badge.tone}>
                   {badge.value} {badge.label}
@@ -85,11 +87,12 @@ export function CommandDeckHero({
               ))}
             </div>
           )}
-          {actions ? <div className="mt-5 flex flex-wrap gap-2">{actions}</div> : null}
+          
+          {actions ? <div className="mt-8 flex flex-wrap gap-3">{actions}</div> : null}
         </div>
 
-        <div className="flex w-full max-w-sm flex-col gap-4 xl:items-end">
-          {orb ? (
+        <div className="flex w-full max-w-sm flex-col gap-6 xl:items-end">
+          {orb && (
             <Motion.div
               initial={{ opacity: 0, scale: 0.92 }}
               animate={{ opacity: 1, scale: 1 }}
@@ -98,8 +101,8 @@ export function CommandDeckHero({
             >
               {orb}
             </Motion.div>
-          ) : null}
-          {sideContent ? (
+          )}
+          {sideContent && (
             <Motion.div
               initial={{ opacity: 0, x: 16 }}
               animate={{ opacity: 1, x: 0 }}
@@ -108,7 +111,7 @@ export function CommandDeckHero({
             >
               {sideContent}
             </Motion.div>
-          ) : null}
+          )}
         </div>
       </Motion.div>
     </section>

@@ -10,6 +10,9 @@ const DEFAULTS = {
   quietHoursStart: '22:00',
   quietHoursEnd: '07:00',
   notificationRoute: 'command_center',
+  slackWebhookUrl: '',
+  notificationEmail: '',
+  themePreference: 'obsidian',
   commanderPersona: 'founder',
   trustedWriteMode: 'review_first',
   approvalDoctrine: 'risk_weighted',
@@ -24,6 +27,9 @@ function mapRowToPreferences(row) {
     quietHoursStart: row?.quiet_hours_start || DEFAULTS.quietHoursStart,
     quietHoursEnd: row?.quiet_hours_end || DEFAULTS.quietHoursEnd,
     notificationRoute: row?.notification_route || DEFAULTS.notificationRoute,
+    slackWebhookUrl: row?.slack_webhook_url || DEFAULTS.slackWebhookUrl,
+    notificationEmail: row?.notification_email || DEFAULTS.notificationEmail,
+    themePreference: row?.theme_preference || DEFAULTS.themePreference,
     commanderPersona: row?.commander_persona || DEFAULTS.commanderPersona,
     trustedWriteMode: row?.trusted_write_mode || DEFAULTS.trustedWriteMode,
     approvalDoctrine: row?.approval_doctrine || DEFAULTS.approvalDoctrine,
@@ -40,6 +46,9 @@ function mapPreferencesToRow(userId, prefs) {
     quiet_hours_start: prefs.quietHoursStart,
     quiet_hours_end: prefs.quietHoursEnd,
     notification_route: prefs.notificationRoute,
+    slack_webhook_url: prefs.slackWebhookUrl,
+    notification_email: prefs.notificationEmail,
+    theme_preference: prefs.themePreference,
     commander_persona: prefs.commanderPersona,
     trusted_write_mode: prefs.trustedWriteMode,
     approval_doctrine: prefs.approvalDoctrine,
@@ -75,6 +84,9 @@ export function useCommanderPreferences() {
           quiet_hours_start,
           quiet_hours_end,
           notification_route,
+          slack_webhook_url,
+          notification_email,
+          theme_preference,
           commander_persona,
           trusted_write_mode,
           approval_doctrine
@@ -116,6 +128,15 @@ export function useCommanderPreferences() {
     return () => clearTimeout(timeout);
   }, [preferences, user]);
 
+  // Handle CSS Class Injection for Themes
+  useEffect(() => {
+    if (preferences.themePreference === 'aurora-light') {
+      document.documentElement.classList.add('aurora-light');
+    } else {
+      document.documentElement.classList.remove('aurora-light');
+    }
+  }, [preferences.themePreference]);
+
   function patchPreference(key, value) {
     setPreferences((prev) => ({ ...prev, [key]: value }));
   }
@@ -133,6 +154,9 @@ export function useCommanderPreferences() {
     setQuietHoursStart: (value) => patchPreference('quietHoursStart', value || DEFAULTS.quietHoursStart),
     setQuietHoursEnd: (value) => patchPreference('quietHoursEnd', value || DEFAULTS.quietHoursEnd),
     setNotificationRoute: (value) => patchPreference('notificationRoute', value || DEFAULTS.notificationRoute),
+    setSlackWebhookUrl: (value) => patchPreference('slackWebhookUrl', value || ''),
+    setNotificationEmail: (value) => patchPreference('notificationEmail', value || ''),
+    setThemePreference: (value) => patchPreference('themePreference', value || DEFAULTS.themePreference),
     setCommanderPersona: (value) => patchPreference('commanderPersona', value || DEFAULTS.commanderPersona),
     setTrustedWriteMode: (value) => patchPreference('trustedWriteMode', value || DEFAULTS.trustedWriteMode),
     setApprovalDoctrine: (value) => patchPreference('approvalDoctrine', value || DEFAULTS.approvalDoctrine),
@@ -140,3 +164,4 @@ export function useCommanderPreferences() {
 
   return api;
 }
+

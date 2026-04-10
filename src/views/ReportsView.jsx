@@ -69,7 +69,7 @@ function HudFrame({ eyebrow, title, detail, accent = 'teal', children, className
       className={`ui-panel relative overflow-hidden p-4 ${className}`}
     >
       <div className={`pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r ${accents[accent] || accents.teal}`} />
-      <div className="pointer-events-none absolute right-4 top-4 h-12 w-12 rounded-full bg-white/[0.03] blur-2xl" />
+      <div className="pointer-events-none absolute right-4 top-4 h-12 w-12 rounded-full bg-panel-soft blur-2xl" />
       <div className="pointer-events-none absolute inset-0 opacity-[0.06] [background-image:repeating-linear-gradient(180deg,rgba(255,255,255,0.16)_0px,rgba(255,255,255,0.16)_1px,transparent_1px,transparent_12px)]" />
       <Motion.div
         initial={{ opacity: 0.12, x: '-30%' }}
@@ -230,7 +230,7 @@ function ExecutiveSignalRail({ learningMemory, summary, burnByModel }) {
               type="button"
               onClick={() => setFocus(tab.id)}
               className={`flex-1 rounded-[18px] px-4 py-3 text-[12px] font-semibold transition-all ${
-                focus === tab.id ? 'border border-white/10 bg-white/[0.05] text-text-primary' : 'text-text-muted hover:text-text-primary'
+                focus === tab.id ? 'ui-card border border-hairline shadow-sm text-text-primary' : 'text-text-muted hover:text-text-primary'
               }`}
             >
               {tab.label}
@@ -450,8 +450,8 @@ export function ReportsView() {
                       onClick={() => setPeriod(option)}
                       className={`ui-chip rounded-full border px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] transition-colors ${
                         period === option
-                          ? 'border-aurora-teal/30 bg-aurora-teal/10 text-aurora-teal'
-                          : 'border-white/8 bg-white/[0.03] text-text-muted hover:text-text-primary'
+                          ? 'border-aurora-teal/30 bg-aurora-teal/10 text-aurora-teal shadow-sm'
+                          : 'border-hairline bg-panel-soft text-text-muted hover:text-text-primary'
                       }`}
                     >
                       {option}
@@ -533,8 +533,8 @@ export function ReportsView() {
                       onClick={() => setPressureFocus(tab.id)}
                       className={`ui-chip rounded-full border px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] transition-colors ${
                         pressureFocus === tab.id
-                          ? 'border-aurora-teal/25 bg-aurora-teal/10 text-aurora-teal'
-                          : 'border-white/8 bg-white/[0.03] text-text-muted hover:text-text-primary'
+                          ? 'border-aurora-teal/25 bg-aurora-teal/10 text-aurora-teal shadow-sm'
+                          : 'border-hairline bg-panel-soft text-text-muted hover:text-text-primary'
                       }`}
                     >
                       {tab.label}
@@ -556,12 +556,12 @@ export function ReportsView() {
                       <div className="relative h-72">
                         <ResponsiveContainer width="100%" height="100%">
                           <BarChart data={activityWave} margin={{ top: 10, right: 10, bottom: 0, left: 0 }}>
-                            <CartesianGrid stroke="rgba(255,255,255,0.05)" strokeDasharray="3 6" vertical={false} />
+                            <CartesianGrid stroke="var(--color-hairline)" strokeDasharray="3 6" vertical={false} />
                             <XAxis dataKey="name" tick={{ fill: '#71717a', fontSize: 11 }} axisLine={false} tickLine={false} />
                             <YAxis tick={{ fill: '#71717a', fontSize: 11 }} axisLine={false} tickLine={false} width={28} />
                             <Tooltip
-                              contentStyle={{ background: '#101114', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 14 }}
-                              itemStyle={{ color: '#e5e7eb' }}
+                              contentStyle={{ background: 'var(--color-canvas-elevated)', border: '1px solid var(--color-hairline)', borderRadius: 14 }}
+                              itemStyle={{ color: 'var(--color-text)' }}
                               formatter={(value) => [value, 'Mission activity']}
                             />
                             <Bar dataKey="volume" radius={[8, 8, 0, 0]} barSize={44} animationDuration={700}>
@@ -573,7 +573,7 @@ export function ReportsView() {
                         </ResponsiveContainer>
                       </div>
                     ) : (
-                      <div className="flex h-72 items-center justify-center rounded-[22px] border border-dashed border-white/10 bg-black/10 text-center">
+                      <div className="flex h-72 items-center justify-center ui-well border-dashed text-center">
                         <div>
                           <div className="text-sm font-semibold text-text-primary">No recent mission activity yet.</div>
                           <p className="mt-2 max-w-[320px] text-[12px] leading-relaxed text-text-muted">Once missions start moving, this chart will show how work volume rises and falls over time.</p>
@@ -601,7 +601,7 @@ export function ReportsView() {
                         <ChartHudOverlay accent="#fbbf24" />
                         <ResponsiveContainer width="100%" height="100%">
                           <BarChart data={burnByModel} layout="vertical" margin={{ top: 10, right: 10, left: 8, bottom: 0 }}>
-                            <CartesianGrid stroke="rgba(255,255,255,0.05)" strokeDasharray="3 6" horizontal={false} />
+                            <CartesianGrid stroke="var(--color-hairline)" strokeDasharray="3 6" horizontal={false} />
                             <XAxis type="number" axisLine={false} tickLine={false} tick={{ fill: '#8f96a3', fontSize: 11 }} />
                             <YAxis
                               type="category"
@@ -613,7 +613,7 @@ export function ReportsView() {
                             />
                             <Tooltip
                               cursor={false}
-                              contentStyle={{ background: '#101114', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 14 }}
+                              contentStyle={{ background: 'var(--color-canvas-elevated)', border: '1px solid var(--color-hairline)', borderRadius: 14 }}
                               formatter={(value) => [formatCurrency(value), 'Burn']}
                             />
                             <Bar dataKey="cost" radius={[0, 8, 8, 0]} barSize={16} animationDuration={900}>
@@ -625,7 +625,7 @@ export function ReportsView() {
                         </ResponsiveContainer>
                       </div>
                     ) : (
-                      <div className="flex h-72 items-center justify-center rounded-[22px] border border-dashed border-white/10 bg-black/10 text-center">
+                      <div className="flex h-72 items-center justify-center ui-well border-dashed text-center">
                         <div>
                           <div className="text-sm font-semibold text-text-primary">No tracked spend yet.</div>
                           <p className="mt-2 max-w-[320px] text-[12px] leading-relaxed text-text-muted">Once costs are recorded, this view will rank the most expensive execution lanes from highest spend to lowest.</p>
@@ -653,7 +653,7 @@ export function ReportsView() {
                         <ChartHudOverlay accent="#a78bfa" />
                         <ResponsiveContainer width="100%" height="100%">
                           <BarChart data={statusPressure.slice(0, 5)} layout="vertical" margin={{ top: 10, right: 10, left: 8, bottom: 0 }}>
-                            <CartesianGrid stroke="rgba(255,255,255,0.05)" strokeDasharray="3 6" horizontal={false} />
+                            <CartesianGrid stroke="var(--color-hairline)" strokeDasharray="3 6" horizontal={false} />
                             <XAxis type="number" axisLine={false} tickLine={false} tick={{ fill: '#8f96a3', fontSize: 11 }} />
                             <YAxis
                               type="category"
@@ -665,7 +665,7 @@ export function ReportsView() {
                             />
                             <Tooltip
                               cursor={false}
-                              contentStyle={{ background: '#101114', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 14 }}
+                              contentStyle={{ background: 'var(--color-canvas-elevated)', border: '1px solid var(--color-hairline)', borderRadius: 14 }}
                               formatter={(value) => [value, 'Count']}
                             />
                             <Bar dataKey="count" radius={[0, 8, 8, 0]} barSize={16} animationDuration={900}>
@@ -677,7 +677,7 @@ export function ReportsView() {
                         </ResponsiveContainer>
                       </div>
                     ) : (
-                      <div className="flex h-72 items-center justify-center rounded-[22px] border border-dashed border-white/10 bg-black/10 text-center">
+                      <div className="flex h-72 items-center justify-center ui-well border-dashed text-center">
                         <div>
                           <div className="text-sm font-semibold text-text-primary">No mission states to compare yet.</div>
                           <p className="mt-2 max-w-[320px] text-[12px] leading-relaxed text-text-muted">Once tasks exist, this view will show which status buckets are owning the board, like running, blocked, or done.</p>

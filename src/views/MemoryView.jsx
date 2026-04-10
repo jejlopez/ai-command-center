@@ -36,7 +36,7 @@ export function MemoryView() {
           <input 
             type="text" 
             placeholder="Query semantic index..." 
-            className="w-full bg-surface border border-border rounded-lg pl-10 pr-4 py-2.5 text-sm font-mono focus:outline-none focus:border-aurora-teal transition-colors text-text-primary"
+            className="w-full bg-panel border border-hairline rounded-lg pl-10 pr-4 py-2.5 text-sm font-mono focus:outline-none focus:border-aurora-teal transition-colors text-text-primary shadow-sm"
           />
         </div>
       </div>
@@ -49,35 +49,37 @@ export function MemoryView() {
             <div className="absolute top-0 right-0 p-4 opacity-10 flex items-center justify-center transform group-hover:scale-110 transition-transform"><Database size={80} /></div>
             <h3 className="text-sm text-text-muted uppercase tracking-widest mb-1 relative z-10">Total Extracted Vectors</h3>
             <div className="text-4xl font-mono text-aurora-teal font-bold relative z-10">{logs.length}</div>
-            <div className="mt-4 flex items-center gap-2 text-xs text-aurora-teal font-medium relative z-10">
-              <span className="w-2 h-2 rounded-full bg-aurora-teal animate-pulse" /> Live vectors derived from account activity
+            <div className="mt-6 ui-well p-4">
+              <div className="flex items-center gap-2 text-xs text-aurora-teal font-medium relative z-10">
+                <span className="w-2 h-2 rounded-full bg-aurora-teal animate-pulse" /> Live vectors derived from account activity
+              </div>
             </div>
           </div>
           
-          <div className="col-span-4 ui-panel p-6 border-white/5 relative overflow-hidden">
+          <div className="col-span-4 ui-panel p-6 border-hairline relative overflow-hidden">
             <div className="absolute top-0 right-0 p-4 opacity-10 flex items-center justify-center"><Server size={80} /></div>
             <h3 className="text-sm text-text-muted uppercase tracking-widest mb-1">Memory Footprint</h3>
             <div className="text-4xl font-mono text-text-primary font-bold">{(logs.length / 100).toFixed(1)} <span className="text-2xl text-text-muted font-normal">GB</span></div>
-            <div className="mt-4 w-full h-1 bg-surface-raised rounded-full overflow-hidden">
+            <div className="mt-4 w-full h-1 bg-canvas-muted rounded-full overflow-hidden">
               <div className="h-full bg-text-muted" style={{ width: `${Math.min(100, logs.length)}%` }} />
             </div>
             <p className="text-[10px] text-text-muted mt-2 text-right">{Math.min(100, logs.length)}% Storage Index</p>
           </div>
 
-          <div className="col-span-4 ui-panel p-6 border-white/5 relative overflow-hidden">
+          <div className="col-span-4 ui-panel p-6 border-hairline relative overflow-hidden">
              <div className="absolute top-0 right-0 p-4 opacity-10 flex items-center justify-center"><Layers size={80} /></div>
              <h3 className="text-sm text-text-muted uppercase tracking-widest mb-1">Active Namespaces</h3>
              <div className="text-4xl font-mono text-text-primary font-bold">{new Set(logs.map((log) => (log.agentId ? 'agent-memory' : 'system-events'))).size}</div>
              <div className="flex flex-wrap gap-2 mt-4 relative z-10">
-               <span className="px-2 py-1 bg-white/[0.04] rounded text-[10px] font-mono text-text-muted">agent-memory</span>
-               <span className="px-2 py-1 bg-white/[0.04] rounded text-[10px] font-mono text-text-muted">system-events</span>
+               <span className="px-2 py-1 ui-panel-soft rounded text-[10px] font-mono text-text-muted">agent-memory</span>
+               <span className="px-2 py-1 ui-panel-soft rounded text-[10px] font-mono text-text-muted">system-events</span>
              </div>
           </div>
         </motion.div>
 
         {/* Data Console Matrix */}
         <motion.div variants={item} className="ui-shell flex flex-col">
-          <div className="p-4 border-b border-border flex items-center justify-between bg-black/20 rounded-t-xl">
+          <div className="p-4 border-b border-hairline flex items-center justify-between bg-panel-soft rounded-t-xl">
              <h3 className="text-xs uppercase tracking-widest text-text-muted font-semibold flex items-center gap-2">
                <Hash className="w-4 h-4 text-aurora-teal" /> Live Semantic Matrix
              </h3>
@@ -86,7 +88,7 @@ export function MemoryView() {
           <div className="w-full">
             <table className="w-full text-left border-collapse">
               <thead>
-                <tr className="border-b border-white/[0.04] text-[10px] uppercase tracking-wider text-text-muted">
+                <tr className="border-b border-hairline text-[10px] uppercase tracking-wider text-text-muted">
                   <th className="font-semibold py-3 px-6">CID / Hash</th>
                   <th className="font-semibold py-3 px-6">Context Representation</th>
                   <th className="font-semibold py-3 px-6">Namespace</th>
@@ -96,7 +98,7 @@ export function MemoryView() {
               </thead>
               <tbody className="text-sm text-text-primary">
                 {embeddings.map((emb, idx) => (
-                  <tr key={idx} className="border-b border-white/[0.02] hover:bg-white/[0.02] transition-colors group cursor-crosshair">
+                  <tr key={idx} className="border-b border-hairline/30 hover:bg-panel transition-colors group cursor-crosshair">
                     <td className="py-4 px-6 font-mono text-xs text-text-muted group-hover:text-aurora-teal transition-colors">
                       {emb.id}
                     </td>
@@ -106,7 +108,7 @@ export function MemoryView() {
                       </span>
                     </td>
                     <td className="py-4 px-6">
-                      <span className="px-2 py-1 bg-surface-raised border border-white/5 rounded text-[10px] font-mono text-text-muted">
+                      <span className="px-2 py-1 bg-panel-soft border border-hairline rounded text-[10px] font-mono text-text-muted">
                         {emb.namespace}
                       </span>
                     </td>

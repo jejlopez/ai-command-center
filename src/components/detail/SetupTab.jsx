@@ -33,6 +33,7 @@ import {
   useProviderCredentials,
   useSkillBank,
 } from '../../utils/useSupabase';
+import { usePreferences } from '../../context/PreferenceContext';
 
 const iconMap = { Globe, Terminal, FolderOpen, Zap, Database, MessageSquare, Monitor };
 
@@ -54,7 +55,7 @@ function InfoBubble({ text }) {
           initial={{ opacity: 0, y: 4 }}
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: 4 }}
-          className="absolute bottom-full left-1/2 z-50 mb-2 w-56 -translate-x-1/2 rounded-lg border border-white/10 bg-surface p-3 text-[11px] leading-relaxed text-text-body shadow-2xl pointer-events-none"
+          className="absolute bottom-full left-1/2 z-50 mb-2 w-56 -translate-x-1/2 rounded-lg border border-hairline bg-panel-soft p-3 text-[11px] leading-relaxed text-text-body shadow-2xl pointer-events-none"
         >
           {text}
         </motion.div>
@@ -70,7 +71,7 @@ function Toggle({ value, onChange }) {
       onClick={() => onChange(!value)}
       className={cn(
         'relative h-5 w-10 rounded-full transition-colors',
-        value ? 'bg-aurora-teal' : 'bg-white/[0.08]'
+        value ? 'bg-aurora-teal' : 'ui-well'
       )}
     >
       <div
@@ -129,7 +130,7 @@ function SegmentedControl({ options, value, onChange }) {
             'ui-chip rounded-full border px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.16em] transition-colors',
             value === option.value
               ? 'border-aurora-teal/30 bg-aurora-teal/10 text-aurora-teal'
-              : 'border-white/[0.08] bg-white/[0.03] text-text-body hover:bg-white/[0.05] hover:text-text-primary'
+              : 'border-hairline bg-panel-soft/30 text-text-body hover:bg-panel-soft'
           )}
         >
           {option.label}
@@ -206,6 +207,7 @@ export function SetupTab({ agent, onAgentUpdated }) {
   const { credentials: providerCredentials } = useProviderCredentials();
   const { skills: skillBank, loading: skillsLoading, refetch: refetchSkills } = useSkillBank();
   const { servers: mcpServers, loading: mcpLoading, refetch: refetchMcpServers } = useMcpServers();
+  const commanderPrefs = usePreferences();
 
   const defaultState = useMemo(() => ({
     model: agent.model || '',
@@ -466,7 +468,7 @@ export function SetupTab({ agent, onAgentUpdated }) {
   return (
     <div className="flex h-full flex-col">
       <div className="flex-1 overflow-y-auto no-scrollbar p-6">
-        <div className="rounded-[1.4rem] border border-white/[0.06] bg-[linear-gradient(180deg,rgba(255,255,255,0.02),rgba(255,255,255,0.01))] p-4">
+        <div className="rounded-[1.4rem] border border-hairline bg-panel-soft p-4">
           <div className="flex flex-wrap items-center gap-2">
             <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.22em] text-aurora-teal">
               <Sparkles className="h-3.5 w-3.5" />
@@ -505,13 +507,13 @@ export function SetupTab({ agent, onAgentUpdated }) {
             description="Choose the runtime this operator should use and keep it aligned with your saved model bank."
           >
             <div className="space-y-4">
-              <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-4">
+              <div className="rounded-2xl border border-hairline bg-panel-soft/50 p-4">
                 {agent.isSyntheticCommander && (
                   <div className="mb-4 rounded-2xl border border-aurora-amber/20 bg-aurora-amber/10 px-4 py-3 text-sm leading-6 text-text-body">
                     You are viewing the fallback commander shell. Saving will first materialize the durable commander row for this workspace, then apply the runtime changes there.
                   </div>
                 )}
-                <div className="rounded-2xl border border-white/[0.06] bg-black/10 p-4">
+                <div className="rounded-2xl border border-hairline bg-panel-soft/50 p-4">
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div>
                       <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-text-muted">Provider shortcuts</div>
@@ -534,7 +536,7 @@ export function SetupTab({ agent, onAgentUpdated }) {
                               ? 'border-aurora-teal/30 bg-aurora-teal/12 shadow-[0_0_18px_rgba(0,217,200,0.08)]'
                               : ready
                                 ? 'border-aurora-teal/20 bg-aurora-teal/10 hover:bg-aurora-teal/15'
-                                : 'border-white/[0.08] bg-white/[0.03] hover:bg-white/[0.05]'
+                                : 'border-hairline bg-panel-soft hover:bg-panel-hover'
                           )}
                         >
                           <div className="space-y-4">
@@ -561,7 +563,7 @@ export function SetupTab({ agent, onAgentUpdated }) {
 
                 <div className="grid gap-2 md:grid-cols-3">
                   {providerReadiness.map((provider) => (
-                    <div key={provider.id} className="rounded-xl border border-white/[0.06] bg-black/10 px-3 py-2">
+                    <div key={provider.id} className="rounded-xl border border-hairline bg-panel-soft/50 px-3 py-2">
                       <div className="flex items-center justify-between gap-2">
                         <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-text-muted">{provider.label}</span>
                         <span className={cn('h-2.5 w-2.5 rounded-full', provider.ready ? 'bg-aurora-green' : 'bg-aurora-amber')} />
@@ -592,8 +594,8 @@ export function SetupTab({ agent, onAgentUpdated }) {
                       className={cn(
                         'rounded-2xl border px-4 py-3 text-left transition-all focus:outline-none',
                         form.model === modelItem.modelKey
-                          ? 'border-aurora-teal/30 bg-aurora-teal/10 shadow-[0_0_18px_rgba(0,217,200,0.08)]'
-                          : 'border-white/[0.06] bg-black/10 hover:border-white/[0.12] hover:bg-white/[0.03]'
+                          ? 'border-aurora-teal/30 bg-aurora-teal/10 shadow-glow-teal'
+                          : 'border-hairline bg-panel-soft/50 hover:bg-panel-hover'
                       )}
                     >
                       <div className="flex items-center justify-between gap-3">
@@ -606,14 +608,14 @@ export function SetupTab({ agent, onAgentUpdated }) {
                     </button>
                   ))}
                   {!modelsLoading && visibleModels.length === 0 && !selectedModelEntry && (
-                    <div className="rounded-2xl border border-dashed border-white/[0.08] px-4 py-4 text-sm text-text-body">
+                    <div className="rounded-2xl border border-dashed border-hairline px-4 py-4 text-sm text-text-body">
                       No saved models for this provider yet.
                     </div>
                   )}
                 </div>
               </div>
 
-              <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-4">
+              <div className="rounded-2xl border border-hairline bg-panel-soft/50 p-4">
                 <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-text-muted">Expand your model bank</div>
                 <div className="mt-3 grid gap-3 md:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_auto]">
                   <input
@@ -621,14 +623,14 @@ export function SetupTab({ agent, onAgentUpdated }) {
                     value={newModelLabel}
                     onChange={(event) => setNewModelLabel(event.target.value)}
                     placeholder="Model name"
-                    className="rounded-xl border border-white/[0.08] bg-black/20 px-3 py-2.5 text-sm text-text-primary outline-none transition-colors focus:border-aurora-teal/40"
+                    className="rounded-xl ui-input px-3 py-2.5 text-sm text-text-primary outline-none transition-colors focus:border-aurora-teal/40 shadow-sm"
                   />
                   <input
                     type="text"
                     value={newModelProvider}
                     onChange={(event) => setNewModelProvider(event.target.value)}
                     placeholder="Provider (optional)"
-                    className="rounded-xl border border-white/[0.08] bg-black/20 px-3 py-2.5 text-sm text-text-primary outline-none transition-colors focus:border-aurora-teal/40"
+                    className="rounded-xl ui-input px-3 py-2.5 text-sm text-text-primary outline-none transition-colors focus:border-aurora-teal/40 shadow-sm"
                   />
                   <button
                     type="button"
@@ -681,7 +683,7 @@ export function SetupTab({ agent, onAgentUpdated }) {
                 <Toggle value={form.canSpawn} onChange={(value) => updateForm({ canSpawn: value })} />
               </SettingRow>
 
-              <div className="rounded-2xl border border-white/[0.05] bg-white/[0.02] p-4">
+              <div className="rounded-2xl border border-hairline bg-panel-soft/50 p-4">
                 <div className="mb-3 flex items-center gap-2">
                   <div className="text-sm font-medium text-text-primary">Delegation pattern</div>
                   <InfoBubble text="Choose the orchestration shape the agent should follow when sub-agent spawning is enabled." />
@@ -695,14 +697,14 @@ export function SetupTab({ agent, onAgentUpdated }) {
                       className={cn(
                         'flex w-full items-start gap-3 rounded-2xl border px-4 py-3 text-left transition-all focus:outline-none',
                         form.spawnPattern === option.id
-                          ? 'border-aurora-teal/30 bg-aurora-teal/10'
-                          : 'border-white/[0.06] bg-black/10 hover:border-white/[0.12]'
+                          ? "border-aurora-teal/30 bg-aurora-teal/10"
+                          : 'border-hairline bg-panel-soft/50 hover:border-hairline/20'
                       )}
                     >
                       <div
                         className={cn(
                           'mt-1 h-3.5 w-3.5 shrink-0 rounded-full border-2',
-                          form.spawnPattern === option.id ? 'border-aurora-teal bg-aurora-teal' : 'border-white/20'
+                          form.spawnPattern === option.id ? 'border-aurora-teal bg-aurora-teal' : 'border-hairline'
                         )}
                       />
                       <div>
@@ -715,6 +717,90 @@ export function SetupTab({ agent, onAgentUpdated }) {
               </div>
             </div>
           </SectionShell>
+
+          {agent.role === 'commander' && (
+            <SectionShell
+              eyebrow="Operational Doctrine"
+              title="Execution and Persona alignment"
+              description="Configure how you navigate missions, weigh approvals, and speak to the fleet."
+            >
+              <div className="space-y-4">
+                <div className="rounded-2xl border border-hairline bg-panel-soft p-4">
+                  <div className="mb-3 flex items-center justify-between gap-3">
+                    <div className="text-sm font-medium text-text-primary">Command style</div>
+                    <CapabilityBadge>{commanderPrefs.commandStyle}</CapabilityBadge>
+                  </div>
+                  <SegmentedControl
+                    options={[
+                      { value: 'tony', label: 'Tony' },
+                      { value: 'hybrid', label: 'Hybrid' },
+                      { value: 'elon', label: 'Elon' },
+                    ]}
+                    value={commanderPrefs.commandStyle}
+                    onChange={commanderPrefs.setCommandStyle}
+                  />
+                  <div className="mt-3 text-[11px] leading-relaxed text-text-muted">
+                    {commanderPrefs.commandStyle === 'tony' && 'Sarcastic, efficient, and highly autonomous with a bias for speed.'}
+                    {commanderPrefs.commandStyle === 'hybrid' && 'Balanced professional posture with occasional creative flare.'}
+                    {commanderPrefs.commandStyle === 'elon' && 'Direct, mission-critical, and highly technical perspective.'}
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-hairline bg-panel-soft p-4">
+                  <div className="mb-3 flex items-center justify-between gap-3">
+                    <div className="text-sm font-medium text-text-primary">Mission persona</div>
+                    <CapabilityBadge>{commanderPrefs.commanderPersona}</CapabilityBadge>
+                  </div>
+                  <SegmentedControl
+                    options={[
+                      { value: 'founder', label: 'Founder' },
+                      { value: 'operator', label: 'Operator' },
+                      { value: 'reviewer', label: 'Reviewer' },
+                    ]}
+                    value={commanderPrefs.commanderPersona}
+                    onChange={commanderPrefs.setCommanderPersona}
+                  />
+                  <div className="mt-3 text-[11px] leading-relaxed text-text-muted">
+                    {commanderPrefs.commanderPersona === 'founder' && 'Extreme ownership, high risk tolerance, and big-picture execution.'}
+                    {commanderPrefs.commanderPersona === 'operator' && 'Focus on efficiency, routine maintenance, and reliability.'}
+                    {commanderPrefs.commanderPersona === 'reviewer' && 'Skeptical, detail-oriented, and focused on quality assurance.'}
+                  </div>
+                </div>
+
+                <div className="grid gap-4 xl:grid-cols-2">
+                  <div className="rounded-2xl border border-hairline bg-panel-soft p-4">
+                    <div className="mb-3 flex items-center justify-between gap-3">
+                      <div className="text-sm font-medium text-text-primary">Trusted-write mode</div>
+                      <Toggle 
+                        value={commanderPrefs.trustedWriteMode === 'autonomous'} 
+                        onChange={(val) => commanderPrefs.setTrustedWriteMode(val ? 'autonomous' : 'review_first')} 
+                      />
+                    </div>
+                    <div className="text-[11px] leading-relaxed text-text-muted">
+                      {commanderPrefs.trustedWriteMode === 'autonomous' 
+                        ? 'Autonomous execution enabled for the primary workspace.' 
+                        : 'Manual review required for all mission-critical modifications.'}
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl border border-hairline bg-panel-soft/50 p-4">
+                    <div className="mb-3 flex items-center justify-between gap-3">
+                      <div className="text-sm font-medium text-text-primary">Approval weighting</div>
+                      <CapabilityBadge>{commanderPrefs.approvalDoctrine === 'risk_weighted' ? 'Risk-Weighted' : 'Standard'}</CapabilityBadge>
+                    </div>
+                    <SegmentedControl
+                      options={[
+                        { value: 'standard', label: 'Standard' },
+                        { value: 'risk_weighted', label: 'Risk-Weighted' },
+                      ]}
+                      value={commanderPrefs.approvalDoctrine}
+                      onChange={commanderPrefs.setApprovalDoctrine}
+                    />
+                  </div>
+                </div>
+              </div>
+            </SectionShell>
+          )}
 
           <SectionShell
             eyebrow="Instructions"
@@ -739,7 +825,7 @@ export function SetupTab({ agent, onAgentUpdated }) {
                 </div>
               </div>
 
-              <div className="rounded-2xl border border-white/[0.05] bg-white/[0.02] p-4">
+              <div className="rounded-2xl border border-hairline bg-panel-soft/50 p-4">
                 <div className="mb-3 flex items-center justify-between gap-3">
                   <div>
                     <div className="text-sm font-medium text-text-primary">System prompt</div>
@@ -749,7 +835,7 @@ export function SetupTab({ agent, onAgentUpdated }) {
                     <button
                       type="button"
                       onClick={() => updateForm({ systemPrompt: template })}
-                      className="rounded-xl border border-white/[0.08] bg-black/20 px-3 py-2 text-[10px] font-bold uppercase tracking-[0.14em] text-text-muted transition-colors hover:border-white/[0.14] hover:text-text-primary"
+                      className="rounded-xl border border-hairline ui-well px-3 py-2 text-[10px] font-bold uppercase tracking-[0.14em] text-text-muted transition-colors hover:border-hairline-strong hover:text-text-primary shadow-sm"
                     >
                       Reset to default
                     </button>
@@ -759,7 +845,7 @@ export function SetupTab({ agent, onAgentUpdated }) {
                   value={form.systemPrompt}
                   onChange={(event) => updateForm({ systemPrompt: event.target.value })}
                   rows={8}
-                  className="w-full rounded-2xl border border-white/[0.08] bg-black/20 px-4 py-3 text-sm leading-6 text-text-primary outline-none transition-colors focus:border-aurora-teal/40"
+                  className="w-full resize-none rounded-2xl ui-input px-4 py-4 text-sm leading-relaxed text-text-primary placeholder:text-text-disabled focus:outline-none transition-colors shadow-sm focus:border-aurora-teal/40"
                 />
               </div>
             </div>
@@ -773,7 +859,7 @@ export function SetupTab({ agent, onAgentUpdated }) {
             <div className="space-y-4">
               <div className="grid gap-4 xl:grid-cols-[1.05fr_0.95fr]">
                 <div className="space-y-4">
-                  <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-4">
+                  <div className="rounded-2xl border border-hairline bg-panel-soft/50 p-4">
                     <div className="flex items-center justify-between gap-3">
                       <div>
                         <div className="text-sm font-medium text-text-primary">Attached capabilities</div>
@@ -785,9 +871,9 @@ export function SetupTab({ agent, onAgentUpdated }) {
                       {attachedSkills.map((skill) => {
                         const Icon = iconMap[skill.icon] || Zap;
                         return (
-                          <div key={skill.id} className="flex items-center justify-between gap-3 rounded-2xl border border-white/[0.06] bg-black/15 px-4 py-3">
+                          <div key={skill.id} className="flex items-center justify-between gap-3 rounded-2xl border border-hairline bg-panel-soft px-4 py-3">
                             <div className="flex min-w-0 items-center gap-3">
-                              <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-white/[0.06] bg-white/[0.03]">
+                              <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-hairline bg-panel-soft/30">
                                 <Icon className="h-4 w-4 text-aurora-teal" />
                               </div>
                               <div className="min-w-0">
@@ -800,7 +886,7 @@ export function SetupTab({ agent, onAgentUpdated }) {
                               <button
                                 type="button"
                                 onClick={() => syncAgentSkills(agentSkillIds.filter((skillId) => skillId !== skill.id))}
-                                className="rounded-xl border border-white/[0.08] bg-black/20 p-2 text-text-muted transition-colors hover:border-aurora-rose/30 hover:text-aurora-rose"
+                                className="rounded-xl border border-hairline ui-well p-2 text-text-muted transition-colors hover:border-aurora-rose/30 hover:text-aurora-rose"
                               >
                                 <Trash2 className="h-3.5 w-3.5" />
                               </button>
@@ -809,14 +895,14 @@ export function SetupTab({ agent, onAgentUpdated }) {
                         );
                       })}
                       {!skillsLoading && attachedSkills.length === 0 && (
-                        <div className="rounded-2xl border border-dashed border-white/[0.08] px-4 py-5 text-sm text-text-body">
+                        <div className="rounded-2xl border border-dashed border-hairline px-4 py-5 text-sm text-text-body">
                           No skills attached yet. Add a path, GitHub source, or an existing bank entry from the discovery panel.
                         </div>
                       )}
                     </div>
                   </div>
 
-                  <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-4">
+                  <div className="rounded-2xl border border-hairline bg-panel-soft/50 p-4">
                     <div className="flex items-center justify-between gap-3">
                       <div>
                         <div className="text-sm font-medium text-text-primary">MCP servers</div>
@@ -831,14 +917,14 @@ export function SetupTab({ agent, onAgentUpdated }) {
                         value={serverName}
                         onChange={(event) => setServerName(event.target.value)}
                         placeholder="Display name (optional)"
-                        className="rounded-xl border border-white/[0.08] bg-black/20 px-3 py-2.5 text-sm text-text-primary outline-none transition-colors focus:border-aurora-teal/40"
+                        className="rounded-xl ui-input px-3 py-2.5 text-sm text-text-primary outline-none transition-colors focus:border-aurora-teal/40 shadow-sm"
                       />
                       <input
                         type="text"
                         value={serverUrl}
                         onChange={(event) => setServerUrl(event.target.value)}
                         placeholder="Server URL"
-                        className="rounded-xl border border-white/[0.08] bg-black/20 px-3 py-2.5 text-sm text-text-primary outline-none transition-colors focus:border-aurora-teal/40"
+                        className="rounded-xl ui-input px-3 py-2.5 text-sm text-text-primary outline-none transition-colors focus:border-aurora-teal/40 shadow-sm"
                       />
                       <button
                         type="button"
@@ -852,9 +938,9 @@ export function SetupTab({ agent, onAgentUpdated }) {
 
                     <div className="mt-4 space-y-2">
                       {mcpServers.map((server) => (
-                        <div key={server.id} className="flex items-center justify-between gap-3 rounded-2xl border border-white/[0.06] bg-black/15 px-4 py-3">
+                        <div key={server.id} className="flex items-center justify-between gap-3 rounded-2xl border border-hairline bg-panel-soft px-4 py-3">
                           <div className="flex min-w-0 items-center gap-3">
-                            <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-white/[0.06] bg-white/[0.03]">
+                            <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-hairline bg-panel-soft/30">
                               <Server className="h-4 w-4 text-aurora-blue" />
                             </div>
                             <div className="min-w-0">
@@ -868,7 +954,7 @@ export function SetupTab({ agent, onAgentUpdated }) {
                             <button
                               type="button"
                               onClick={() => handleDeleteServer(server.id)}
-                              className="rounded-xl border border-white/[0.08] bg-black/20 p-2 text-text-muted transition-colors hover:border-aurora-rose/30 hover:text-aurora-rose"
+                              className="rounded-xl border border-hairline ui-well p-2 text-text-muted transition-colors hover:border-aurora-rose/30 hover:text-aurora-rose"
                             >
                               <Trash2 className="h-3.5 w-3.5" />
                             </button>
@@ -876,7 +962,7 @@ export function SetupTab({ agent, onAgentUpdated }) {
                         </div>
                       ))}
                       {!mcpLoading && mcpServers.length === 0 && (
-                        <div className="rounded-2xl border border-dashed border-white/[0.08] px-4 py-5 text-sm text-text-body">
+                        <div className="rounded-2xl border border-dashed border-hairline px-4 py-5 text-sm text-text-body">
                           No MCP servers configured yet. Add one above to make it a first-class capability in this workspace.
                         </div>
                       )}
@@ -885,7 +971,7 @@ export function SetupTab({ agent, onAgentUpdated }) {
                 </div>
 
                 <div className="space-y-4">
-                  <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-4">
+                  <div className="rounded-2xl border border-hairline bg-panel-soft/50 p-4">
                     <div className="text-sm font-medium text-text-primary">Discover and attach</div>
                     <div className="mt-1 text-xs text-text-body">Search the shared skill bank, or create a new skill from a local path, custom name, or GitHub reference.</div>
 
@@ -896,7 +982,7 @@ export function SetupTab({ agent, onAgentUpdated }) {
                         value={searchInput}
                         onChange={(event) => setSearchInput(event.target.value)}
                         placeholder="Search skills, paste path, or GitHub URL..."
-                        className="w-full rounded-2xl border border-white/[0.08] bg-black/20 py-3 pl-10 pr-3 text-sm text-text-primary outline-none transition-colors focus:border-aurora-teal/40"
+                        className="w-full rounded-2xl ui-input py-3 pl-10 pr-3 text-sm text-text-primary outline-none transition-colors focus:border-aurora-teal/40 shadow-sm"
                       />
                     </div>
 
@@ -924,10 +1010,10 @@ export function SetupTab({ agent, onAgentUpdated }) {
                             key={skill.id}
                             type="button"
                             onClick={() => syncAgentSkills([...(agentSkillIds || []), skill.id])}
-                            className="flex w-full items-center justify-between gap-3 rounded-2xl border border-white/[0.06] bg-black/15 px-4 py-3 text-left transition-colors hover:border-white/[0.12] hover:bg-white/[0.03]"
+                            className="flex w-full items-center justify-between gap-3 rounded-2xl border border-hairline bg-panel-soft px-4 py-3 text-left transition-colors hover:border-white/[0.12] hover:bg-panel-soft/30"
                           >
                             <div className="flex min-w-0 items-center gap-3">
-                              <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-white/[0.06] bg-white/[0.03]">
+                              <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-hairline bg-panel-soft/30">
                                 <Icon className="h-4 w-4 text-aurora-teal" />
                               </div>
                               <div className="min-w-0">
@@ -943,7 +1029,7 @@ export function SetupTab({ agent, onAgentUpdated }) {
                         );
                       })}
                       {!skillsLoading && filteredSkills.length === 0 && !searchInput && (
-                        <div className="rounded-2xl border border-dashed border-white/[0.08] px-4 py-5 text-sm text-text-body">
+                        <div className="rounded-2xl border border-dashed border-hairline px-4 py-5 text-sm text-text-body">
                           Your shared skill bank is empty. Paste a path or GitHub source above to seed it.
                         </div>
                       )}
@@ -956,7 +1042,7 @@ export function SetupTab({ agent, onAgentUpdated }) {
         </div>
       </div>
 
-      <div className="shrink-0 border-t border-white/[0.07] bg-canvas/80 p-4 backdrop-blur">
+      <div className="shrink-0 border-t border-hairline bg-canvas/80 p-4 backdrop-blur">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex min-h-6 items-center gap-2">
             {saveError && <span className="text-xs text-aurora-rose">{saveError}</span>}
@@ -967,7 +1053,7 @@ export function SetupTab({ agent, onAgentUpdated }) {
               type="button"
               disabled={!dirty || saving}
               onClick={handleDiscard}
-              className="rounded-xl border border-white/[0.08] px-4 py-2.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-text-muted transition-colors hover:border-white/[0.14] hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-50"
+              className="rounded-xl border border-hairline px-4 py-2.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-text-muted transition-colors hover:border-white/[0.14] hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-50"
             >
               Discard
             </button>

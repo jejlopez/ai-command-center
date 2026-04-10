@@ -74,8 +74,8 @@ export function LiveTaskRail({ tasks, selectedId, onSelect }) {
             className={cn(
               "w-full text-left px-4 py-3 rounded-lg border transition-all duration-200 flex items-center gap-4 group relative overflow-hidden",
               isSelected
-                ? "bg-white/[0.04] border-aurora-teal/30 shadow-[0_0_15px_rgba(0,217,200,0.08)]"
-                : "bg-white/[0.015] border-white/[0.04] hover:bg-white/[0.03] hover:border-white/[0.08] hover:-translate-y-[1px]"
+                ? "ui-well border-aurora-teal/30 shadow-[0_0_15px_rgba(0,217,200,0.08)]"
+                : "bg-panel-soft/40 border-hairline hover:bg-panel-soft hover:border-hairline-strong hover:-translate-y-[1px]"
             )}
           >
             {/* Left accent bar */}

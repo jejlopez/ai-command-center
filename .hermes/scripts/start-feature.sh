@@ -11,11 +11,11 @@ if [ -z "$FEATURE_NAME" ]; then
   exit 1
 fi
 
-# 🚨 DIRTY CHECK: Ensure the working directory is clean
+# 🚦 WORKSPACE STATE: Detect uncommitted changes
+WORKSPACE_STATE="clean"
 if ! git diff-index --quiet HEAD --; then
-  echo "⚠️  Dirty workspace detected! Please commit or stash your changes before starting a new feature."
-  echo "Hint: Run 'git status' to see what's pending."
-  exit 1
+  echo "⚠️  Uncommitted changes detected. Jarvis will manage flow preservation."
+  WORKSPACE_STATE="dirty"
 fi
 
 # 1. Sanitize the name for a git branch (lowercase, replace砥paces with hyphens)

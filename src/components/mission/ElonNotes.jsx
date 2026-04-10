@@ -21,7 +21,7 @@ export function ElonNotes({ notes }) {
       {notes.map(note => (
         <div
           key={note.id}
-          className="p-3 bg-white/[0.015] rounded-lg border border-white/[0.04] hover:border-aurora-violet/20 transition-colors"
+          className="p-3 ui-well rounded-lg border border-hairline hover:border-aurora-violet/20 transition-colors"
         >
           <div className="flex items-center justify-between mb-1.5">
             <span className="text-[10px] font-mono text-text-disabled">{formatTime(note.timestamp)}</span>

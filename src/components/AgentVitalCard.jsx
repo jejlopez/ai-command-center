@@ -26,7 +26,7 @@ function parseErrorMessage(raw) {
 
 const statusConfig = {
   processing: { label: 'In Flow', dot: 'bg-aurora-teal animate-pulse', badge: 'border-aurora-teal/20 bg-aurora-teal/10 text-aurora-teal' },
-  idle: { label: 'Standing By', dot: 'bg-text-muted', badge: 'border-white/10 bg-white/[0.04] text-text-muted' },
+  idle: { label: 'Standing By', dot: 'bg-text-muted', badge: 'border-hairline ui-panel-soft text-text-muted' },
   error: { label: 'Error', dot: 'bg-aurora-rose', badge: 'border-aurora-rose/20 bg-aurora-rose/10 text-aurora-rose' },
 };
 
@@ -62,7 +62,7 @@ export function AgentVitalCard({
             ? 'border-aurora-rose/20 bg-[linear-gradient(180deg,rgba(251,113,133,0.06),rgba(17,17,17,0.98))]'
             : isEphemeral
               ? 'border-dashed border-white/[0.15] bg-[linear-gradient(180deg,rgba(255,255,255,0.02),rgba(17,17,17,0.98))]'
-              : 'border-white/[0.08] bg-[linear-gradient(180deg,rgba(255,255,255,0.035),rgba(17,17,17,0.98))]',
+              : 'border-hairline bg-[linear-gradient(180deg,rgba(255,255,255,0.035),rgba(17,17,17,0.98))]',
         )}
         style={{ boxShadow: isError ? '0 8px 32px rgba(251,113,133,0.08)' : '0 8px 32px rgba(0,0,0,0.28)' }}
       >
@@ -83,13 +83,12 @@ export function AgentVitalCard({
               {status.label}
             </motion.div>
             {isEphemeral && (
-              <span className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-[0.18em] text-text-disabled">
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-hairline ui-panel-soft px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-[0.18em] text-text-disabled">
                 <Timer className="h-3 w-3" />
                 Temp
               </span>
             )}
-
-            <div className="rounded-xl border border-white/[0.08] bg-black/30 px-3.5 py-2.5 text-right">
+            <div className="bg-panel/95 backdrop-blur-md border border-hairline rounded-lg p-3 shadow-elevated text-[10px]">
               <div className="text-[9px] font-semibold uppercase tracking-[0.2em] text-text-disabled">Token Burn</div>
               <div className="mt-0.5 font-mono text-lg font-semibold leading-tight text-text-primary">
                 {(agent.totalTokens || 0).toLocaleString()}
@@ -155,7 +154,7 @@ export function AgentVitalCard({
               whileHover={{ scale: 1.03 }}
               whileTap={{ scale: 0.97 }}
               onClick={(e) => { e.stopPropagation(); onViewLogs?.(); }}
-              className="inline-flex items-center gap-2 rounded-xl border border-white/[0.1] bg-white/[0.03] px-3.5 py-2.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-text-muted transition-all hover:border-white/[0.18] hover:text-text-primary"
+              className="inline-flex items-center gap-2 rounded-xl border border-white/[0.1] bg-panel-soft px-3.5 py-2.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-text-muted transition-all hover:border-white/[0.18] hover:text-text-primary"
             >
               <Eye className="h-3.5 w-3.5" />
               View Live Logs
@@ -165,7 +164,7 @@ export function AgentVitalCard({
               whileHover={{ scale: 1.03 }}
               whileTap={{ scale: 0.97 }}
               onClick={(e) => { e.stopPropagation(); onTuneAgent?.(); }}
-              className="inline-flex items-center gap-2 rounded-xl border border-white/[0.1] bg-white/[0.03] px-3.5 py-2.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-text-muted transition-all hover:border-white/[0.18] hover:text-text-primary"
+              className="inline-flex items-center gap-2 rounded-xl border border-white/[0.1] bg-panel-soft px-3.5 py-2.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-text-muted transition-all hover:border-white/[0.18] hover:text-text-primary"
             >
               <Wand2 className="h-3.5 w-3.5" />
               Tune Agent

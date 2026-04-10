@@ -17,7 +17,8 @@ export function NavRail({ activeId, onNavigate }) {
 
   return (
     <nav className="flex items-center justify-center min-w-0 w-full max-w-full">
-      <div className="relative flex items-center gap-1 min-w-0 w-full overflow-x-auto no-scrollbar rounded-[1.2rem] border border-white/[0.05] bg-black/20 p-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
+      <div className="relative flex items-center gap-1 min-w-0 w-full overflow-x-auto no-scrollbar rounded-[1.35rem] bg-panel-soft/55 p-1.5 shadow-inner">
+        <div className="pointer-events-none absolute inset-0 rounded-[1.35rem] bg-[linear-gradient(180deg,color-mix(in_srgb,var(--color-hairline-soft)_72%,transparent),transparent_34%)]" />
         {items.map((item) => {
           const showBadge = item.id === 'missions' && pendingCount > 0;
           const isActive = activeId === item.id;
@@ -28,23 +29,30 @@ export function NavRail({ activeId, onNavigate }) {
               onClick={() => onNavigate(item.id)}
               aria-label={item.label}
               className={cn(
-                'group relative flex items-center gap-1.5 rounded-[0.95rem] px-2.5 py-2 text-[12px] font-medium whitespace-nowrap transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aurora-teal/40 xl:px-3.5 xl:text-[13px]',
+                'group relative flex items-center gap-1.5 rounded-[1rem] px-2.5 py-2 text-[12px] font-medium whitespace-nowrap transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aurora-teal/40 xl:px-3.5 xl:text-[13px]',
                 isActive ? 'text-text-primary' : 'text-text-muted hover:text-text-primary'
               )}
             >
               {isActive && (
                 <Motion.div
                   layoutId="nav-indicator"
-                  className="absolute inset-0 rounded-[0.95rem] bg-white/[0.06] ring-1 ring-white/[0.06]"
+                  className="absolute inset-0 rounded-[1rem] bg-panel-soft/80"
                   initial={false}
                   transition={{ type: 'spring', stiffness: 300, damping: 30 }}
                 />
               )}
+              {isActive && (
+                <>
+                  <span className="pointer-events-none absolute inset-0 rounded-[1rem] opacity-60 [background:radial-gradient(circle_at_50%_0%,color-mix(in_srgb,var(--color-hairline-soft)_90%,transparent),transparent_52%)]" />
+                  <span className="pointer-events-none absolute inset-x-[1px] inset-y-[1px] rounded-[calc(1rem-1px)] [box-shadow:inset_0_1px_0_color-mix(in_srgb,var(--color-hairline-soft)_60%,transparent),inset_0_-8px_16px_rgba(0,0,0,0.08)]" />
+                  <span className="pointer-events-none absolute inset-x-3 bottom-[4px] h-px rounded-full bg-[color-mix(in_srgb,var(--color-aurora-teal)_72%,transparent)]" />
+                </>
+              )}
 
               <span className="relative z-10 flex items-center gap-2">
-                <item.icon className={cn('w-3.5 h-3.5 transition-colors', isActive ? 'text-aurora-teal' : 'text-text-muted/55 group-hover:text-text-primary')} />
-                <span className={cn('tracking-[0.01em]', item.id === 'managedOps' && 'hidden lg:inline', isActive && 'text-white')}>{item.label}</span>
-                <span className={cn('tracking-[0.01em] lg:hidden', item.id === 'managedOps' ? 'inline' : 'hidden', isActive && 'text-white')}>Managed</span>
+                <item.icon className={cn('w-3.5 h-3.5 transition-colors', isActive ? 'text-aurora-teal' : 'text-text-muted group-hover:text-text-primary')} />
+                <span className={cn('tracking-[0.01em]', item.id === 'managedOps' && 'hidden lg:inline', isActive ? 'text-text' : 'text-text-muted')}>{item.label}</span>
+                <span className={cn('tracking-[0.01em] lg:hidden', item.id === 'managedOps' ? 'inline' : 'hidden', isActive ? 'text-text' : 'text-text-muted')}>Managed</span>
               </span>
 
               <AnimatePresence>

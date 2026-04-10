@@ -70,7 +70,7 @@ function FilterButton({ active, label, onClick }) {
         'ui-chip rounded-full border px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aurora-teal/40',
         active
           ? 'border-aurora-teal/25 bg-aurora-teal/10 text-aurora-teal'
-          : 'border-white/[0.08] bg-white/[0.03] text-text-muted hover:text-text-primary'
+          : 'border-hairline bg-panel-soft text-text-muted hover:text-text-primary'
       )}
     >
       {label}
@@ -91,7 +91,7 @@ function AlertCard({ alert, onClick, onDismiss }) {
       exit={{ opacity: 0, x: 32 }}
       whileHover={{ y: -2 }}
       onClick={() => onClick(alert)}
-      className="ui-panel w-full p-4 text-left transition-colors hover:bg-white/[0.04]"
+      className="ui-panel w-full p-4 text-left transition-colors hover:bg-panel-soft"
     >
       <div className={cn('absolute left-0 top-0 bottom-0 w-[3px]', meta.rail)} />
       <div className="flex items-start gap-3">
@@ -116,7 +116,7 @@ function AlertCard({ alert, onClick, onDismiss }) {
                 event.stopPropagation();
                 onDismiss(alert.id);
               }}
-              className="rounded-xl border border-white/[0.08] bg-white/[0.03] px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-text-disabled transition-colors hover:text-aurora-rose focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aurora-teal/40"
+              className="rounded-xl border border-hairline bg-panel-soft px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-text-dim transition-colors hover:text-aurora-rose focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aurora-teal/40"
             >
               Dismiss
             </button>
@@ -169,7 +169,7 @@ export function NotificationsPanel({ notificationsOpen, setNotificationsOpen, on
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-40 bg-black/35 backdrop-blur-sm"
+            className="fixed inset-0 z-40 bg-black/25 backdrop-blur-sm"
             onClick={() => setNotificationsOpen(false)}
           />
 
@@ -178,9 +178,9 @@ export function NotificationsPanel({ notificationsOpen, setNotificationsOpen, on
             animate={{ x: 0, opacity: 1 }}
             exit={{ x: 420, opacity: 0 }}
             transition={{ type: 'spring', damping: 30, stiffness: 220 }}
-            className="ui-drawer fixed inset-y-0 right-0 z-50 flex w-[440px] max-w-[96vw] flex-col overflow-hidden shadow-[-18px_0_60px_rgba(0,0,0,0.55)]"
+            className="ui-drawer fixed inset-y-0 right-0 z-50 flex w-[440px] max-w-[96vw] flex-col overflow-hidden shadow-[-18px_0_60px_rgba(0,0,0,0.15)]"
           >
-            <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(214,199,161,0.08),transparent_24%),radial-gradient(circle_at_18%_8%,rgba(45,212,191,0.10),transparent_22%),linear-gradient(180deg,rgba(255,255,255,0.02),transparent_24%)]" />
+            <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,var(--color-aurora-teal-soft),transparent_24%),radial-gradient(circle_at_18%_8%,rgba(45,212,191,0.08),transparent_22%),linear-gradient(180deg,var(--color-panel),transparent_24%)]" />
 
             <div className="relative border-b border-hairline px-5 py-5">
               <div className="flex items-start justify-between gap-4">
@@ -232,7 +232,7 @@ export function NotificationsPanel({ notificationsOpen, setNotificationsOpen, on
                 type="button"
                 onClick={() => handleAlertClick({ action: directive.action })}
                 className={cn(
-                  'ui-panel w-full p-4 text-left transition-colors hover:bg-white/[0.04]',
+                  'ui-panel w-full p-4 text-left transition-colors hover:bg-panel-soft',
                   directive.tone === 'rose'
                     ? 'border-aurora-rose/20'
                     : directive.tone === 'amber'

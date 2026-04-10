@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { useCommanderPreferences } from './useCommanderPreferences';
+import { usePreferences } from '../context/PreferenceContext';
 import { useAgents, useConnectedSystems, usePendingReviews, useTasks } from './useSupabase';
 
 function relativeMinutes(minutes) {
@@ -149,7 +149,7 @@ export function useDerivedAlerts() {
     quietHoursEnd,
     notificationRoute,
     commanderPersona,
-  } = useCommanderPreferences();
+  } = usePreferences();
 
   const alerts = useMemo(
     () => buildAlerts({ agents, tasks, reviews, connectedSystems }),

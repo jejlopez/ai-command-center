@@ -18,18 +18,23 @@ import { TimeRangeProvider } from './utils/useTimeRange';
 import { useSystemState } from './context/SystemStateContext';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { WorkspaceProvider } from './context/WorkspaceContext';
+import { PreferenceProvider } from './context/PreferenceContext';
 import { useAgents, usePendingReviews, useTasks } from './utils/useSupabase';
 import { useDerivedAlerts } from './utils/useDerivedAlerts';
 import { useCommandCenterTruth } from './utils/useCommandCenterTruth';
 import { runCommanderHeartbeat } from './lib/api';
-import { Bell, Settings, User, Loader2, Search } from 'lucide-react';
+import { Bell, Settings, UserCircle2, Loader2, Search } from 'lucide-react';
 import { cn } from './utils/cn';
 import { ProjectSwitcher } from './components/ProjectSwitcher';
 
 function TacticalTopbarButton({ active, onClick, children, tone = 'teal', pulse = false, ariaLabel }) {
   const toneMap = {
-    teal: active ? 'border-aurora-teal/35 text-aurora-teal bg-aurora-teal/10' : 'text-text-muted hover:text-text-primary hover:border-aurora-teal/20',
-    amber: active ? 'border-aurora-amber/35 text-aurora-amber bg-aurora-amber/10' : 'text-text-muted hover:text-text-primary hover:border-aurora-amber/20',
+    teal: active
+      ? 'border-transparent text-aurora-teal bg-panel shadow-xl'
+      : 'border-transparent text-text-dim hover:text-text',
+    amber: active
+      ? 'border-transparent text-aurora-amber bg-panel shadow-xl'
+      : 'border-transparent text-text-dim hover:text-text',
   };
 
   return (
@@ -37,14 +42,22 @@ function TacticalTopbarButton({ active, onClick, children, tone = 'teal', pulse 
       onClick={onClick}
       aria-label={ariaLabel}
       className={cn(
-        'group relative flex h-11 w-11 items-center justify-center overflow-hidden rounded-2xl border border-white/[0.06] bg-white/[0.03] transition-all duration-200 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]',
+        'group relative flex h-11 w-11 items-center justify-center overflow-hidden rounded-[1.15rem] border bg-panel-soft backdrop-blur transition-all duration-200 shadow-main active:scale-[0.98]',
         toneMap[tone] || toneMap.teal
       )}
     >
-      <span className="pointer-events-none absolute inset-0 opacity-[0.06] [background-image:repeating-linear-gradient(180deg,rgba(255,255,255,0.18)_0px,rgba(255,255,255,0.18)_1px,transparent_1px,transparent_12px)]" />
-      <span className={cn('pointer-events-none absolute inset-0 rounded-2xl border', active ? 'border-current/20' : 'border-transparent')} />
-      <span className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(255,255,255,0.08),transparent_38%)]" />
-      <span className="pointer-events-none absolute inset-0 opacity-0 transition-opacity duration-300 group-hover:opacity-100 bg-[linear-gradient(90deg,transparent,rgba(255,255,255,0.08),transparent)]" />
+      <span className="pointer-events-none absolute inset-0 opacity-[0.035] [background-image:repeating-linear-gradient(180deg,var(--color-text-dim)_0px,var(--color-text-dim)_1px,transparent_1px,transparent_14px)]" />
+      <span
+        className={cn(
+          'pointer-events-none absolute inset-[6px] rounded-[0.95rem] transition-all duration-200',
+          '[background:linear-gradient(180deg,var(--color-panel),var(--color-canvas-overlay))]',
+          '[box-shadow:inset_0_1px_0_var(--color-hairline-soft),inset_0_-8px_14px_rgba(0,0,0,0.16)]',
+          active && tone === 'teal' && '[box-shadow:inset_0_1px_0_var(--color-hairline-soft),inset_0_-10px_16px_color-mix(in_srgb,var(--color-aurora-teal)_8%,transparent)]',
+          active && tone === 'amber' && '[box-shadow:inset_0_1px_0_var(--color-hairline-soft),inset_0_-10px_16px_color-mix(in_srgb,var(--color-aurora-amber)_9%,transparent)]'
+        )}
+      />
+      <span className="pointer-events-none absolute inset-[6px] rounded-[0.95rem] [background:linear-gradient(180deg,color-mix(in_srgb,var(--color-hairline-strong)_50%,transparent),transparent_28%)] opacity-70" />
+      <span className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,var(--color-panel-soft),transparent_48%)]" />
       {pulse && (
         <>
           <span className="absolute right-1.5 top-1.5 h-2.5 w-2.5 rounded-full bg-aurora-rose ring-2 ring-canvas" />
@@ -68,11 +81,11 @@ function CommandReadinessChip({ truth, onClick }) {
       type="button"
       onClick={onClick}
       className={cn(
-        'hidden xl:inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.18em] transition-colors',
+        'hidden xl:inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.18em] transition-colors shadow-main',
         tone
       )}
     >
-      <span className="h-2 w-2 rounded-full bg-current" />
+      <span className="h-2 w-2 rounded-full bg-current shadow-[0_0_8px_currentColor]" />
       {truth.readinessLabel}
     </button>
   );
@@ -168,9 +181,9 @@ function Dashboard() {
       <main className="flex-1 flex flex-col relative">
         {/* Topbar */}
         <header className="px-8 py-4 shrink-0 z-10 w-full relative">
-          <div className="relative flex items-center gap-4 rounded-[28px] border border-white/[0.06] bg-[linear-gradient(180deg,rgba(255,255,255,0.035),rgba(255,255,255,0.015))] px-4 py-3 shadow-[0_24px_80px_rgba(0,0,0,0.24)] backdrop-blur-sm before:pointer-events-none before:absolute before:inset-x-10 before:top-0 before:h-px before:bg-gradient-to-r before:from-transparent before:via-white/20 before:to-transparent">
-            <div className="pointer-events-none absolute inset-0 rounded-[28px] opacity-[0.06] [background-image:repeating-linear-gradient(180deg,rgba(255,255,255,0.18)_0px,rgba(255,255,255,0.18)_1px,transparent_1px,transparent_12px)]" />
-            <div className="pointer-events-none absolute inset-0 rounded-[28px] bg-[radial-gradient(circle_at_12%_0%,rgba(45,212,191,0.08),transparent_24%),radial-gradient(circle_at_88%_0%,rgba(167,139,250,0.08),transparent_22%)]" />
+          <div className="ui-cyan-edge relative flex items-center gap-4 rounded-[28px] px-4 py-3 shadow-xl backdrop-blur-sm before:pointer-events-none before:absolute before:inset-x-10 before:top-0 before:h-px before:bg-gradient-to-r before:from-transparent before:via-hairline-strong before:to-transparent">
+            <div className="pointer-events-none absolute inset-0 rounded-[28px] opacity-[0.06] [background-image:repeating-linear-gradient(180deg,var(--color-text-dim)_0px,var(--color-text-dim)_1px,transparent_1px,transparent_12px)]" />
+            <div className="pointer-events-none absolute inset-0 rounded-[28px] bg-[radial-gradient(circle_at_12%_0%,var(--color-aurora-teal-soft),transparent_24%),radial-gradient(circle_at_88%_0%,var(--color-aurora-violet-soft),transparent_22%)]" />
             <div className="shrink-0 min-w-0">
               <ProjectSwitcher compact />
             </div>
@@ -186,7 +199,7 @@ function Dashboard() {
               />
               <button
                 onClick={() => setCmdOpen(true)}
-                className="flex items-center justify-center w-10 h-10 rounded-2xl border border-white/[0.06] bg-white/[0.03] hover:bg-white/[0.055] transition-colors text-text-muted shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
+                className="flex items-center justify-center w-10 h-10 rounded-2xl border border-hairline bg-panel-soft hover:bg-panel transition-colors text-text-dim shadow-sm"
                 aria-label="Open search"
               >
                 <Search className="w-3.5 h-3.5" />
@@ -202,11 +215,7 @@ function Dashboard() {
                 pulse={criticalCount > 0 || unreadCount > 0}
                 ariaLabel="Open command alerts"
               >
-                <span className="pointer-events-none absolute inset-0 rounded-2xl">
-                  <span className="absolute left-1/2 top-1/2 h-7 w-7 -translate-x-1/2 -translate-y-1/2 rounded-full border border-aurora-amber/20" />
-                  <span className="absolute left-1/2 top-1/2 h-9 w-9 -translate-x-1/2 -translate-y-1/2 rounded-full border border-aurora-amber/10" />
-                </span>
-                <Bell className="relative z-10 h-4.5 w-4.5" />
+                <Bell className="relative z-10 h-[17px] w-[17px] [stroke-width:1.8]" />
               </TacticalTopbarButton>
 
               {/* Settings */}
@@ -216,11 +225,7 @@ function Dashboard() {
                 tone="teal"
                 ariaLabel="Open systems control"
               >
-                <span className="pointer-events-none absolute inset-0 rounded-2xl">
-                  <span className="absolute left-1/2 top-1/2 h-7 w-7 -translate-x-1/2 -translate-y-1/2 rounded-full border border-aurora-teal/20" />
-                  <span className="absolute left-1/2 top-1/2 h-9 w-9 -translate-x-1/2 -translate-y-1/2 rounded-full border border-aurora-teal/10" />
-                </span>
-                <Settings className="relative z-10 h-4.5 w-4.5" />
+                <Settings className="relative z-10 h-[17px] w-[17px] [stroke-width:1.8]" />
               </TacticalTopbarButton>
 
               {/* User Avatar */}
@@ -230,11 +235,7 @@ function Dashboard() {
                 tone="teal"
                 ariaLabel="Open commander identity"
               >
-                <span className="pointer-events-none absolute inset-0 rounded-2xl">
-                  <span className="absolute left-1/2 top-1/2 h-7 w-7 -translate-x-1/2 -translate-y-1/2 rounded-full border border-aurora-teal/20" />
-                  <span className="absolute left-1/2 top-1/2 h-9 w-9 -translate-x-1/2 -translate-y-1/2 rounded-full border border-aurora-blue/10" />
-                </span>
-                <User className="w-4 h-4 text-aurora-teal" />
+                <UserCircle2 className="relative z-10 h-[17px] w-[17px] [stroke-width:1.8]" />
               </TacticalTopbarButton>
             </div>
           </div>
@@ -310,7 +311,9 @@ function App() {
   return (
     <AppErrorBoundary>
       <AuthProvider>
-        <AuthGate />
+        <PreferenceProvider>
+          <AuthGate />
+        </PreferenceProvider>
       </AuthProvider>
     </AppErrorBoundary>
   );

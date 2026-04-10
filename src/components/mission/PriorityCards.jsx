@@ -5,12 +5,12 @@ import { cn } from '../../utils/cn';
 const priorityStyles = {
   critical: { bg: 'bg-aurora-teal/10', text: 'text-aurora-teal', border: 'border-aurora-teal/20', label: 'Critical' },
   high:     { bg: 'bg-aurora-amber/10', text: 'text-aurora-amber', border: 'border-aurora-amber/20', label: 'High' },
-  normal:   { bg: 'bg-white/5',         text: 'text-text-muted',    border: 'border-white/10',        label: 'Normal' },
+  normal:   { bg: 'ui-well',         text: 'text-text-muted',    border: 'border-hairline',        label: 'Normal' },
 };
 
 function MiniSparkline({ progress }) {
   return (
-    <div className="w-full h-1 rounded-full bg-white/[0.06] overflow-hidden mt-2">
+    <div className="w-full h-1 rounded-full ui-well overflow-hidden mt-2">
       <motion.div
         className="h-full rounded-full bg-aurora-violet/60"
         initial={{ width: 0 }}
@@ -36,10 +36,10 @@ export function PriorityCards({ priorities, onFilterTasks }) {
             onClick={() => onFilterTasks?.(p.id)}
             className={cn(
               "w-full text-left p-4 rounded-lg border transition-all duration-200 group",
-              "bg-white/[0.015] hover:bg-white/[0.03] hover:-translate-y-[1px]",
+              "ui-well hover:bg-panel-soft hover:-translate-y-[1px]",
               style.border,
               // Blueprint grid background for Elon section
-              "bg-[radial-gradient(circle_at_1px_1px,rgba(255,255,255,0.02)_1px,transparent_0)] bg-[length:16px_16px]"
+              "bg-[radial-gradient(circle_at_1px_1px,var(--color-hairline)_1px,transparent_0)] bg-[length:16px_16px]"
             )}
           >
             {/* Title */}

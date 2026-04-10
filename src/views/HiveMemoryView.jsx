@@ -57,7 +57,7 @@ export function HiveMemoryView({ context }) {
         
         <div className="flex gap-4">
            <div className="flex-1 ui-panel rounded-2xl p-6 flex flex-col justify-center relative group cursor-pointer overflow-hidden">
-             <div className="absolute inset-0 bg-white/5 opacity-0 group-hover:opacity-100 transition-opacity"></div>
+             <div className="absolute inset-0 bg-panel-soft/30 opacity-0 group-hover:opacity-100 transition-opacity"></div>
              <div className="flex flex-col gap-2">
                <PlusCircle className="w-6 h-6 text-aurora-teal" />
                <span className="text-sm font-medium text-text-primary">Embed Data source</span>
@@ -71,7 +71,7 @@ export function HiveMemoryView({ context }) {
                <input 
                  type="text" 
                  placeholder="Search the hive..." 
-                 className="w-full bg-canvas/50 border border-hairline rounded-xl px-4 py-3 pl-10 text-sm focus:outline-none focus:border-white/20 text-text-primary placeholder:text-text-muted"
+                 className="w-full bg-panel-soft border border-hairline rounded-xl px-4 py-3 pl-10 text-sm focus:outline-none focus:border-aurora-teal/30 text-text-primary placeholder:text-text-muted transition-all"
                />
                <Search className="w-4 h-4 text-text-muted absolute left-3 top-3.5" />
              </div>

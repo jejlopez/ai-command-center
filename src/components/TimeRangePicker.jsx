@@ -47,8 +47,8 @@ export function TimeRangePicker() {
                 className={cn(
                   "w-full text-left px-3 py-2 text-xs font-medium rounded-lg transition-colors",
                   range === r.id 
-                    ? "text-aurora-teal bg-aurora-teal/10" 
-                    : "text-text-primary hover:bg-white/[0.04]"
+                    ? "text-aurora-teal bg-aurora-teal/10 font-bold" 
+                    : "text-text-primary hover:bg-panel-soft"
                 )}
               >
                 {r.label}

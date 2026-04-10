@@ -22,7 +22,7 @@ function InfoBubble({ text }) {
             initial={{ opacity: 0, y: 4 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 4 }}
-            className="absolute bottom-full left-1/2 z-50 mb-2 w-56 -translate-x-1/2 rounded-lg border border-white/10 bg-surface p-3 text-[11px] leading-relaxed text-text-body shadow-2xl pointer-events-none"
+            className="absolute bottom-full left-1/2 z-50 mb-2 w-56 -translate-x-1/2 rounded-lg border border-hairline bg-panel-elevated p-3 text-[11px] leading-relaxed text-text-body shadow-elevated pointer-events-none"
           >
             {text}
           </motion.div>
@@ -36,7 +36,7 @@ function Toggle({ value, onChange }) {
   return (
     <button
       onClick={() => onChange(!value)}
-      className={cn('relative h-5 w-9 rounded-full transition-colors', value ? 'bg-aurora-teal' : 'bg-white/10')}
+      className={cn('relative h-5 w-9 rounded-full transition-colors', value ? 'bg-aurora-teal' : 'bg-panel-soft')}
     >
       <div className={cn('absolute top-[3px] h-3.5 w-3.5 rounded-full bg-white transition-transform', value ? 'translate-x-[18px]' : 'translate-x-[3px]')} />
     </button>
@@ -159,7 +159,7 @@ export function ConfigTab({ agent }) {
             'rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider',
             agent.status === 'processing' ? 'bg-aurora-teal/10 text-aurora-teal' :
             agent.status === 'error' ? 'bg-aurora-rose/10 text-aurora-rose' :
-            'bg-white/5 text-text-muted'
+            'ui-well text-text-muted'
           )}>
             {agent.status}
           </div>
@@ -176,7 +176,7 @@ export function ConfigTab({ agent }) {
                 'rounded-full border px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.16em] transition-colors',
                 selectedProvider === 'All'
                   ? 'border-aurora-teal/30 bg-aurora-teal/10 text-aurora-teal'
-                  : 'border-white/[0.08] bg-white/[0.02] text-text-muted hover:bg-white/[0.04]'
+                  : 'border-hairline bg-panel-soft text-text-muted hover:bg-panel-active'
               )}
             >
               All
@@ -190,7 +190,7 @@ export function ConfigTab({ agent }) {
                   'rounded-full border px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.16em] transition-colors',
                   selectedProvider === provider
                     ? 'border-aurora-teal/30 bg-aurora-teal/10 text-aurora-teal'
-                    : 'border-white/[0.08] bg-white/[0.02] text-text-muted hover:bg-white/[0.04]'
+                    : 'border-hairline bg-panel-soft text-text-muted hover:bg-panel-active'
                 )}
               >
                 {provider}
@@ -200,7 +200,7 @@ export function ConfigTab({ agent }) {
           <div className="relative">
             <button
               onClick={() => setShowModelDropdown(!showModelDropdown)}
-              className="flex w-full items-center justify-between rounded-lg border border-white/[0.07] bg-white/[0.03] px-3 py-2.5 text-sm text-text-primary transition-colors hover:border-white/[0.14]"
+              className="flex w-full items-center justify-between rounded-lg border border-hairline bg-panel-soft px-3 py-2.5 text-sm text-text-primary transition-colors hover:border-white/[0.14]"
             >
               <span className="font-mono text-sm">{model}</span>
               <ChevronDown className={cn('h-4 w-4 text-text-muted transition-transform', showModelDropdown && 'rotate-180')} />
@@ -211,7 +211,7 @@ export function ConfigTab({ agent }) {
                   initial={{ opacity: 0, y: -4 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -4 }}
-                  className="absolute left-0 right-0 top-full z-50 mt-1 max-h-64 overflow-y-auto rounded-lg border border-white/10 bg-surface shadow-2xl no-scrollbar"
+                  className="absolute left-0 right-0 top-full z-50 mt-1 max-h-64 overflow-y-auto rounded-lg border border-hairline bg-panel-elevated shadow-elevated no-scrollbar"
                 >
                   <div>
                     <div className="bg-canvas/50 px-3 py-1.5 text-[9px] font-bold uppercase tracking-[0.2em] text-text-disabled">
@@ -227,7 +227,7 @@ export function ConfigTab({ agent }) {
                             markDirty();
                           }}
                           className={cn(
-                            'flex w-full items-center justify-between px-3 py-2 text-left transition-colors hover:bg-white/[0.05]',
+                            'flex w-full items-center justify-between px-3 py-2 text-left transition-colors hover:bg-panel-soft',
                             model === m.modelKey && 'bg-aurora-teal/5'
                           )}
                         >
@@ -238,13 +238,15 @@ export function ConfigTab({ agent }) {
                       : <div className="px-3 py-3 text-xs text-text-muted">No saved models for this provider yet.</div>}
                   </div>
                   <div className="border-t border-white/5 p-3 space-y-2">
-                    <input
-                      type="text"
-                      value={newModelLabel}
-                      onChange={(e) => setNewModelLabel(e.target.value)}
-                      placeholder="Add model to your bank"
-                      className="w-full rounded-lg border border-white/[0.07] bg-white/[0.03] px-3 py-2 text-xs font-mono text-text-primary outline-none focus:border-aurora-teal/40"
-                    />
+                    <div className="rounded-xl border border-hairline bg-panel-soft px-3 py-3 shadow-inner">
+                      <input
+                        type="text"
+                        value={newModelLabel}
+                        onChange={(e) => setNewModelLabel(e.target.value)}
+                        placeholder="Add model to your bank"
+                        className="w-full bg-transparent text-xs font-mono text-text-primary outline-none focus:border-aurora-teal/40"
+                      />
+                    </div>
                     <button
                       type="button"
                       onClick={handleAddModel}
@@ -275,7 +277,7 @@ export function ConfigTab({ agent }) {
                   'rounded-lg border px-3 py-1.5 text-xs font-medium transition-all',
                   temp === preset.value
                     ? 'border-aurora-teal/40 bg-aurora-teal/10 text-aurora-teal'
-                    : 'border-white/[0.07] bg-white/[0.03] text-text-muted hover:border-white/[0.14]'
+                    : 'border-hairline bg-panel-soft text-text-muted hover:border-white/[0.14]'
                 )}
               >
                 {preset.label}
@@ -289,7 +291,7 @@ export function ConfigTab({ agent }) {
               placeholder="Custom"
               value={customTemp}
               onChange={(e) => { setCustomTemp(e.target.value); setTemp(parseFloat(e.target.value) || 0); markDirty(); }}
-              className="w-20 rounded-lg border border-white/[0.07] bg-white/[0.03] px-2 py-1.5 text-center font-mono text-xs text-text-primary outline-none transition-colors focus:border-aurora-teal/40"
+              className="w-20 rounded-lg border border-hairline bg-panel-soft px-2 py-1.5 text-center font-mono text-xs text-text-primary outline-none transition-colors focus:border-aurora-teal/40"
             />
           </div>
         </div>
@@ -308,7 +310,7 @@ export function ConfigTab({ agent }) {
                   'rounded-lg border px-3 py-1.5 text-xs font-medium capitalize transition-all',
                   respLength === length
                     ? 'border-aurora-teal/40 bg-aurora-teal/10 text-aurora-teal'
-                    : 'border-white/[0.07] bg-white/[0.03] text-text-muted hover:border-white/[0.14]'
+                    : 'border-hairline bg-panel-soft text-text-muted hover:border-white/[0.14]'
                 )}
               >
                 {length}
@@ -325,7 +327,7 @@ export function ConfigTab({ agent }) {
               <button
                 type="button"
                 onClick={() => { setSysPrompt(getTemplateForRole(agent.role)); markDirty(); }}
-                className="flex items-center gap-1.5 rounded-lg border border-white/[0.07] px-2.5 py-1 text-[10px] font-medium text-text-muted transition-colors hover:border-white/[0.14] hover:text-text-primary"
+                className="flex items-center gap-1.5 rounded-lg border border-hairline px-2.5 py-1 text-[10px] font-medium text-text-muted transition-colors hover:border-hairline-strong hover:text-text-primary shadow-sm"
               >
                 <RotateCcw className="h-3 w-3" />
                 Reset to default
@@ -336,7 +338,7 @@ export function ConfigTab({ agent }) {
             value={sysPrompt}
             onChange={(e) => { setSysPrompt(e.target.value); markDirty(); }}
             rows={5}
-            className="w-full resize-none rounded-lg border border-white/[0.07] bg-white/[0.03] px-3 py-2.5 text-xs leading-relaxed text-text-primary outline-none transition-colors focus:border-aurora-teal/40"
+            className="w-full resize-none rounded-lg border border-hairline bg-panel-soft px-3 py-2.5 text-xs leading-relaxed text-text-primary outline-none transition-colors focus:border-aurora-teal/40"
           />
           <div className="mt-1.5 flex justify-between font-mono text-[10px] text-text-disabled">
             <span>{sysPrompt.length} chars</span>
@@ -362,12 +364,12 @@ export function ConfigTab({ agent }) {
                       'flex w-full items-start gap-3 rounded-lg border px-3 py-2.5 text-left transition-all',
                       spawnPattern === pattern.id
                         ? 'border-aurora-teal/30 bg-aurora-teal/5'
-                        : 'border-white/[0.05] bg-white/[0.02] hover:border-white/[0.1]'
+                        : 'border-hairline bg-panel-soft hover:border-white/[0.1]'
                     )}
                   >
                     <div className={cn(
                       'mt-0.5 h-3 w-3 shrink-0 rounded-full border-2 transition-colors',
-                      spawnPattern === pattern.id ? 'border-aurora-teal bg-aurora-teal' : 'border-white/20'
+                      spawnPattern === pattern.id ? 'border-aurora-teal bg-aurora-teal' : 'border-hairline-strong'
                     )} />
                     <div>
                       <div className="text-xs font-medium text-text-primary">{pattern.label}</div>
@@ -397,13 +399,13 @@ export function ConfigTab({ agent }) {
         </div>
       </div>
 
-      <div className="shrink-0 border-t border-white/[0.07] bg-canvas/80 p-4 backdrop-blur">
+      <div className="shrink-0 border-t border-hairline bg-canvas/80 p-4 backdrop-blur">
         <div className="flex gap-2">
           <button
             disabled={!dirty}
             className={cn(
               'flex-1 rounded-lg py-2.5 text-xs font-bold uppercase tracking-wider transition-all',
-              dirty ? 'bg-aurora-teal text-[#000] hover:bg-aurora-teal/90' : 'cursor-not-allowed bg-white/5 text-text-disabled'
+              dirty ? 'bg-aurora-teal text-[#000] hover:bg-aurora-teal/90 shadow-glow-teal' : 'cursor-not-allowed ui-well text-text-disabled'
             )}
           >
             Save Changes
@@ -411,7 +413,7 @@ export function ConfigTab({ agent }) {
           <button
             disabled={!dirty}
             onClick={handleDiscard}
-            className="rounded-lg border border-white/[0.07] px-4 py-2.5 text-xs font-medium text-text-muted transition-colors hover:border-white/[0.14]"
+            className="rounded-lg border border-hairline px-4 py-2.5 text-xs font-medium text-text-muted transition-colors hover:border-white/[0.14]"
           >
             Discard
           </button>

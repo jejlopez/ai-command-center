@@ -48,10 +48,21 @@ Every component must adhere to the Obsidian Core design system.
 - **Typography**: Headings: "Inter" (tight tracking). Data/Code: "JetBrains Mono".
 
 ### UI Mood
-- Heavy use of `backdrop-blur` and `bg-surface/95`.
-- 1px borders with low-opacity white (`border-white/5`).
+- Heavy use of `backdrop-blur` and variable-based backgrounds.
+- 1px borders with low-opacity white (Dark) or low-opacity black (Light).
 - Animated status dots (Pulsing = Processing, Blinking Rose = Error).
 - Snappy transitions via `framer-motion` (Spring physics only).
+
+### Theme Protocols: "Obsidian" vs "Aurora"
+- **Obsidian Dark (Default)**:
+    - Canvas: `#0A0A0A` / Panel: `rgba(255,255,255,0.04)`.
+    - Hairlines: `rgba(255,255,255,0.08)`.
+    - Vibe: Deep space, technical, high-density.
+- **Aurora Light**:
+    - Canvas: `#F2F2F7` / Panel: `#FFFFFF`.
+    - Hairlines: `rgba(0,0,0,0.06)`.
+    - Shadows: Heavy soft elevation (`shadow-2xl` for modals, `shadow-md` for cards).
+    - Vibe: Clean, airy, premium utility.
 
 ---
 
