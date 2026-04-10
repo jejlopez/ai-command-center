@@ -179,6 +179,7 @@ These are not separate feature IDs yet. They should be implemented as depth adde
 4. Push mission-pattern winners into provider, lane, and approval defaults more aggressively
 5. Keep widening trust and doctrine readback where operators make decisions
 6. Turn durable-fleet shaping guidance into stronger automatic coverage defaults
+7. Surface trust-recovery state and fleet-shaping actions directly in executive and operator surfaces
 
 ## Autodrive Program Rule
 

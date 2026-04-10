@@ -1797,6 +1797,31 @@ function SpecialistFleetTab({ agents, lifecycleEvents, skills, tasks }) {
     }
   }
 
+  async function handleCreateRecommendedPersistent(target) {
+    if (!target?.role || !model) return;
+    setBusy(true);
+    setMessage('');
+    try {
+      const laneName = `${target.role}-${target.domain || 'core'}-lane`;
+      const objectiveText = target.domain
+        ? `Persistent ${target.role} coverage for ${target.domain}${target.intentType ? ` / ${target.intentType}` : ''} missions.`
+        : `Persistent ${target.role} coverage for Commander where durable fleet pressure is highest.`;
+      const agent = await createPersistentSpecialist({
+        name: laneName,
+        objective: objectiveText,
+        role: target.role,
+        model,
+        commanderId: commander?.id || null,
+        skills: selectedSkills,
+      });
+      setMessage(`Persistent lane ${agent.name} is now live for ${target.domain ? `${target.domain} coverage` : `${target.role} coverage`}.`);
+    } catch (error) {
+      setMessage(error.message || 'Could not create recommended persistent specialist.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   function toggleSkill(name) {
     setSelectedSkills((current) => (
       current.includes(name)
@@ -1859,6 +1884,38 @@ function SpecialistFleetTab({ agents, lifecycleEvents, skills, tasks }) {
                     {entry.domain} pack: {entry.role} x{entry.count}
                   </span>
                 ))}
+              </div>
+            )}
+            {(promotionGuidance.autoCreateRoles?.length > 0 || promotionGuidance.domainPackTargets?.length > 0) && (
+              <div className="mt-4 rounded-[18px] border border-white/8 bg-black/20 p-3">
+                <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Fleet-shaping actions</div>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {promotionGuidance.autoCreateRoles?.slice(0, 3).map((entryRole) => (
+                    <button
+                      key={`role-${entryRole}`}
+                      type="button"
+                      disabled={busy || !model}
+                      onClick={() => handleCreateRecommendedPersistent({ role: entryRole })}
+                      className="rounded-full border border-aurora-blue/20 bg-aurora-blue/10 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-aurora-blue transition-colors hover:bg-aurora-blue/14 disabled:opacity-50"
+                    >
+                      {busy ? 'Working...' : `Create ${entryRole} lane`}
+                    </button>
+                  ))}
+                  {promotionGuidance.domainPackTargets?.slice(0, 2).map((entry) => (
+                    <button
+                      key={`pack-${entry.domain}-${entry.role}`}
+                      type="button"
+                      disabled={busy || !model}
+                      onClick={() => handleCreateRecommendedPersistent(entry)}
+                      className="rounded-full border border-aurora-violet/20 bg-aurora-violet/10 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-aurora-violet transition-colors hover:bg-aurora-violet/14 disabled:opacity-50"
+                    >
+                      {busy ? 'Working...' : `${entry.domain}: ${entry.role}`}
+                    </button>
+                  ))}
+                </div>
+                <p className="mt-3 text-[11px] leading-relaxed text-text-muted">
+                  These actions turn durable coverage pressure into persistent lanes immediately, so Commander does not have to keep relearning the same missing role through spawned specialists.
+                </p>
               </div>
             )}
           </div>

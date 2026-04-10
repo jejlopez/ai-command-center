@@ -3,7 +3,7 @@ import { motion as Motion } from 'framer-motion';
 import { BrainCircuit, Loader2, Rocket, ShieldCheck, Sparkles } from 'lucide-react';
 import { container, item } from '../utils/variants';
 import { cn } from '../utils/cn';
-import { useActivityLog, useCostData, useModelBank, usePendingReviews, useSchedules, useTaskInterventions } from '../utils/useSupabase';
+import { useActivityLog, useCostData, useModelBank, usePendingReviews, useSchedules, useTaskInterventions, useTaskOutcomes } from '../utils/useSupabase';
 import { CreateAgentModal } from '../components/CreateAgentModal';
 import { CommanderHero } from '../components/overview/CommanderHero';
 import { CommandReadFirst } from '../components/overview/CommandReadFirst';
@@ -22,7 +22,7 @@ import { useCommandCenterTruth } from '../utils/useCommandCenterTruth';
 import { ReactorCoreBoard } from '../components/command/ReactorCoreBoard';
 import { CommandTimelineRail } from '../components/command/CommandTimelineRail';
 import { buildTimelineEntries } from '../utils/buildCommandTimeline';
-import { getAutonomyMetrics, getDoctrineDeltaSummary, getPrimaryBottleneck } from '../utils/commanderAnalytics';
+import { getAutomationCandidates, getAutonomyMetrics, getDoctrineDeltaSummary, getPrimaryBottleneck, getRecurringAutonomyTuningSummary } from '../utils/commanderAnalytics';
 
 function formatWaitLabel(ms) {
   if (!ms || ms <= 0) return 'None';
@@ -34,7 +34,7 @@ function formatWaitLabel(ms) {
   return rem ? `${hours}h ${rem}m` : `${hours}h`;
 }
 
-function ExecutiveBriefingPanel({ briefing, deltaItems = [], onNavigate, onOpenDetail, onAddOperator }) {
+function ExecutiveBriefingPanel({ briefing, deltaItems = [], recoveryItems = [], onNavigate, onOpenDetail, onAddOperator }) {
   const handlePrimary = () => {
     if (briefing.primary.type === 'detail' && briefing.primary.target) {
       onOpenDetail?.(briefing.primary.target);
@@ -97,6 +97,32 @@ function ExecutiveBriefingPanel({ briefing, deltaItems = [], onNavigate, onOpenD
           </div>
         </div>
       )}
+      {recoveryItems.length > 0 && (
+        <div className="mt-4 rounded-[22px] border border-aurora-amber/20 bg-aurora-amber/10 p-4">
+          <div className="text-[10px] uppercase tracking-[0.16em] text-aurora-amber">Trust Recovery</div>
+          <div className="mt-3 grid gap-3 md:grid-cols-2">
+            {recoveryItems.map((entry) => (
+              <div key={entry.key} className="rounded-[18px] border border-white/8 bg-black/20 p-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="text-[12px] font-semibold text-text-primary">{entry.title}</div>
+                  <span className={cn(
+                    'rounded-full border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em]',
+                    entry.recommendedPaused
+                      ? 'border-aurora-amber/20 bg-aurora-amber/10 text-aurora-amber'
+                      : entry.posture === 'watch'
+                        ? 'border-aurora-violet/20 bg-aurora-violet/10 text-aurora-violet'
+                        : 'border-aurora-teal/20 bg-aurora-teal/10 text-aurora-teal'
+                  )}>
+                    {entry.recommendedPaused ? 'paused' : entry.posture}
+                  </span>
+                </div>
+                <p className="mt-2 text-[11px] leading-5 text-text-muted">{entry.recoveryLabel}</p>
+                <p className="mt-2 text-[11px] leading-5 text-text-body">{entry.detail}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -137,6 +163,7 @@ export function OverviewView({ agents, tasks, loading, addOptimistic, onOpenDeta
   const { models } = useModelBank();
   const { data: costData } = useCostData();
   const { interventions } = useTaskInterventions();
+  const { outcomes } = useTaskOutcomes();
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [referenceNow] = useState(() => new Date().getTime());
 
@@ -290,6 +317,22 @@ export function OverviewView({ agents, tasks, loading, addOptimistic, onOpenDeta
     () => getPrimaryBottleneck({ tasks, reviews, schedules, agents, interventions, logs, costData }),
     [tasks, reviews, schedules, agents, interventions, logs, costData]
   );
+  const automationCandidates = useMemo(
+    () => getAutomationCandidates(tasks, 150, interventions, outcomes),
+    [tasks, interventions, outcomes]
+  );
+  const recurringRecoveryItems = useMemo(() => (
+    automationCandidates
+      .map((candidate) => {
+        const trust = getRecurringAutonomyTuningSummary(candidate);
+        return {
+          ...candidate,
+          ...trust,
+        };
+      })
+      .filter((entry) => entry.posture !== 'stable' || entry.recommendedPaused)
+      .slice(0, 2)
+  ), [automationCandidates]);
 
   const readiness = useMemo(() => {
     const score = Math.max(0, Math.min(100, 100 - (reviews.length * 8) - (failedTasks.length * 12) - (stalledAgents.length * 10) - (lateSchedules * 7)));
@@ -476,6 +519,38 @@ export function OverviewView({ agents, tasks, loading, addOptimistic, onOpenDeta
       };
     }
 
+    if (recurringRecoveryItems[0]) {
+      const topRecovery = recurringRecoveryItems[0];
+      return {
+        primary: {
+          title: `Recover ${topRecovery.title} before scaling automation`,
+          detail: topRecovery.recommendedPaused
+            ? `${topRecovery.recoveryLabel} Commander should hold this recurring product in a safer posture until it earns autonomy back.`
+            : `${topRecovery.recoveryLabel} Tightening this recurring product now will restore trust faster than launching something new.`,
+          cta: 'Review recurring flows',
+          type: 'navigate',
+          target: 'reports',
+        },
+        secondary: [
+          {
+            eyebrow: 'Recovery',
+            title: topRecovery.recommendedPaused ? 'Paused until trust improves' : 'Managed recovery underway',
+            detail: topRecovery.detail,
+          },
+          {
+            eyebrow: 'Cadence',
+            title: `Recommended cadence: ${topRecovery.recommendedFrequency}`,
+            detail: 'Commander is now using recurring trust memory to decide how quickly this flow should try again.',
+          },
+          {
+            eyebrow: 'Why now',
+            title: 'Recurring trust is part of bridge posture',
+            detail: 'Recovery drag on recurring products now affects how aggressively Commander should scale automation elsewhere.',
+          },
+        ],
+      };
+    }
+
     if (flaggedAgents[0]) {
       return {
         primary: {
@@ -560,7 +635,7 @@ export function OverviewView({ agents, tasks, loading, addOptimistic, onOpenDeta
         },
       ],
     };
-  }, [reviews.length, flaggedAgents, failedTasks.length, stalledAgents.length, operatorAgents.length, runningTasks.length, avgApprovalWaitMs, readiness, autonomyPosture]);
+  }, [reviews.length, recurringRecoveryItems, flaggedAgents, failedTasks.length, stalledAgents.length, operatorAgents.length, runningTasks.length, avgApprovalWaitMs, readiness, autonomyPosture]);
 
   if (loading) {
     return (
@@ -600,6 +675,7 @@ export function OverviewView({ agents, tasks, loading, addOptimistic, onOpenDeta
           <ExecutiveBriefingPanel
             briefing={executiveBriefing}
             deltaItems={doctrineDeltas}
+            recoveryItems={recurringRecoveryItems}
             onNavigate={onNavigate}
             onOpenDetail={onOpenDetail}
             onAddOperator={() => setCreateModalOpen(true)}

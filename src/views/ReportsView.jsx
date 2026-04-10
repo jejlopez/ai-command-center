@@ -869,6 +869,7 @@ export function ReportsView() {
                     <div className="mt-3 rounded-[14px] border border-white/8 bg-black/20 px-3 py-2 text-[11px] text-text-body">
                       <div>{trustSignals.trustDetail}</div>
                       <div className="mt-2 text-aurora-blue">{trustTuning.actionLabel}. {trustTuning.detail}</div>
+                      <div className="mt-2 text-aurora-amber">{trustTuning.recoveryLabel}</div>
                     </div>
                   )}
                   <div className="mt-3 flex flex-wrap justify-between gap-3 text-[11px] text-text-muted">
@@ -1098,6 +1099,7 @@ export function ReportsView() {
                       {recurringTrustRail.trustSummary && (
                         <div className="rounded-[12px] border border-aurora-violet/20 bg-aurora-violet/10 px-3 py-2 text-[11px] text-text-body">
                           {recurringTrustRail.trustSummary.actionLabel}. {recurringTrustRail.trustSummary.detail} Recommended cadence: {recurringTrustRail.trustSummary.recommendedFrequency}.{recurringTrustRail.trustSummary.recommendedPaused ? ' Commander should keep this flow paused until trust recovers.' : ''}
+                          <div className="mt-2 text-aurora-amber">{recurringTrustRail.trustSummary.recoveryLabel}</div>
                         </div>
                       )}
                     </div>

@@ -95,6 +95,9 @@ This is the live build tracker for the Jarvis / Stark / Musk Commander program.
 - Wider doctrine-delta trust rails across operator surfaces
 - Stronger durable-fleet shaping defaults from lifecycle pressure
 - Mission-pattern winners pushed harder into provider and lane defaults
+- Trust-recovery state surfaced more explicitly in recurring management and executive surfaces
+- Generalized runtime winners pushed deeper into provider and model defaults across nearby mission families
+- Automatic durable coverage defaults exposed as visible fleet-shaping actions in operator surfaces
 
 ## Epic Experience Layer
 
@@ -216,3 +219,4 @@ Build next:
 2. deepen recurring trust recovery so flows can earn their way back from paused/watch posture
 3. expand automatic durable coverage defaults into more mission families and domain packs
 4. push mission-pattern winners deeper into provider, lane, and approval defaults
+5. surface trust recovery and durable coverage defaults directly where operators act
