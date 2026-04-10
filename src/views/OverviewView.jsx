@@ -3,7 +3,6 @@ import { motion as Motion } from 'framer-motion';
 import { BrainCircuit, Loader2, Rocket, ShieldCheck, Sparkles } from 'lucide-react';
 import { container, item } from '../utils/variants';
 import { useActivityLog, useCostData, useModelBank, usePendingReviews, useSchedules } from '../utils/useSupabase';
-import { CreateAgentModal } from '../components/CreateAgentModal';
 import { CommanderHero } from '../components/overview/CommanderHero';
 import { CommandReadFirst } from '../components/overview/CommandReadFirst';
 import { CommandSquadPanel } from '../components/overview/CommandSquadPanel';
@@ -32,13 +31,12 @@ function formatWaitLabel(ms) {
   return rem ? `${hours}h ${rem}m` : `${hours}h`;
 }
 
-export function OverviewView({ agents, tasks, loading, addOptimistic, onOpenDetail, onNavigate }) {
+export function OverviewView({ agents, tasks, loading, onOpenDetail, onNavigate }) {
   const { logs } = useActivityLog();
   const { reviews } = usePendingReviews();
   const { schedules, loading: loadingSchedules } = useSchedules();
   const { models } = useModelBank();
   const { data: costData } = useCostData();
-  const [createModalOpen, setCreateModalOpen] = useState(false);
   const [referenceNow] = useState(() => new Date().getTime());
 
   const activeAgents = agents.filter(a => a.status === 'processing').length;
@@ -349,9 +347,8 @@ export function OverviewView({ agents, tasks, loading, addOptimistic, onOpenDeta
   return (
     <div className="relative flex h-full flex-col overflow-y-auto pb-10">
       <div className="pointer-events-none absolute inset-0 overflow-hidden">
-        <div className="absolute -top-16 left-[-8%] h-[360px] w-[360px] rounded-full bg-aurora-teal/10 blur-[120px]" />
-        <div className="absolute top-[10%] right-[-12%] h-[420px] w-[420px] rounded-full bg-aurora-blue/10 blur-[140px]" />
-        <div className="absolute bottom-[-22%] left-[18%] h-[420px] w-[420px] rounded-full bg-aurora-violet/10 blur-[160px]" />
+        <div className="absolute -top-16 left-[-8%] h-[360px] w-[360px] rounded-full bg-aurora-teal/7 blur-[120px]" />
+        <div className="absolute top-[10%] right-[-12%] h-[420px] w-[420px] rounded-full bg-aurora-blue/7 blur-[140px]" />
       </div>
 
       <Motion.div variants={container} initial="hidden" animate="show" className="relative space-y-5">
@@ -391,7 +388,7 @@ export function OverviewView({ agents, tasks, loading, addOptimistic, onOpenDeta
               actions={launchProtocolActions}
               onNavigate={onNavigate}
               onOpenDetail={onOpenDetail}
-              onAddOperator={() => setCreateModalOpen(true)}
+              onAddOperator={() => onNavigate?.('managedOps', { tab: 'quickstart' })}
             />
             <CommandTimelineRail
               entries={timelineEntries}
@@ -408,7 +405,7 @@ export function OverviewView({ agents, tasks, loading, addOptimistic, onOpenDeta
             <FleetHealthPanel summary={overviewSummary} onOpenDetail={onOpenDetail} />
           </div>
           <div className="space-y-5">
-            <div className="rounded-[28px] border border-white/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.015))] p-5">
+            <div className="deck-panel p-5">
               <CommandSectionHeader
                 eyebrow="Strategic Control Zone"
                 title="Doctrine and learned command patterns"
@@ -429,7 +426,7 @@ export function OverviewView({ agents, tasks, loading, addOptimistic, onOpenDeta
         </Motion.section>
 
         <Motion.section variants={item} className="space-y-5">
-          <div className="rounded-[28px] border border-white/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.015))] p-5">
+          <div className="deck-panel p-5">
             <CommandSectionHeader
               eyebrow="Research Direction"
               title="What this bridge is borrowing from elite command surfaces"
@@ -438,7 +435,7 @@ export function OverviewView({ agents, tasks, loading, addOptimistic, onOpenDeta
               tone="blue"
             />
             <div className="grid gap-3 md:grid-cols-3">
-              <div className="rounded-[20px] border border-white/8 bg-black/20 p-4">
+              <div className="deck-panel-soft p-4 ring-1 ring-white/[0.05]">
                 <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.16em] text-text-muted">
                   <Sparkles className="h-3.5 w-3.5 text-aurora-teal" />
                   Borrow
@@ -447,7 +444,7 @@ export function OverviewView({ agents, tasks, loading, addOptimistic, onOpenDeta
                   Cinematic hero framing, dense operational sidecars, launch-readiness language, and control-room information hierarchy.
                 </p>
               </div>
-              <div className="rounded-[20px] border border-white/8 bg-black/20 p-4">
+              <div className="deck-panel-soft p-4 ring-1 ring-white/[0.05]">
                 <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.16em] text-text-muted">
                   <ShieldCheck className="h-3.5 w-3.5 text-aurora-blue" />
                   Keep grounded
@@ -456,7 +453,7 @@ export function OverviewView({ agents, tasks, loading, addOptimistic, onOpenDeta
                   Every dramatic cue maps back to real app data, current actions, or trusted state. No fake sci-fi clutter.
                 </p>
               </div>
-              <div className="rounded-[20px] border border-white/8 bg-black/20 p-4">
+              <div className="deck-panel-soft p-4 ring-1 ring-white/[0.05]">
                 <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.16em] text-text-muted">
                   <BrainCircuit className="h-3.5 w-3.5 text-aurora-violet" />
                   Avoid
@@ -473,15 +470,9 @@ export function OverviewView({ agents, tasks, loading, addOptimistic, onOpenDeta
             providerByModel={providerByModel}
             flaggedIds={flaggedAgentIds}
             onOpenDetail={onOpenDetail}
-            onAddOperator={() => setCreateModalOpen(true)}
+            onAddOperator={() => onNavigate?.('managedOps', { tab: 'quickstart' })}
           />
         </Motion.section>
-
-        <CreateAgentModal
-          isOpen={createModalOpen}
-          onClose={() => setCreateModalOpen(false)}
-          onCreated={(optimisticAgent) => addOptimistic?.(optimisticAgent)}
-        />
       </Motion.div>
     </div>
   );

@@ -29,6 +29,7 @@ import {
 } from '../lib/api';
 import { useSystemState } from '../context/SystemStateContext';
 import { MissionCreatorPanel } from '../components/mission/MissionCreatorPanel';
+import { ScratchpadStrip } from '../components/mission/ScratchpadStrip';
 import { CommandDeckHero } from '../components/command/CommandDeckHero';
 import { AnimatedNumber } from '../components/command/AnimatedNumber';
 import { CommandSectionHeader } from '../components/command/CommandSectionHeader';
@@ -972,6 +973,7 @@ export function MissionControlView() {
             onOpenCreator={() => setCreatorOpen(true)}
             onOpenOps={() => setTab('ops')}
           />
+          <ScratchpadStrip />
         </div>
       </div>
 
