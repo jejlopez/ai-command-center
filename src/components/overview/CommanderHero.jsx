@@ -3,7 +3,7 @@ import { CommandDeckHero } from '../command/CommandDeckHero';
 
 function PulseStat({ label, value, tone = 'text-text-primary' }) {
   return (
-    <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-3">
+    <div className="deck-panel-soft p-3">
       <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">{label}</div>
       <div className={`mt-2 text-2xl font-semibold tracking-[-0.03em] ${tone}`}>{value}</div>
     </div>
@@ -70,20 +70,20 @@ export function CommanderHero({
           <button
             type="button"
             onClick={() => onNavigate?.('missions')}
-            className="commander-comms-button"
+            className="inline-flex items-center gap-3 rounded-[22px] border border-[#d6c7a1]/20 bg-[#d6c7a1]/[0.08] px-4 py-3 text-sm font-semibold text-[#f4e6c2] transition-colors hover:bg-[#d6c7a1]/[0.12]"
           >
-            <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-black/16 ring-1 ring-black/10">
+            <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-black/20 ring-1 ring-[#d6c7a1]/10">
               <MessageSquareText className="h-5 w-5" />
             </span>
             <span className="min-w-0 text-left">
               <span className="block text-base font-semibold leading-tight">Open Mission Control</span>
-              <span className="mt-1 block text-[10px] uppercase tracking-[0.2em] text-black/70">Primary launch lane</span>
+              <span className="mt-1 block text-[10px] uppercase tracking-[0.2em] text-[#f4e6c2]/70">Primary launch lane</span>
             </span>
           </button>
           <button
             type="button"
             onClick={() => onOpenDetail?.(commander.id)}
-            className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm font-semibold text-text-primary transition-colors hover:bg-white/[0.07]"
+            className="inline-flex items-center gap-2 rounded-2xl border border-white/8 bg-white/[0.03] px-4 py-3 text-sm font-semibold text-text-primary transition-colors hover:bg-white/[0.05]"
           >
             <Gauge className="h-4 w-4 text-aurora-blue" />
             Tune Commander
@@ -91,7 +91,7 @@ export function CommanderHero({
         </>
       )}
       sideContent={(
-        <div className="w-full rounded-[24px] border border-white/10 bg-black/25 p-4 backdrop-blur-sm">
+        <div className="deck-panel w-full p-4 backdrop-blur-sm">
           <div className="flex items-center justify-between">
             <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">System Pulse</div>
             <div className={`rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] ${
@@ -112,12 +112,12 @@ export function CommanderHero({
             <PulseStat label="Burn / hour" value={`$${Number(summary.burnRate || 0).toFixed(2)}`} tone="text-aurora-violet" />
           </div>
 
-          <div className="mt-3 rounded-2xl border border-white/[0.06] bg-white/[0.02] p-3">
+          <div className="mt-4 deck-panel-soft p-3">
             <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.16em] text-text-muted">
               <Sparkles className="h-3.5 w-3.5 text-aurora-teal" />
               Bridge readback
             </div>
-            <div className="mt-3 rounded-2xl border border-white/8 bg-black/20 px-3 py-3">
+            <div className="mt-3 rounded-2xl bg-black/20 px-3 py-3 ring-1 ring-white/[0.05]">
               <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Primary commander</div>
               <div className="mt-2 flex items-center justify-between gap-3">
                 <div>
@@ -133,17 +133,17 @@ export function CommanderHero({
               {readiness.readback}
             </p>
             <div className="mt-3 flex flex-wrap gap-2">
-              <div className="rounded-full border border-white/10 bg-white/[0.03] px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-text-muted">
+              <div className="deck-chip px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.16em]">
                 {provider || 'Unknown provider'}
               </div>
-              <div className="rounded-full border border-white/10 bg-white/[0.03] px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-text-muted">
+              <div className="deck-chip px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.16em]">
                 {commander.model || 'Unassigned model'}
               </div>
             </div>
           </div>
 
           {summary.flaggedAgentCount > 0 && (
-            <div className="mt-3 rounded-2xl border border-aurora-amber/20 bg-aurora-amber/[0.07] p-3">
+            <div className="mt-3 rounded-2xl border border-aurora-amber/16 bg-aurora-amber/[0.06] p-3">
               <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.16em] text-aurora-amber">
                 <ShieldAlert className="h-3.5 w-3.5" />
                 Operator attention

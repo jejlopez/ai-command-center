@@ -10,7 +10,7 @@ const toneClass = {
 function ReactorMetric({ label, value, detail, icon, tone = 'ready', bordered = true }) {
   const IconComponent = icon;
   return (
-    <div className={cn('px-4 py-3', bordered && 'border-l border-white/8')}>
+    <div className={cn('px-4 py-3', bordered && 'border-l border-white/[0.05]')}>
       <div className="flex items-center justify-between gap-2">
         <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">{label}</div>
         <div className={cn('rounded-xl border p-2', toneClass[tone])}>
@@ -28,10 +28,10 @@ export function ReactorCoreBoard({ truth, summary }) {
   const interventionCount = truth.pendingApprovals + truth.blockedMissions + truth.criticalAlerts;
 
   return (
-    <div className="rounded-[28px] border border-white/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.015))] p-5">
+    <div className="deck-panel p-5">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-text-muted">
+          <div className="deck-chip inline-flex items-center gap-2 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em]">
             <Activity className="h-3.5 w-3.5 text-aurora-teal" />
             Reactor Core Readiness
           </div>
@@ -45,7 +45,7 @@ export function ReactorCoreBoard({ truth, summary }) {
         </div>
       </div>
 
-      <div className="mt-5 overflow-hidden rounded-[22px] border border-white/8 bg-black/20">
+      <div className="mt-5 overflow-hidden rounded-[22px] bg-black/20 ring-1 ring-white/[0.05]">
         <div className="grid gap-0 md:grid-cols-2 xl:grid-cols-4">
         <ReactorMetric
           label="Interventions"

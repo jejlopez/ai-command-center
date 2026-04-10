@@ -74,6 +74,11 @@ function mapAgentRow(row) {
     lastRestart:      row.last_restart,
     tokenHistory24h:  row.token_history_24h || [],
     latencyHistory24h: row.latency_history_24h || [],
+    isEphemeral:      row.is_ephemeral ?? false,
+    templateId:       row.template_id || null,
+    sessionId:        row.session_id || null,
+    expiresAt:        row.expires_at || null,
+    archivedAt:       row.archived_at || null,
   };
 }
 
@@ -221,6 +226,8 @@ function mapTaskRow(row) {
     startedAt:  row.started_at,
     cancelledAt: row.cancelled_at,
     failedAt:   row.failed_at,
+    sessionId:  row.session_id || null,
+    templateId: row.template_id || null,
     createdAt:  row.created_at,
     updatedAt:  row.updated_at,
     durationMs: row.duration_ms || 0,
@@ -236,6 +243,7 @@ function mapLogRow(row) {
     type:        row.type,
     message:     row.message,
     agentId:     row.agent_id,
+    sessionId:   row.session_id || null,
     parentLogId: row.parent_log_id,
     tokens:      row.tokens || 0,
     durationMs:  row.duration_ms || 0,
@@ -250,6 +258,7 @@ export async function fetchAgents() {
   let { data, error } = await supabase
     .from('agents')
     .select('*')
+    .is('archived_at', null)
     .order('created_at', { ascending: true });
 
   if (error) {
@@ -264,6 +273,7 @@ export async function fetchAgents() {
     ({ data, error } = await supabase
       .from('agents')
       .select('*')
+      .is('archived_at', null)
       .order('created_at', { ascending: true }));
 
     if (error) {
@@ -889,6 +899,62 @@ export async function createTaskNote(taskId, content, author = 'Human') {
   const { error } = await supabase
     .from('task_notes')
     .insert({ task_id: taskId, user_id: user.id, author, content });
+
+  if (error) throw error;
+  return { success: true };
+}
+
+function getScratchpadDateKey() {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = `${now.getMonth() + 1}`.padStart(2, '0');
+  const day = `${now.getDate()}`.padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+export async function fetchScratchpadNote(workspaceId) {
+  if (!isSupabaseConfigured || !workspaceId) return null;
+
+  const noteDate = getScratchpadDateKey();
+  const { data, error } = await supabase
+    .from('scratchpad_notes')
+    .select('*')
+    .eq('workspace_id', workspaceId)
+    .eq('note_date', noteDate)
+    .maybeSingle();
+
+  if (error) {
+    console.error('[api] fetchScratchpadNote:', error.message);
+    return null;
+  }
+
+  if (!data) return null;
+  return {
+    id: data.id,
+    workspaceId: data.workspace_id,
+    noteDate: data.note_date,
+    content: data.content || '',
+    updatedAt: data.updated_at,
+  };
+}
+
+export async function upsertScratchpadNote(workspaceId, content) {
+  if (!isSupabaseConfigured || !workspaceId) return { success: true };
+
+  const user = (await supabase.auth.getUser()).data?.user;
+  if (!user) throw new Error('Not authenticated');
+
+  const payload = {
+    user_id: user.id,
+    workspace_id: workspaceId,
+    note_date: getScratchpadDateKey(),
+    content,
+    updated_at: new Date().toISOString(),
+  };
+
+  const { error } = await supabase
+    .from('scratchpad_notes')
+    .upsert(payload, { onConflict: 'workspace_id,note_date' });
 
   if (error) throw error;
   return { success: true };
