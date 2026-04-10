@@ -29,7 +29,7 @@ import {
   YAxis,
 } from 'recharts';
 import { container, item } from '../utils/variants';
-import { cleanupTempAgents, createPersistentSpecialist, createTempAgent, promoteAgentToPersistent, useActivityLog, useAgents, useKnowledgeNamespaces, useModelBank, useRoutingPolicies, useSharedDirectives, useSkillBank, useSystemRecommendations, useTaskInterventions, useTasks } from '../utils/useSupabase';
+import { cleanupTempAgents, createPersistentSpecialist, createTempAgent, promoteAgentToPersistent, useActivityLog, useAgents, useKnowledgeNamespaces, useModelBank, useRoutingPolicies, useSharedDirectives, useSkillBank, useSpecialistLifecycle, useSystemRecommendations, useTaskInterventions, useTasks } from '../utils/useSupabase';
 import { AnimatedNumber } from '../components/command/AnimatedNumber';
 import { CommandSectionHeader } from '../components/command/CommandSectionHeader';
 import { useCommanderPreferences } from '../utils/useCommanderPreferences';
@@ -40,7 +40,7 @@ import { TruthAuditStrip } from '../components/command/TruthAuditStrip';
 import { useCommandCenterTruth } from '../utils/useCommandCenterTruth';
 import { normalizeModelProvider } from '../utils/commanderPolicy';
 import { getWorkflowMeta } from '../utils/missionLifecycle';
-import { buildPolicyDemotionSummary, getObservedModelBenchmarks, getPersistentFleetHistory, scoreTaskOutcome } from '../utils/commanderAnalytics';
+import { buildPolicyDemotionSummary, getObservedModelBenchmarks, getSpecialistLifecycleSummary, scoreTaskOutcome } from '../utils/commanderAnalytics';
 
 const tabs = [
   { id: 'models', label: 'Model Command Matrix', icon: Cpu },
@@ -873,7 +873,7 @@ function ModelRegistryTab({ availableModels, agents, tasks, logs, interventions 
   );
 }
 
-function RoutingDoctrineTab({ routingPolicies, tasks, agents, logs, interventions, skills, upsertPolicy, ensureDefaultPolicy }) {
+function RoutingDoctrineTab({ routingPolicies, tasks, agents, logs, interventions, lifecycleEvents, skills, upsertPolicy, ensureDefaultPolicy }) {
   const [selectedPolicyId, setSelectedPolicyId] = useState('');
   const [draft, setDraft] = useState(null);
   const [saving, setSaving] = useState(false);
@@ -1006,6 +1006,13 @@ function RoutingDoctrineTab({ routingPolicies, tasks, agents, logs, intervention
     return Array.from(seen.values());
   }, [agents]);
   const demotionSummary = useMemo(() => buildPolicyDemotionSummary(draft, tasks, interventions, logs), [draft, tasks, interventions, logs]);
+  const trendTone = demotionSummary.trend === 'improving'
+    ? 'text-aurora-teal border-aurora-teal/20 bg-aurora-teal/10'
+    : demotionSummary.trend === 'demoted'
+      ? 'text-aurora-rose border-aurora-rose/20 bg-aurora-rose/10'
+      : demotionSummary.trend === 'forming'
+        ? 'text-aurora-amber border-aurora-amber/20 bg-aurora-amber/10'
+        : 'text-aurora-blue border-aurora-blue/20 bg-aurora-blue/10';
 
   function updateFallback(index, field, value) {
     setDraft((current) => {
@@ -1460,23 +1467,79 @@ function RoutingDoctrineTab({ routingPolicies, tasks, agents, logs, intervention
                   </div>
                 </div>
                 <div className="rounded-[20px] border border-white/8 bg-black/20 p-3">
-                  <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Why this lane is being demoted</div>
-                  <div className="mt-2 space-y-2">
-                    <div className="rounded-[14px] border border-white/8 bg-white/[0.03] px-3 py-2 text-[11px] text-text-body">
-                      {demotionSummary.interventionCount > 0
-                        ? `${demotionSummary.interventionCount} intervention signals are currently shaping this policy's rank across ${demotionSummary.matchingRuns} matching run${demotionSummary.matchingRuns === 1 ? '' : 's'}.`
-                        : 'This policy has not accumulated enough intervention pressure to be demoted yet.'}
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Policy trend and demotion pressure</div>
+                      <div className="mt-1 text-[11px] text-text-muted">
+                        {demotionSummary.interventionCount > 0
+                          ? `${demotionSummary.interventionCount} intervention signals are shaping this policy across ${demotionSummary.matchingRuns} matching run${demotionSummary.matchingRuns === 1 ? '' : 's'}.`
+                          : 'This policy has not accumulated enough intervention pressure to rank as weak yet.'}
+                      </div>
                     </div>
-                    {demotionSummary.reasons.map((reason) => (
-                      <div key={reason} className="rounded-[14px] border border-aurora-amber/20 bg-aurora-amber/10 px-3 py-2 text-[11px] text-text-body">
-                        {reason}
+                    <span className={cn('rounded-full border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em]', trendTone)}>
+                      {demotionSummary.trend}
+                    </span>
+                  </div>
+                  <div className="mt-3 grid gap-3 md:grid-cols-4">
+                    {[
+                      { label: 'Confidence', value: demotionSummary.confidence },
+                      { label: 'Recent quality', value: demotionSummary.recentOutcome || 'n/a' },
+                      { label: 'Recent rescue rate', value: demotionSummary.recentInterventionRate || 0 },
+                      { label: 'Trend delta', value: demotionSummary.trendDelta },
+                    ].map((entry) => (
+                      <div key={entry.label} className="rounded-[14px] border border-white/8 bg-white/[0.03] px-3 py-2">
+                        <div className="text-[10px] uppercase tracking-[0.14em] text-text-muted">{entry.label}</div>
+                        <div className="mt-1 text-[12px] font-semibold text-text-primary">{entry.value}</div>
                       </div>
                     ))}
-                    {demotionSummary.interventionCount > 0 && demotionSummary.reasons.length === 0 && (
-                      <div className="rounded-[14px] border border-dashed border-white/10 bg-black/10 px-3 py-2 text-[11px] text-text-muted">
-                        Intervention pressure exists, but Commander still needs a little more run density before the demotion reasons become specific.
+                  </div>
+                  <div className="mt-3 rounded-[14px] border border-white/8 bg-white/[0.03] px-3 py-2 text-[11px] text-text-body">
+                    {demotionSummary.trendDetail}
+                  </div>
+                  <div className="mt-3 grid gap-3 xl:grid-cols-2">
+                    <div className="rounded-[16px] border border-aurora-teal/15 bg-aurora-teal/[0.05] p-3">
+                      <div className="text-[10px] uppercase tracking-[0.14em] text-aurora-teal">Why this lane still wins</div>
+                      <div className="mt-2 space-y-2">
+                        {demotionSummary.laneStrengths.length === 0 && (
+                          <div className="text-[11px] text-text-muted">Commander still needs more matching runs before this lane has a durable strength signature.</div>
+                        )}
+                        {demotionSummary.laneStrengths.map((reason) => (
+                          <div key={reason} className="rounded-[12px] border border-white/8 bg-black/10 px-3 py-2 text-[11px] text-text-body">
+                            {reason}
+                          </div>
+                        ))}
                       </div>
-                    )}
+                    </div>
+                    <div className="rounded-[16px] border border-aurora-amber/15 bg-aurora-amber/[0.05] p-3">
+                      <div className="text-[10px] uppercase tracking-[0.14em] text-aurora-amber">Why this lane is losing trust</div>
+                      <div className="mt-2 space-y-2">
+                        {demotionSummary.pressureSources.map((source) => (
+                          <div key={source.key} className="rounded-[12px] border border-white/8 bg-black/10 px-3 py-2 text-[11px] text-text-body">
+                            <span className="font-semibold text-text-primary">{source.label}:</span> {source.count} signal{source.count === 1 ? '' : 's'}. {source.detail}
+                          </div>
+                        ))}
+                        {demotionSummary.reasons.map((reason) => (
+                          <div key={reason} className="rounded-[12px] border border-white/8 bg-black/10 px-3 py-2 text-[11px] text-text-body">
+                            {reason}
+                          </div>
+                        ))}
+                        {demotionSummary.interventionCount > 0 && demotionSummary.pressureSources.length === 0 && demotionSummary.reasons.length === 0 && (
+                          <div className="rounded-[12px] border border-dashed border-white/10 bg-black/10 px-3 py-2 text-[11px] text-text-muted">
+                            Rescue pressure exists, but Commander still needs a little more run density before the losing signals become specific.
+                          </div>
+                        )}
+                        {demotionSummary.interventionCount === 0 && demotionSummary.laneRisks.length === 0 && (
+                          <div className="rounded-[12px] border border-dashed border-white/10 bg-black/10 px-3 py-2 text-[11px] text-text-muted">
+                            No meaningful demotion pressure is registered yet.
+                          </div>
+                        )}
+                        {demotionSummary.laneRisks.map((reason) => (
+                          <div key={reason} className="rounded-[12px] border border-white/8 bg-black/10 px-3 py-2 text-[11px] text-text-body">
+                            {reason}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
                   </div>
                 </div>
                 {(saveError || saveMessage) && (
@@ -1635,18 +1698,18 @@ function RoutingDoctrineTab({ routingPolicies, tasks, agents, logs, intervention
         </HudPanel>
       </div>
 
-      <SpecialistFleetTab agents={agents} logs={logs} skills={skills} />
+      <SpecialistFleetTab agents={agents} lifecycleEvents={lifecycleEvents} skills={skills} />
     </div>
   );
 }
 
-function SpecialistFleetTab({ agents, logs, skills }) {
+function SpecialistFleetTab({ agents, lifecycleEvents, skills }) {
   const commander = agents.find((agent) => agent.role === 'commander' && !agent.isSyntheticCommander) || agents.find((agent) => agent.role === 'commander') || null;
   const modelOptions = [...new Set(agents.map((agent) => agent.model).filter(Boolean))];
   const persistentSpecialists = agents.filter((agent) => !agent.isEphemeral && !['commander', 'executor'].includes(agent.role || ''));
   const spawnedSpecialists = agents.filter((agent) => agent.isEphemeral);
-  const fleetHistory = getPersistentFleetHistory(logs, agents);
-  const lifecycleEvents = fleetHistory.events.slice(0, 6);
+  const fleetHistory = getSpecialistLifecycleSummary(lifecycleEvents, agents);
+  const recentLifecycleEvents = fleetHistory.events.slice(0, 6);
   const promotionHistory = fleetHistory.promotions.slice(0, 6);
   const [objective, setObjective] = useState('');
   const [persistentName, setPersistentName] = useState('');
@@ -1891,7 +1954,7 @@ function SpecialistFleetTab({ agents, logs, skills }) {
             <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Lifecycle rail</div>
             <div className="mt-3 space-y-2">
               {lifecycleEvents.length === 0 && <div className="text-[11px] text-text-muted">No specialist lifecycle events yet.</div>}
-              {lifecycleEvents.map((entry) => (
+              {recentLifecycleEvents.map((entry) => (
                 <div key={entry.id} className="rounded-[16px] border border-white/8 bg-white/[0.02] px-3 py-3">
                   <div className="flex items-center justify-between gap-3">
                     <div className="text-[10px] font-mono uppercase text-text-muted">{entry.type}</div>
@@ -2194,6 +2257,7 @@ export function IntelligenceView() {
   const { policies: routingPolicies, upsertPolicy, ensureDefaultPolicy } = useRoutingPolicies();
   const { logs } = useActivityLog();
   const { interventions } = useTaskInterventions();
+  const { events: lifecycleEvents } = useSpecialistLifecycle();
   const { namespaces: knowledgeNamespaces } = useKnowledgeNamespaces();
   const { directives: sharedDirectives } = useSharedDirectives();
   const { recommendations: persistedRecommendations } = useSystemRecommendations();
@@ -2358,7 +2422,7 @@ export function IntelligenceView() {
 
             <div className="rounded-[24px] border border-white/8 bg-[#111827]/90 p-4">
               {activeTab === 'models' && <ModelRegistryTab availableModels={availableModels} agents={agents} tasks={tasks} logs={logs} interventions={interventions} />}
-              {activeTab === 'routing' && <RoutingDoctrineTab routingPolicies={routingPolicies} tasks={tasks} agents={agents} logs={logs} interventions={interventions} skills={skills} upsertPolicy={upsertPolicy} ensureDefaultPolicy={ensureDefaultPolicy} />}
+              {activeTab === 'routing' && <RoutingDoctrineTab routingPolicies={routingPolicies} tasks={tasks} agents={agents} logs={logs} interventions={interventions} lifecycleEvents={lifecycleEvents} skills={skills} upsertPolicy={upsertPolicy} ensureDefaultPolicy={ensureDefaultPolicy} />}
               {activeTab === 'knowledge' && <KnowledgeMapTab namespaces={knowledgeNamespaces} />}
               {activeTab === 'directives' && <DirectivesTab directives={sharedDirectives} agents={agents} tasks={tasks} recommendations={derivedRecommendations} />}
             </div>

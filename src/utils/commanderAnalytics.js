@@ -238,12 +238,83 @@ export function buildPolicyDemotionSummary(policy, tasks = [], interventions = [
     matchingInterventions.length > 0 && matchingTasks.length > 0 ? `${(matchingInterventions.length / Math.max(matchingTasks.length, 1)).toFixed(1)} interventions per matching mission on average.` : null,
   ].filter(Boolean);
 
+  const sortedTasks = matchingTasks
+    .slice()
+    .sort((left, right) => new Date(right.updatedAt || right.createdAt || 0).getTime() - new Date(left.updatedAt || left.createdAt || 0).getTime());
+  const recentRuns = sortedTasks.slice(0, 5);
+  const priorRuns = sortedTasks.slice(5, 10);
+  const averageOutcome = (taskList) => taskList.length
+    ? taskList.reduce((sum, task) => sum + scoreTaskOutcome(task).score, 0) / taskList.length
+    : 0;
+  const interventionRate = (taskList) => {
+    if (!taskList.length) return 0;
+    const missionIds = new Set(taskList.map((task) => task.rootMissionId || task.id).filter(Boolean));
+    const count = matchingInterventions.filter((entry) => missionIds.has(entry.rootMissionId || entry.taskId)).length;
+    return count / taskList.length;
+  };
+  const recentOutcome = averageOutcome(recentRuns);
+  const priorOutcome = averageOutcome(priorRuns);
+  const recentInterventionRate = interventionRate(recentRuns);
+  const priorInterventionRate = interventionRate(priorRuns);
+  const trendDelta = Math.round((recentOutcome - priorOutcome) - ((recentInterventionRate - priorInterventionRate) * 8));
+  const trend = matchingTasks.length < 3
+    ? 'forming'
+    : trendDelta >= 6
+      ? 'improving'
+      : trendDelta <= -6 || score >= Math.max(4, Math.ceil(matchingTasks.length * 0.8))
+        ? 'demoted'
+        : 'flat';
+  const confidence = matchingTasks.length >= 8 ? 'high' : matchingTasks.length >= 4 ? 'medium' : 'low';
+  const pressureSources = [
+    { key: 'stop', label: 'Stops', count: Number(counts.stop || 0), detail: 'Human operators had to stop execution outright.' },
+    { key: 'cancel', label: 'Cancels', count: Number(counts.cancel || 0), detail: 'The lane produced work that needed to be canceled instead of completed.' },
+    { key: 'reroute', label: 'Reroutes', count: Number(counts.reroute || 0), detail: 'Work was moved off the preferred lane to recover delivery.' },
+    { key: 'guardrail', label: 'Guardrails', count: Number(counts.guardrail || 0), detail: 'Recurring automation safety rules held the lane before execution.' },
+    { key: 'retry', label: 'Retries', count: Number(counts.retry || 0), detail: 'Commander needed to rerun work to get a usable outcome.' },
+    { key: 'dependency', label: 'Dependency edits', count: Number(counts.dependency || 0), detail: 'Branch dependency surgery was needed to keep the mission graph viable.' },
+  ].filter((entry) => entry.count > 0)
+    .sort((left, right) => right.count - left.count);
+  const completionRate = matchingTasks.length
+    ? Math.round((matchingTasks.filter((task) => isTaskClosed(task)).length / matchingTasks.length) * 100)
+    : 0;
+  const averageCost = matchingTasks.length
+    ? matchingTasks.reduce((sum, task) => sum + Number(task.costUsd || 0), 0) / matchingTasks.length
+    : 0;
+  const laneStrengths = [
+    matchingTasks.length > 0 ? `${completionRate}% of matching runs are still closing successfully.` : null,
+    recentOutcome > 0 ? `Recent outcome quality is averaging ${Math.round(recentOutcome)} across the latest ${recentRuns.length || 0} run${recentRuns.length === 1 ? '' : 's'}.` : null,
+    averageCost > 0 ? `Average spend is holding near $${averageCost.toFixed(2)} per matching run.` : null,
+  ].filter(Boolean);
+  const laneRisks = [
+    pressureSources[0] ? `${pressureSources[0].label} are currently the strongest demotion pressure.` : null,
+    recentInterventionRate > 0 ? `${recentInterventionRate.toFixed(1)} intervention events per recent run are still landing on this lane.` : null,
+    priorRuns.length > 0 && recentOutcome < priorOutcome ? `Recent quality has dropped ${Math.round(priorOutcome - recentOutcome)} points versus the prior window.` : null,
+  ].filter(Boolean);
+  const trendDetail = trend === 'improving'
+    ? 'Recent outcome quality is rising and intervention pressure is easing.'
+    : trend === 'demoted'
+      ? 'Human rescue pressure is outweighing recent execution quality, so Commander should trust this lane less.'
+      : trend === 'forming'
+        ? 'Commander needs more run density before it can call this lane stable or weak.'
+        : 'Recent quality and rescue pressure are roughly balanced, so the lane is holding but not separating.';
+
   return {
     score,
     reasons,
     matchingRuns: matchingTasks.length,
     interventionCount: matchingInterventions.length,
     counts,
+    trend,
+    trendDelta,
+    trendDetail,
+    confidence,
+    recentOutcome: Math.round(recentOutcome),
+    priorOutcome: Math.round(priorOutcome),
+    recentInterventionRate: Number(recentInterventionRate.toFixed(1)),
+    priorInterventionRate: Number(priorInterventionRate.toFixed(1)),
+    pressureSources,
+    laneStrengths,
+    laneRisks,
   };
 }
 
@@ -397,6 +468,35 @@ export function getPersistentFleetHistory(logs = [], agents = []) {
     promotions: events.filter((entry) => entry.eventType === 'promoted'),
     retirements: events.filter((entry) => entry.eventType === 'retired'),
     events,
+    coverageByRole,
+  };
+}
+
+export function getSpecialistLifecycleSummary(lifecycleEvents = [], agents = []) {
+  const normalizedEvents = lifecycleEvents
+    .map((entry) => ({
+      ...entry,
+      cleanMessage: String(entry.message || '')
+        .replace('[specialist-persistent] ', '')
+        .replace('[specialist-spawned] ', '')
+        .replace('[specialist-retired] ', ''),
+      timestamp: entry.createdAt || entry.timestamp,
+    }))
+    .sort((left, right) => new Date(right.timestamp || 0).getTime() - new Date(left.timestamp || 0).getTime());
+
+  const persistentAgents = agents.filter((agent) => !agent.isEphemeral && !['commander', 'executor'].includes(agent.role || ''));
+  const coverageByRole = persistentAgents.reduce((acc, agent) => {
+    const role = agent.role || 'specialist';
+    acc[role] = (acc[role] || 0) + 1;
+    return acc;
+  }, {});
+
+  return {
+    promotions: normalizedEvents.filter((entry) => ['promoted', 'persistent_created'].includes(entry.eventType)),
+    retirements: normalizedEvents.filter((entry) => ['retired', 'cleaned_up'].includes(entry.eventType)),
+    spawned: normalizedEvents.filter((entry) => entry.eventType === 'spawned'),
+    cleaned: normalizedEvents.filter((entry) => entry.eventType === 'cleaned_up'),
+    events: normalizedEvents,
     coverageByRole,
   };
 }

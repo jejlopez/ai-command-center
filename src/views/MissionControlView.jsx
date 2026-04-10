@@ -36,7 +36,7 @@ import { useLearningMemory } from '../utils/useLearningMemory';
 import { DoctrineCards } from '../components/command/DoctrineCards';
 import { TruthAuditStrip } from '../components/command/TruthAuditStrip';
 import { useCommandCenterTruth } from '../utils/useCommandCenterTruth';
-import { useConnectedSystems, useTaskInterventions, useTaskOutcomes } from '../utils/useSupabase';
+import { useConnectedSystems, useSpecialistLifecycle, useTaskInterventions, useTaskOutcomes } from '../utils/useSupabase';
 import { ReactorCoreBoard } from '../components/command/ReactorCoreBoard';
 import { CommandTimelineRail } from '../components/command/CommandTimelineRail';
 import { TacticalInterventionConsole } from '../components/command/TacticalInterventionConsole';
@@ -137,7 +137,7 @@ function normalizeTimelineMessage(message = '', rootMissionId = null) {
     .replace(rootMissionId ? `root ${rootMissionId} ` : '', '');
 }
 
-function buildInterventionRailEntries({ branchHistory = [], outcomeHistory = [], doctrineFeedback = [], rootMissionId = null }) {
+function buildInterventionRailEntries({ branchHistory = [], lifecycleEvents = [], outcomeHistory = [], doctrineFeedback = [], rootMissionId = null }) {
   const branchEntries = branchHistory.map((entry) => {
     const message = String(entry.message || '');
     let tone = 'blue';
@@ -205,7 +205,26 @@ function buildInterventionRailEntries({ branchHistory = [], outcomeHistory = [],
     meta: 'LEARN',
   }));
 
-  return [...branchEntries, ...outcomeEntries, ...doctrineEntries]
+  const lifecycleRailEntries = lifecycleEvents.map((entry) => ({
+    id: `lifecycle-${entry.id}`,
+    timestamp: entry.createdAt || entry.timestamp,
+    sortValue: toRailTimestamp(entry.createdAt || entry.timestamp),
+    tone: ['retired', 'cleaned_up'].includes(entry.eventType) ? 'violet' : entry.isEphemeral ? 'violet' : 'blue',
+    label: ['retired', 'cleaned_up'].includes(entry.eventType) ? 'Retirement' : 'Specialist',
+    title: entry.eventType === 'promoted'
+      ? 'Specialist promoted to persistent lane'
+      : entry.eventType === 'persistent_created'
+        ? 'Persistent specialist created'
+        : entry.eventType === 'cleaned_up'
+          ? 'Idle specialist cleaned up'
+          : entry.eventType === 'retired'
+            ? 'Specialist retired'
+            : 'Specialist materialized',
+    detail: normalizeTimelineMessage(entry.message || '', rootMissionId),
+    meta: 'FLEET',
+  }));
+
+  return [...branchEntries, ...lifecycleRailEntries, ...outcomeEntries, ...doctrineEntries]
     .sort((left, right) => right.sortValue - left.sortValue)
     .slice(0, 14);
 }
@@ -362,7 +381,7 @@ function ApprovalCard({ item, agents, onClick, onApprove, onReject }) {
   );
 }
 
-function MissionGraphPanel({ tasks, agents, logs, outcomes, interventions, selectedId, onSelect, onRetry, onStop, onApprove, onCancel, onUpdateBranchRouting, onUpdateBranchDependencies }) {
+function MissionGraphPanel({ tasks, agents, logs, outcomes, interventions, lifecycleEvents, selectedId, onSelect, onRetry, onStop, onApprove, onCancel, onUpdateBranchRouting, onUpdateBranchDependencies }) {
   const graphTaskSet = useMemo(() => {
     if (!tasks.length) return [];
     const selectedTask = tasks.find((task) => task.id === selectedId) || tasks[0];
@@ -392,16 +411,12 @@ function MissionGraphPanel({ tasks, agents, logs, outcomes, interventions, selec
   const rootOutcomes = outcomes.filter((entry) => !selectedRootMissionId || entry.rootMissionId === selectedRootMissionId);
   const outcomeMemory = getOutcomeMemorySummary(rootOutcomes);
   const selectedDependencySummary = selectedTask ? getDependencySummary(selectedTask, graphTaskSet) : { dependencies: [], unlocks: [] };
-  const retirementEvents = (
-    logs
-      .filter((entry) => {
-        const message = String(entry.message || '');
-        return message.includes('[specialist-retired]')
-          && (!selectedRootMissionId || message.includes(selectedRootMissionId));
-      })
-      .slice(-4)
-      .reverse()
-  );
+  const retirementEvents = lifecycleEvents
+    .filter((entry) => entry.eventType === 'retired' && (!selectedRootMissionId || entry.rootMissionId === selectedRootMissionId))
+    .slice(0, 4);
+  const rootLifecycleEvents = lifecycleEvents
+    .filter((entry) => !selectedRootMissionId || entry.rootMissionId === selectedRootMissionId)
+    .slice(0, 10);
   const outcomeHistory = rootOutcomes.slice(0, 6).map((entry) => ({
     id: entry.id,
     score: entry.score,
@@ -427,11 +442,12 @@ function MissionGraphPanel({ tasks, agents, logs, outcomes, interventions, selec
   const interventionRail = useMemo(() => (
     buildInterventionRailEntries({
       branchHistory,
+      lifecycleEvents: rootLifecycleEvents,
       outcomeHistory,
       doctrineFeedback,
       rootMissionId: selectedRootMissionId,
     })
-  ), [branchHistory, doctrineFeedback, outcomeHistory, selectedRootMissionId]);
+  ), [branchHistory, doctrineFeedback, outcomeHistory, rootLifecycleEvents, selectedRootMissionId]);
 
   const branchSummary = useMemo(() => {
     const running = graphTaskSet.filter((task) => task.workflowStatus === 'running').length;
@@ -1426,6 +1442,7 @@ export function MissionControlView() {
   const { connectedSystems } = useConnectedSystems();
   const { outcomes } = useTaskOutcomes();
   const { interventions } = useTaskInterventions();
+  const { events: lifecycleEvents } = useSpecialistLifecycle();
 
   return (
     <div className="flex flex-col h-full overflow-hidden relative">
@@ -1581,6 +1598,7 @@ export function MissionControlView() {
                 logs={logs}
                 outcomes={outcomes}
                 interventions={interventions}
+                lifecycleEvents={lifecycleEvents}
                 selectedId={sel}
                 onSelect={setSel}
                 onRetry={handleRetry}

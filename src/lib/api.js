@@ -472,6 +472,7 @@ async function ensureBranchSpecialistAgent({
   providerOverride,
   commander,
   selectedAgent,
+  rootMissionId = null,
   objective,
   recommendedSkillNames = [],
 }) {
@@ -502,10 +503,27 @@ async function ensureBranchSpecialistAgent({
 
   const { data, error } = await supabase.from('agents').insert([row]).select('*').single();
   if (error) throw error;
+  const message = `[specialist-spawned] ${data.name} (${branchRole}) materialized for "${objective}" on ${chosenModel}.`;
   await logBranchEvent({
     userId: user.id,
     agentId: data.id,
-    message: `[specialist-spawned] ${data.name} (${branchRole}) materialized for "${objective}" on ${chosenModel}.`,
+    message,
+  });
+  await persistSpecialistLifecycleEvent({
+    userId: user.id,
+    agentId: data.id,
+    rootMissionId,
+    eventType: 'spawned',
+    eventSource: 'mission_routing',
+    role: branchRole,
+    provider: chosenProvider,
+    model: chosenModel,
+    isEphemeral: true,
+    message,
+    metadata: {
+      objective,
+      skills: recommendedSkillNames,
+    },
   });
   return mapAgentRow(data);
 }
@@ -544,6 +562,7 @@ async function buildMissionSubtasks({
       ? branch.dependsOn.map((dependencyTitle) => branchIdByTitle.get(dependencyTitle)).filter(Boolean)
       : [];
     const assignment = await resolveBranchAssignment({
+      missionId,
       branch: {
         ...branch,
         recommendedSkillNames: Array.isArray(branch.recommendedSkillNames) && branch.recommendedSkillNames.length
@@ -615,6 +634,7 @@ async function buildMissionSubtasks({
 }
 
 async function resolveBranchAssignment({
+  missionId,
   branch,
   user,
   agents,
@@ -671,6 +691,7 @@ async function resolveBranchAssignment({
       providerOverride,
       commander,
       selectedAgent,
+      rootMissionId: missionId,
       objective: branch.title || branch.description || `${branchRole} branch`,
       recommendedSkillNames,
     }).catch((error) => {
@@ -830,6 +851,40 @@ async function persistTaskIntervention({
 
   if (error) {
     console.error('[api] persistTaskIntervention:', error.message);
+  }
+}
+
+async function persistSpecialistLifecycleEvent({
+  userId,
+  agentId = null,
+  rootMissionId = null,
+  eventType = 'spawned',
+  eventSource = 'runtime',
+  role = 'specialist',
+  provider = null,
+  model = null,
+  isEphemeral = true,
+  message = '',
+  metadata = {},
+}) {
+  if (!userId || !message) return;
+
+  const { error } = await supabase.from('specialist_lifecycle').insert({
+    user_id: userId,
+    agent_id: agentId,
+    root_mission_id: rootMissionId,
+    event_type: eventType,
+    event_source: eventSource,
+    role,
+    provider,
+    model,
+    is_ephemeral: isEphemeral,
+    message,
+    metadata,
+  });
+
+  if (error) {
+    console.error('[api] persistSpecialistLifecycleEvent:', error.message);
   }
 }
 

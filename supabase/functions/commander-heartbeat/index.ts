@@ -164,6 +164,30 @@ async function recordTaskIntervention(
   });
 }
 
+async function recordSpecialistLifecycle(
+  db: ReturnType<typeof createClient>,
+  userId: string,
+  agent: { id: string; name?: string | null; role?: string | null; model?: string | null; is_ephemeral?: boolean | null },
+  rootMissionId: string | null | undefined,
+  eventType: string,
+  message: string,
+) {
+  await db.from('specialist_lifecycle').insert({
+    user_id: userId,
+    agent_id: agent.id,
+    root_mission_id: rootMissionId || null,
+    event_type: eventType,
+    event_source: 'runtime',
+    role: agent.role || 'specialist',
+    model: agent.model || null,
+    is_ephemeral: Boolean(agent.is_ephemeral ?? true),
+    message,
+    metadata: {
+      cleanupSource: 'commander-heartbeat',
+    },
+  });
+}
+
 async function updateMissionGraphProgress(db: ReturnType<typeof createClient>, task: TaskRow) {
   if (!task.parent_id || !task.root_mission_id) return;
 
@@ -293,6 +317,14 @@ async function cleanupEphemeralSpecialists(
         duration_ms: 0,
       })),
     );
+    await Promise.all(staleAgents.map((agent) => recordSpecialistLifecycle(
+      db,
+      userId,
+      agent,
+      rootMissionId,
+      'retired',
+      `[specialist-retired] ${agent.name || agent.id} (${agent.role || 'specialist'}) retired after mission ${rootMissionId} on ${agent.model || 'adaptive lane'}.`,
+    )));
   }
 
   await db

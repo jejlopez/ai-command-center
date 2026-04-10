@@ -1109,6 +1109,93 @@ export function useTaskInterventions() {
   return { interventions, loading, refetch: fetchInterventions };
 }
 
+export function useSpecialistLifecycle() {
+  const { user } = useAuth();
+  const [events, setEvents] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetchLifecycle = useCallback(async () => {
+    if (!user) {
+      setEvents([]);
+      setLoading(false);
+      return;
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from('specialist_lifecycle')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      setEvents((data || []).map(mapSpecialistLifecycleFromDb));
+    } catch (error) {
+      console.error('[useSpecialistLifecycle] Fetch error:', error);
+      setEvents([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) return;
+
+    fetchLifecycle();
+    const channel = supabase
+      .channel(createRealtimeChannelName('specialist-lifecycle-user', user.id))
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'specialist_lifecycle',
+        filter: `user_id=eq.${user.id}`,
+      }, () => {
+        fetchLifecycle();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user, fetchLifecycle]);
+
+  return { events, loading, refetch: fetchLifecycle };
+}
+
+async function recordSpecialistLifecycleEvent({
+  userId,
+  agentId = null,
+  rootMissionId = null,
+  eventType = 'spawned',
+  eventSource = 'ui',
+  role = 'specialist',
+  provider = null,
+  model = null,
+  isEphemeral = true,
+  message = '',
+  metadata = {},
+}) {
+  if (!userId || !message) return;
+
+  const { error } = await supabase.from('specialist_lifecycle').insert({
+    user_id: userId,
+    agent_id: agentId,
+    root_mission_id: rootMissionId,
+    event_type: eventType,
+    event_source: eventSource,
+    role,
+    provider,
+    model,
+    is_ephemeral: isEphemeral,
+    message,
+    metadata,
+  });
+
+  if (error) {
+    console.error('[recordSpecialistLifecycleEvent] Insert error:', error);
+  }
+}
+
 /**
  * Insert a new agent into Supabase.
  */
@@ -1150,12 +1237,28 @@ export async function createTempAgent({ objective, role, model, commanderId }) {
   };
   const { data, error } = await supabase.from('agents').insert([row]).select().single();
   if (error) throw error;
+  const message = `[specialist-spawned] ${data.name} (${row.role}) created from Intelligence for "${objective}" on ${model}.`;
   await supabase.from('activity_log').insert([{
     user_id: user.id,
     agent_id: data.id,
     type: 'SYS',
-    message: `[specialist-spawned] ${data.name} (${row.role}) created from Intelligence for "${objective}" on ${model}.`,
+    message,
   }]);
+  await recordSpecialistLifecycleEvent({
+    userId: user.id,
+    agentId: data.id,
+    eventType: 'spawned',
+    eventSource: 'intelligence',
+    role: row.role,
+    provider: row.provider,
+    model: row.model,
+    isEphemeral: true,
+    message,
+    metadata: {
+      objective,
+      commanderId: commanderId || null,
+    },
+  });
   return mapAgentFromDb(data);
 }
 
@@ -1184,12 +1287,29 @@ export async function createPersistentSpecialist({ name, objective, role, model,
 
   const { data, error } = await supabase.from('agents').insert([row]).select().single();
   if (error) throw error;
+  const message = `[specialist-persistent] ${data.name} (${row.role}) promoted as a persistent lane on ${model}.`;
   await supabase.from('activity_log').insert([{
     user_id: user.id,
     agent_id: data.id,
     type: 'SYS',
-    message: `[specialist-persistent] ${data.name} (${row.role}) promoted as a persistent lane on ${model}.`,
+    message,
   }]);
+  await recordSpecialistLifecycleEvent({
+    userId: user.id,
+    agentId: data.id,
+    eventType: 'persistent_created',
+    eventSource: 'intelligence',
+    role: row.role,
+    provider: row.provider,
+    model: row.model,
+    isEphemeral: false,
+    message,
+    metadata: {
+      objective: objective || trimmedName,
+      skills,
+      commanderId: commanderId || null,
+    },
+  });
   return mapAgentFromDb(data);
 }
 
@@ -1222,12 +1342,28 @@ export async function promoteAgentToPersistent(agentId, patch = {}) {
     .single();
 
   if (error) throw error;
+  const message = `[specialist-persistent] ${data.name} (${data.role}) promoted from ephemeral to persistent coverage.`;
   await supabase.from('activity_log').insert([{
     user_id: user.id,
     agent_id: data.id,
     type: 'SYS',
-    message: `[specialist-persistent] ${data.name} (${data.role}) promoted from ephemeral to persistent coverage.`,
+    message,
   }]);
+  await recordSpecialistLifecycleEvent({
+    userId: user.id,
+    agentId: data.id,
+    eventType: 'promoted',
+    eventSource: 'intelligence',
+    role: data.role || 'specialist',
+    provider: normalizeModelProvider(data.provider),
+    model: data.model || null,
+    isEphemeral: false,
+    message,
+    metadata: {
+      fromEphemeral: true,
+      skills: Array.isArray(data.skills) ? data.skills : [],
+    },
+  });
   return mapAgentFromDb(data);
 }
 
@@ -1256,6 +1392,16 @@ export async function cleanupTempAgents() {
       message: `[specialist-retired] ${agent.name} (${agent.role || 'specialist'}) retired from Intelligence cleanup on ${agent.model || 'adaptive lane'}.`,
     }))
   );
+  await Promise.all(idleAgents.map((agent) => recordSpecialistLifecycleEvent({
+    userId: user.id,
+    agentId: agent.id,
+    eventType: 'cleaned_up',
+    eventSource: 'intelligence',
+    role: agent.role || 'specialist',
+    model: agent.model || null,
+    isEphemeral: true,
+    message: `[specialist-retired] ${agent.name} (${agent.role || 'specialist'}) retired from Intelligence cleanup on ${agent.model || 'adaptive lane'}.`,
+  })));
 
   const { data, error } = await supabase
     .from('agents')
@@ -1590,6 +1736,25 @@ function mapTaskInterventionFromDb(row) {
     provider: normalizeModelProvider(row.provider),
     model: row.model || '',
     scheduleType: row.schedule_type || 'once',
+    metadata: row.metadata || {},
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function mapSpecialistLifecycleFromDb(row) {
+  return {
+    id: row.id,
+    userId: row.user_id,
+    agentId: row.agent_id || null,
+    rootMissionId: row.root_mission_id || null,
+    eventType: row.event_type || 'spawned',
+    eventSource: row.event_source || 'runtime',
+    role: row.role || 'specialist',
+    provider: normalizeModelProvider(row.provider),
+    model: row.model || '',
+    isEphemeral: row.is_ephemeral ?? true,
+    message: row.message || '',
     metadata: row.metadata || {},
     createdAt: row.created_at,
     updatedAt: row.updated_at,

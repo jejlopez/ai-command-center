@@ -129,17 +129,17 @@ Legend:
 ## Current Read
 
 - `Shipped`: 15
-- `In Progress`: 30
+- `In Progress`: 32
 - `Next`: 0
 - `Queued`: 16
 - `Later / Future`: 48
 
 ## Immediate Next Four
 
-1. Doctrine feedback persistence into recommendations and learning memory
-2. Unified intervention timeline rail in Mission Control
-3. Benchmark-aware provider escalation explanations
-4. Recurring flow editing and automation guardrails
+1. Recurring flow management and tuning
+2. Mission preflight + confidence readback
+3. Bottleneck rail + autonomy ratio visibility
+4. Mission-pattern memory and rescue-aware learning
 
 ## Epic Experience Layer Additions
 
@@ -160,6 +160,7 @@ These are now explicit tracked roadmap targets even when they are implemented as
 
 These are not separate feature IDs yet. They should be implemented as depth added to the existing routing, memory, and automation rows above:
 
+- specialist lifecycle memory
 - policy trend memory
 - intervention-weighted doctrine scoring
 - mission pattern memory
@@ -172,12 +173,12 @@ These are not separate feature IDs yet. They should be implemented as depth adde
 
 ## Updated Immediate Next Order
 
-1. Commit the current intervention-memory slice cleanly
-2. Add first-class specialist lifecycle memory
-3. Deepen routing policy trend and demotion history
-4. Turn recurring flows into tunable automation products
-5. Add mission preflight + confidence readback
-6. Add bottleneck rail + autonomy ratio visibility
+1. Turn recurring flows into tunable automation products
+2. Add mission preflight + confidence readback
+3. Add bottleneck rail + autonomy ratio visibility
+4. Add mission-pattern memory and rescue-aware learning
+5. Keep specialist lifecycle memory unified across fleet surfaces
+6. Push trend-aware doctrine scoring deeper into recommendations
 
 ## Autodrive Program Rule
 

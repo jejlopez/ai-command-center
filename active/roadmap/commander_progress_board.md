@@ -6,8 +6,8 @@ This is the live build tracker for the Jarvis / Stark / Musk Commander program.
 
 - Jarvis vision size: `100` scoped features
 - Shipped foundation: `15`
-- Active buildout: `30`
-- Immediate next targets: `10`
+- Active buildout: `32`
+- Immediate next targets: `9`
 - Deferred / later items: `64`
 
 ## Shipped
@@ -67,8 +67,10 @@ This is the live build tracker for the Jarvis / Stark / Musk Commander program.
 - Launch recurring flows from automation recommendations
 - First-class intervention memory
 - Lane demotion reasons in Intelligence
+- Routing policy trend and pressure history
 - Recurring guardrail and intervention history in Reports
 - Structured intervention history in Mission Control
+- First-class specialist lifecycle memory
 
 ## Epic Experience Layer
 
@@ -87,21 +89,7 @@ These are now explicit roadmap targets, not implied polish:
 
 ## Next Program Targets
 
-### 1. Clean Up And Commit The Current Intervention-Memory Slice
-
-Goal:
-- lock the current structural intervention-memory slice into source control before expanding the program further
-
-Definition of done:
-- commit current local changes as one coherent slice
-- update roadmap artifacts so the tracked state matches the product state
-
-Likely surfaces:
-- [`/Users/Jjarvis/ai-command-center/src/lib/api.js`](/Users/Jjarvis/ai-command-center/src/lib/api.js)
-- [`/Users/Jjarvis/ai-command-center/src/views/IntelligenceView.jsx`](/Users/Jjarvis/ai-command-center/src/views/IntelligenceView.jsx)
-- [`/Users/Jjarvis/ai-command-center/src/views/ReportsView.jsx`](/Users/Jjarvis/ai-command-center/src/views/ReportsView.jsx)
-
-### 2. First-Class Specialist Lifecycle Memory
+### 1. First-Class Specialist Lifecycle Memory
 
 Goal:
 - stop depending on mixed log parsing for specialist fleet history
@@ -109,13 +97,14 @@ Goal:
 Definition of done:
 - specialist lifecycle events are persisted structurally
 - Intelligence and Mission Control use the same normalized fleet history source
+- specialist spawn, promotion, retirement, and cleanup all share one memory rail
 
 Likely surfaces:
 - [`/Users/Jjarvis/ai-command-center/src/utils/useSupabase.js`](/Users/Jjarvis/ai-command-center/src/utils/useSupabase.js)
 - [`/Users/Jjarvis/ai-command-center/src/views/IntelligenceView.jsx`](/Users/Jjarvis/ai-command-center/src/views/IntelligenceView.jsx)
 - [`/Users/Jjarvis/ai-command-center/src/views/MissionControlView.jsx`](/Users/Jjarvis/ai-command-center/src/views/MissionControlView.jsx)
 
-### 3. Routing Policy Trend And Demotion History
+### 2. Routing Policy Trend And Demotion History
 
 Goal:
 - make it obvious why a lane is improving, flat, or being demoted
@@ -129,7 +118,7 @@ Likely surfaces:
 - [`/Users/Jjarvis/ai-command-center/src/utils/commanderAnalytics.js`](/Users/Jjarvis/ai-command-center/src/utils/commanderAnalytics.js)
 - [`/Users/Jjarvis/ai-command-center/src/utils/useLearningMemory.js`](/Users/Jjarvis/ai-command-center/src/utils/useLearningMemory.js)
 
-### 4. Recurring Flow Management And Tuning
+### 3. Recurring Flow Management And Tuning
 
 Goal:
 - turn recurring launches into manageable automation products
@@ -138,27 +127,27 @@ Definition of done:
 - cadence, mission mode, and approval posture can be tuned over time
 - latest outcomes, guardrails, and interventions stay visible after launch
 
-### 5. Mission Preflight Card
+### 4. Mission Preflight Card
 
 - show context loaded, expected branches, cost, approval posture, confidence, and top risks before launch
 
-### 6. Confidence + Uncertainty Rail
+### 5. Confidence + Uncertainty Rail
 
 - make certainty and unknowns visible before and during execution
 
-### 7. Single Bottleneck Rail
+### 6. Single Bottleneck Rail
 
 - always expose the one strongest current constraint across cost, approvals, intervention pressure, or connector drag
 
-### 8. Autonomy Ratio + Rescue-Rate Visibility
+### 7. Autonomy Ratio + Rescue-Rate Visibility
 
 - measure how much work completed cleanly vs with rescue
 
-### 9. Mission Pattern Memory
+### 8. Mission Pattern Memory
 
 - learn repeatable mission shapes, not just individual outcomes
 
-### 10. One-Screen Bridge Mode
+### 9. One-Screen Bridge Mode
 
 - compress Overview, Mission Control, and Intelligence into the true Jarvis cockpit
 
@@ -199,8 +188,8 @@ Default posture:
 
 Build next:
 
-1. commit the current intervention-memory slice
-2. add first-class specialist lifecycle memory
-3. deepen routing policy trend and demotion history
-4. turn recurring flows into tunable automation products
-5. add mission preflight and confidence rails
+1. turn recurring flows into tunable automation products
+2. add mission preflight and confidence rails
+3. add autonomy, bottleneck, and mission-pattern visibility
+4. keep fleet lifecycle memory visible across Intelligence and Mission Control
+5. deepen doctrine scoring with recurring-flow and intervention trend data
