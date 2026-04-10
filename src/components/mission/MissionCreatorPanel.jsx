@@ -373,6 +373,7 @@ function inferDoctrineDefaults({ intent, agents, learningMemory }) {
   const costDoctrine = doctrine['doctrine-cost'];
   const speedDoctrine = doctrine['doctrine-speed'];
   const routingDoctrine = doctrine['doctrine-routing'];
+  const batchDoctrine = doctrine['batch-command-memory'];
 
   const explicitOutput = inferExplicitOutput(intent);
   const doctrineAgent = findAgentByDoctrineName(agents, agentDoctrine?.metrics?.topAgentName);
@@ -385,11 +386,25 @@ function inferDoctrineDefaults({ intent, agents, learningMemory }) {
   } else if (Number(costDoctrine?.metrics?.savings || 0) < 0 || Number(routingDoctrine?.metrics?.spendLeaderCost || 0) > 1.5) {
     suggestedMode = 'efficient';
   }
+  let suggestedMissionMode = 'do_now';
+  const batchApprovePressure = Number(batchDoctrine?.metrics?.batchSignals?.actionCounts?.approve || 0);
+  const batchRescuePressure = Number(batchDoctrine?.metrics?.batchSignals?.actionCounts?.retry || 0)
+    + Number(batchDoctrine?.metrics?.batchSignals?.actionCounts?.redirect || 0)
+    + Number(batchDoctrine?.metrics?.batchSignals?.actionCounts?.stop || 0);
+
+  if (batchRescuePressure >= 2 && batchRescuePressure >= batchApprovePressure) {
+    suggestedMissionMode = 'watch_and_approve';
+  } else if (batchApprovePressure >= 2 && batchApprovePressure > batchRescuePressure) {
+    suggestedMissionMode = 'do_now';
+  } else if (/(review|verify|check|qa|finance|payment|customer)/.test(lower)) {
+    suggestedMissionMode = 'watch_and_approve';
+  }
 
   return {
     agent: suggestedAgent,
     outputType: suggestedOutput,
     mode: suggestedMode,
+    missionMode: suggestedMissionMode,
     notes: [
       doctrineAgent
         ? `${doctrineAgent.name} is carrying the strongest execution pattern right now.`
@@ -402,6 +417,7 @@ function inferDoctrineDefaults({ intent, agents, learningMemory }) {
         : suggestedMode === 'efficient'
           ? 'Spend concentration suggests a more disciplined mode by default.'
           : 'Balanced mode is still the safest lane for quality and cost together.',
+      batchDoctrine?.detail || 'Grouped bridge outcomes have not yet shifted launch posture defaults.',
     ],
   };
 }
@@ -501,6 +517,121 @@ function buildPreflightReadback({
   };
 }
 
+function buildCommanderMemoryBrief({
+  learningMemory,
+  routingDecision,
+  systemsReadback,
+  selectedAgent,
+  missionSummary,
+  preflightAlignment,
+}) {
+  const doctrineItems = Array.isArray(learningMemory?.doctrine) ? learningMemory.doctrine : [];
+  const executiveItems = Array.isArray(learningMemory?.executiveThree) ? learningMemory.executiveThree : [];
+  const patternDoctrine = learningMemory?.doctrineById?.['doctrine-mission-patterns']
+    || learningMemory?.doctrineById?.['mission-pattern-memory']
+    || null;
+  const batchDoctrine = learningMemory?.doctrineById?.['batch-command-memory'] || null;
+  const winningPattern = patternDoctrine?.metrics?.winningPattern || null;
+  const disconnectedSystems = systemsReadback.filter((system) => !system.connected);
+  const activeContext = routingDecision.contextPackIds || [];
+  const capabilities = routingDecision.requiredCapabilities || [];
+  const strongestDoctrine = doctrineItems[0] || executiveItems[0] || null;
+
+  const usuallyWorks = winningPattern
+    ? `${winningPattern.executionStrategy} execution with ${String(winningPattern.approvalLevel || 'risk_weighted').replaceAll('_', ' ')} approval is the strongest repeated shape for ${winningPattern.domain}/${winningPattern.intentType}.`
+    : strongestDoctrine?.detail
+      || 'Commander does best when the mission intent is specific about output, destination, and success criteria.';
+
+  const usuallyFails = disconnectedSystems.length > 0
+    ? `${disconnectedSystems.map((system) => system.label).join(', ')} is not fully connected, so missions touching those systems are more likely to fall back or stall.`
+    : preflightAlignment?.posture === 'drifting'
+      ? 'Similar missions have been drifting from preflight expectations, so broad requests are more likely to need human correction.'
+      : missionSummary.confidence < 60
+        ? 'Broad mission language usually causes avoidable reroutes, approvals, or branch churn.'
+        : 'No dominant failure pattern is outranking the usual risk controls right now.';
+
+  const contextReadback = activeContext.length > 0
+    ? `Commander is loading ${activeContext.join(', ')}${capabilities.length ? ` and expects ${capabilities.join(', ')}` : ''}.`
+    : 'Commander is still leaning mostly on the core context layer for this mission.';
+
+  const launchPosture = selectedAgent
+    ? `${selectedAgent.name} is the lead lane, and Commander is carrying a ${missionSummary.confidence >= 75 ? 'grounded' : missionSummary.confidence >= 55 ? 'managed' : 'cautious'} confidence posture into launch.`
+    : 'Commander is still auto-selecting the launch lane for this mission.';
+
+  const evidence = winningPattern
+    ? `${winningPattern.runs} similar runs in memory`
+    : preflightAlignment?.sampleCount > 0
+      ? `${preflightAlignment.sampleCount} matching runtime runs`
+      : 'light runtime history';
+  const batchReadback = batchDoctrine?.detail || 'Grouped bridge actions have not formed a meaningful doctrine signal yet.';
+
+  return {
+    usuallyWorks,
+    usuallyFails,
+    contextReadback,
+    launchPosture,
+    evidence,
+    batchReadback,
+  };
+}
+
+function buildCommanderDecisionReadback({
+  form,
+  selectedAgent,
+  missionSummary,
+  routingDecision,
+  systemsReadback,
+  preflight,
+  preflightAlignment,
+  commanderMemoryBrief,
+}) {
+  const disconnectedSystems = systemsReadback.filter((system) => !system.connected);
+  const whyChosen = [
+    selectedAgent
+      ? `${selectedAgent.name} is the lead lane because the mission language best matches ${selectedAgent.role || 'its'} execution pattern.`
+      : 'Commander is still auto-selecting the cleanest lead lane for this mission.',
+    routingDecision.routingReason || null,
+    commanderMemoryBrief.usuallyWorks,
+    preflight.contextPacks.length > 0
+      ? `Commander is grounding the launch in ${preflight.contextPacks.join(', ')} before it fans out the branches.`
+      : null,
+    commanderMemoryBrief.batchReadback,
+  ].filter(Boolean).slice(0, 3);
+
+  const whyPause = [];
+
+  if (form.missionMode === 'watch_and_approve') {
+    whyPause.push('This mission is in watch-and-approve mode, so Commander will stop at the first human gate before execution scales.');
+  } else if (form.missionMode === 'plan_first') {
+    whyPause.push('This mission is in plan-first mode, so Commander will build the graph and hold it until you release execution.');
+  }
+
+  if (routingDecision.riskLevel === 'high') {
+    whyPause.push('Risk is elevated enough that Commander will keep this mission human-aware even if the rest of the preflight looks healthy.');
+  }
+
+  if (preflightAlignment.posture === 'drifting') {
+    whyPause.push('Similar missions have been drifting from the briefing, which raises the chance of a verification or approval pause.');
+  }
+
+  if (missionSummary.confidence < 60) {
+    whyPause.push('Intent clarity is still broad, so Commander may pause to avoid scaling the wrong branch shape.');
+  }
+
+  if (disconnectedSystems.length > 0) {
+    whyPause.push(`${disconnectedSystems.map((system) => system.label).join(', ')} is not fully connected, so fallback behavior may force a pause or redirect.`);
+  }
+
+  if (whyPause.length === 0) {
+    whyPause.push('No strong pause pressure is outranking the current launch posture, so Commander should be able to keep this moving once you launch.');
+  }
+
+  return {
+    whyChosen,
+    whyPause: whyPause.slice(0, 3),
+  };
+}
+
 function SegmentedControl({ options, value, onChange }) {
   return (
     <div className="flex gap-2">
@@ -527,6 +658,7 @@ export function MissionCreatorPanel({
   isOpen,
   agents,
   learningMemory,
+  initialDraft,
   onClose,
   onLaunch,
   onPreview,
@@ -537,6 +669,7 @@ export function MissionCreatorPanel({
   const [agentTouched, setAgentTouched] = useState(false);
   const [outputTouched, setOutputTouched] = useState(false);
   const [modeTouched, setModeTouched] = useState(false);
+  const [missionModeTouched, setMissionModeTouched] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [preview, setPreview] = useState(null);
   const [previewLoading, setPreviewLoading] = useState(false);
@@ -593,20 +726,51 @@ export function MissionCreatorPanel({
     estimatedCost: preflight.estimatedCost,
     expectedBranches: preflight.expectedBranches,
   }), [tasks, routingDecision, missionSummary, preflight.estimatedCost, preflight.expectedBranches]);
+  const commanderMemoryBrief = useMemo(() => buildCommanderMemoryBrief({
+    learningMemory,
+    routingDecision,
+    systemsReadback,
+    selectedAgent,
+    missionSummary,
+    preflightAlignment,
+  }), [learningMemory, routingDecision, systemsReadback, selectedAgent, missionSummary, preflightAlignment]);
+  const commanderDecisionReadback = useMemo(() => buildCommanderDecisionReadback({
+    form,
+    selectedAgent,
+    missionSummary,
+    routingDecision,
+    systemsReadback,
+    preflight,
+    preflightAlignment,
+    commanderMemoryBrief,
+  }), [form, selectedAgent, missionSummary, routingDecision, systemsReadback, preflight, preflightAlignment, commanderMemoryBrief]);
   const selectedAgentIsPersistent = !!(selectedAgent && !selectedAgent.isEphemeral && !selectedAgent.isSyntheticCommander);
 
   useEffect(() => {
     if (!isOpen) return;
-    setForm(initialFormState(agents));
+    const baseForm = initialFormState(agents);
+    const nextForm = initialDraft ? {
+      ...baseForm,
+      intent: initialDraft.intent || baseForm.intent,
+      missionMode: initialDraft.missionMode || baseForm.missionMode,
+      when: initialDraft.when || baseForm.when,
+      priority: initialDraft.priority || baseForm.priority,
+      mode: initialDraft.mode || baseForm.mode,
+      outputType: initialDraft.outputType || baseForm.outputType,
+      targetType: initialDraft.targetType || baseForm.targetType,
+      targetIdentifier: initialDraft.targetIdentifier || baseForm.targetIdentifier,
+    } : baseForm;
+    setForm(nextForm);
     setAgentTouched(false);
     setOutputTouched(false);
     setModeTouched(false);
+    setMissionModeTouched(false);
     setError('');
     setPreview(null);
     setPreviewOpen(false);
     setShowSavePreset(false);
     setPresetName('');
-  }, [isOpen, agents]);
+  }, [isOpen, agents, initialDraft]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -648,6 +812,13 @@ export function MissionCreatorPanel({
   }, [doctrineDefaults.mode, form.mode, modeTouched]);
 
   useEffect(() => {
+    if (missionModeTouched || !doctrineDefaults.missionMode) return;
+    if (doctrineDefaults.missionMode !== form.missionMode) {
+      setForm(prev => ({ ...prev, missionMode: doctrineDefaults.missionMode }));
+    }
+  }, [doctrineDefaults.missionMode, form.missionMode, missionModeTouched]);
+
+  useEffect(() => {
     if (!availableTargetOptions.some((option) => option.value === form.targetType)) {
       setForm((prev) => ({ ...prev, targetType: 'internal', targetIdentifier: '' }));
     }
@@ -675,6 +846,7 @@ export function MissionCreatorPanel({
     if (field === 'agentId') setAgentTouched(true);
     if (field === 'outputType') setOutputTouched(true);
     if (field === 'mode') setModeTouched(true);
+    if (field === 'missionMode') setMissionModeTouched(true);
     setForm(prev => ({ ...prev, [field]: value }));
     setError('');
   }
@@ -701,6 +873,7 @@ export function MissionCreatorPanel({
     setAgentTouched(true);
     setOutputTouched(true);
     setModeTouched(true);
+    setMissionModeTouched(true);
   }
 
   function buildPayload() {
@@ -1031,6 +1204,72 @@ export function MissionCreatorPanel({
                       {preflight.topRisks.map((risk) => (
                         <div key={risk} className="rounded-2xl border border-white/[0.08] bg-white/[0.03] px-3 py-2 text-[11px] text-text-body">
                           {risk}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-4 rounded-[20px] border border-aurora-teal/15 bg-[linear-gradient(135deg,rgba(45,212,191,0.08),rgba(96,165,250,0.05))] px-4 py-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="text-[10px] uppercase tracking-[0.18em] text-aurora-teal font-semibold">Commander Memory Brief</div>
+                      <div className="mt-1 text-sm font-semibold text-text-primary">What Commander has learned before this launch</div>
+                      <div className="mt-1 text-[11px] leading-relaxed text-text-body">
+                        A compact readback of what usually works, what usually fails, and what context Commander is trusting for this mission.
+                      </div>
+                    </div>
+                    <div className="rounded-full border border-aurora-teal/20 bg-aurora-teal/10 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-aurora-teal">
+                      {commanderMemoryBrief.evidence}
+                    </div>
+                  </div>
+
+                  <div className="mt-4 space-y-3">
+                    <div className="rounded-2xl border border-white/[0.08] bg-black/20 px-3 py-3">
+                      <div className="text-[9px] uppercase tracking-[0.18em] text-text-muted">Usually works</div>
+                      <div className="mt-2 text-[11px] leading-relaxed text-text-body">{commanderMemoryBrief.usuallyWorks}</div>
+                    </div>
+                    <div className="rounded-2xl border border-white/[0.08] bg-black/20 px-3 py-3">
+                      <div className="text-[9px] uppercase tracking-[0.18em] text-text-muted">Usually fails</div>
+                      <div className="mt-2 text-[11px] leading-relaxed text-text-body">{commanderMemoryBrief.usuallyFails}</div>
+                    </div>
+                    <div className="grid gap-3 xl:grid-cols-2">
+                      <div className="rounded-2xl border border-white/[0.08] bg-black/20 px-3 py-3">
+                        <div className="text-[9px] uppercase tracking-[0.18em] text-text-muted">Context readback</div>
+                        <div className="mt-2 text-[11px] leading-relaxed text-text-body">{commanderMemoryBrief.contextReadback}</div>
+                      </div>
+                      <div className="rounded-2xl border border-white/[0.08] bg-black/20 px-3 py-3">
+                        <div className="text-[9px] uppercase tracking-[0.18em] text-text-muted">Launch posture</div>
+                        <div className="mt-2 text-[11px] leading-relaxed text-text-body">{commanderMemoryBrief.launchPosture}</div>
+                      </div>
+                    </div>
+                    <div className="rounded-2xl border border-white/[0.08] bg-black/20 px-3 py-3">
+                      <div className="text-[9px] uppercase tracking-[0.18em] text-text-muted">Grouped command memory</div>
+                      <div className="mt-2 text-[11px] leading-relaxed text-text-body">{commanderMemoryBrief.batchReadback}</div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-4 grid gap-3 xl:grid-cols-2">
+                  <div className="rounded-[20px] border border-aurora-violet/15 bg-[linear-gradient(135deg,rgba(167,139,250,0.10),rgba(96,165,250,0.04))] px-4 py-4">
+                    <div className="text-[10px] uppercase tracking-[0.18em] text-aurora-violet font-semibold">Why Commander Chose This</div>
+                    <div className="mt-1 text-sm font-semibold text-text-primary">Launch-lane rationale</div>
+                    <div className="mt-3 space-y-2">
+                      {commanderDecisionReadback.whyChosen.map((reason) => (
+                        <div key={reason} className="rounded-2xl border border-white/[0.08] bg-black/20 px-3 py-2 text-[11px] leading-relaxed text-text-body">
+                          {reason}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="rounded-[20px] border border-aurora-amber/15 bg-[linear-gradient(135deg,rgba(251,191,36,0.10),rgba(244,114,182,0.04))] px-4 py-4">
+                    <div className="text-[10px] uppercase tracking-[0.18em] text-aurora-amber font-semibold">Why Commander Would Pause This</div>
+                    <div className="mt-1 text-sm font-semibold text-text-primary">Human-gate rationale</div>
+                    <div className="mt-3 space-y-2">
+                      {commanderDecisionReadback.whyPause.map((reason) => (
+                        <div key={reason} className="rounded-2xl border border-white/[0.08] bg-black/20 px-3 py-2 text-[11px] leading-relaxed text-text-body">
+                          {reason}
                         </div>
                       ))}
                     </div>

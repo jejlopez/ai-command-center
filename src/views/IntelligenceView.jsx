@@ -40,7 +40,7 @@ import { TruthAuditStrip } from '../components/command/TruthAuditStrip';
 import { useCommandCenterTruth } from '../utils/useCommandCenterTruth';
 import { normalizeModelProvider } from '../utils/commanderPolicy';
 import { getWorkflowMeta } from '../utils/missionLifecycle';
-import { buildPolicyDemotionSummary, getDoctrineDeltaSummary, getFleetPostureSummary, getObservedModelBenchmarks, getPersistentPromotionGuidance, getSpecialistLifecycleSummary, rankCommanderRecommendations, scoreTaskOutcome } from '../utils/commanderAnalytics';
+import { buildPolicyDemotionSummary, getBatchRoutingTrustSummary, getDoctrineDeltaSummary, getFleetPostureSummary, getLatestBatchCommandAudit, getObservedModelBenchmarks, getPersistentPromotionGuidance, getPolicyActionGuidance, getPolicyDeltaReadback, getSpecialistLifecycleSummary, getTradeoffCorrectiveAction, getTradeoffOutcomeSummary, rankCommanderRecommendations, scoreTaskOutcome } from '../utils/commanderAnalytics';
 
 const tabs = [
   { id: 'models', label: 'Model Command Matrix', icon: Cpu },
@@ -198,7 +198,7 @@ function StrategicReadFirst({ items }) {
   );
 }
 
-function OptimizationCard({ recommendation }) {
+function OptimizationCard({ recommendation, onStageCorrectiveAction = null }) {
   const toneClass = recommendation.impact === 'critical'
     ? 'border-l-aurora-rose'
     : recommendation.impact === 'high'
@@ -226,6 +226,22 @@ function OptimizationCard({ recommendation }) {
               <span className="font-semibold text-text-primary">Why now:</span> {recommendation.whyNow}
             </div>
           )}
+          {recommendation.correctiveAction?.label && (
+            <div className="mt-3 ui-panel-soft px-3 py-2 text-[11px] leading-relaxed text-text-body">
+              <span className="font-semibold text-text-primary">Corrective action:</span> {recommendation.correctiveAction.label}. {recommendation.correctiveAction.detail}
+              {recommendation.correctiveAction.routeState && onStageCorrectiveAction ? (
+                <div className="mt-3">
+                  <button
+                    type="button"
+                    onClick={() => onStageCorrectiveAction(recommendation.correctiveAction)}
+                    className="rounded-2xl border border-aurora-blue/20 bg-aurora-blue/10 px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-aurora-blue transition-colors hover:bg-aurora-blue/15"
+                  >
+                    Stage corrective action
+                  </button>
+                </div>
+              ) : null}
+            </div>
+          )}
         </div>
         <ChevronRight className="mt-0.5 h-4 w-4 text-text-disabled" />
       </div>
@@ -233,14 +249,43 @@ function OptimizationCard({ recommendation }) {
   );
 }
 
-function DoctrineSignalRail({ learningMemory }) {
+function DoctrineSignalRail({ learningMemory, logs = [] }) {
   const timeline = learningMemory.doctrine
     .slice()
     .sort((a, b) => new Date(b.latestSnapshotAt || 0).getTime() - new Date(a.latestSnapshotAt || 0).getTime())
     .slice(0, 4);
+  const latestBatchAudit = useMemo(() => getLatestBatchCommandAudit(logs), [logs]);
+  const batchDoctrine = learningMemory?.doctrineById?.['batch-command-memory'] || null;
 
   return (
     <div className="space-y-4">
+      {(latestBatchAudit || batchDoctrine) && (
+        <div className="ui-panel-soft p-4">
+          <div className="flex items-center gap-2">
+            <Layers3 className="h-4 w-4 text-aurora-blue" />
+            <span className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Batch command pressure</span>
+          </div>
+          {latestBatchAudit && (
+            <div className="mt-4 ui-card-row px-3 py-3">
+              <div className="flex items-center justify-between gap-2">
+                <div className="text-[12px] font-semibold text-text-primary">{latestBatchAudit.label}</div>
+                <div className="text-[10px] font-mono uppercase text-aurora-blue">{latestBatchAudit.type}</div>
+              </div>
+              <div className="mt-2 text-[11px] leading-relaxed text-text-body">{latestBatchAudit.message}</div>
+            </div>
+          )}
+          {batchDoctrine && (
+            <div className="mt-3 ui-card-row px-3 py-3">
+              <div className="flex items-center justify-between gap-2">
+                <div className="text-[12px] font-semibold text-text-primary">{batchDoctrine.title}</div>
+                <div className="text-[10px] font-mono text-aurora-teal">{batchDoctrine.confidence}%</div>
+              </div>
+              <div className="mt-2 text-[11px] leading-relaxed text-text-body">{batchDoctrine.detail}</div>
+            </div>
+          )}
+        </div>
+      )}
+
       <div className="ui-panel-soft p-4">
         <div className="flex items-center gap-2">
           <History className="h-4 w-4 text-aurora-violet" />
@@ -278,7 +323,7 @@ function DoctrineSignalRail({ learningMemory }) {
   );
 }
 
-function StrategyRail({ derivedRecommendations, learningMemory, humanHourlyRate, economics }) {
+function StrategyRail({ derivedRecommendations, learningMemory, humanHourlyRate, economics, logs = [], onStageCorrectiveAction = null }) {
   const [focus, setFocus] = useState('economics');
 
   return (
@@ -369,7 +414,7 @@ function StrategyRail({ derivedRecommendations, learningMemory, humanHourlyRate,
           />
             <DoctrineCards items={learningMemory.doctrine.slice(0, 3)} columns="one" />
           </HudPanel>
-          <DoctrineSignalRail learningMemory={learningMemory} />
+          <DoctrineSignalRail learningMemory={learningMemory} logs={logs} />
         </>
       )}
 
@@ -389,7 +434,7 @@ function StrategyRail({ derivedRecommendations, learningMemory, humanHourlyRate,
           />
           <div className="mt-5 space-y-3">
             {derivedRecommendations.slice(0, 2).map((recommendation) => (
-              <OptimizationCard key={recommendation.id} recommendation={recommendation} />
+              <OptimizationCard key={recommendation.id} recommendation={recommendation} onStageCorrectiveAction={onStageCorrectiveAction} />
             ))}
           </div>
         </HudPanel>
@@ -546,10 +591,11 @@ function IntelligenceHeader({ activeTab, setActiveTab, systemSummary, availableM
   );
 }
 
-function ModelRegistryTab({ availableModels, agents, tasks, logs, interventions }) {
+function ModelRegistryTab({ availableModels, agents, tasks, logs, interventions, learningMemory }) {
   const [detailView, setDetailView] = useState('constellation');
   const radarSelection = availableModels.slice(0, 4);
   const observedBenchmarks = useMemo(() => getObservedModelBenchmarks(tasks, agents, logs, interventions).slice(0, 6), [tasks, agents, logs, interventions]);
+  const batchRoutingTrust = useMemo(() => getBatchRoutingTrustSummary({ logs, doctrineItem: learningMemory?.doctrineById?.['batch-command-memory'] || null }), [logs, learningMemory]);
 
   const groupedComparisonData = useMemo(() => (
     capabilityMetrics.map((metric) => {
@@ -769,6 +815,11 @@ function ModelRegistryTab({ availableModels, agents, tasks, logs, interventions 
               </div>
             ))}
           </div>
+          {batchRoutingTrust.available && (
+            <div className="mt-4 rounded-2xl border border-aurora-teal/15 bg-aurora-teal/[0.05] px-3 py-2 text-[11px] text-text-body">
+              Routing trust readback: <span className="font-semibold text-aurora-teal">{batchRoutingTrust.title}</span> {batchRoutingTrust.detail}
+            </div>
+          )}
           <div className="mt-5 space-y-3">
             {observedBenchmarks.length === 0 ? (
               <div className="ui-panel-soft border border-dashed border-hairline p-6 text-center">
@@ -878,8 +929,9 @@ function ModelRegistryTab({ availableModels, agents, tasks, logs, interventions 
   );
 }
 
-function RoutingDoctrineTab({ routingPolicies, tasks, agents, logs, interventions, lifecycleEvents, skills, upsertPolicy, ensureDefaultPolicy }) {
+function RoutingDoctrineTab({ routingPolicies, tasks, agents, logs, interventions, lifecycleEvents, skills, upsertPolicy, ensureDefaultPolicy, routeState = null, onConsumeRouteState = null }) {
   const [selectedPolicyId, setSelectedPolicyId] = useState('');
+  const [policyActionContext, setPolicyActionContext] = useState(null);
   const [draft, setDraft] = useState(null);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState('');
@@ -897,6 +949,51 @@ function RoutingDoctrineTab({ routingPolicies, tasks, agents, logs, intervention
     setSelectedPolicyId(selected?.id || '');
     setDraft(selected ? { ...selected } : null);
   }, [routingPolicies, selectedPolicyId]);
+
+  useEffect(() => {
+    if (!routeState?.selectedPolicyId || !routingPolicies.length) return;
+    const selected = routingPolicies.find((policy) => policy.id === routeState.selectedPolicyId);
+    if (!selected) return;
+
+    setSelectedPolicyId(selected.id);
+    setPolicyActionContext(routeState.actionContext || null);
+    setDraft((current) => {
+      const nextDraft = { ...(current?.id === selected.id ? current : selected) };
+      const adjustmentAllowed = routeState.actionContext?.enabled ?? true;
+      if (routeState.adjustment === 'harden' && adjustmentAllowed) {
+        nextDraft.approvalRule = nextDraft.approvalRule === 'auto_low_risk' ? 'risk_weighted' : 'human_required';
+      } else if (routeState.adjustment === 'loosen' && adjustmentAllowed) {
+        nextDraft.approvalRule = nextDraft.approvalRule === 'human_required' ? 'risk_weighted' : 'auto_low_risk';
+      }
+      if (routeState.providerSwap) {
+        nextDraft.preferredProvider = routeState.providerSwap;
+      }
+      if (routeState.modelSwap) {
+        nextDraft.preferredModel = routeState.modelSwap;
+      }
+      if (typeof routeState.evidenceRequired === 'boolean') {
+        nextDraft.evidenceRequired = routeState.evidenceRequired;
+      }
+      if (routeState.contextPolicy) {
+        nextDraft.contextPolicy = routeState.contextPolicy;
+      }
+      if (routeState.stageFallback && routeState.fallbackSwap) {
+        const existingFallbacks = Array.isArray(nextDraft.fallbackOrder) ? [...nextDraft.fallbackOrder] : [];
+        const fallbackEntry = {
+          role: nextDraft.preferredAgentRole || 'executor',
+          provider: routeState.fallbackSwap.provider || nextDraft.preferredProvider || 'Anthropic',
+          model: routeState.fallbackSwap.model || '',
+        };
+        const alreadyPresent = existingFallbacks.some((entry) => entry.provider === fallbackEntry.provider && entry.model === fallbackEntry.model && entry.role === fallbackEntry.role);
+        if (!alreadyPresent) {
+          existingFallbacks.unshift(fallbackEntry);
+          nextDraft.fallbackOrder = existingFallbacks;
+        }
+      }
+      return nextDraft;
+    });
+    onConsumeRouteState?.();
+  }, [routeState, routingPolicies, onConsumeRouteState]);
 
   const workflowDistribution = useMemo(() => {
     const counts = new Map();
@@ -1011,6 +1108,8 @@ function RoutingDoctrineTab({ routingPolicies, tasks, agents, logs, intervention
     return Array.from(seen.values());
   }, [agents]);
   const demotionSummary = useMemo(() => buildPolicyDemotionSummary(draft, tasks, interventions, logs), [draft, tasks, interventions, logs]);
+  const policyDelta = useMemo(() => getPolicyDeltaReadback(draft, tasks, interventions, logs), [draft, tasks, interventions, logs]);
+  const policyActionGuidance = useMemo(() => getPolicyActionGuidance(draft, tasks, interventions, logs, agents), [draft, tasks, interventions, logs, agents]);
   const trendTone = demotionSummary.trend === 'improving'
     ? 'text-aurora-teal border-aurora-teal/20 bg-aurora-teal/10'
     : demotionSummary.trend === 'demoted'
@@ -1156,7 +1255,9 @@ function RoutingDoctrineTab({ routingPolicies, tasks, agents, logs, intervention
                 </div>
               </div>
             )}
-            {routingPolicies.map((policy) => (
+            {routingPolicies.map((policy) => {
+              const listDelta = getPolicyDeltaReadback(policy, tasks, interventions, logs);
+              return (
               <button
                 key={policy.id}
                 type="button"
@@ -1200,8 +1301,19 @@ function RoutingDoctrineTab({ routingPolicies, tasks, agents, logs, intervention
                     <div className="mt-1 font-semibold text-text-primary">{policy.approvalRule}</div>
                   </div>
                 </div>
+                <div className={cn(
+                  'mt-3 rounded-2xl border px-3 py-2 text-[11px]',
+                  listDelta.tone === 'teal'
+                    ? 'border-aurora-teal/15 bg-aurora-teal/[0.05] text-text-body'
+                    : listDelta.tone === 'amber'
+                      ? 'border-aurora-amber/15 bg-aurora-amber/[0.05] text-text-body'
+                      : 'border-white/[0.08] bg-white/[0.03] text-text-body'
+                )}>
+                  <span className="font-semibold text-text-primary">{listDelta.title}.</span> {listDelta.providerDelta}, {listDelta.modelDelta}, {listDelta.approvalDelta}.
+                </div>
               </button>
-            ))}
+              );
+            })}
           </div>
         </div>
 
@@ -1471,6 +1583,150 @@ function RoutingDoctrineTab({ routingPolicies, tasks, agents, logs, intervention
                     <span className="font-semibold text-text-primary">{matchingTasks.length}</span> routed mission{matchingTasks.length === 1 ? '' : 's'}.
                   </div>
                 </div>
+                <div className={cn(
+                  'ui-card-row p-3',
+                  policyDelta.tone === 'teal'
+                    ? 'border-aurora-teal/15 bg-aurora-teal/[0.05]'
+                    : policyDelta.tone === 'amber'
+                      ? 'border-aurora-amber/15 bg-aurora-amber/[0.05]'
+                      : 'border-white/[0.08] bg-white/[0.03]'
+                )}>
+                  <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Policy delta readback</div>
+                  <div className="mt-2 text-[12px] font-semibold text-text-primary">{policyDelta.title}</div>
+                  <div className="mt-3 grid gap-3 md:grid-cols-3">
+                    {[
+                      { label: 'Provider', value: policyDelta.providerDelta },
+                      { label: 'Model', value: policyDelta.modelDelta },
+                      { label: 'Approval', value: policyDelta.approvalDelta },
+                    ].map((entry) => (
+                      <div key={entry.label} className="ui-panel-soft px-3 py-2">
+                        <div className="text-[10px] uppercase tracking-[0.14em] text-text-muted">{entry.label}</div>
+                        <div className="mt-1 text-[11px] font-semibold text-text-primary">{entry.value}</div>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="mt-3 text-[11px] leading-relaxed text-text-body">{policyDelta.detail}</div>
+                </div>
+                {policyActionContext ? (
+                  <div className="ui-card-row border-aurora-violet/15 bg-aurora-violet/[0.05] p-3">
+                    <div className="text-[10px] uppercase tracking-[0.16em] text-aurora-violet">Incoming action evidence</div>
+                    <div className="mt-2 text-[12px] font-semibold text-text-primary">{policyActionContext.label || 'Open policy'}</div>
+                    <div className="mt-2 text-[11px] leading-relaxed text-text-body">{policyActionContext.detail}</div>
+                    {routeState?.providerSwap || routeState?.modelSwap ? (
+                      <div className="mt-3 ui-panel-soft px-3 py-2 text-[11px] text-text-body">
+                        Commander staged {routeState.providerSwap || draft.preferredProvider || 'adaptive'} / {routeState.modelSwap || draft.preferredModel || 'adaptive model'} into this draft from the summary surface.
+                      </div>
+                    ) : null}
+                    {policyActionContext.currentLane && policyActionContext.suggestedLane ? (
+                      <div className="mt-3 grid gap-3 md:grid-cols-2">
+                        <div className="ui-panel-soft px-3 py-3">
+                          <div className="text-[10px] uppercase tracking-[0.14em] text-text-muted">Current lane</div>
+                          <div className="mt-1 text-[12px] font-semibold text-text-primary">{policyActionContext.currentLane.provider} / {policyActionContext.currentLane.model}</div>
+                          <div className="mt-2 text-[11px] leading-relaxed text-text-muted">
+                            Benchmark {policyActionContext.currentLane.benchmarkScore} • Quality {policyActionContext.currentLane.avgQuality} • Success {policyActionContext.currentLane.successRate}% • Avg interventions {policyActionContext.currentLane.avgInterventions}
+                          </div>
+                        </div>
+                        <div className="ui-panel-soft px-3 py-3">
+                          <div className="text-[10px] uppercase tracking-[0.14em] text-aurora-blue">Suggested lane</div>
+                          <div className="mt-1 text-[12px] font-semibold text-text-primary">{policyActionContext.suggestedLane.provider} / {policyActionContext.suggestedLane.model}</div>
+                          <div className="mt-2 text-[11px] leading-relaxed text-text-muted">
+                            Benchmark {policyActionContext.suggestedLane.benchmarkScore} • Quality {policyActionContext.suggestedLane.avgQuality} • Success {policyActionContext.suggestedLane.successRate}% • Avg interventions {policyActionContext.suggestedLane.avgInterventions}
+                          </div>
+                        </div>
+                      </div>
+                    ) : null}
+                    {policyActionContext.comparison ? (
+                      <div className="mt-3 ui-panel-soft px-3 py-3 text-[11px] text-text-body">
+                        <div className="text-[10px] uppercase tracking-[0.14em] text-text-muted">
+                          {policyActionContext.intent === 'safer'
+                            ? 'Safety threshold'
+                            : policyActionContext.intent === 'cheaper'
+                              ? 'Cost threshold'
+                              : policyActionContext.intent === 'faster'
+                                ? 'Speed threshold'
+                                : 'Performance threshold'}
+                        </div>
+                        <div className="mt-1 font-semibold text-text-primary">{policyActionContext.thresholdLabel}</div>
+                        <div className="mt-2 leading-relaxed text-text-muted">
+                          Benchmark delta {policyActionContext.comparison.benchmarkDelta ?? 'n/a'} • Quality delta {policyActionContext.comparison.qualityDelta ?? 'n/a'} • Intervention delta {policyActionContext.comparison.interventionDelta ?? 'n/a'} • Cost delta {policyActionContext.comparison.costDelta ?? 'n/a'} • Time delta {policyActionContext.comparison.durationDeltaMinutes ?? 'n/a'}m
+                        </div>
+                        {policyActionContext.signal ? (
+                          <div className="mt-2 text-aurora-blue">{policyActionContext.signal}</div>
+                        ) : null}
+                        {routeState?.stageFallback ? (
+                          <div className="mt-2 text-text-body">
+                            Commander also staged the previous lane into fallback order so this swap stays reversible.
+                          </div>
+                        ) : null}
+                      </div>
+                    ) : null}
+                    {(policyActionContext.evidence || policyActionGuidance.evidence).length ? (
+                      <div className="mt-3 grid gap-2 md:grid-cols-2">
+                        {(policyActionContext.evidence || policyActionGuidance.evidence).slice(0, 4).map((entry) => (
+                          <div key={entry} className="ui-panel-soft px-3 py-2 text-[11px] text-text-muted">
+                            {entry}
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
+                    {policyActionContext.expectedImpact ? (
+                      <div className="mt-3 space-y-3">
+                        {policyActionContext.postureComparison ? (
+                          <div className="grid gap-3 md:grid-cols-2">
+                            <div className="ui-panel-soft px-3 py-3 text-[11px] text-text-body">
+                              <div className="text-[10px] uppercase tracking-[0.14em] text-text-muted">Current posture</div>
+                              <div className="mt-2 leading-relaxed">{policyActionContext.postureComparison.current}</div>
+                            </div>
+                            <div className="ui-panel-soft px-3 py-3 text-[11px] text-text-body">
+                              <div className="text-[10px] uppercase tracking-[0.14em] text-aurora-blue">Proposed posture</div>
+                              <div className="mt-2 leading-relaxed">{policyActionContext.postureComparison.proposed}</div>
+                            </div>
+                          </div>
+                        ) : null}
+                        <div className="grid gap-3 md:grid-cols-2">
+                          <div className="ui-panel-soft px-3 py-3 text-[11px] text-text-body">
+                            <div className="text-[10px] uppercase tracking-[0.14em] text-aurora-teal">Expected improvement</div>
+                            <div className="mt-2 leading-relaxed">{policyActionContext.expectedImpact.primary}</div>
+                          </div>
+                          <div className="ui-panel-soft px-3 py-3 text-[11px] text-text-body">
+                            <div className="text-[10px] uppercase tracking-[0.14em] text-aurora-amber">Expected tradeoff</div>
+                            <div className="mt-2 leading-relaxed">{policyActionContext.expectedImpact.tradeoff}</div>
+                          </div>
+                        </div>
+                        {policyActionContext.doctrineImpact ? (
+                          <div className="ui-panel-soft px-3 py-3 text-[11px] text-text-body">
+                            <div className="text-[10px] uppercase tracking-[0.14em] text-aurora-violet">Doctrine confidence impact</div>
+                            <div className="mt-2 leading-relaxed">{policyActionContext.doctrineImpact.confidence}</div>
+                            <div className="mt-1 leading-relaxed text-text-muted">{policyActionContext.doctrineImpact.trust}</div>
+                          </div>
+                        ) : null}
+                        {policyActionContext.verificationImpact ? (
+                          <div className="ui-panel-soft px-3 py-3 text-[11px] text-text-body">
+                            <div className="text-[10px] uppercase tracking-[0.14em] text-aurora-blue">Recommended verification</div>
+                            <div className="mt-2 font-semibold leading-relaxed text-text-primary">{policyActionContext.verificationImpact.threshold}</div>
+                            <div className="mt-1 leading-relaxed text-text-muted">{policyActionContext.verificationImpact.detail}</div>
+                          </div>
+                        ) : null}
+                        {policyActionContext.successCriteria?.length ? (
+                          <div className="ui-panel-soft px-3 py-3 text-[11px] text-text-body">
+                            <div className="text-[10px] uppercase tracking-[0.14em] text-aurora-green">Success criteria</div>
+                            <div className="mt-2 leading-relaxed text-text-muted">
+                              {policyActionContext.successCriteria.slice(0, 3).map((entry) => `• ${entry}`).join(' ')}
+                            </div>
+                          </div>
+                        ) : null}
+                        {policyActionContext.rollbackCriteria?.length ? (
+                          <div className="ui-panel-soft px-3 py-3 text-[11px] text-text-body">
+                            <div className="text-[10px] uppercase tracking-[0.14em] text-aurora-rose">Rollback criteria</div>
+                            <div className="mt-2 leading-relaxed text-text-muted">
+                              {policyActionContext.rollbackCriteria.slice(0, 3).map((entry) => `• ${entry}`).join(' ')}
+                            </div>
+                          </div>
+                        ) : null}
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
                 <div className="ui-panel-soft p-3">
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
@@ -2373,7 +2629,7 @@ function DirectivesTab({ directives, agents, tasks, recommendations }) {
                 impact: 'normal',
               },
             ]).map((recommendation) => (
-              <OptimizationCard key={recommendation.title} recommendation={recommendation} />
+              <OptimizationCard key={recommendation.title} recommendation={recommendation} onStageCorrectiveAction={null} />
             ))}
           </div>
         </div>
@@ -2382,8 +2638,9 @@ function DirectivesTab({ directives, agents, tasks, recommendations }) {
   );
 }
 
-export function IntelligenceView() {
-  const [activeTab, setActiveTab] = useState('models');
+export function IntelligenceView({ routeState = null, onConsumeRouteState = null }) {
+  const [activeTab, setActiveTab] = useState(routeState?.tab || 'models');
+  const [localRouteState, setLocalRouteState] = useState(null);
   const { agents } = useAgents();
   const { models } = useModelBank();
   const { skills } = useSkillBank();
@@ -2441,6 +2698,23 @@ export function IntelligenceView() {
 
   const learningMemory = useLearningMemory({ agents, tasks, logs, approvals: [], costData: { total: economics.agentCost, models: [] }, humanHourlyRate });
   const doctrineDeltas = useMemo(() => getDoctrineDeltaSummary(learningMemory.doctrine).slice(0, 3), [learningMemory.doctrine]);
+  const topPolicy = useMemo(
+    () => routingPolicies.find((policy) => policy.isDefault) || routingPolicies[0] || null,
+    [routingPolicies]
+  );
+  const topPolicyActionGuidance = useMemo(
+    () => getPolicyActionGuidance(topPolicy, tasks, interventions, logs, agents),
+    [topPolicy, tasks, interventions, logs, agents]
+  );
+  const topTradeoffOutcome = useMemo(
+    () => getTradeoffOutcomeSummary(topPolicyActionGuidance.swap),
+    [topPolicyActionGuidance]
+  );
+  const topTradeoffCorrectiveAction = useMemo(
+    () => getTradeoffCorrectiveAction(topTradeoffOutcome, topPolicyActionGuidance.swap),
+    [topTradeoffOutcome, topPolicyActionGuidance]
+  );
+  const effectiveRouteState = localRouteState || routeState || null;
   const derivedRecommendations = useMemo(() => {
     const runningTasks = tasks.filter((task) => task.status === 'running').length;
     const failedTasks = tasks.filter((task) => ['failed', 'error', 'blocked'].includes(task.status)).length;
@@ -2475,8 +2749,10 @@ export function IntelligenceView() {
       lifecycleEvents,
       agents,
       learningMemory,
+      tradeoffOutcome: topTradeoffOutcome,
+      tradeoffCorrectiveAction: topTradeoffCorrectiveAction,
     }).slice(0, 5);
-  }, [agents, interventions, learningMemory, lifecycleEvents, logs, outcomes, persistedRecommendations, tasks]);
+  }, [agents, interventions, learningMemory, lifecycleEvents, logs, outcomes, persistedRecommendations, tasks, topTradeoffOutcome, topTradeoffCorrectiveAction]);
   const readFirstItems = useMemo(() => {
     const bestReasoner = availableModels.slice().sort((a, b) => b.reliability - a.reliability)[0];
     const fastest = availableModels.slice().sort((a, b) => b.speed - a.speed)[0];
@@ -2565,8 +2841,11 @@ export function IntelligenceView() {
             </div>
 
             <div className="ui-panel p-4">
-              {activeTab === 'models' && <ModelRegistryTab availableModels={availableModels} agents={agents} tasks={tasks} logs={logs} interventions={interventions} />}
-              {activeTab === 'routing' && <RoutingDoctrineTab routingPolicies={routingPolicies} tasks={tasks} agents={agents} logs={logs} interventions={interventions} lifecycleEvents={lifecycleEvents} skills={skills} upsertPolicy={upsertPolicy} ensureDefaultPolicy={ensureDefaultPolicy} />}
+              {activeTab === 'models' && <ModelRegistryTab availableModels={availableModels} agents={agents} tasks={tasks} logs={logs} interventions={interventions} learningMemory={learningMemory} />}
+              {activeTab === 'routing' && <RoutingDoctrineTab routingPolicies={routingPolicies} tasks={tasks} agents={agents} logs={logs} interventions={interventions} lifecycleEvents={lifecycleEvents} skills={skills} upsertPolicy={upsertPolicy} ensureDefaultPolicy={ensureDefaultPolicy} routeState={effectiveRouteState} onConsumeRouteState={() => {
+                if (localRouteState) setLocalRouteState(null);
+                else onConsumeRouteState?.();
+              }} />}
               {activeTab === 'knowledge' && <KnowledgeMapTab namespaces={knowledgeNamespaces} />}
               {activeTab === 'directives' && <DirectivesTab directives={sharedDirectives} agents={agents} tasks={tasks} recommendations={derivedRecommendations} />}
             </div>
@@ -2646,6 +2925,17 @@ export function IntelligenceView() {
                   learningMemory={learningMemory}
                   humanHourlyRate={humanHourlyRate}
                   economics={economics}
+                  logs={logs}
+                  onStageCorrectiveAction={(correctiveAction) => {
+                    if (!topPolicy?.id || !correctiveAction?.routeState) return;
+                    setActiveTab('routing');
+                    setLocalRouteState({
+                      tab: 'routing',
+                      selectedPolicyId: topPolicy.id,
+                      actionContext: correctiveAction,
+                      ...correctiveAction.routeState,
+                    });
+                  }}
                 />
               </div>
               <TruthAuditStrip truth={truth} />

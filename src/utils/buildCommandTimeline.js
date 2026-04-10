@@ -28,8 +28,16 @@ export function buildTimelineEntries({ tasks = [], reviews = [], logs = [], conn
 
   const logEntries = logs.slice(-4).reverse().map((log, index) => ({
     id: `log-${log.id || index}`,
-    type: log.type === 'ERR' ? 'alert' : 'log',
-    title: log.type === 'ERR' ? 'Execution anomaly' : 'Command traffic',
+    type: String(log.message || '').includes('[batch-intervention-]')
+      ? 'command'
+      : log.type === 'ERR'
+        ? 'alert'
+        : 'log',
+    title: String(log.message || '').includes('[batch-intervention-]')
+      ? 'Batch command audit'
+      : log.type === 'ERR'
+        ? 'Execution anomaly'
+        : 'Command traffic',
     detail: log.message,
     timestamp: log.timestamp,
   }));

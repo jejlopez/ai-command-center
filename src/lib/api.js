@@ -26,7 +26,7 @@ import {
   deriveRoutingDecision,
   mapRoutingPolicyFromDb,
 } from '../utils/routingPolicy';
-import { getPatternApprovalBiasSummary, getPersistentPromotionGuidance, getRecurringAutonomyTuningSummary, inferAgentProvider } from '../utils/commanderAnalytics';
+import { getBatchCommandSignals, getPatternApprovalBiasSummary, getPersistentPromotionGuidance, getRecurringAutonomyTuningSummary, inferAgentProvider } from '../utils/commanderAnalytics';
 
 // True when real Supabase env vars are set (not the placeholder)
 const isSupabaseConfigured = import.meta.env.VITE_SUPABASE_URL
@@ -1257,7 +1257,7 @@ async function selectRoutingPolicyRow(user, routingDecision) {
   );
 }
 
-async function selectOutcomeWinningLane(user, routingDecision) {
+async function selectOutcomeWinningLane(user, routingDecision, batchSignals = null) {
   if (!user?.id) return null;
 
   const selectColumns = 'provider,model,score,cost_usd,agent_role,execution_strategy,approval_level,domain,intent_type';
@@ -1338,6 +1338,20 @@ async function selectOutcomeWinningLane(user, routingDecision) {
         : entry.exactRuns >= 2 || scopeSupport >= 5
           ? 'medium'
           : 'low';
+      const batchApprovePressure = Number(batchSignals?.actionCounts?.approve || 0);
+      const batchRescuePressure = Number(batchSignals?.actionCounts?.retry || 0)
+        + Number(batchSignals?.actionCounts?.redirect || 0)
+        + Number(batchSignals?.actionCounts?.stop || 0);
+      const batchTrustAdjustment = batchApprovePressure > batchRescuePressure
+        ? (entry.approvalLevel === 'auto_low_risk' ? 8 : entry.approvalLevel === 'risk_weighted' ? 4 : -3)
+        : batchRescuePressure > batchApprovePressure
+          ? (entry.approvalLevel === 'auto_low_risk' ? -10 : entry.approvalLevel === 'risk_weighted' ? -2 : 4)
+          : 0;
+      const batchTrustDetail = batchTrustAdjustment > 0
+        ? 'Grouped approvals are reinforcing lighter lane trust.'
+        : batchTrustAdjustment < 0
+          ? 'Grouped rescues are penalizing brittle lane posture.'
+          : 'Grouped batch history is not shifting lane trust yet.';
 
       return {
         ...entry,
@@ -1345,12 +1359,15 @@ async function selectOutcomeWinningLane(user, routingDecision) {
         avgCost,
         scopeLabel,
         confidence,
+        batchTrustAdjustment,
+        batchTrustDetail,
         rank: avgScore
           + Math.min(24, (entry.exactRuns * 4) + generalizedSupport * 2)
           - (avgCost * 5.5)
           + (entry.approvalLevel === 'auto_low_risk' ? 6 : entry.approvalLevel === 'risk_weighted' ? 2 : -6)
           + (entry.executionStrategy === 'parallel' ? 3 : 0)
-          + (scopeLabel === 'exact' ? 6 : scopeLabel === 'domain-pack' ? 2 : 0),
+          + (scopeLabel === 'exact' ? 6 : scopeLabel === 'domain-pack' ? 2 : 0)
+          + batchTrustAdjustment,
       };
     })
     .sort((left, right) => {
@@ -1359,7 +1376,7 @@ async function selectOutcomeWinningLane(user, routingDecision) {
     })[0] || null;
 }
 
-function applyPatternApprovalBias({ routingDecision, observedWinningLane }) {
+function applyPatternApprovalBiasWithBatch({ routingDecision, observedWinningLane, batchSignals = null }) {
   const patternBias = getPatternApprovalBiasSummary({
     winningPattern: observedWinningLane
       ? {
@@ -1373,6 +1390,7 @@ function applyPatternApprovalBias({ routingDecision, observedWinningLane }) {
       : null,
     routingDecision,
     observedWinningLane,
+    batchSignals,
   });
 
   if (!patternBias.available || routingDecision.riskLevel === 'high') {
@@ -1389,7 +1407,30 @@ function applyPatternApprovalBias({ routingDecision, observedWinningLane }) {
   };
 }
 
-function applyRuntimeConfidenceBias({ routingDecision, observedWinningLane }) {
+async function fetchRecentBatchAuditLogs(userId) {
+  const { data, error } = await supabase
+    .from('activity_log')
+    .select('id,message,timestamp,type')
+    .eq('user_id', userId)
+    .order('timestamp', { ascending: false })
+    .limit(120);
+
+  if (error) {
+    console.error('[api] fetchRecentBatchAuditLogs:', error.message);
+    return [];
+  }
+
+  return (data || [])
+    .filter((row) => String(row.message || '').includes('[batch-intervention-]'))
+    .map((row) => ({
+      id: row.id,
+      message: row.message || '',
+      timestamp: row.timestamp || null,
+      type: row.type || 'SYS',
+    }));
+}
+
+function applyRuntimeConfidenceBias({ routingDecision, observedWinningLane, batchSignals = null }) {
   if (!observedWinningLane) return routingDecision;
 
   const shouldPromoteWinningLane = observedWinningLane.confidence === 'high'
@@ -1404,7 +1445,7 @@ function applyRuntimeConfidenceBias({ routingDecision, observedWinningLane }) {
     selectedProvider: observedWinningLane.provider || routingDecision.selectedProvider,
     selectedModel: observedWinningLane.model || routingDecision.selectedModel,
     selectedAgentRole: observedWinningLane.agentRole || routingDecision.selectedAgentRole,
-    routingReason: `${routingDecision.routingReason} | runtime winner ${observedWinningLane.provider || 'Adaptive'} ${observedWinningLane.model || 'lane'} @ ${Math.round(observedWinningLane.avgScore || 0)} score via ${observedWinningLane.scopeLabel || 'exact'} history`,
+    routingReason: `${routingDecision.routingReason} | runtime winner ${observedWinningLane.provider || 'Adaptive'} ${observedWinningLane.model || 'lane'} @ ${Math.round(observedWinningLane.avgScore || 0)} score via ${observedWinningLane.scopeLabel || 'exact'} history${observedWinningLane.batchTrustAdjustment ? ` | ${observedWinningLane.batchTrustDetail}` : ''}${batchSignals?.totalActions ? ` | ${batchSignals.totalActions} grouped batch actions informed lane trust` : ''}`,
   };
 }
 
@@ -1473,10 +1514,12 @@ export async function createMission(payload, agents = []) {
     console.error('[api] selectRoutingPolicyRow:', error.message);
     return null;
   });
+  const recentBatchAuditLogs = await fetchRecentBatchAuditLogs(user.id);
+  const batchSignals = getBatchCommandSignals(recentBatchAuditLogs);
   let routingDecision = deriveRoutingDecision(effectivePayload, selectedAgent, routingPolicy);
-  const observedWinningLane = await selectOutcomeWinningLane(user, routingDecision);
-  routingDecision = applyPatternApprovalBias({ routingDecision, observedWinningLane });
-  routingDecision = applyRuntimeConfidenceBias({ routingDecision, observedWinningLane });
+  const observedWinningLane = await selectOutcomeWinningLane(user, routingDecision, batchSignals);
+  routingDecision = applyPatternApprovalBiasWithBatch({ routingDecision, observedWinningLane, batchSignals });
+  routingDecision = applyRuntimeConfidenceBias({ routingDecision, observedWinningLane, batchSignals });
   const persistentLaneSignals = await fetchPersistentLaneSignals(user.id);
   const hasDelegatedSteps = plannedBranches.length > 1;
   const executionPosture = getMissionExecutionPosture(effectivePayload);
@@ -1941,6 +1984,135 @@ export async function stopTask(taskId) {
     model: task?.model_override || null,
     scheduleType: task?.schedule_type || 'once',
   });
+  return { success: true, taskId };
+}
+
+export async function recordBatchCommandEvent({ actionType = 'batch', tasks = [], targetAgent = null } = {}) {
+  if (!isSupabaseConfigured || !Array.isArray(tasks) || tasks.length === 0) return { success: true };
+
+  const user = (await supabase.auth.getUser()).data?.user;
+  if (!user) throw new Error('Not authenticated');
+
+  const normalizedAction = String(actionType || 'batch').toLowerCase();
+  const summaryTitles = tasks
+    .slice(0, 3)
+    .map((task) => task?.title || task?.name || task?.id)
+    .filter(Boolean);
+  const summaryLabel = summaryTitles.join(', ');
+  const remainder = tasks.length > 3 ? ` +${tasks.length - 3} more` : '';
+  const roots = [...new Set(tasks.map((task) => task?.rootMissionId || task?.root_mission_id || task?.id).filter(Boolean))];
+
+  const message = `[batch-intervention-${normalizedAction}] ${tasks.length} branch${tasks.length === 1 ? '' : 'es'} handled from the bridge${targetAgent?.name ? ` toward ${targetAgent.name}` : ''}: ${summaryLabel}${remainder}. Roots: ${roots.join(', ') || 'unknown'}.`;
+  const type = normalizedAction === 'approve'
+    ? 'OK'
+    : normalizedAction === 'stop'
+      ? 'ERR'
+      : 'SYS';
+
+  await logBranchEvent({
+    userId: user.id,
+    agentId: targetAgent?.id || tasks[0]?.agentId || tasks[0]?.agent_id || null,
+    type,
+    message,
+  });
+
+  return { success: true, message };
+}
+
+export async function interruptAndRedirectTask(taskId, updates = {}, agents = []) {
+  if (!isSupabaseConfigured) return { success: true, taskId };
+
+  const user = (await supabase.auth.getUser()).data?.user;
+  if (!user) throw new Error('Not authenticated');
+
+  const { data: task, error: fetchError } = await supabase
+    .from('tasks')
+    .select('id,title,name,priority,status,agent_id,agent_name,root_mission_id,domain,intent_type,provider_override,model_override,schedule_type,routing_reason')
+    .eq('id', taskId)
+    .single();
+
+  if (fetchError) {
+    console.error('[api] interruptAndRedirectTask fetch:', fetchError.message);
+    throw fetchError;
+  }
+
+  const requestedAgent = Object.prototype.hasOwnProperty.call(updates, 'agentId')
+    ? agents.find((agent) => agent.id === updates.agentId) || null
+    : null;
+  const laneDefaults = requestedAgent
+    ? {
+        provider: inferAgentProvider(requestedAgent) || null,
+        model: requestedAgent.model || null,
+      }
+    : await inferAgentLaneDefaults(task.agent_id || null);
+
+  const patch = {
+    status: 'queued',
+    workflow_status: WORKFLOW_STATUS.READY,
+    lane: inferLane(task.priority ?? 5, false, 'queued'),
+    duration_ms: 0,
+    cost_usd: 0,
+    actual_cost_cents: 0,
+    progress_percent: 0,
+    failed_at: null,
+    cancelled_at: null,
+    requires_approval: false,
+    updated_at: new Date().toISOString(),
+    agent_id: Object.prototype.hasOwnProperty.call(updates, 'agentId') ? (updates.agentId || null) : task.agent_id,
+    agent_name: Object.prototype.hasOwnProperty.call(updates, 'agentId')
+      ? (requestedAgent?.name || 'Unassigned')
+      : (task.agent_name || 'Unassigned'),
+    provider_override: Object.prototype.hasOwnProperty.call(updates, 'providerOverride')
+      ? (updates.providerOverride || null)
+      : (requestedAgent ? laneDefaults.provider : (task.provider_override || laneDefaults.provider || null)),
+    model_override: Object.prototype.hasOwnProperty.call(updates, 'modelOverride')
+      ? (updates.modelOverride || null)
+      : (requestedAgent ? laneDefaults.model : (task.model_override || laneDefaults.model || null)),
+  };
+
+  const { error } = await supabase
+    .from('tasks')
+    .update(patch)
+    .eq('id', taskId);
+
+  if (error) {
+    console.error('[api] interruptAndRedirectTask:', error.message);
+    throw error;
+  }
+
+  const message = `[intervention-redirect] ${task.title || task.name || taskId} (${taskId}) on root ${task.root_mission_id || taskId} was interrupted from ${task.status || 'active'} and redirected to ${patch.agent_name || 'Unassigned'}, provider ${patch.provider_override || 'default'}, model ${patch.model_override || 'default'}.`;
+  await logBranchEvent({
+    userId: user.id,
+    agentId: patch.agent_id || task.agent_id || null,
+    type: 'SYS',
+    message,
+  });
+  await persistTaskIntervention({
+    userId: user.id,
+    taskId,
+    rootMissionId: task.root_mission_id || taskId,
+    agentId: patch.agent_id || task.agent_id || null,
+    eventType: 'interrupt_redirect',
+    eventSource: 'manual',
+    tone: 'blue',
+    message,
+    domain: task.domain || 'general',
+    intentType: task.intent_type || 'general',
+    provider: patch.provider_override || null,
+    model: patch.model_override || null,
+    scheduleType: task.schedule_type || 'once',
+    metadata: {
+      previousStatus: task.status || null,
+      previousAgentId: task.agent_id || null,
+      nextAgentId: patch.agent_id || task.agent_id || null,
+      previousProvider: task.provider_override || null,
+      previousModel: task.model_override || null,
+      nextProvider: patch.provider_override || null,
+      nextModel: patch.model_override || null,
+      previousRoutingReason: task.routing_reason || '',
+    },
+  });
+
   return { success: true, taskId };
 }
 

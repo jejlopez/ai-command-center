@@ -23,6 +23,17 @@ This folder turns the Jarvis / Stark / Musk commander vision into repo-tracked o
 - Treat `commander_cleanup_backlog.md` as the foundation gate before deeper automation.
 - Treat `commander_architecture_schema.md` as the contract for future implementation work.
 
+Current default reading order for the remaining program:
+
+1. `commander_epic_scope.md`
+2. `commander_feature_matrix.md`
+3. `commander_progress_board.md`
+
+Use those three together to answer:
+- what is left
+- what order it should be built in
+- what must stay deferred until trust is stronger
+
 ## Autodrive
 
 When the user wants the Commander roadmap pushed forward continuously:

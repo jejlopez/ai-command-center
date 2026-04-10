@@ -20,6 +20,7 @@ import {
   fetchPendingReviews, fetchCompletedOutputs,
   approveReview, rejectReview, retryTask, stopTask,
   approveMissionTask, cancelMissionTask,
+  interruptAndRedirectTask,
   subscribeToPendingReviews,
   subscribeToTasks,
   fetchTaskNotes, createTaskNote,
@@ -37,11 +38,12 @@ import { useLearningMemory } from '../utils/useLearningMemory';
 import { DoctrineCards } from '../components/command/DoctrineCards';
 import { TruthAuditStrip } from '../components/command/TruthAuditStrip';
 import { useCommandCenterTruth } from '../utils/useCommandCenterTruth';
-import { useConnectedSystems } from '../utils/useSupabase';
+import { useConnectedSystems, useRoutingPolicies } from '../utils/useSupabase';
 import { ReactorCoreBoard } from '../components/command/ReactorCoreBoard';
 import { CommandTimelineRail } from '../components/command/CommandTimelineRail';
 import { TacticalInterventionConsole } from '../components/command/TacticalInterventionConsole';
 import { buildTimelineEntries } from '../utils/buildCommandTimeline';
+import { getBatchRoutingTrustSummary, getLatestBatchCommandAudit, getPolicyActionGuidance, getPolicyDeltaReadback, getTradeoffCorrectiveAction, getTradeoffOutcomeSummary } from '../utils/commanderAnalytics';
 
 // ═══════════════════════════════════════════════════════════════
 // UI ATOMS
@@ -222,19 +224,63 @@ function ApprovalCard({ item, agents, onClick, onApprove, onReject }) {
   );
 }
 
+function buildMissionControlExplanation(item, agent) {
+  const whyChosen = [
+    item.routingReason || 'Commander did not persist a detailed routing rationale for this branch yet.',
+    agent?.name
+      ? `${agent.name} is holding this branch because its current lane matches the branch role better than the rest of the active fleet.`
+      : 'This branch is currently unassigned, so Commander is leaving the lane open for reassignment or redirect.',
+    item.providerOverride || item.modelOverride
+      ? `Execution is biased toward ${item.providerOverride || 'the selected provider'} ${item.modelOverride || ''}`.trim()
+      : null,
+  ].filter(Boolean).slice(0, 3);
+
+  const whyPaused = [];
+  if (item.status === 'needs_approval' || item.requiresApproval) {
+    whyPaused.push('Commander paused this branch at a human gate because the current posture requires approval before execution continues.');
+  }
+  if (item.status === 'pending') {
+    whyPaused.push('This branch is still in planning posture, so Commander has not released it into queued execution yet.');
+  }
+  if (item.status === 'blocked') {
+    whyPaused.push('Commander is treating this branch as blocked because a dependency, approval, or upstream graph condition has not cleared yet.');
+  }
+  if (item.status === 'paused') {
+    whyPaused.push('This branch is explicitly paused, so Commander is holding it out of the active lane until you resume or redirect it.');
+  }
+  if (item.riskLevel === 'high') {
+    whyPaused.push('The branch is tagged high risk, which increases the chance Commander will stop for verification or human review.');
+  }
+  if (item.approvalLevel === 'human_required') {
+    whyPaused.push('Approval posture is set to human required, so Commander should not let this branch self-advance.');
+  }
+  if (whyPaused.length === 0) {
+    whyPaused.push('No strong pause pressure is recorded on this branch right now, so Commander should keep it moving unless you intervene.');
+  }
+
+  return {
+    whyChosen,
+    whyPaused: whyPaused.slice(0, 3),
+  };
+}
+
 // ═══════════════════════════════════════════════════════════════
 // DETAIL DRAWER
 // ═══════════════════════════════════════════════════════════════
 
-function Drawer({ item, agents, tasks, logs, onClose, onApprove, onReject, onRetry, onStop, onCopy, onAcknowledge, onReopen, onSnooze }) {
+function Drawer({ item, agents, tasks, logs, learningMemory, onClose, onApprove, onReject, onRetry, onStop, onCopy, onAcknowledge, onReopen, onSnooze }) {
   const [tab, setTab] = useState('timeline');
   const [feedback, setFeedback] = useState('');
   const [showRejectForm, setShowRejectForm] = useState(false);
+  const [showRedirectForm, setShowRedirectForm] = useState(false);
   const [actionLoading, setActionLoading] = useState(null);
   const [actionError, setActionError] = useState(null);
   const [notes, setNotes] = useState([]);
   const [noteText, setNoteText] = useState('');
   const [notesLoaded, setNotesLoaded] = useState(false);
+  const [redirectAgentId, setRedirectAgentId] = useState('');
+  const [redirectProvider, setRedirectProvider] = useState('');
+  const [redirectModel, setRedirectModel] = useState('');
 
   // Load notes when item changes or notes tab opens
   useEffect(() => {
@@ -256,8 +302,32 @@ function Drawer({ item, agents, tasks, logs, onClose, onApprove, onReject, onRet
     finally { setActionLoading(null); }
   }
 
+  const agent = item ? agents.find(a => a.id === (item.agentId || item.agent_id)) : null;
+  const availableAgents = agents.filter(candidate => !candidate.isSyntheticCommander);
+
+  async function act(name, fn) {
+    setActionLoading(name); setActionError(null);
+    try { await fn(); } catch (e) { setActionError(`${name} failed: ${e.message}`); }
+    finally { setActionLoading(null); }
+  }
+
+  useEffect(() => {
+    if (!item) return;
+    setRedirectAgentId(item.agentId || item.agent_id || '');
+    setRedirectProvider(item.providerOverride || '');
+    setRedirectModel(item.modelOverride || agent?.model || '');
+    setShowRedirectForm(false);
+  }, [item, item?.id, item?.agentId, item?.agent_id, item?.providerOverride, item?.modelOverride, agent?.model]);
+
+  const selectedRedirectAgent = availableAgents.find(candidate => candidate.id === redirectAgentId) || null;
+
+  useEffect(() => {
+    if (!selectedRedirectAgent) return;
+    if (!redirectProvider) setRedirectProvider(selectedRedirectAgent.provider || '');
+    if (!redirectModel) setRedirectModel(selectedRedirectAgent.model || '');
+  }, [selectedRedirectAgent, redirectProvider, redirectModel]);
+
   if (!item) return null;
-  const agent = agents.find(a => a.id === (item.agentId || item.agent_id));
   const cfg = stColor[item.status] || stColor.pending;
   const isMissionApproval = item.status === 'needs_approval';
   const isReviewApproval = item.urgency != null || (item.outputType != null && !item.mode);
@@ -265,12 +335,10 @@ function Drawer({ item, agents, tasks, logs, onClose, onApprove, onReject, onRet
   const isCompleted = ['completed', 'approved', 'done'].includes(item.status);
   const isRunning = item.status === 'running';
   const itemLogs = logs.filter(l => l.agentId === (item.agentId || item.agent_id));
-
-  async function act(name, fn) {
-    setActionLoading(name); setActionError(null);
-    try { await fn(); } catch (e) { setActionError(`${name} failed: ${e.message}`); }
-    finally { setActionLoading(null); }
-  }
+  const explanation = buildMissionControlExplanation(item, agent);
+  const latestBatchAudit = getLatestBatchCommandAudit(logs);
+  const batchDoctrine = learningMemory?.doctrineById?.['batch-command-memory'] || null;
+  const batchRoutingTrust = getBatchRoutingTrustSummary({ logs, doctrineItem: batchDoctrine });
 
   return (<>
     <Motion.div key="dbg" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 bg-black/50 backdrop-blur-sm z-40" onClick={onClose} />
@@ -295,6 +363,60 @@ function Drawer({ item, agents, tasks, logs, onClose, onApprove, onReject, onRet
       </div>
 
       {(item.summary || item.description) && <div className="px-5 py-3 border-b border-border bg-surface"><p className="text-[12px] text-text-body leading-relaxed">{item.summary || item.description}</p></div>}
+      {!isApproval && (
+        <div className="px-5 py-3 border-b border-border bg-surface">
+          <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Commander route readback</div>
+          <p className="mt-2 text-[12px] leading-relaxed text-text-body">
+            {item.routingReason || 'Commander did not record a route rationale for this branch yet.'}
+          </p>
+          {(item.providerOverride || item.modelOverride) && (
+            <div className="mt-2 flex flex-wrap gap-2">
+              {item.providerOverride && <span className="rounded-full border border-white/[0.08] bg-white/[0.03] px-2 py-1 text-[10px] font-semibold text-text-body">{item.providerOverride}</span>}
+              {item.modelOverride && <span className="rounded-full border border-white/[0.08] bg-white/[0.03] px-2 py-1 text-[10px] font-semibold text-text-body">{item.modelOverride}</span>}
+            </div>
+          )}
+        </div>
+      )}
+
+      {!isApproval && (
+        <div className="px-5 py-3 border-b border-border bg-surface">
+          <div className="grid gap-3 xl:grid-cols-2">
+            <div className="rounded-2xl border border-aurora-violet/15 bg-[linear-gradient(135deg,rgba(167,139,250,0.08),rgba(96,165,250,0.04))] px-3 py-3">
+              <div className="text-[10px] uppercase tracking-[0.16em] text-aurora-violet font-semibold">Why Commander Chose This</div>
+              <div className="mt-2 space-y-2">
+                {explanation.whyChosen.map((reason) => (
+                  <div key={reason} className="rounded-2xl border border-white/[0.08] bg-black/20 px-3 py-2 text-[11px] leading-relaxed text-text-body">
+                    {reason}
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="rounded-2xl border border-aurora-amber/15 bg-[linear-gradient(135deg,rgba(251,191,36,0.08),rgba(244,114,182,0.03))] px-3 py-3">
+              <div className="text-[10px] uppercase tracking-[0.16em] text-aurora-amber font-semibold">Why Commander Paused This</div>
+              <div className="mt-2 space-y-2">
+                {explanation.whyPaused.map((reason) => (
+                  <div key={reason} className="rounded-2xl border border-white/[0.08] bg-black/20 px-3 py-2 text-[11px] leading-relaxed text-text-body">
+                    {reason}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+          {(batchDoctrine || latestBatchAudit) && (
+            <div className="mt-3 rounded-2xl border border-aurora-blue/15 bg-[linear-gradient(135deg,rgba(96,165,250,0.08),rgba(255,255,255,0.02))] px-3 py-3">
+              <div className="text-[10px] uppercase tracking-[0.16em] text-aurora-blue font-semibold">Grouped command doctrine</div>
+              <div className="mt-2 text-[11px] leading-relaxed text-text-body">
+                {batchRoutingTrust.detail}
+              </div>
+              {latestBatchAudit && (
+                <div className="mt-2 rounded-2xl border border-white/[0.08] bg-black/20 px-3 py-2 text-[11px] leading-relaxed text-text-body">
+                  Latest grouped action: {latestBatchAudit.message}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       {actionError && <div className="px-5 py-2 border-b border-aurora-rose/10 bg-aurora-rose/5 flex items-center gap-2"><AlertTriangle className="w-3.5 h-3.5 text-aurora-rose shrink-0" /><span className="text-[11px] text-aurora-rose flex-1">{actionError}</span><button onClick={() => setActionError(null)} className="text-[10px] text-aurora-rose font-bold">Dismiss</button></div>}
 
@@ -380,6 +502,58 @@ function Drawer({ item, agents, tasks, logs, onClose, onApprove, onReject, onRet
         )}
       </div>
 
+      {!isCompleted && !isApproval && showRedirectForm && (
+        <div className="shrink-0 border-t border-border px-5 py-4 bg-surface">
+          <div className="flex items-center justify-between gap-3 mb-3">
+            <div>
+              <div className="text-[10px] uppercase tracking-[0.16em] text-aurora-blue font-semibold">Interrupt + Redirect</div>
+              <div className="mt-1 text-[12px] text-text-body">Pause this branch’s current lane, redirect it, and send it back to queued execution.</div>
+            </div>
+            <button onClick={() => setShowRedirectForm(false)} className="text-[10px] font-semibold uppercase tracking-[0.16em] text-text-muted">Close</button>
+          </div>
+          <div className="grid grid-cols-1 gap-3">
+            <label className="block">
+              <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted mb-2">Redirect to agent</div>
+              <select
+                value={redirectAgentId}
+                onChange={(e) => {
+                  const nextAgent = availableAgents.find(candidate => candidate.id === e.target.value) || null;
+                  setRedirectAgentId(e.target.value);
+                  setRedirectProvider(nextAgent?.provider || '');
+                  setRedirectModel(nextAgent?.model || '');
+                }}
+                className="w-full rounded-xl border border-border bg-surface-input px-3 py-2.5 text-sm text-text-primary outline-none focus:border-aurora-teal/40"
+              >
+                <option value="">Unassigned</option>
+                {availableAgents.map((candidate) => (
+                  <option key={candidate.id} value={candidate.id}>{candidate.name} {candidate.role ? `(${candidate.role})` : ''}</option>
+                ))}
+              </select>
+            </label>
+            <div className="grid grid-cols-2 gap-3">
+              <label className="block">
+                <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted mb-2">Provider override</div>
+                <input
+                  value={redirectProvider}
+                  onChange={(e) => setRedirectProvider(e.target.value)}
+                  placeholder="Adaptive"
+                  className="w-full rounded-xl border border-border bg-surface-input px-3 py-2.5 text-sm text-text-primary outline-none focus:border-aurora-teal/40"
+                />
+              </label>
+              <label className="block">
+                <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted mb-2">Model override</div>
+                <input
+                  value={redirectModel}
+                  onChange={(e) => setRedirectModel(e.target.value)}
+                  placeholder="Use agent default"
+                  className="w-full rounded-xl border border-border bg-surface-input px-3 py-2.5 text-sm text-text-primary outline-none focus:border-aurora-teal/40"
+                />
+              </label>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="shrink-0 border-t border-border p-4 flex gap-2">
         {isCompleted ? (
           /* Completed item actions */
@@ -417,6 +591,26 @@ function Drawer({ item, agents, tasks, logs, onClose, onApprove, onReject, onRet
           /* Task actions */
           <>
             {isRunning && <button onClick={() => act('Stop', () => onStop(item.id))} disabled={!!actionLoading} className="flex items-center gap-1.5 px-3 py-2.5 text-[11px] font-bold text-aurora-rose bg-aurora-rose/5 border border-aurora-rose/20 rounded-xl hover:bg-aurora-rose/10">{actionLoading === 'Stop' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <StopCircle className="w-3.5 h-3.5" />}Stop</button>}
+            <button
+              onClick={() => setShowRedirectForm((prev) => !prev)}
+              disabled={!!actionLoading}
+              className="flex items-center gap-1.5 px-3 py-2.5 text-[11px] font-bold text-aurora-blue bg-aurora-blue/5 border border-aurora-blue/20 rounded-xl hover:bg-aurora-blue/10"
+            >
+              <GitBranch className="w-3.5 h-3.5" />Redirect
+            </button>
+            {showRedirectForm && (
+              <button
+                onClick={() => act('Redirect', () => interruptAndRedirectTask(item.id, {
+                  agentId: redirectAgentId || null,
+                  providerOverride: redirectProvider.trim() || null,
+                  modelOverride: redirectModel.trim() || null,
+                }, agents))}
+                disabled={!!actionLoading}
+                className="flex items-center gap-1.5 px-3 py-2.5 text-[11px] font-bold text-aurora-teal bg-aurora-teal/5 border border-aurora-teal/20 rounded-xl hover:bg-aurora-teal/10"
+              >
+                {actionLoading === 'Redirect' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}Interrupt + Redirect
+              </button>
+            )}
             <button onClick={() => act('Rerun', () => onRetry(item.id))} disabled={!!actionLoading} className="flex items-center gap-1.5 px-3 py-2.5 text-[11px] font-bold text-aurora-amber bg-aurora-amber/5 border border-aurora-amber/20 rounded-xl hover:bg-aurora-amber/10">{actionLoading === 'Rerun' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RotateCcw className="w-3.5 h-3.5" />}Rerun</button>
             <button onClick={() => onCopy(item)} className="flex items-center gap-1.5 px-3 py-2.5 text-[11px] font-bold text-text-muted bg-surface border border-border rounded-xl hover:bg-surface-raised ml-auto"><Copy className="w-3.5 h-3.5" />Copy</button>
           </>
@@ -596,7 +790,7 @@ function PlannerTab({ schedules, agents, onToggle, onDispatch }) {
 // MAIN VIEW
 // ═══════════════════════════════════════════════════════════════
 
-export function MissionControlView() {
+export function MissionControlView({ launchDraft = null, onConsumeLaunchDraft, onNavigate }) {
   const { setPendingCount, setSettingsOpen } = useSystemState();
   const [agents, setAgents] = useState([]);
   const [tasks, setTasks] = useState([]);
@@ -686,12 +880,19 @@ export function MissionControlView() {
   function handleCopy(item) { navigator.clipboard?.writeText(`${item.name || item.title}\nStatus: ${item.status}\nAgent: ${item.agentName || ''}\nCost: ${item.actualCostCents != null ? `$${(item.actualCostCents / 100).toFixed(2)}` : `$${item.costUsd?.toFixed(3) || '0.000'}`}`); }
 
   const selectedItem = sel ? [...tasks, ...approvalItems, ...completedItems].find(i => i.id === sel) : null;
+  const creatorIsOpen = creatorOpen || !!launchDraft;
   const hour = new Date().getHours();
   const greeting = hour < 12 ? 'Good Morning' : hour < 17 ? 'Good Afternoon' : 'Good Evening';
   const dateStr = new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
   const primaryAgent = agents.find(agent => /tony|atlas/i.test(agent.name || '')) || agents.find(agent => agent.role === 'commander') || agents[0];
   const truth = useCommandCenterTruth();
   const { connectedSystems } = useConnectedSystems();
+  const { policies: routingPolicies } = useRoutingPolicies();
+  const topPolicy = routingPolicies.find((policy) => policy.isDefault) || routingPolicies[0] || null;
+  const topPolicyDelta = getPolicyDeltaReadback(routingPolicies.find((policy) => policy.isDefault) || routingPolicies[0] || null, tasks, [], logs);
+  const topPolicyActionGuidance = getPolicyActionGuidance(topPolicy, tasks, [], logs, agents);
+  const topTradeoffOutcome = getTradeoffOutcomeSummary(topPolicyActionGuidance.swap);
+  const topTradeoffCorrectiveAction = getTradeoffCorrectiveAction(topTradeoffOutcome, topPolicyActionGuidance.swap);
 
   return (
     <div className="flex flex-col h-full overflow-hidden relative">
@@ -748,6 +949,147 @@ export function MissionControlView() {
                         : 'The deck is calm. Good time to launch the next mission.'}
                   </p>
                 </div>
+                {topPolicyDelta?.title && (
+                  <div className="ui-panel-soft mt-2 px-3 py-2.5">
+                    <div className="text-[10px] uppercase tracking-[0.14em] text-text-muted mb-1">Policy delta</div>
+                    <div className="text-[12px] font-semibold text-text-primary">{topPolicyDelta.title}</div>
+                    <p className="mt-1 text-[11px] leading-relaxed text-text-body">
+                      {topPolicyDelta.providerDelta}. {topPolicyDelta.modelDelta}. {topPolicyDelta.approvalDelta}.
+                    </p>
+                    {topPolicyActionGuidance.evidence.length ? (
+                      <p className="mt-2 text-[11px] leading-relaxed text-text-muted">
+                        Evidence: {topPolicyActionGuidance.evidence.slice(0, 2).join(' • ')}
+                      </p>
+                    ) : null}
+                    {topPolicyActionGuidance.swap.enabled ? (
+                      <p className="mt-2 text-[11px] leading-relaxed text-aurora-blue">
+                        {topPolicyActionGuidance.swap.signal}
+                      </p>
+                    ) : null}
+                    {topTradeoffOutcome.available ? (
+                      <p className="mt-2 text-[11px] leading-relaxed text-text-muted">
+                        Tradeoff payback: <span className="font-semibold text-text-primary">{topTradeoffOutcome.outcomeLabel}</span>. {topTradeoffOutcome.detail}
+                      </p>
+                    ) : null}
+                    {topTradeoffOutcome.available && topTradeoffCorrectiveAction.label ? (
+                      <p className="mt-2 text-[11px] leading-relaxed text-text-body">
+                        <span className="font-semibold text-text-primary">Corrective action:</span> {topTradeoffCorrectiveAction.label}. {topTradeoffCorrectiveAction.detail}
+                      </p>
+                    ) : null}
+                    {topTradeoffOutcome.available && topTradeoffCorrectiveAction.expectedImpact ? (
+                      <div className="mt-2 rounded-2xl border border-white/[0.06] bg-black/10 px-3 py-2.5">
+                        {topTradeoffCorrectiveAction.postureComparison ? (
+                          <>
+                            <div className="text-[10px] uppercase tracking-[0.14em] text-text-muted">Posture shift</div>
+                            <div className="mt-2 grid gap-2 md:grid-cols-2">
+                              <div className="ui-panel-soft px-3 py-2 text-[11px] leading-relaxed text-text-body">
+                                <div className="text-[10px] uppercase tracking-[0.14em] text-text-muted">Current</div>
+                                <div className="mt-1">{topTradeoffCorrectiveAction.postureComparison.current}</div>
+                              </div>
+                              <div className="ui-panel-soft px-3 py-2 text-[11px] leading-relaxed text-text-body">
+                                <div className="text-[10px] uppercase tracking-[0.14em] text-aurora-blue">Proposed</div>
+                                <div className="mt-1">{topTradeoffCorrectiveAction.postureComparison.proposed}</div>
+                              </div>
+                            </div>
+                          </>
+                        ) : null}
+                        <div className="text-[10px] uppercase tracking-[0.14em] text-aurora-teal">Expected improvement</div>
+                        <div className="mt-1 text-[11px] leading-relaxed text-text-body">
+                          {topTradeoffCorrectiveAction.expectedImpact.primary}
+                        </div>
+                        <div className="mt-2 text-[10px] uppercase tracking-[0.14em] text-aurora-amber">Expected tradeoff</div>
+                        <div className="mt-1 text-[11px] leading-relaxed text-text-muted">
+                          {topTradeoffCorrectiveAction.expectedImpact.tradeoff}
+                        </div>
+                        {topTradeoffCorrectiveAction.doctrineImpact ? (
+                          <>
+                            <div className="mt-2 text-[10px] uppercase tracking-[0.14em] text-aurora-violet">Doctrine confidence impact</div>
+                            <div className="mt-1 text-[11px] leading-relaxed text-text-body">
+                              {topTradeoffCorrectiveAction.doctrineImpact.confidence}
+                            </div>
+                            <div className="mt-1 text-[11px] leading-relaxed text-text-muted">
+                              {topTradeoffCorrectiveAction.doctrineImpact.trust}
+                            </div>
+                          </>
+                        ) : null}
+                        {topTradeoffCorrectiveAction.verificationImpact ? (
+                          <>
+                            <div className="mt-2 text-[10px] uppercase tracking-[0.14em] text-aurora-blue">Recommended verification</div>
+                            <div className="mt-1 text-[11px] font-semibold leading-relaxed text-text-primary">
+                              {topTradeoffCorrectiveAction.verificationImpact.threshold}
+                            </div>
+                            <div className="mt-1 text-[11px] leading-relaxed text-text-muted">
+                              {topTradeoffCorrectiveAction.verificationImpact.detail}
+                            </div>
+                          </>
+                        ) : null}
+                        {topTradeoffCorrectiveAction.successCriteria?.length ? (
+                          <>
+                            <div className="mt-2 text-[10px] uppercase tracking-[0.14em] text-aurora-green">Success criteria</div>
+                            <div className="mt-1 text-[11px] leading-relaxed text-text-muted">
+                              {topTradeoffCorrectiveAction.successCriteria.slice(0, 2).join(' • ')}
+                            </div>
+                          </>
+                        ) : null}
+                        {topTradeoffCorrectiveAction.rollbackCriteria?.length ? (
+                          <>
+                            <div className="mt-2 text-[10px] uppercase tracking-[0.14em] text-aurora-rose">Rollback criteria</div>
+                            <div className="mt-1 text-[11px] leading-relaxed text-text-muted">
+                              {topTradeoffCorrectiveAction.rollbackCriteria.slice(0, 2).join(' • ')}
+                            </div>
+                          </>
+                        ) : null}
+                      </div>
+                    ) : null}
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => topPolicy && onNavigate?.('intelligence', { intelligenceRouteState: { tab: 'routing', selectedPolicyId: topPolicy.id, actionContext: topPolicyActionGuidance.open } })}
+                        className="ui-chip px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-text-primary"
+                        title={topPolicyActionGuidance.open.detail}
+                      >
+                        Open policy
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => topPolicy && topPolicyActionGuidance.harden.enabled && onNavigate?.('intelligence', { intelligenceRouteState: { tab: 'routing', selectedPolicyId: topPolicy.id, adjustment: 'harden', actionContext: topPolicyActionGuidance.harden } })}
+                        className="ui-chip px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-aurora-amber disabled:cursor-not-allowed disabled:opacity-50"
+                        disabled={!topPolicyActionGuidance.harden.enabled}
+                        title={topPolicyActionGuidance.harden.detail}
+                      >
+                        Harden approval
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => topPolicy && topPolicyActionGuidance.loosen.enabled && onNavigate?.('intelligence', { intelligenceRouteState: { tab: 'routing', selectedPolicyId: topPolicy.id, adjustment: 'loosen', actionContext: topPolicyActionGuidance.loosen } })}
+                        className="ui-chip px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-aurora-teal disabled:cursor-not-allowed disabled:opacity-50"
+                        disabled={!topPolicyActionGuidance.loosen.enabled}
+                        title={topPolicyActionGuidance.loosen.detail}
+                      >
+                        Loosen approval
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => topPolicy && topPolicyActionGuidance.swap.enabled && onNavigate?.('intelligence', { intelligenceRouteState: { tab: 'routing', selectedPolicyId: topPolicy.id, actionContext: topPolicyActionGuidance.swap, providerSwap: topPolicyActionGuidance.swap.provider, modelSwap: topPolicyActionGuidance.swap.model, fallbackSwap: topPolicyActionGuidance.swap.currentLane, stageFallback: topPolicyActionGuidance.swap.stageFallback } })}
+                        className="ui-chip px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-aurora-blue disabled:cursor-not-allowed disabled:opacity-50"
+                        disabled={!topPolicyActionGuidance.swap.enabled}
+                        title={topPolicyActionGuidance.swap.detail}
+                      >
+                        {topPolicyActionGuidance.swap.label}
+                      </button>
+                      {topTradeoffOutcome.available && topPolicy && topTradeoffCorrectiveAction.routeState ? (
+                        <button
+                          type="button"
+                          onClick={() => onNavigate?.('intelligence', { intelligenceRouteState: { tab: 'routing', selectedPolicyId: topPolicy.id, actionContext: topTradeoffCorrectiveAction, ...topTradeoffCorrectiveAction.routeState } })}
+                          className="ui-chip px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-aurora-violet"
+                          title={topTradeoffCorrectiveAction.detail}
+                        >
+                          Stage correction
+                        </button>
+                      ) : null}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           }
@@ -976,14 +1318,18 @@ export function MissionControlView() {
 
       {/* Drawer */}
       <AnimatePresence>
-        {selectedItem && <Drawer item={selectedItem} agents={agents} tasks={tasks} logs={logs} onClose={() => setSel(null)} onApprove={handleApprove} onReject={handleReject} onRetry={handleRetry} onStop={handleStop} onCopy={handleCopy} onAcknowledge={handleAcknowledge} onReopen={handleReopen} onSnooze={handleSnooze} />}
+        {selectedItem && <Drawer item={selectedItem} agents={agents} tasks={tasks} logs={logs} learningMemory={learningMemory} onClose={() => setSel(null)} onApprove={handleApprove} onReject={handleReject} onRetry={handleRetry} onStop={handleStop} onCopy={handleCopy} onAcknowledge={handleAcknowledge} onReopen={handleReopen} onSnooze={handleSnooze} />}
       </AnimatePresence>
 
       <MissionCreatorPanel
-        isOpen={creatorOpen}
+        isOpen={creatorIsOpen}
         agents={agents}
         learningMemory={learningMemory}
-        onClose={() => setCreatorOpen(false)}
+        initialDraft={launchDraft}
+        onClose={() => {
+          setCreatorOpen(false);
+          onConsumeLaunchDraft?.();
+        }}
         onLaunch={handleLaunchMission}
         onPreview={previewMissionPlan}
       />

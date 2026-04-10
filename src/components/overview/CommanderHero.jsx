@@ -30,6 +30,15 @@ export function CommanderHero({
   operatorCount,
   summary,
   readiness,
+  policyDelta,
+  policyActionGuidance,
+  tradeoffOutcome,
+  tradeoffCorrectiveAction,
+  onOpenRoutingPolicy,
+  onHardenPolicy,
+  onLoosenPolicy,
+  onSwapPolicyLane,
+  onStageTradeoffCorrection,
   onOpenDetail,
   onNavigate,
 }) {
@@ -141,6 +150,150 @@ export function CommanderHero({
               </div>
             </div>
           </div>
+
+          {policyDelta?.title && (
+            <div className="mt-3 ui-panel-soft p-3">
+              <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Policy delta</div>
+              <div className="mt-2 text-[12px] font-semibold text-text-primary">{policyDelta.title}</div>
+              <p className="mt-2 text-[11px] leading-relaxed text-text-body">
+                {policyDelta.providerDelta}. {policyDelta.modelDelta}. {policyDelta.approvalDelta}.
+              </p>
+              {policyActionGuidance?.evidence?.length ? (
+                <div className="mt-2 text-[11px] leading-relaxed text-text-muted">
+                  Evidence: {policyActionGuidance.evidence.slice(0, 2).join(' • ')}
+                </div>
+              ) : null}
+              {policyActionGuidance?.swap?.enabled ? (
+                <div className="mt-2 text-[11px] leading-relaxed text-aurora-blue">
+                  {policyActionGuidance.swap.signal}
+                </div>
+              ) : null}
+              {tradeoffOutcome?.available ? (
+                <div className="mt-2 text-[11px] leading-relaxed text-text-muted">
+                  Tradeoff payback: <span className="font-semibold text-text-primary">{tradeoffOutcome.outcomeLabel}</span>. {tradeoffOutcome.detail}
+                </div>
+              ) : null}
+              {tradeoffOutcome?.available && tradeoffCorrectiveAction?.label ? (
+                <div className="mt-2 text-[11px] leading-relaxed text-text-body">
+                  <span className="font-semibold text-text-primary">Corrective action:</span> {tradeoffCorrectiveAction.label}. {tradeoffCorrectiveAction.detail}
+                </div>
+              ) : null}
+              {tradeoffOutcome?.available && tradeoffCorrectiveAction?.expectedImpact ? (
+                <div className="mt-2 rounded-2xl border border-white/[0.06] bg-black/10 px-3 py-2.5">
+                  {tradeoffCorrectiveAction.postureComparison ? (
+                    <>
+                      <div className="text-[10px] uppercase tracking-[0.14em] text-text-muted">Posture shift</div>
+                      <div className="mt-2 grid gap-2 md:grid-cols-2">
+                        <div className="ui-panel-soft px-3 py-2 text-[11px] leading-relaxed text-text-body">
+                          <div className="text-[10px] uppercase tracking-[0.14em] text-text-muted">Current</div>
+                          <div className="mt-1">{tradeoffCorrectiveAction.postureComparison.current}</div>
+                        </div>
+                        <div className="ui-panel-soft px-3 py-2 text-[11px] leading-relaxed text-text-body">
+                          <div className="text-[10px] uppercase tracking-[0.14em] text-aurora-blue">Proposed</div>
+                          <div className="mt-1">{tradeoffCorrectiveAction.postureComparison.proposed}</div>
+                        </div>
+                      </div>
+                    </>
+                  ) : null}
+                  <div className="text-[10px] uppercase tracking-[0.14em] text-aurora-teal">Expected improvement</div>
+                  <div className="mt-1 text-[11px] leading-relaxed text-text-body">
+                    {tradeoffCorrectiveAction.expectedImpact.primary}
+                  </div>
+                  <div className="mt-2 text-[10px] uppercase tracking-[0.14em] text-aurora-amber">Expected tradeoff</div>
+                  <div className="mt-1 text-[11px] leading-relaxed text-text-muted">
+                    {tradeoffCorrectiveAction.expectedImpact.tradeoff}
+                  </div>
+                  {tradeoffCorrectiveAction.doctrineImpact ? (
+                    <>
+                      <div className="mt-2 text-[10px] uppercase tracking-[0.14em] text-aurora-violet">Doctrine confidence impact</div>
+                      <div className="mt-1 text-[11px] leading-relaxed text-text-body">
+                        {tradeoffCorrectiveAction.doctrineImpact.confidence}
+                      </div>
+                      <div className="mt-1 text-[11px] leading-relaxed text-text-muted">
+                        {tradeoffCorrectiveAction.doctrineImpact.trust}
+                      </div>
+                    </>
+                  ) : null}
+                  {tradeoffCorrectiveAction.verificationImpact ? (
+                    <>
+                      <div className="mt-2 text-[10px] uppercase tracking-[0.14em] text-aurora-blue">Recommended verification</div>
+                      <div className="mt-1 text-[11px] font-semibold leading-relaxed text-text-primary">
+                        {tradeoffCorrectiveAction.verificationImpact.threshold}
+                      </div>
+                      <div className="mt-1 text-[11px] leading-relaxed text-text-muted">
+                        {tradeoffCorrectiveAction.verificationImpact.detail}
+                      </div>
+                    </>
+                  ) : null}
+                  {tradeoffCorrectiveAction.successCriteria?.length ? (
+                    <>
+                      <div className="mt-2 text-[10px] uppercase tracking-[0.14em] text-aurora-green">Success criteria</div>
+                      <div className="mt-1 text-[11px] leading-relaxed text-text-muted">
+                        {tradeoffCorrectiveAction.successCriteria.slice(0, 2).join(' • ')}
+                      </div>
+                    </>
+                  ) : null}
+                  {tradeoffCorrectiveAction.rollbackCriteria?.length ? (
+                    <>
+                      <div className="mt-2 text-[10px] uppercase tracking-[0.14em] text-aurora-rose">Rollback criteria</div>
+                      <div className="mt-1 text-[11px] leading-relaxed text-text-muted">
+                        {tradeoffCorrectiveAction.rollbackCriteria.slice(0, 2).join(' • ')}
+                      </div>
+                    </>
+                  ) : null}
+                </div>
+              ) : null}
+              <div className="mt-3 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={onOpenRoutingPolicy}
+                  className="ui-chip px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-text-primary"
+                  title={policyActionGuidance?.open?.detail || policyDelta.detail}
+                >
+                  Open policy
+                </button>
+                <button
+                  type="button"
+                  onClick={onHardenPolicy}
+                  className="ui-chip px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-aurora-amber disabled:cursor-not-allowed disabled:opacity-50"
+                  disabled={!policyActionGuidance?.harden?.enabled}
+                  title={policyActionGuidance?.harden?.detail}
+                >
+                  Harden approval
+                </button>
+                <button
+                  type="button"
+                  onClick={onLoosenPolicy}
+                  className="ui-chip px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-aurora-teal disabled:cursor-not-allowed disabled:opacity-50"
+                  disabled={!policyActionGuidance?.loosen?.enabled}
+                  title={policyActionGuidance?.loosen?.detail}
+                >
+                  Loosen approval
+                </button>
+                {policyActionGuidance?.swap ? (
+                  <button
+                    type="button"
+                    onClick={onSwapPolicyLane}
+                    className="ui-chip px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-aurora-blue disabled:cursor-not-allowed disabled:opacity-50"
+                    disabled={!policyActionGuidance.swap.enabled}
+                    title={policyActionGuidance.swap.detail}
+                  >
+                    {policyActionGuidance.swap.label}
+                  </button>
+                ) : null}
+                {tradeoffOutcome?.available && tradeoffCorrectiveAction?.routeState && onStageTradeoffCorrection ? (
+                  <button
+                    type="button"
+                    onClick={onStageTradeoffCorrection}
+                    className="ui-chip px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-aurora-violet"
+                    title={tradeoffCorrectiveAction.detail}
+                  >
+                    Stage correction
+                  </button>
+                ) : null}
+              </div>
+            </div>
+          )}
 
           {summary.flaggedAgentCount > 0 && (
             <div className="mt-3 rounded-2xl border border-aurora-amber/16 bg-aurora-amber/[0.06] p-3">

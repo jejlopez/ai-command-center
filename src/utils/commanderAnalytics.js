@@ -108,6 +108,112 @@ export function normalizeInterventionEvents(interventions = [], logs = []) {
   return parseInterventionLogs(logs);
 }
 
+export function getLatestBatchCommandAudit(logs = []) {
+  const batchLog = [...logs]
+    .filter((log) => String(log?.message || '').includes('[batch-intervention-]'))
+    .sort((a, b) => new Date(b.timestamp || 0).getTime() - new Date(a.timestamp || 0).getTime())[0];
+
+  if (!batchLog) return null;
+
+  const message = String(batchLog.message || '');
+  const label = message
+    .replace(/^\[batch-intervention-/, '')
+    .replace(/\].*$/, '')
+    .replaceAll('-', ' ')
+    .trim();
+
+  return {
+    id: batchLog.id || `batch-${batchLog.timestamp || 'latest'}`,
+    label: label || 'batch',
+    message,
+    timestamp: batchLog.timestamp || null,
+    type: batchLog.type || 'SYS',
+  };
+}
+
+export function getBatchCommandSignals(logs = []) {
+  const batchLogs = [...logs]
+    .filter((entry) => String(entry?.message || '').includes('[batch-intervention-]'))
+    .sort((a, b) => new Date(b.timestamp || 0).getTime() - new Date(a.timestamp || 0).getTime());
+
+  const actionCounts = {};
+  let totalActions = 0;
+  let totalBranches = 0;
+
+  batchLogs.forEach((entry) => {
+    const message = String(entry.message || '');
+    const actionMatch = message.match(/^\[batch-intervention-([a-z-]+)\]/i);
+    const countMatch = message.match(/\]\s+(\d+)\s+branch/i);
+    const action = String(actionMatch?.[1] || 'batch').toLowerCase();
+    const branchCount = Number(countMatch?.[1] || 0);
+
+    actionCounts[action] = (actionCounts[action] || 0) + 1;
+    totalActions += 1;
+    totalBranches += branchCount;
+  });
+
+  const latest = batchLogs[0] || null;
+  const latestAction = latest
+    ? String(latest.message || '').match(/^\[batch-intervention-([a-z-]+)\]/i)?.[1] || 'batch'
+    : null;
+  const safeApproveRate = totalActions > 0
+    ? Math.round(((actionCounts.approve || 0) / totalActions) * 100)
+    : 0;
+
+  return {
+    totalActions,
+    totalBranches,
+    actionCounts,
+    latestAction,
+    latestAudit: latest ? getLatestBatchCommandAudit([latest]) : null,
+    safeApproveRate,
+    rescuePressure: Number(actionCounts.retry || 0) + Number(actionCounts.stop || 0),
+    redirectPressure: Number(actionCounts.redirect || 0),
+  };
+}
+
+export function getBatchRoutingTrustSummary({ logs = [], doctrineItem = null } = {}) {
+  const batchSignals = getBatchCommandSignals(logs);
+  const approveCount = Number(batchSignals.actionCounts.approve || 0);
+  const rescueCount = Number(batchSignals.actionCounts.retry || 0)
+    + Number(batchSignals.actionCounts.redirect || 0)
+    + Number(batchSignals.actionCounts.stop || 0);
+
+  if (!batchSignals.totalActions && !doctrineItem) {
+    return {
+      available: false,
+      tone: 'slate',
+      title: 'Batch routing trust still forming',
+      detail: 'Commander needs grouped bridge history before it should move provider and lane defaults from clustered intervention behavior.',
+    };
+  }
+
+  if (approveCount > rescueCount) {
+    return {
+      available: true,
+      tone: 'teal',
+      title: 'Grouped approvals are promoting lighter lane trust',
+      detail: doctrineItem?.detail || `${approveCount} grouped approvals are landing more cleanly than grouped rescues, so Commander can promote lighter provider and lane defaults faster on similar low-risk work.`,
+    };
+  }
+
+  if (rescueCount > approveCount) {
+    return {
+      available: true,
+      tone: 'amber',
+      title: 'Grouped rescues are demoting brittle lane defaults',
+      detail: doctrineItem?.detail || `${rescueCount} grouped retries, redirects, or stops are clustering harder than grouped approvals, so Commander should demote brittle provider and lane defaults faster on similar work.`,
+    };
+  }
+
+  return {
+    available: true,
+    tone: 'blue',
+    title: 'Grouped routing trust is balanced',
+    detail: doctrineItem?.detail || 'Grouped approvals and grouped rescues are balanced enough that Commander should keep lane-default changes measured until a clearer signal forms.',
+  };
+}
+
 export function getObservedModelBenchmarks(tasks = [], agents = [], logs = [], interventions = []) {
   const grouped = new Map();
   const interventionLogs = normalizeInterventionEvents(interventions, logs);
@@ -323,6 +429,564 @@ export function buildPolicyDemotionSummary(policy, tasks = [], interventions = [
     pressureSources,
     laneStrengths,
     laneRisks,
+  };
+}
+
+export function getPolicyDeltaReadback(policy, tasks = [], interventions = [], logs = []) {
+  if (!policy) {
+    return {
+      title: 'Policy delta still forming',
+      detail: 'Commander needs a live routing policy before it can explain provider, model, and approval movement.',
+      tone: 'slate',
+      providerDelta: 'Holding',
+      modelDelta: 'Holding',
+      approvalDelta: 'Holding',
+    };
+  }
+
+  const demotion = buildPolicyDemotionSummary(policy, tasks, interventions, logs);
+  const batchTrust = getBatchRoutingTrustSummary({ logs });
+  const approvingBatchTrust = batchTrust.available && batchTrust.tone === 'teal';
+  const demotingBatchTrust = batchTrust.available && batchTrust.tone === 'amber';
+
+  const providerDelta = demotion.trend === 'demoted'
+    ? `Demoting ${policy.preferredProvider || 'adaptive'}`
+    : approvingBatchTrust
+      ? `Promoting ${policy.preferredProvider || 'adaptive'}`
+      : 'Holding provider';
+  const modelDelta = demotion.trend === 'demoted'
+    ? (policy.preferredModel ? `Loosening ${policy.preferredModel}` : 'Avoiding a hard model lock')
+    : approvingBatchTrust
+      ? (policy.preferredModel ? `Reinforcing ${policy.preferredModel}` : 'Keeping model adaptive')
+      : 'Holding model';
+  const approvalDelta = demotingBatchTrust || demotion.trend === 'demoted'
+    ? (policy.approvalRule === 'auto_low_risk' ? 'Hardening approval' : 'Keeping approval gated')
+    : approvingBatchTrust
+      ? (policy.approvalRule === 'risk_weighted' ? 'Lightening approval' : 'Holding low-friction approval')
+      : 'Holding approval';
+  const tone = demotion.trend === 'demoted'
+    ? 'amber'
+    : approvingBatchTrust
+      ? 'teal'
+      : demotion.trend === 'improving'
+        ? 'blue'
+        : 'slate';
+  const title = demotion.trend === 'demoted'
+    ? `${policy.name} is losing trust`
+    : approvingBatchTrust
+      ? `${policy.name} is earning lane trust`
+      : `${policy.name} is holding steady`;
+  const detail = demotion.trend === 'demoted'
+    ? `${policy.preferredProvider || 'Adaptive'} / ${policy.preferredModel || 'adaptive model'} is slipping because ${demotion.pressureSources[0]?.label?.toLowerCase() || 'rescue pressure'} is outweighing recent quality. ${batchTrust.available ? batchTrust.detail : ''}`.trim()
+    : approvingBatchTrust
+      ? `${policy.preferredProvider || 'Adaptive'} / ${policy.preferredModel || 'adaptive model'} is being reinforced by grouped approvals landing safely on similar work. ${demotion.trendDetail}`
+      : `${policy.preferredProvider || 'Adaptive'} / ${policy.preferredModel || 'adaptive model'} is holding. ${demotion.trendDetail}`;
+
+  return {
+    title,
+    detail,
+    tone,
+    providerDelta,
+    modelDelta,
+    approvalDelta,
+    trend: demotion.trend,
+    confidence: demotion.confidence,
+  };
+}
+
+export function getPolicyActionGuidance(policy, tasks = [], interventions = [], logs = [], agents = []) {
+  const delta = getPolicyDeltaReadback(policy, tasks, interventions, logs);
+  const demotion = buildPolicyDemotionSummary(policy, tasks, interventions, logs);
+  const batchTrust = getBatchRoutingTrustSummary({ logs });
+  const benchmarks = getObservedModelBenchmarks(tasks, agents, logs, interventions);
+  const evidence = [];
+
+  if (demotion.matchingRuns > 0) {
+    evidence.push(`${demotion.matchingRuns} matching run${demotion.matchingRuns === 1 ? '' : 's'} in memory`);
+  }
+  if (demotion.recentOutcome != null) {
+    evidence.push(`recent quality ${demotion.recentOutcome}`);
+  }
+  if (demotion.recentInterventionRate != null) {
+    evidence.push(`rescue rate ${demotion.recentInterventionRate}%`);
+  }
+  if (batchTrust.available) {
+    evidence.push(batchTrust.title);
+  }
+
+  const relevantBenchmarks = benchmarks.filter((entry) => {
+    if (!policy) return false;
+    return tasks.some((task) => {
+      const domainMatch = (policy.taskDomain || 'general') === 'general' || task.domain === policy.taskDomain;
+      const intentMatch = (policy.intentType || 'general') === 'general' || task.intentType === policy.intentType;
+      const taskModel = task.modelOverride || agents.find((candidate) => candidate.id === task.agentId)?.model;
+      const taskProvider = inferAgentProvider(agents.find((candidate) => candidate.id === task.agentId) || task);
+      return domainMatch && intentMatch && taskModel === entry.model && taskProvider === entry.provider;
+    });
+  });
+  const benchmarkPool = relevantBenchmarks.length ? relevantBenchmarks : benchmarks;
+  const currentLane = benchmarkPool.find((entry) => (
+    entry.provider === (policy?.preferredProvider || 'Adaptive')
+    && entry.model === (policy?.preferredModel || 'Adaptive lane')
+  )) || null;
+  const strongerCandidate = benchmarkPool.find((entry) => (
+    entry.provider !== (policy?.preferredProvider || '')
+    || entry.model !== (policy?.preferredModel || '')
+  )) || null;
+  const saferCandidate = benchmarkPool
+    .filter((entry) => (
+      (entry.provider !== (policy?.preferredProvider || '') || entry.model !== (policy?.preferredModel || ''))
+      && entry.avgInterventions <= ((currentLane?.avgInterventions ?? 99))
+      && entry.successRate >= 65
+    ))
+    .sort((left, right) => {
+      if (left.avgInterventions !== right.avgInterventions) return left.avgInterventions - right.avgInterventions;
+      return right.benchmarkScore - left.benchmarkScore;
+    })[0] || null;
+
+  const canHarden = policy?.approvalRule !== 'human_required';
+  const canLoosen = Boolean(
+    policy
+    && policy.approvalRule !== 'auto_low_risk'
+    && demotion.trend !== 'demoted'
+    && demotion.confidence >= 60
+    && batchTrust.tone !== 'amber'
+    && (demotion.trend === 'improving' || batchTrust.tone === 'teal')
+  );
+
+  const hardenReason = !policy
+    ? 'Commander needs a live policy before it can harden approval safely.'
+    : !canHarden
+      ? 'This routing policy is already at the strictest approval posture.'
+      : demotion.trend === 'demoted'
+        ? `Pressure is rising from ${demotion.pressureSources[0]?.label?.toLowerCase() || 'recent rescue pressure'}, so a stricter approval gate is justified.`
+        : 'You can harden approval proactively if you want to slow risky work while evidence is still mixed.';
+
+  const loosenReason = !policy
+    ? 'Commander needs a live policy before it can relax approval safely.'
+    : policy.approvalRule === 'auto_low_risk'
+      ? 'This routing policy is already running at the lightest approval posture.'
+      : canLoosen
+        ? 'Trust is strong enough to stage a lighter approval posture from the summary surface.'
+        : 'Commander is not ready to relax approval yet because trust is still mixed or rescue pressure is too recent.';
+
+  const shouldPreferSaferSwap = demotion.trend === 'demoted' || batchTrust.tone === 'amber';
+  const swapCandidate = shouldPreferSaferSwap ? saferCandidate || strongerCandidate : strongerCandidate || saferCandidate;
+  const canSwap = Boolean(
+    policy
+    && swapCandidate
+    && (
+      swapCandidate.provider !== (policy.preferredProvider || '')
+      || swapCandidate.model !== (policy.preferredModel || '')
+    )
+  );
+  const swapDetail = !policy
+    ? 'Commander needs a live policy before it can suggest a provider or model swap.'
+    : !canSwap
+      ? 'The current provider and model are still the best-supported lane for this policy.'
+      : shouldPreferSaferSwap
+        ? `${swapCandidate.provider} / ${swapCandidate.model} is the safer next lane because it is carrying less rescue pressure while still holding quality at ${swapCandidate.avgQuality}.`
+        : `${swapCandidate.provider} / ${swapCandidate.model} is the stronger next lane because it is leading observed benchmark score at ${swapCandidate.benchmarkScore}.`;
+  const swapEvidence = canSwap
+    ? [
+        `${swapCandidate.provider} / ${swapCandidate.model}`,
+        `benchmark ${swapCandidate.benchmarkScore}`,
+        `quality ${swapCandidate.avgQuality}`,
+        `success ${swapCandidate.successRate}%`,
+        `avg interventions ${swapCandidate.avgInterventions}`,
+      ]
+    : evidence;
+  const benchmarkDelta = canSwap && currentLane ? swapCandidate.benchmarkScore - currentLane.benchmarkScore : null;
+  const interventionDelta = canSwap && currentLane ? Number((currentLane.avgInterventions - swapCandidate.avgInterventions).toFixed(1)) : null;
+  const qualityDelta = canSwap && currentLane ? swapCandidate.avgQuality - currentLane.avgQuality : null;
+  const costDelta = canSwap && currentLane ? Number((currentLane.avgCost - swapCandidate.avgCost).toFixed(2)) : null;
+  const durationDeltaMinutes = canSwap && currentLane ? Math.round(((currentLane.avgDurationMs - swapCandidate.avgDurationMs) / 60000) * 10) / 10 : null;
+  const swapIntent = !canSwap
+    ? 'none'
+    : shouldPreferSaferSwap
+      ? 'safer'
+      : (costDelta ?? 0) >= 0.35 && swapCandidate.successRate >= ((currentLane?.successRate || 0) - 5)
+        ? 'cheaper'
+        : (durationDeltaMinutes ?? 0) >= 4 && swapCandidate.avgQuality >= ((currentLane?.avgQuality || 0) - 4)
+          ? 'faster'
+          : 'stronger';
+  const swapIntentLabel = swapIntent === 'safer'
+    ? 'safer lane'
+    : swapIntent === 'cheaper'
+      ? 'cheaper lane'
+      : swapIntent === 'faster'
+        ? 'faster lane'
+        : swapIntent === 'stronger'
+          ? 'stronger lane'
+          : 'lane swap';
+  const swapSignal = !canSwap
+    ? 'No provider/model swap signal is dominant yet.'
+    : swapIntent === 'safer'
+      ? `Safer lane signal: ${swapCandidate.provider} / ${swapCandidate.model} is cutting rescue pressure by ${interventionDelta ?? 0}.`
+      : swapIntent === 'cheaper'
+        ? `Cheaper lane signal: ${swapCandidate.provider} / ${swapCandidate.model} is saving about $${Math.max(0, costDelta ?? 0).toFixed(2)} per run.`
+        : swapIntent === 'faster'
+          ? `Faster lane signal: ${swapCandidate.provider} / ${swapCandidate.model} is trimming about ${Math.max(0, durationDeltaMinutes ?? 0)} minutes per run.`
+          : `Stronger lane signal: ${swapCandidate.provider} / ${swapCandidate.model} is up ${benchmarkDelta ?? 0} benchmark points.`;
+  const swapLabel = canSwap ? `Stage ${swapIntentLabel}` : 'No lane swap suggested';
+  const thresholdMet = Boolean(
+    canSwap
+    && (
+      (shouldPreferSaferSwap && ((interventionDelta ?? 0) >= 0.5 || (swapCandidate.successRate - (currentLane?.successRate || 0)) >= 5))
+      || (!shouldPreferSaferSwap && ((benchmarkDelta ?? 0) >= 8 || (qualityDelta ?? 0) >= 6))
+    )
+  );
+  const thresholdLabel = !canSwap
+    ? 'No swap threshold met'
+    : swapIntent === 'safer'
+      ? thresholdMet
+        ? 'Safety threshold cleared'
+        : 'Safety case still forming'
+      : swapIntent === 'cheaper'
+        ? thresholdMet
+          ? 'Cost threshold cleared'
+          : 'Cost case still forming'
+        : swapIntent === 'faster'
+          ? thresholdMet
+            ? 'Speed threshold cleared'
+            : 'Speed case still forming'
+          : thresholdMet
+            ? 'Performance threshold cleared'
+            : 'Performance case still forming';
+  const stageFallback = Boolean(thresholdMet && currentLane && (
+    currentLane.provider !== swapCandidate?.provider || currentLane.model !== swapCandidate?.model
+  ));
+
+  return {
+    delta,
+    evidence,
+    open: {
+      label: 'Open policy',
+      detail: delta.detail,
+      evidence,
+    },
+    harden: {
+      label: 'Harden approval',
+      enabled: canHarden,
+      detail: hardenReason,
+      evidence,
+    },
+    loosen: {
+      label: 'Loosen approval',
+      enabled: canLoosen,
+      detail: loosenReason,
+      evidence,
+    },
+    swap: {
+      label: swapLabel,
+      enabled: canSwap,
+      detail: swapDetail,
+      evidence: swapEvidence,
+      signal: swapSignal,
+      provider: swapCandidate?.provider || null,
+      model: swapCandidate?.model || null,
+      intent: swapIntent,
+      intentLabel: swapIntentLabel,
+      thresholdMet,
+      thresholdLabel,
+      stageFallback,
+      currentLane: currentLane ? {
+        provider: currentLane.provider,
+        model: currentLane.model,
+        benchmarkScore: currentLane.benchmarkScore,
+        avgQuality: currentLane.avgQuality,
+        successRate: currentLane.successRate,
+        avgInterventions: currentLane.avgInterventions,
+        avgCost: currentLane.avgCost,
+        avgDurationMs: currentLane.avgDurationMs,
+      } : null,
+      suggestedLane: swapCandidate ? {
+        provider: swapCandidate.provider,
+        model: swapCandidate.model,
+        benchmarkScore: swapCandidate.benchmarkScore,
+        avgQuality: swapCandidate.avgQuality,
+        successRate: swapCandidate.successRate,
+        avgInterventions: swapCandidate.avgInterventions,
+        avgCost: swapCandidate.avgCost,
+        avgDurationMs: swapCandidate.avgDurationMs,
+      } : null,
+      comparison: {
+        benchmarkDelta,
+        interventionDelta,
+        qualityDelta,
+        costDelta,
+        durationDeltaMinutes,
+      },
+    },
+  };
+}
+
+export function getTradeoffOutcomeSummary(swap = null) {
+  if (!swap?.enabled || !swap.currentLane || !swap.suggestedLane) {
+    return {
+      available: false,
+      title: 'No tradeoff outcome signal yet',
+      detail: 'Commander still needs a clear lane tradeoff before it can judge whether safer, cheaper, faster, or stronger routing is paying off.',
+      tone: 'slate',
+      outcomeLabel: 'forming',
+      metrics: [],
+    };
+  }
+
+  const benchmarkDelta = swap.comparison?.benchmarkDelta ?? 0;
+  const qualityDelta = swap.comparison?.qualityDelta ?? 0;
+  const interventionDelta = swap.comparison?.interventionDelta ?? 0;
+  const costDelta = swap.comparison?.costDelta ?? 0;
+  const durationDeltaMinutes = swap.comparison?.durationDeltaMinutes ?? 0;
+
+  let payingOff = false;
+  if (swap.intent === 'safer') payingOff = interventionDelta > 0 || (swap.suggestedLane.successRate - swap.currentLane.successRate) >= 5;
+  if (swap.intent === 'cheaper') payingOff = costDelta > 0 && qualityDelta >= -4;
+  if (swap.intent === 'faster') payingOff = durationDeltaMinutes > 0 && qualityDelta >= -4;
+  if (swap.intent === 'stronger') payingOff = benchmarkDelta > 0 || qualityDelta > 0;
+
+  const outcomeLabel = payingOff ? 'paying off' : swap.thresholdMet ? 'mixed return' : 'still forming';
+  const tone = payingOff ? 'teal' : swap.thresholdMet ? 'amber' : 'slate';
+  const title = payingOff
+    ? `${swap.intentLabel[0].toUpperCase()}${swap.intentLabel.slice(1)} is paying off`
+    : `${swap.intentLabel[0].toUpperCase()}${swap.intentLabel.slice(1)} is still being proven`;
+  const detail = swap.intent === 'safer'
+    ? payingOff
+      ? `${swap.suggestedLane.provider} / ${swap.suggestedLane.model} is reducing rescue pressure while keeping success stable enough to justify the safer posture.`
+      : `${swap.suggestedLane.provider} / ${swap.suggestedLane.model} looks safer, but Commander still needs cleaner rescue and success evidence before that tradeoff is proven.`
+    : swap.intent === 'cheaper'
+      ? payingOff
+        ? `${swap.suggestedLane.provider} / ${swap.suggestedLane.model} is cutting cost without a material quality collapse, so the cheaper route is earning trust.`
+        : `${swap.suggestedLane.provider} / ${swap.suggestedLane.model} is cheaper, but Commander is still checking whether the quality tradeoff is acceptable.`
+      : swap.intent === 'faster'
+        ? payingOff
+          ? `${swap.suggestedLane.provider} / ${swap.suggestedLane.model} is reducing execution time while keeping quality stable enough to justify the faster route.`
+          : `${swap.suggestedLane.provider} / ${swap.suggestedLane.model} is faster, but Commander still needs to prove speed is not hurting outcomes.`
+        : payingOff
+          ? `${swap.suggestedLane.provider} / ${swap.suggestedLane.model} is outperforming the current lane strongly enough to justify the stronger route.`
+          : `${swap.suggestedLane.provider} / ${swap.suggestedLane.model} looks stronger on paper, but Commander still needs the performance gap to hold.`;
+
+  return {
+    available: true,
+    title,
+    detail,
+    tone,
+    payingOff,
+    outcomeLabel,
+    metrics: [
+      { label: 'Benchmark', value: benchmarkDelta > 0 ? `+${benchmarkDelta}` : `${benchmarkDelta}` },
+      { label: 'Quality', value: qualityDelta > 0 ? `+${qualityDelta}` : `${qualityDelta}` },
+      { label: 'Interventions', value: interventionDelta > 0 ? `-${interventionDelta}` : `${interventionDelta}` },
+      { label: 'Cost', value: costDelta > 0 ? `-$${costDelta.toFixed(2)}` : `$${Math.abs(costDelta).toFixed(2)}` },
+      { label: 'Time', value: durationDeltaMinutes > 0 ? `-${durationDeltaMinutes}m` : `${Math.abs(durationDeltaMinutes)}m` },
+    ],
+  };
+}
+
+export function getTradeoffCorrectiveAction(tradeoffOutcome = null, swap = null) {
+  if (!tradeoffOutcome?.available || !swap?.enabled) {
+    return {
+      label: 'No corrective action yet',
+      detail: 'Commander still needs a clear routing tradeoff before it can suggest a precise correction.',
+      tone: 'slate',
+      routeState: null,
+      expectedImpact: null,
+      postureComparison: null,
+      doctrineImpact: null,
+      verificationImpact: null,
+      successCriteria: null,
+      rollbackCriteria: null,
+    };
+  }
+
+  const currentProvider = swap.currentLane?.provider || 'Adaptive provider';
+  const currentModel = swap.currentLane?.model || 'Adaptive model';
+  const suggestedProvider = swap.suggestedLane?.provider || currentProvider;
+  const suggestedModel = swap.suggestedLane?.model || currentModel;
+  const trustLift = tradeoffOutcome.payingOff ? 'gain' : swap.intent === 'safer' || swap.intent === 'faster' ? 'recover' : 'stabilize';
+
+  if (tradeoffOutcome.payingOff) {
+    return {
+      label: 'Keep scaling this tradeoff',
+      detail: swap.intent === 'safer'
+        ? 'The safer lane is calming rescue pressure, so keep routing similar work through it.'
+        : swap.intent === 'cheaper'
+          ? 'The cheaper lane is preserving quality well enough to keep scaling it.'
+          : swap.intent === 'faster'
+          ? 'The faster lane is preserving outcomes, so it is safe to keep using it on matching work.'
+          : 'The stronger lane is earning its extra cost, so keep reinforcing it on high-value work.',
+      tone: 'teal',
+      routeState: null,
+      expectedImpact: {
+        primary: 'Routing trust should strengthen further if similar runs stay clean.',
+        tradeoff: 'Commander should keep watching for drift, but no immediate corrective cost is expected.',
+      },
+      postureComparison: {
+        current: `Stay on ${suggestedProvider} / ${suggestedModel} with the current approval posture.`,
+        proposed: 'No posture change. Commander should keep reinforcing the current winning lane.',
+      },
+      doctrineImpact: {
+        confidence: 'Doctrine confidence should keep climbing if similar runs stay clean.',
+        trust: `Commander expects this policy to keep ${trustLift}ing routing trust without a corrective reset.`,
+      },
+      verificationImpact: {
+        threshold: 'Light verification',
+        detail: 'A quick spot-check is enough here because Commander is reinforcing a tradeoff that is already paying off.',
+      },
+      successCriteria: [
+        'Matching runs stay clean with no new rescue spike.',
+        'Commander keeps or increases routing trust on this lane.',
+      ],
+      rollbackCriteria: [
+        'Grouped rescues or reroutes start clustering again on matching work.',
+        'Routing trust slips instead of holding or climbing.',
+      ],
+    };
+  }
+
+  if (swap.intent === 'safer') {
+    return {
+      label: 'Reroute back toward the stronger lane',
+      detail: 'This safer lane is not calming the board enough, so Commander should lean back toward the stronger benchmark lane for similar work.',
+      tone: 'amber',
+      routeState: swap.currentLane ? {
+        providerSwap: swap.currentLane.provider,
+        modelSwap: swap.currentLane.model,
+        fallbackSwap: swap.suggestedLane,
+        stageFallback: true,
+      } : null,
+      expectedImpact: {
+        primary: 'Quality and rescue pressure should stabilize if Commander moves back to the stronger lane.',
+        tradeoff: 'Cost may rise relative to the safer lane, but branch failure pressure should drop.',
+      },
+      postureComparison: {
+        current: `Current posture is leaning on the safer lane ${suggestedProvider} / ${suggestedModel}.`,
+        proposed: `Proposed posture reroutes back toward ${currentProvider} / ${currentModel} and keeps the current lane staged as fallback.`,
+      },
+      doctrineImpact: {
+        confidence: 'Doctrine confidence should recover if the stronger lane reduces rescue pressure on matching work.',
+        trust: `Commander expects trust to move back toward ${currentProvider} / ${currentModel} once brittle safer-lane pressure drops.`,
+      },
+      verificationImpact: {
+        threshold: 'Strong verification',
+        detail: 'Commander should watch the next few matching runs closely because this reroute changes the preferred lane and cost posture together.',
+      },
+      successCriteria: [
+        'Rescue and reroute pressure fall on the next matching runs.',
+        'Quality recovers without another policy hardening step.',
+      ],
+      rollbackCriteria: [
+        'Cost rises but rescue pressure does not improve.',
+        'The stronger lane still needs repeated manual rescue on matching work.',
+      ],
+    };
+  }
+  if (swap.intent === 'cheaper') {
+    return {
+      label: 'Harden approval on the cheaper lane',
+      detail: 'The cheaper route is not protecting quality enough, so Commander should tighten approval before scaling it further.',
+      tone: 'amber',
+      routeState: {
+        adjustment: 'harden',
+        evidenceRequired: true,
+      },
+      expectedImpact: {
+        primary: 'Rescue risk should fall because low-confidence cheap-lane work will hit a tighter approval gate.',
+        tradeoff: 'Approval drag will increase until the cheaper lane proves it can hold quality.',
+      },
+      postureComparison: {
+        current: `Current posture is scaling the cheaper lane ${suggestedProvider} / ${suggestedModel} with its existing approval gate.`,
+        proposed: `Proposed posture keeps ${suggestedProvider} / ${suggestedModel} but hardens approval and requires more evidence before scale.`,
+      },
+      doctrineImpact: {
+        confidence: 'Doctrine confidence should stabilize because weaker cheap-lane runs will stop self-advancing so easily.',
+        trust: 'Commander expects approval trust to rise even if throughput relaxes for a while.',
+      },
+      verificationImpact: {
+        threshold: 'Moderate verification',
+        detail: 'Check the next approval-gated runs for cleaner quality and lower rescue pressure before relaxing the human bar again.',
+      },
+      successCriteria: [
+        'Approval-gated runs land with fewer rescues.',
+        'Quality holds while the cheaper lane stays in use.',
+      ],
+      rollbackCriteria: [
+        'Approval drag rises without a meaningful rescue or quality improvement.',
+        'The cheaper lane still needs repeated overrides after hardening.',
+      ],
+    };
+  }
+  if (swap.intent === 'faster') {
+    return {
+      label: 'Slow down and verify',
+      detail: 'The faster lane is creating drag or quality loss, so Commander should add verification before trusting it at speed.',
+      tone: 'amber',
+      routeState: {
+        adjustment: 'harden',
+        evidenceRequired: true,
+        contextPolicy: 'balanced',
+      },
+      expectedImpact: {
+        primary: 'Failure pressure should fall because faster work will slow down for more verification.',
+        tradeoff: 'Latency will rise, but Commander should recover cleaner output.',
+      },
+      postureComparison: {
+        current: `Current posture is favoring the faster lane ${suggestedProvider} / ${suggestedModel} for speed.`,
+        proposed: `Proposed posture keeps ${suggestedProvider} / ${suggestedModel} but slows down with a harder approval gate and balanced verification context.`,
+      },
+      doctrineImpact: {
+        confidence: 'Doctrine confidence should recover if added verification stops speed-led quality drift.',
+        trust: 'Commander expects the routing policy to trade some throughput for a more trustworthy confidence signal.',
+      },
+      verificationImpact: {
+        threshold: 'Strong verification',
+        detail: 'Commander should verify the next fast-lane runs carefully because this change is explicitly trading speed for reliability.',
+      },
+      successCriteria: [
+        'Failure pressure drops on the next fast-lane runs.',
+        'Latency rises less than the quality recovery gained.',
+      ],
+      rollbackCriteria: [
+        'Latency rises sharply but failures do not improve.',
+        'Fast-lane quality is still drifting even with added verification.',
+      ],
+    };
+  }
+
+  return {
+    label: 'Keep the stronger lane and scale it carefully',
+    detail: 'The stronger lane is still the best available option, but Commander should keep the cheaper or safer alternatives from bleeding trust into it.',
+    tone: 'teal',
+    routeState: swap.suggestedLane ? {
+      providerSwap: swap.suggestedLane.provider,
+      modelSwap: swap.suggestedLane.model,
+      fallbackSwap: swap.currentLane,
+      stageFallback: true,
+    } : null,
+    expectedImpact: {
+      primary: 'High-value work should keep landing cleanly if Commander keeps the stronger lane in front.',
+      tradeoff: 'Cost may stay elevated, so weaker work should still be pushed down-stack where possible.',
+    },
+    postureComparison: {
+      current: `Current posture is still allowing weaker alternatives to compete with ${suggestedProvider} / ${suggestedModel}.`,
+      proposed: `Proposed posture moves ${suggestedProvider} / ${suggestedModel} to the front and stages ${currentProvider} / ${currentModel} as fallback coverage.`,
+    },
+    doctrineImpact: {
+      confidence: 'Doctrine confidence should rise if the stronger lane keeps outperforming nearby alternatives.',
+      trust: `Commander expects trust to consolidate around ${suggestedProvider} / ${suggestedModel} while keeping fallback safety intact.`,
+    },
+    verificationImpact: {
+      threshold: 'Moderate verification',
+      detail: 'Watch the next few high-value runs to confirm the stronger lane keeps earning its extra cost before widening the policy further.',
+    },
+    successCriteria: [
+      'High-value runs keep landing cleanly on the stronger lane.',
+      'The stronger lane continues to outperform fallback options on trust.',
+    ],
+    rollbackCriteria: [
+      'The stronger lane stops outperforming fallback options on trust.',
+      'Extra cost keeps rising without a matching quality or rescue advantage.',
+    ],
   };
 }
 
@@ -616,6 +1280,15 @@ function getRecommendationKeywordBoost(recommendation, signals) {
       score += routingPressure;
       reasons.push(`${signals.reroutePressure} reroutes and ${signals.rescuePressure} rescue events are still stressing lane choice.`);
     }
+    if (signals.tradeoffOutcome?.available) {
+      if (signals.tradeoffOutcome.payingOff) {
+        score += 10;
+        reasons.push(`Current ${signals.tradeoffOutcome.outcomeLabel} routing tradeoff is paying back, so Commander should reinforce the winning lane logic.`);
+      } else {
+        score += 16;
+        reasons.push(`Current routing tradeoff is ${signals.tradeoffOutcome.outcomeLabel}, so Commander should correct weak lane posture faster.`);
+      }
+    }
   }
 
   if (/(automation|recurring|cadence|approval posture|guardrail)/.test(text)) {
@@ -720,8 +1393,11 @@ export function rankCommanderRecommendations({
   lifecycleEvents = [],
   agents = [],
   learningMemory = null,
+  tradeoffOutcome = null,
+  tradeoffCorrectiveAction = null,
 } = {}) {
   const normalizedInterventions = normalizeInterventionEvents(interventions, logs);
+  const batchSignals = getBatchCommandSignals(logs);
   const fleetPosture = getFleetPostureSummary(lifecycleEvents, agents);
   const rescueTouchedRoots = new Set(
     normalizedInterventions
@@ -747,11 +1423,17 @@ export function rankCommanderRecommendations({
       const eventType = String(entry.eventType || '').toLowerCase();
       return scheduleType === 'recurring' && eventType !== 'guardrail';
     }).length,
+    batchApprovePressure: Number(batchSignals.actionCounts.approve || 0),
+    batchRetryPressure: Number(batchSignals.actionCounts.retry || 0),
+    batchRedirectPressure: Number(batchSignals.actionCounts.redirect || 0),
+    batchCommandPressure: batchSignals.totalActions,
     rescueRate: Math.round((rescueTouchedRoots.size / totalMissionRoots) * 100),
     patternStrength,
     policyDemotionPressure,
     fleetPosture,
     confidenceClosure,
+    tradeoffOutcome,
+    tradeoffCorrectiveAction,
   };
 
   return recommendations
@@ -768,10 +1450,16 @@ export function rankCommanderRecommendations({
       const id = String(recommendation.id || '');
       if (id.includes('mission-pattern')) score += Math.round(signals.patternStrength / 3);
       if (id.includes('rescue') || id.includes('intervention')) score += Math.round((signals.rescueRate + (signals.rescuePressure * 6)) / 3);
+      if (/(batch|group|approval posture|approval|reroute|redirect)/.test(`${recommendation.id || ''} ${recommendation.title || ''} ${recommendation.description || ''}`.toLowerCase())) {
+        score += (signals.batchRetryPressure * 4) + (signals.batchRedirectPressure * 3) + Math.round(signals.batchApprovePressure * 1.5);
+      }
       if (signals.confidenceClosure.posture === 'drifting' && /(routing|lane|provider|model|automation|rescue|intervention|guardrail|confidence)/.test(`${recommendation.title || ''} ${recommendation.description || ''}`.toLowerCase())) {
         score += 16;
       } else if (signals.confidenceClosure.posture === 'cautious' && /(routing|automation|rescue|confidence)/.test(`${recommendation.title || ''} ${recommendation.description || ''}`.toLowerCase())) {
         score += 8;
+      }
+      if (signals.tradeoffOutcome?.available && /(routing|lane|provider|model|doctrine|escalat)/.test(`${recommendation.title || ''} ${recommendation.description || ''}`.toLowerCase())) {
+        score += signals.tradeoffOutcome.payingOff ? 8 : 14;
       }
       const whyNow = keywordBoost.reasons[0]
         || (signals.confidenceClosure.posture === 'drifting' ? signals.confidenceClosure.detail : null)
@@ -785,6 +1473,9 @@ export function rankCommanderRecommendations({
         signalCount: keywordBoost.reasons.length,
         rankingReasons: keywordBoost.reasons,
         recommendationClass,
+        correctiveAction: signals.tradeoffOutcome?.available && signals.tradeoffCorrectiveAction && /(routing|lane|provider|model|doctrine|escalat)/.test(`${recommendation.title || ''} ${recommendation.description || ''}`.toLowerCase())
+          ? signals.tradeoffCorrectiveAction
+          : null,
       };
     })
     .sort((left, right) => {
@@ -1005,7 +1696,7 @@ export function getMissionPatternDefaultSummary(learningMemory = null) {
   };
 }
 
-export function getPatternApprovalBiasSummary({ winningPattern = null, routingDecision = null, observedWinningLane = null } = {}) {
+export function getPatternApprovalBiasSummary({ winningPattern = null, routingDecision = null, observedWinningLane = null, batchSignals = null } = {}) {
   if (!winningPattern) {
     return {
       available: false,
@@ -1020,11 +1711,29 @@ export function getPatternApprovalBiasSummary({ winningPattern = null, routingDe
   const confidence = Number(winningPattern.confidence || 0);
   const canLeanOnPattern = confidence >= 72 || Number(winningPattern.runs || 0) >= 4;
   const laneApproval = observedWinningLane?.approvalLevel || null;
-  const recommendedApprovalLevel = laneApproval === 'human_required' || patternApproval === 'human_required'
+  const safeBatchApprovals = Number(batchSignals?.actionCounts?.approve || 0);
+  const batchRescuePressure = Number(batchSignals?.actionCounts?.retry || 0) + Number(batchSignals?.actionCounts?.redirect || 0) + Number(batchSignals?.actionCounts?.stop || 0);
+  const strongBatchApprovalSignal = Number(batchSignals?.totalActions || 0) >= 2 && Number(batchSignals?.safeApproveRate || 0) >= 60 && safeBatchApprovals > batchRescuePressure;
+  const strongBatchRescueSignal = batchRescuePressure >= 2 && batchRescuePressure >= safeBatchApprovals;
+  let recommendedApprovalLevel = laneApproval === 'human_required' || patternApproval === 'human_required'
     ? 'human_required'
     : canLeanOnPattern
       ? patternApproval
       : routingDecision?.approvalLevel || patternApproval;
+  let detail = `${winningPattern.executionStrategy} with ${patternApproval} approval is the strongest repeating shape across ${winningPattern.runs} runs, so Commander should bias this mission family toward ${recommendedApprovalLevel}.`;
+
+  if (routingDecision?.riskLevel !== 'high') {
+    if (strongBatchApprovalSignal && recommendedApprovalLevel === 'risk_weighted') {
+      recommendedApprovalLevel = 'auto_low_risk';
+      detail = `${detail} Grouped approvals are landing safely across ${batchSignals.totalBranches} recent branches, so low-risk repeats can lean toward auto_low_risk posture.`;
+    } else if (strongBatchRescueSignal && recommendedApprovalLevel === 'auto_low_risk') {
+      recommendedApprovalLevel = 'risk_weighted';
+      detail = `${detail} Grouped retries and redirects are still exposing brittle clusters, so Commander should pull this mission family back to risk_weighted review.`;
+    } else if (strongBatchRescueSignal && recommendedApprovalLevel === 'risk_weighted') {
+      recommendedApprovalLevel = 'human_required';
+      detail = `${detail} Grouped retries and redirects are recurring often enough that Commander should temporarily harden this mission family back to human_required review.`;
+    }
+  }
   const tone = recommendedApprovalLevel === 'human_required'
     ? 'amber'
     : recommendedApprovalLevel === 'auto_low_risk'
@@ -1034,7 +1743,7 @@ export function getPatternApprovalBiasSummary({ winningPattern = null, routingDe
   return {
     available: true,
     label: `${winningPattern.domain} / ${winningPattern.intentType} approval default`,
-    detail: `${winningPattern.executionStrategy} with ${patternApproval} approval is the strongest repeating shape across ${winningPattern.runs} runs, so Commander should bias this mission family toward ${recommendedApprovalLevel}.`,
+    detail,
     recommendedApprovalLevel,
     tone,
     confidence,

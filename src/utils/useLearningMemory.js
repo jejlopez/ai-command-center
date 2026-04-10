@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '../lib/supabaseClient';
 import { useAuth } from '../context/AuthContext';
+import { getBatchCommandSignals } from './commanderAnalytics';
 
 function formatOutputLabel(value) {
   return (value || 'summary').replaceAll('_', ' ');
@@ -162,14 +163,43 @@ async function fetchRecentInterventionRows(userId) {
   };
 }
 
+async function fetchRecentBatchAuditLogs(userId) {
+  const { data, error } = await supabase
+    .from('activity_log')
+    .select('id,message,timestamp,type')
+    .eq('user_id', userId)
+    .order('timestamp', { ascending: false })
+    .limit(160);
+
+  if (error) {
+    if (isMissingTableError(error)) return { available: false, rows: [] };
+    throw error;
+  }
+
+  return {
+    available: true,
+    rows: (data || [])
+      .filter((row) => String(row.message || '').includes('[batch-intervention-]'))
+      .map((row) => ({
+        id: row.id,
+        message: row.message || '',
+        timestamp: row.timestamp || null,
+        type: row.type || 'SYS',
+      })),
+  };
+}
+
 async function syncOutcomeDoctrineArtifacts(userId) {
   const outcomeResponse = await fetchRecentOutcomeRows(userId);
   if (!outcomeResponse.available) return { available: false };
   const interventionResponse = await fetchRecentInterventionRows(userId);
   if (!interventionResponse.available) return { available: false };
+  const batchAuditResponse = await fetchRecentBatchAuditLogs(userId);
+  if (!batchAuditResponse.available) return { available: false };
 
   const outcomes = outcomeResponse.rows;
   const interventions = interventionResponse.rows;
+  const batchAuditLogs = batchAuditResponse.rows;
   if (!outcomes.length) return { available: true };
 
   const averageScore = Math.round(outcomes.reduce((sum, row) => sum + Number(row.score || 0), 0) / outcomes.length);
@@ -229,6 +259,11 @@ async function syncOutcomeDoctrineArtifacts(userId) {
   const rescueWeightedCost = interventionLoad > 0
     ? Number((outcomes.reduce((sum, row) => sum + Number(row.cost_usd || 0), 0) / Math.max(interventionLoad, 1)).toFixed(2))
     : 0;
+  const batchSignals = getBatchCommandSignals(batchAuditLogs);
+  const batchPressure = batchSignals.totalActions;
+  const batchRetryPressure = Number(batchSignals.actionCounts.retry || 0);
+  const batchRedirectPressure = Number(batchSignals.actionCounts.redirect || 0);
+  const batchApprovePressure = Number(batchSignals.actionCounts.approve || 0);
 
   const doctrine = [
     buildDoctrineItem({
@@ -353,6 +388,41 @@ async function syncOutcomeDoctrineArtifacts(userId) {
         rescueWeightedCost,
       },
     }),
+    buildDoctrineItem({
+      id: 'batch-command-memory',
+      owner: 'Batch Command Memory',
+      tone: batchPressure === 0
+        ? 'blue'
+        : batchRetryPressure + batchRedirectPressure > batchApprovePressure
+          ? 'amber'
+          : 'teal',
+      title: batchPressure === 0
+        ? 'Grouped bridge actions have not formed a doctrine signal yet'
+        : batchRetryPressure + batchRedirectPressure > batchApprovePressure
+          ? 'Grouped interventions are still correcting fragile clusters'
+          : 'Grouped approvals are beginning to validate safer branch clusters',
+      detail: batchPressure === 0
+        ? 'Commander has bridge batch controls, but not enough grouped-command history has accumulated yet to harden doctrine around it.'
+        : batchRetryPressure + batchRedirectPressure > batchApprovePressure
+          ? `${batchPressure} grouped bridge actions were recorded recently, with ${batchRetryPressure} retries and ${batchRedirectPressure} redirects. That means grouped intervention behavior should demote brittle lane clusters faster.`
+          : `${batchApprovePressure} grouped approvals across ${batchSignals.totalBranches} branches are starting to validate safer clustered execution, which can support lighter approval posture on low-risk repeats.`,
+      confidence: batchPressure === 0 ? 42 : Math.min(93, 52 + (batchPressure * 7)),
+      evidence: [
+        batchPressure > 0
+          ? `${batchPressure} grouped bridge command events are now available for doctrine feedback.`
+          : 'No grouped bridge command events have been written yet.',
+        batchPressure > 0
+          ? `${batchSignals.totalBranches} branches were touched by recent grouped actions.`
+          : 'Commander needs grouped execution history before it can learn from cluster behavior.',
+        batchPressure > 0
+          ? `Approvals: ${batchApprovePressure}, retries: ${batchRetryPressure}, redirects: ${batchRedirectPressure}.`
+          : 'Bridge actions will start affecting doctrine once operators use batch controls in live work.',
+      ],
+      metrics: {
+        batchPressure,
+        batchSignals,
+      },
+    }),
   ];
 
   await syncLearningMemoryRows(userId, doctrine);
@@ -423,6 +493,25 @@ async function syncOutcomeDoctrineArtifacts(userId) {
           : 'Human rescue cost is currently contained, so Commander can keep current recommendation ranking relatively stable.',
         impact: interventionLoad > 10 ? 'critical' : interventionLoad > 4 ? 'high' : 'medium',
         savings_label: interventionLoad > 0 ? `$${rescueWeightedCost.toFixed(2)} per rescue cluster` : 'low rescue load',
+      },
+      {
+        id: 'batch-command-memory',
+        user_id: userId,
+        rec_type: 'optimization',
+        title: batchRetryPressure + batchRedirectPressure > batchApprovePressure
+          ? 'Use grouped bridge interventions to demote brittle lane clusters faster'
+          : 'Grouped approvals are evidence for lighter low-risk approval posture',
+        description: batchPressure === 0
+          ? 'Grouped bridge actions are available, but Commander still needs more history before batch behavior should change defaults.'
+          : batchRetryPressure + batchRedirectPressure > batchApprovePressure
+            ? `Recent grouped bridge commands show ${batchRetryPressure} retries and ${batchRedirectPressure} redirects across ${batchSignals.totalBranches} branches. Treat that as evidence that clustered fragile work still needs routing and rescue changes.`
+            : `Recent grouped bridge approvals now cover ${batchSignals.totalBranches} branches with ${batchApprovePressure} grouped approvals. Use that as evidence when loosening approval posture for low-risk repeated patterns.`,
+        impact: batchRetryPressure + batchRedirectPressure > batchApprovePressure
+          ? (batchPressure >= 4 ? 'high' : 'medium')
+          : batchApprovePressure >= 3
+            ? 'medium'
+            : 'low',
+        savings_label: batchPressure > 0 ? `${batchPressure} batch actions` : 'awaiting history',
       },
     ], { onConflict: 'id' });
 

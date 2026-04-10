@@ -136,10 +136,10 @@ Legend:
 
 ## Immediate Next Four
 
-1. Runtime winner logic generalizing across nearby mission families when exact history is thin
-2. Recurring trust recovery becoming explicit from paused/watch posture
-3. Automatic durable coverage expanding across more mission families and domain packs
-4. Mission-pattern winners influencing approval defaults even more directly
+1. Finish structured mission brief generation from natural-language intake
+2. Finish stronger auto-generated execution planning and richer specialist decomposition
+3. Finish hybrid approval, guardrails, and audit-trail depth needed for default-safe orchestration
+4. Finish execution-core explainability, routing trust, and permission semantics before broadening domain scope
 
 ## Epic Experience Layer Additions
 
@@ -155,6 +155,33 @@ These are now explicit tracked roadmap targets even when they are implemented as
 - Recurring automation tuning loop
 - One-screen bridge mode
 - Interruptible conversational Commander
+
+Current phase 2 note:
+
+- Mission preflight, confidence/uncertainty, and Commander memory brief are now present in the launch surface.
+- The launch surface now also explains why Commander chose the lane and why it would pause the mission before launch.
+- Mission Control now explains why Commander chose a branch and why it is paused when you inspect the drawer.
+- Overview now exposes a one-screen bridge mode that compresses executive, mission, and intelligence signals into one cockpit.
+- Overview bridge mode now hands conversational mission intake directly into Mission Control with prefilled posture.
+- Overview bridge mode now supports inline approve, retry, stabilize, and redirect controls for the highest-pressure branch.
+- Overview bridge mode now supports a ranked multi-branch intervention queue for inline cockpit control.
+- Overview bridge mode now supports true batch command control across the top intervention queue.
+- Bridge batch actions now write grouped audit events into command memory and expose a latest batch-command readback in the cockpit.
+- Grouped batch-command audits now surface across Mission Control, Reports, and Intelligence.
+- Policy-delta actions now carry evidence-aware guidance from summary surfaces, and approval-loosening only stages when trust evidence clears the threshold.
+- Summary surfaces can now propose evidence-backed provider/model swaps and stage them directly into the routing editor.
+- The routing editor now shows threshold-aware current-vs-suggested lane comparisons and can stage the previous lane into fallback order during strong swap cases.
+- Summary-surface lane swaps now declare whether the move is safer, cheaper, faster, or stronger before the operator enters the routing editor.
+- Reports and executive readback rails now reflect the same lane-tradeoff language so routing tradeoffs stay readable outside Intelligence.
+- Reports now shows whether the chosen safer/cheaper/faster/stronger tradeoff is actually paying back in outcome terms.
+- Overview and Mission Control now surface the same tradeoff payback signal so live operator surfaces can judge whether the route change is helping the system.
+- Tradeoff payback now influences recommendation ranking and bridge intervention pressure so weak routing tradeoffs are corrected faster.
+- Recommendation cards and bridge targets now spell out the corrective action for a losing safer/cheaper/faster/stronger tradeoff.
+- Low-risk corrective actions can now be staged directly from the bridge, Mission Control summaries, and Intelligence recommendation cards.
+- Staged corrective actions now show expected improvement and expected tradeoff before the routing draft is saved.
+- Staged corrective actions now show current posture vs proposed posture before save.
+- Staged corrective actions now preview doctrine-confidence impact, recommended verification thresholds, success criteria, and rollback criteria before save.
+- Remaining epic-experience gaps are now more heavily concentrated in richer cross-surface interruption and deeper inline post-launch orchestration beyond the bridge surface.
 
 ## Intelligence / Learning Upgrades To Fold Into Existing Features
 
@@ -173,20 +200,54 @@ These are not separate feature IDs yet. They should be implemented as depth adde
 
 ## Updated Immediate Next Order
 
-1. Generalize runtime winner logic across nearby mission families when exact history is thin
-2. Deepen recurring trust recovery so flows can earn their way back from paused/watch posture
-3. Expand automatic durable coverage defaults across more mission families and domain packs
-4. Push mission-pattern winners into provider, lane, and approval defaults more aggressively
-5. Keep widening trust and doctrine readback where operators make decisions
-6. Turn durable-fleet shaping guidance into stronger automatic coverage defaults
-7. Surface trust-recovery state and fleet-shaping actions directly in executive and operator surfaces
-8. Push generalized runtime winners deeper into provider/model defaults when exact history is thin
-9. Turn fleet-shaping actions into stronger default operator workflows across mission families and domain packs
-10. Keep widening trust-recovery and fleet-shaping actions across bridge, recurring, and live intervention surfaces
-11. Show recurring recovery as progress back toward autonomy, not just restriction state
-12. Let recovered recurring flows earn autonomy upgrades explicitly from clean runtime history
-13. Keep inherited lane defaults consistent across manual resume and reroute actions
-14. Keep inherited lane defaults consistent across schedule-driven launches and executive readback
+1. Finish the core execution engine from `In Progress` to truly `Shipped`
+2. Finish the Jarvis decision cockpit so flagship surfaces become decision-complete
+3. Deepen learning, memory, and doctrine so routing and approval changes are evidence-driven
+4. Expand recurring automation into mature managed products with executive briefing loops
+5. Expand domain packs and mission families only after the execution core is trustworthy
+6. Keep future authority-heavy modes deferred until trust, auditability, and permissions are strong
+
+## Remaining Interfaces To Mature
+
+- mission brief structure:
+  - intent
+  - constraints
+  - domain
+  - risk
+  - approval posture
+  - cost posture
+- execution plan structure:
+  - branches
+  - dependencies
+  - specialists
+  - route choices
+  - verification requirements
+- doctrine and learning outputs:
+  - confidence movement
+  - trust movement
+  - recommendation rank
+  - correction suggestions
+  - success and rollback standards
+- recurring automation model:
+  - cadence
+  - approval posture
+  - recovery state
+  - maturity
+  - autonomy-earned state
+- domain-pack capabilities:
+  - connectors
+  - skills
+  - context packs
+  - approval rules
+  - reporting outputs
+
+## Release Gates
+
+- Do not advance into finance, personal, voice, or broader authority modes until:
+  - routing trust is stable
+  - audit trail is complete
+  - permissions are trustworthy
+  - recurring autonomy behavior is predictable
 
 ## Autodrive Program Rule
 
@@ -210,3 +271,9 @@ The following are intentionally delayed until the execution core is trustworthy:
 - voice-first interaction
 - scenario simulation
 - stealth / privacy special modes beyond base controls
+- 2026-04-10: Summary-surface corrective actions now preview expected improvement and expected tradeoff before routing changes are staged in Intelligence.
+- 2026-04-10: Staged corrective actions now show current posture vs proposed posture before save across executive, operator, and routing surfaces.
+- 2026-04-10: Staged corrective actions now preview doctrine confidence impact before save across executive, operator, and routing surfaces.
+- 2026-04-10: Staged corrective actions now preview recommended verification thresholds before save across executive, operator, and routing surfaces.
+- 2026-04-10: Staged corrective actions now preview success criteria before save across executive, operator, and routing surfaces.
+- 2026-04-10: Staged corrective actions now preview rollback criteria before save across executive, operator, and routing surfaces.

@@ -26,7 +26,8 @@ import {
   YAxis,
 } from 'recharts';
 import { container, item } from '../utils/variants';
-import { useActivityLog, useCostData, usePendingReviews, useTasks } from '../utils/useSupabase';
+import { cn } from '../utils/cn';
+import { useActivityLog, useAgents, useCostData, usePendingReviews, useRoutingPolicies, useTasks } from '../utils/useSupabase';
 import { CommandDeckHero } from '../components/command/CommandDeckHero';
 import { AnimatedNumber } from '../components/command/AnimatedNumber';
 import { CommandSectionHeader } from '../components/command/CommandSectionHeader';
@@ -34,6 +35,7 @@ import { useLearningMemory } from '../utils/useLearningMemory';
 import { DoctrineCards } from '../components/command/DoctrineCards';
 import { TruthAuditStrip } from '../components/command/TruthAuditStrip';
 import { useCommandCenterTruth } from '../utils/useCommandCenterTruth';
+import { getBatchRoutingTrustSummary, getLatestBatchCommandAudit, getPolicyActionGuidance, getTradeoffOutcomeSummary } from '../utils/commanderAnalytics';
 
 const PERIOD_OPTIONS = ['30d', '90d', 'QTD'];
 const STATUS_COLORS = {
@@ -190,8 +192,45 @@ function DoctrineTimelinePanel({ learningMemory }) {
   );
 }
 
-function ExecutiveSignalRail({ learningMemory, summary, burnByModel }) {
+function BatchAuditPanel({ audit, doctrineItem = null }) {
+  if (!audit && !doctrineItem) return null;
+
+  return (
+    <div className="ui-panel-soft p-4">
+      <div className="flex items-center gap-2">
+        <Layers3 className="h-4 w-4 text-aurora-blue" />
+        <span className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Batch command audit</span>
+      </div>
+      {audit && (
+        <div className="mt-4 ui-card-row px-3 py-3">
+          <div className="flex items-center justify-between gap-3">
+            <div className="text-[12px] font-semibold text-text-primary">{audit.label}</div>
+            <div className="text-[10px] font-mono uppercase text-aurora-blue">{audit.type}</div>
+          </div>
+          <div className="mt-2 text-[11px] leading-relaxed text-text-body">{audit.message}</div>
+          <div className="mt-2 text-[10px] uppercase tracking-[0.16em] text-text-disabled">
+            {audit.timestamp ? new Date(audit.timestamp).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Current session'}
+          </div>
+        </div>
+      )}
+      {doctrineItem && (
+        <div className="mt-3 ui-card-row px-3 py-3">
+          <div className="flex items-center justify-between gap-3">
+            <div className="text-[12px] font-semibold text-text-primary">{doctrineItem.title}</div>
+            <div className="text-[10px] font-mono text-aurora-teal">{doctrineItem.confidence}%</div>
+          </div>
+          <div className="mt-2 text-[11px] leading-relaxed text-text-body">{doctrineItem.detail}</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ExecutiveSignalRail({ learningMemory, summary, burnByModel, logs = [], policyTradeoff = null }) {
   const [focus, setFocus] = useState('doctrine');
+  const latestBatchAudit = useMemo(() => getLatestBatchCommandAudit(logs), [logs]);
+  const batchDoctrine = learningMemory?.doctrineById?.['batch-command-memory'] || null;
+  const batchRoutingTrust = useMemo(() => getBatchRoutingTrustSummary({ logs, doctrineItem: batchDoctrine }), [logs, batchDoctrine]);
   const orders = [
     {
       title: 'Cut approval drag',
@@ -214,6 +253,11 @@ function ExecutiveSignalRail({ learningMemory, summary, burnByModel }) {
         : 'Volume is still light enough to set standards before habits harden.',
       tone: 'blue',
     },
+    ...(policyTradeoff?.enabled ? [{
+      title: `Route toward the ${policyTradeoff.intentLabel}`,
+      detail: policyTradeoff.signal,
+      tone: policyTradeoff.intent === 'safer' ? 'amber' : policyTradeoff.intent === 'cheaper' ? 'teal' : 'blue',
+    }] : []),
   ];
 
   return (
@@ -279,8 +323,56 @@ function ExecutiveSignalRail({ learningMemory, summary, burnByModel }) {
         </div>
       )}
 
-      {focus === 'timeline' && <DoctrineTimelinePanel learningMemory={learningMemory} />}
+      {focus === 'timeline' && (
+        <div className="space-y-5">
+          <BatchAuditPanel audit={latestBatchAudit} doctrineItem={batchDoctrine} />
+          {batchRoutingTrust.available && (
+            <div className="ui-panel-soft p-4">
+              <div className="flex items-center gap-2">
+                <Gauge className="h-4 w-4 text-aurora-teal" />
+                <span className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Batch routing trust</span>
+              </div>
+              <div className="mt-4 ui-card-row px-3 py-3">
+                <div className="text-[12px] font-semibold text-text-primary">{batchRoutingTrust.title}</div>
+                <div className="mt-2 text-[11px] leading-relaxed text-text-body">{batchRoutingTrust.detail}</div>
+              </div>
+            </div>
+          )}
+          <DoctrineTimelinePanel learningMemory={learningMemory} />
+        </div>
+      )}
     </div>
+  );
+}
+
+function TradeoffOutcomePanel({ tradeoffOutcome }) {
+  if (!tradeoffOutcome?.available) return null;
+
+  const toneStyles = {
+    teal: 'border-aurora-teal/15 bg-aurora-teal/[0.05]',
+    amber: 'border-aurora-amber/15 bg-aurora-amber/[0.05]',
+    slate: 'border-white/[0.08] bg-white/[0.03]',
+  };
+
+  return (
+    <Motion.section variants={item} className={cn('ui-panel p-5', toneStyles[tradeoffOutcome.tone] || toneStyles.slate)}>
+      <CommandSectionHeader
+        eyebrow="Tradeoff Payback"
+        title={tradeoffOutcome.title}
+        description={tradeoffOutcome.detail}
+        icon={TrendingUp}
+        tone={tradeoffOutcome.tone === 'amber' ? 'amber' : tradeoffOutcome.tone === 'teal' ? 'teal' : 'blue'}
+        action={<span className="ui-chip border-white/8 bg-white/[0.03] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-text-primary">{tradeoffOutcome.outcomeLabel}</span>}
+      />
+      <div className="mt-4 grid gap-3 md:grid-cols-5">
+        {tradeoffOutcome.metrics.map((metric) => (
+          <div key={metric.label} className="ui-stat p-3">
+            <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">{metric.label}</div>
+            <div className="mt-2 text-sm font-semibold text-text-primary">{metric.value}</div>
+          </div>
+        ))}
+      </div>
+    </Motion.section>
   );
 }
 
@@ -297,9 +389,11 @@ export function ReportsView() {
   const [period, setPeriod] = useState('30d');
   const [pressureFocus, setPressureFocus] = useState('activity');
   const { data: costData } = useCostData();
+  const { agents } = useAgents();
   const { tasks } = useTasks();
   const { reviews } = usePendingReviews();
   const { logs } = useActivityLog();
+  const { policies: routingPolicies } = useRoutingPolicies();
   const truth = useCommandCenterTruth();
 
   const summary = useMemo(() => {
@@ -378,6 +472,18 @@ export function ReportsView() {
   }, [logs]);
 
   const learningMemory = useLearningMemory({ tasks, approvals: reviews, logs, costData });
+  const topPolicy = useMemo(
+    () => routingPolicies.find((policy) => policy.isDefault) || routingPolicies[0] || null,
+    [routingPolicies]
+  );
+  const topPolicyActionGuidance = useMemo(
+    () => getPolicyActionGuidance(topPolicy, tasks, [], logs, agents),
+    [topPolicy, tasks, logs, agents]
+  );
+  const tradeoffOutcome = useMemo(
+    () => getTradeoffOutcomeSummary(topPolicyActionGuidance.swap),
+    [topPolicyActionGuidance]
+  );
   const peakActivity = useMemo(
     () => activityWave.reduce((best, bucket) => (bucket.volume > best.volume ? bucket : best), activityWave[0] || { name: 'No activity yet', volume: 0 }),
     [activityWave]
@@ -400,12 +506,16 @@ export function ReportsView() {
     },
     {
       eyebrow: 'Execution Signal',
-      title: summary.topAgents[0] ? `${summary.topAgents[0].name} is carrying the deck` : 'No operator is dominating yet',
-      detail: summary.topAgents[0]
-        ? `${summary.topAgents[0].name} has become the strongest branch by load and completion, which makes it the best pattern to replicate.`
-        : 'Traffic is still broad enough that you should keep focusing on standards and quality before scaling one branch.',
+      title: topPolicyActionGuidance.swap.enabled
+        ? `Commander is favoring a ${topPolicyActionGuidance.swap.intentLabel}`
+        : summary.topAgents[0] ? `${summary.topAgents[0].name} is carrying the deck` : 'No operator is dominating yet',
+      detail: topPolicyActionGuidance.swap.enabled
+        ? topPolicyActionGuidance.swap.signal
+        : summary.topAgents[0]
+          ? `${summary.topAgents[0].name} has become the strongest branch by load and completion, which makes it the best pattern to replicate.`
+          : 'Traffic is still broad enough that you should keep focusing on standards and quality before scaling one branch.',
     },
-  ], [summary, topCostCenter]);
+  ], [summary, topCostCenter, topPolicyActionGuidance]);
 
   return (
     <div className="relative flex h-full flex-col overflow-y-auto pb-10">
@@ -500,7 +610,8 @@ export function ReportsView() {
           />
         </Motion.section>
 
-        <ExecutiveReadFirst items={readFirstItems.slice(0, 2)} />
+        <ExecutiveReadFirst items={readFirstItems} />
+        <TradeoffOutcomePanel tradeoffOutcome={tradeoffOutcome} />
         <TruthAuditStrip truth={truth} />
 
         <Motion.section variants={item} className="space-y-5">
@@ -712,7 +823,7 @@ export function ReportsView() {
         </Motion.section>
 
         <Motion.section variants={item}>
-          <ExecutiveSignalRail learningMemory={learningMemory} summary={summary} burnByModel={burnByModel} />
+          <ExecutiveSignalRail learningMemory={learningMemory} summary={summary} burnByModel={burnByModel} logs={logs} policyTradeoff={topPolicyActionGuidance.swap} />
         </Motion.section>
 
         <Motion.section variants={item}>

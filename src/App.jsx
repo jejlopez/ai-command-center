@@ -80,6 +80,8 @@ function CommandReadinessChip({ truth, onClick }) {
 
 function Dashboard() {
   const [activeRoute, setActiveRoute] = useState('overview');
+  const [missionComposerDraft, setMissionComposerDraft] = useState(null);
+  const [intelligenceRouteState, setIntelligenceRouteState] = useState(null);
   const [cmdOpen, setCmdOpen] = useState(false);
   const [detailState, setDetailState] = useState(null);
   const { notificationsOpen, setNotificationsOpen, settingsOpen, setSettingsOpen, profileOpen, setProfileOpen, setPendingCount } = useSystemState();
@@ -130,6 +132,16 @@ function Dashboard() {
     };
   }, [agents, tasks, reviews, loadingAgents, loadingTasks]);
 
+  function navigateTo(route, options = {}) {
+    setActiveRoute(route);
+    if (options?.missionComposerDraft) {
+      setMissionComposerDraft(options.missionComposerDraft);
+    }
+    if (options?.intelligenceRouteState) {
+      setIntelligenceRouteState(options.intelligenceRouteState);
+    }
+  }
+
   function openAgentWorkspace(agentId, options = {}) {
     if (!agentId) return;
     setDetailState({
@@ -142,9 +154,9 @@ function Dashboard() {
     if (!action) return;
     const { type, route, agentId, panel } = action;
     if (type === 'navigate') {
-      if (route === 'review') setActiveRoute('missions');
-      else if (route === 'operations') setActiveRoute('overview');
-      else setActiveRoute(route);
+      if (route === 'review') navigateTo('missions');
+      else if (route === 'operations') navigateTo('overview');
+      else navigateTo(route);
     }
     if (type === 'agent') openAgentWorkspace(agentId);
     if (type === 'panel') {
@@ -249,15 +261,27 @@ function Dashboard() {
                 tasks={tasks}
                 loading={loadingAgents || loadingTasks}
                 addOptimistic={addOptimistic}
-                onNavigate={setActiveRoute}
+                onNavigate={navigateTo}
                 onOpenDetail={openAgentWorkspace}
                 onQuickDispatch={(agentId) => openAgentWorkspace(agentId, { mode: 'dispatch' })}
               />
             )}
-            {activeRoute === 'missions' && <MissionControlView />}
+            {activeRoute === 'missions' && (
+              <MissionControlView
+                launchDraft={missionComposerDraft}
+                onConsumeLaunchDraft={() => setMissionComposerDraft(null)}
+                onNavigate={navigateTo}
+              />
+            )}
             {activeRoute === 'managedOps' && <ManagedOpsView />}
             {activeRoute === 'reports' && <ReportsView />}
-            {activeRoute === 'intelligence' && <IntelligenceView />}
+            {activeRoute === 'intelligence' && (
+              <IntelligenceView
+                key={intelligenceRouteState ? `intelligence-${intelligenceRouteState.tab || 'models'}-${intelligenceRouteState.selectedPolicyId || 'none'}-${intelligenceRouteState.adjustment || 'none'}` : 'intelligence'}
+                routeState={intelligenceRouteState}
+                onConsumeRouteState={() => setIntelligenceRouteState(null)}
+              />
+            )}
             {activeRoute === 'review' && <ReviewRoomView />}
           </Suspense>
         </div>

@@ -176,6 +176,38 @@ Priority experience additions:
   - partial doctrine and shared directive groundwork exists
   - the real memory, learning, domain-pack, and full Jarvis layers are still upcoming
 
+## Remaining Program Order
+
+1. Finish the execution core:
+   - structured mission briefs
+   - stronger execution plans
+   - richer specialist decomposition
+   - safer approvals, permissions, guardrails, and auditability
+2. Finish the Jarvis decision cockpit:
+   - deeper live orchestration from flagship surfaces
+   - stronger explainability
+   - complete decision-ready bridge, Mission Control, Intelligence, and Reports interplay
+3. Deepen learning and memory:
+   - doctrine updates
+   - mission-pattern memory
+   - context and skill effectiveness
+   - rescue, escalation, and failure-pattern intelligence
+4. Expand recurring systems into mature products:
+   - autonomy recovery
+   - tuning memory
+   - executive briefing loops
+5. Expand domain packs and mission families after the core is trusted
+6. Hold authority-heavy future modes until safety and trust gates are met
+
+## Release Gates
+
+Do not broaden into finance, personal authority, voice, or other higher-authority operating modes until:
+
+- routing trust is stable
+- audit trail depth is complete
+- permission boundaries are trustworthy
+- recurring autonomy behavior is predictable
+
 ## Autodrive Rule
 
 Autodrive for this roadmap means:
@@ -222,7 +254,7 @@ Recommended user wording:
 19. Executive briefings
 20. Clean page boundaries across Overview / Mission Control / Intelligence / Reports / Settings
 
-## Release Gates
+## Scope Guardrails
 
 - Do not deepen domain automation until Phase 0 cleanup is complete.
 - Do not add broad personal or finance authority before capability metadata, approvals, and auditability are strong.

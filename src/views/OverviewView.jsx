@@ -1,8 +1,10 @@
 import { useMemo, useState } from 'react';
 import { motion as Motion } from 'framer-motion';
-import { BrainCircuit, Loader2, Rocket, ShieldCheck, Sparkles } from 'lucide-react';
+import { BrainCircuit, Loader2, Rocket, ShieldCheck, Sparkles, Target, Workflow } from 'lucide-react';
 import { container, item } from '../utils/variants';
-import { useActivityLog, useCostData, useModelBank, usePendingReviews, useSchedules } from '../utils/useSupabase';
+import { cn } from '../utils/cn';
+import { useActivityLog, useCostData, useModelBank, usePendingReviews, useRoutingPolicies, useSchedules } from '../utils/useSupabase';
+import { approveMissionTask, interruptAndRedirectTask, recordBatchCommandEvent, retryTask, stopTask } from '../lib/api';
 import { CommanderHero } from '../components/overview/CommanderHero';
 import { CommandReadFirst } from '../components/overview/CommandReadFirst';
 import { CommandSquadPanel } from '../components/overview/CommandSquadPanel';
@@ -20,6 +22,7 @@ import { useCommandCenterTruth } from '../utils/useCommandCenterTruth';
 import { ReactorCoreBoard } from '../components/command/ReactorCoreBoard';
 import { CommandTimelineRail } from '../components/command/CommandTimelineRail';
 import { buildTimelineEntries } from '../utils/buildCommandTimeline';
+import { getPolicyActionGuidance, getPolicyDeltaReadback, getTradeoffCorrectiveAction, getTradeoffOutcomeSummary } from '../utils/commanderAnalytics';
 
 function formatWaitLabel(ms) {
   if (!ms || ms <= 0) return 'None';
@@ -31,13 +34,75 @@ function formatWaitLabel(ms) {
   return rem ? `${hours}h ${rem}m` : `${hours}h`;
 }
 
+function BridgeModeCard({ eyebrow, title, description, stats = [], actionLabel, onAction, tone = 'teal', icon: Icon }) {
+  const toneStyles = {
+    teal: {
+      chip: 'border-aurora-teal/20 bg-aurora-teal/10 text-aurora-teal',
+      panel: 'border-aurora-teal/15 bg-[linear-gradient(135deg,rgba(45,212,191,0.08),rgba(255,255,255,0.02))]',
+      icon: 'text-aurora-teal',
+    },
+    blue: {
+      chip: 'border-aurora-blue/20 bg-aurora-blue/10 text-aurora-blue',
+      panel: 'border-aurora-blue/15 bg-[linear-gradient(135deg,rgba(96,165,250,0.08),rgba(255,255,255,0.02))]',
+      icon: 'text-aurora-blue',
+    },
+    violet: {
+      chip: 'border-aurora-violet/20 bg-aurora-violet/10 text-aurora-violet',
+      panel: 'border-aurora-violet/15 bg-[linear-gradient(135deg,rgba(167,139,250,0.08),rgba(255,255,255,0.02))]',
+      icon: 'text-aurora-violet',
+    },
+  };
+  const style = toneStyles[tone] || toneStyles.teal;
+
+  return (
+    <div className={cn('rounded-[24px] border p-4', style.panel)}>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.18em] text-text-muted">
+            {Icon ? <Icon className={cn('h-3.5 w-3.5', style.icon)} /> : null}
+            {eyebrow}
+          </div>
+          <div className="mt-2 text-[15px] font-semibold text-text-primary">{title}</div>
+          <div className="mt-2 text-[12px] leading-relaxed text-text-body">{description}</div>
+        </div>
+        <div className={cn('rounded-full border px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.16em]', style.chip)}>
+          bridge
+        </div>
+      </div>
+
+      <div className="mt-4 grid grid-cols-2 gap-3">
+        {stats.map((stat) => (
+          <div key={stat.label} className="rounded-2xl border border-white/[0.08] bg-black/20 px-3 py-3">
+            <div className="text-[9px] uppercase tracking-[0.16em] text-text-muted">{stat.label}</div>
+            <div className="mt-1 text-[13px] font-semibold text-text-primary">{stat.value}</div>
+          </div>
+        ))}
+      </div>
+
+      {actionLabel && onAction && (
+        <button
+          onClick={onAction}
+          className="mt-4 inline-flex items-center gap-2 rounded-2xl border border-white/[0.08] bg-white/[0.04] px-3 py-2 text-[11px] font-semibold text-text-primary transition-colors hover:bg-white/[0.07]"
+        >
+          {actionLabel}
+        </button>
+      )}
+    </div>
+  );
+}
+
 export function OverviewView({ agents, tasks, loading, onOpenDetail, onNavigate }) {
   const { logs } = useActivityLog();
   const { reviews } = usePendingReviews();
   const { schedules, loading: loadingSchedules } = useSchedules();
   const { models } = useModelBank();
+  const { policies: routingPolicies } = useRoutingPolicies();
   const { data: costData } = useCostData();
   const [referenceNow] = useState(() => new Date().getTime());
+  const [bridgeMode, setBridgeMode] = useState(false);
+  const [bridgeIntent, setBridgeIntent] = useState('');
+  const [bridgeActionLoading, setBridgeActionLoading] = useState('');
+  const [bridgeActionError, setBridgeActionError] = useState('');
 
   const activeAgents = agents.filter(a => a.status === 'processing').length;
   const idleAgents = agents.filter(a => a.status === 'idle').length;
@@ -180,6 +245,10 @@ export function OverviewView({ agents, tasks, loading, onOpenDetail, onNavigate 
   const learningMemory = useLearningMemory({ agents, tasks, approvals: reviews, logs, costData });
   const truth = useCommandCenterTruth();
   const timelineEntries = useMemo(() => buildTimelineEntries({ tasks, reviews, logs }), [logs, reviews, tasks]);
+  const latestBatchAudit = useMemo(
+    () => logs.find((log) => String(log.message || '').includes('[batch-intervention-]')) || null,
+    [logs]
+  );
 
   const readiness = useMemo(() => {
     const score = Math.max(0, Math.min(100, 100 - (reviews.length * 8) - (failedTasks.length * 12) - (stalledAgents.length * 10) - (lateSchedules * 7)));
@@ -197,6 +266,26 @@ export function OverviewView({ agents, tasks, loading, onOpenDetail, onNavigate 
         : 'Recovery work is outweighing acceleration. Clear the blockers before adding more throughput.';
     return { score, state, label, headline, readback };
   }, [reviews.length, failedTasks.length, stalledAgents.length, lateSchedules]);
+  const topPolicyDelta = useMemo(
+    () => getPolicyDeltaReadback(routingPolicies.find((policy) => policy.isDefault) || routingPolicies[0] || null, tasks, [], logs),
+    [routingPolicies, tasks, logs]
+  );
+  const topPolicy = useMemo(
+    () => routingPolicies.find((policy) => policy.isDefault) || routingPolicies[0] || null,
+    [routingPolicies]
+  );
+  const topPolicyActionGuidance = useMemo(
+    () => getPolicyActionGuidance(topPolicy, tasks, [], logs, agents),
+    [topPolicy, tasks, logs, agents]
+  );
+  const topTradeoffOutcome = useMemo(
+    () => getTradeoffOutcomeSummary(topPolicyActionGuidance.swap),
+    [topPolicyActionGuidance]
+  );
+  const topTradeoffCorrectiveAction = useMemo(
+    () => getTradeoffCorrectiveAction(topTradeoffOutcome, topPolicyActionGuidance.swap),
+    [topTradeoffOutcome, topPolicyActionGuidance]
+  );
 
   const readFirstItems = useMemo(() => {
     const primaryDrag = reviews.length > 0
@@ -205,7 +294,6 @@ export function OverviewView({ agents, tasks, loading, onOpenDetail, onNavigate 
         ? `${lateSchedules} automation${lateSchedules === 1 ? ' is' : 's are'} behind schedule`
         : 'The machine is clear enough to push throughput';
     const spendLeader = costData.models?.[0];
-    const topOperator = flaggedAgents[0]?.name || operatorAgents[0]?.name || 'Commander';
     return [
       {
         eyebrow: 'Read First',
@@ -226,17 +314,21 @@ export function OverviewView({ agents, tasks, loading, onOpenDetail, onNavigate 
         tone: 'text-aurora-teal',
       },
       {
-        eyebrow: 'Operator Signal',
-        title: `${topOperator} is the operator to watch`,
-        detail: flaggedAgents.length > 0
-          ? 'This operator is creating the clearest signal on the bridge right now and should be checked before pushing more volume.'
-          : spendLeader
-            ? `${spendLeader.name} is currently consuming the most budget, so it is the first place to tighten routing discipline.`
-            : 'No single operator or model is dominating the board yet, which means you still have room to shape clean habits.',
-        tone: 'text-aurora-blue',
+        eyebrow: 'Policy Signal',
+        title: topPolicyDelta.title,
+        detail: routingPolicies.length > 0
+          ? topPolicyActionGuidance.swap.enabled
+            ? `${topPolicyDelta.providerDelta}. ${topPolicyDelta.modelDelta}. ${topPolicyDelta.approvalDelta}. ${topPolicyActionGuidance.swap.signal} ${topTradeoffOutcome.available ? topTradeoffOutcome.detail : ''}`.trim()
+            : `${topPolicyDelta.providerDelta}. ${topPolicyDelta.modelDelta}. ${topPolicyDelta.approvalDelta}.`
+          : flaggedAgents.length > 0
+            ? 'This operator is creating the clearest signal on the bridge right now and should be checked before pushing more volume.'
+            : spendLeader
+              ? `${spendLeader.name} is currently consuming the most budget, so it is the first place to tighten routing discipline.`
+              : 'No single operator or model is dominating the board yet, which means you still have room to shape clean habits.',
+        tone: topPolicyDelta.tone === 'teal' ? 'text-aurora-teal' : topPolicyDelta.tone === 'amber' ? 'text-aurora-amber' : 'text-aurora-blue',
       },
     ];
-  }, [reviews.length, lateSchedules, costData.models, flaggedAgents, operatorAgents, readiness.score]);
+  }, [reviews.length, lateSchedules, costData.models, flaggedAgents, readiness.score, topPolicyDelta, routingPolicies.length, topPolicyActionGuidance.swap.enabled, topPolicyActionGuidance.swap.signal, topTradeoffOutcome.available, topTradeoffOutcome.detail]);
 
   const autonomyPosture = useMemo(() => {
     const humanGates = reviews.length + lateSchedules;
@@ -336,6 +428,176 @@ export function OverviewView({ agents, tasks, loading, onOpenDetail, onNavigate 
     return actions.slice(0, 4);
   }, [reviews.length, flaggedAgents, lateSchedules, operatorAgents.length]);
 
+  const bridgeModeCards = useMemo(() => {
+    const topDoctrine = learningMemory?.topThree?.[0];
+    const truthItems = truth?.items || [];
+    const driftCount = truthItems.filter((entry) => entry.status === 'warn' || entry.status === 'error').length;
+
+    return [
+      {
+        key: 'executive',
+        eyebrow: 'Executive Bridge',
+        title: readiness.headline,
+        description: readiness.readback,
+        tone: 'teal',
+        icon: Sparkles,
+        stats: [
+          { label: 'readiness', value: `${readiness.score}%` },
+          { label: 'autonomy', value: `${autonomyPosture.autonomousPercent}%` },
+          { label: 'attention', value: overviewSummary.needsAttention },
+          { label: 'truth drift', value: driftCount },
+        ],
+        actionLabel: 'Open Mission Control',
+        onAction: () => onNavigate?.('missions'),
+      },
+      {
+        key: 'missions',
+        eyebrow: 'Mission Deck',
+        title: `${runningTasks.length} live mission${runningTasks.length === 1 ? '' : 's'} with ${reviews.length} human gate${reviews.length === 1 ? '' : 's'}`,
+        description: reviews.length > 0
+          ? `${formatWaitLabel(avgApprovalWaitMs)} average approval drag is still the biggest mission-speed constraint on the deck.`
+          : lateSchedules > 0
+            ? `${lateSchedules} recurring flow${lateSchedules === 1 ? ' is' : 's are'} behind schedule and should be stabilized before the next wave.`
+            : 'Mission throughput is clean enough that Commander can push the next wave without immediate gate pressure.',
+        tone: 'blue',
+        icon: Target,
+        stats: [
+          { label: 'live', value: runningTasks.length },
+          { label: 'queued', value: pendingTasks.length },
+          { label: 'approvals', value: reviews.length },
+          { label: 'late schedules', value: lateSchedules },
+        ],
+        actionLabel: 'Open Live Deck',
+        onAction: () => onNavigate?.('missions'),
+      },
+      {
+        key: 'intelligence',
+        eyebrow: 'Intelligence Rail',
+        title: topDoctrine?.title || 'Doctrine is still forming the next advantage',
+        description: topDoctrine?.detail || 'Routing, fleet posture, and model choice are learning from runtime memory and intervention pressure.',
+        tone: 'violet',
+        icon: BrainCircuit,
+        stats: [
+          { label: 'models online', value: models.length },
+          { label: 'operators', value: operatorAgents.length },
+          { label: 'flagged lanes', value: flaggedAgents.length },
+          { label: 'active doctrine', value: learningMemory?.topThree?.length || 0 },
+        ],
+        actionLabel: 'Open Intelligence',
+        onAction: () => onNavigate?.('intelligence'),
+      },
+    ];
+  }, [
+    learningMemory,
+    truth,
+    readiness,
+    autonomyPosture,
+    overviewSummary.needsAttention,
+    onNavigate,
+    runningTasks.length,
+    reviews.length,
+    avgApprovalWaitMs,
+    lateSchedules,
+    pendingTasks.length,
+    models.length,
+    operatorAgents.length,
+    flaggedAgents.length,
+  ]);
+
+  const bridgeControlQueue = useMemo(() => {
+    const currentTradeoffLane = topPolicyActionGuidance.swap.currentLane;
+    const suggestedTradeoffLane = topPolicyActionGuidance.swap.suggestedLane;
+    const scored = tasks
+      .filter((task) => !['completed', 'done', 'cancelled'].includes(task.status))
+      .map((task) => {
+        let priorityScore = 0;
+        let posture = 'queued';
+
+        if (task.status === 'needs_approval') {
+          priorityScore = 100;
+          posture = 'approval';
+        } else if (['failed', 'error', 'blocked'].includes(task.status)) {
+          priorityScore = 90;
+          posture = 'recovery';
+        } else if (task.status === 'running') {
+          priorityScore = 75;
+          posture = 'live';
+        } else if (['queued', 'pending'].includes(task.status)) {
+          priorityScore = 55;
+          posture = 'queued';
+        }
+
+        priorityScore += Number(task.priority || 0);
+        if (task.requiresApproval) priorityScore += 8;
+
+        const taskProvider = String(task.providerOverride || '').trim() || (task.routingReason?.match(/Provider[:=]\s*([A-Za-z0-9_-]+)/i)?.[1] || '');
+        const taskModel = String(task.modelOverride || '').trim();
+        const matchesCurrentTradeoffLane = currentTradeoffLane && (
+          (!currentTradeoffLane.provider || currentTradeoffLane.provider === taskProvider || String(task.routingReason || '').includes(currentTradeoffLane.provider))
+          && (!currentTradeoffLane.model || currentTradeoffLane.model === taskModel || String(task.routingReason || '').includes(currentTradeoffLane.model))
+        );
+        const matchesSuggestedTradeoffLane = suggestedTradeoffLane && (
+          (!suggestedTradeoffLane.provider || suggestedTradeoffLane.provider === taskProvider || String(task.routingReason || '').includes(suggestedTradeoffLane.provider))
+          && (!suggestedTradeoffLane.model || suggestedTradeoffLane.model === taskModel || String(task.routingReason || '').includes(suggestedTradeoffLane.model))
+        );
+
+        if (topTradeoffOutcome.available && !topTradeoffOutcome.payingOff && matchesCurrentTradeoffLane) {
+          priorityScore += 12;
+          posture = posture === 'live' ? 'route-drift' : posture;
+        }
+        if (topTradeoffOutcome.available && topTradeoffOutcome.payingOff && matchesSuggestedTradeoffLane) {
+          priorityScore -= 6;
+        }
+
+        return { task, posture, priorityScore, correctiveAction: matchesCurrentTradeoffLane && topTradeoffOutcome.available ? topTradeoffCorrectiveAction : null };
+      })
+      .filter((entry) => entry.priorityScore > 0)
+      .sort((a, b) => b.priorityScore - a.priorityScore);
+
+    return scored.slice(0, 3);
+  }, [tasks, topPolicyActionGuidance, topTradeoffOutcome, topTradeoffCorrectiveAction]);
+
+  const safestRedirectAgent = useMemo(() => {
+    const operators = agents.filter((agent) => !agent.isSyntheticCommander);
+    return operators.find((agent) => !agent.isEphemeral && agent.status !== 'error')
+      || operators.find((agent) => agent.status !== 'error')
+      || null;
+  }, [agents]);
+  const approvalQueue = useMemo(
+    () => bridgeControlQueue.filter(({ task }) => task.status === 'needs_approval'),
+    [bridgeControlQueue]
+  );
+  const recoveryQueue = useMemo(
+    () => bridgeControlQueue.filter(({ task }) => ['failed', 'error', 'blocked'].includes(task.status)),
+    [bridgeControlQueue]
+  );
+  const liveQueue = useMemo(
+    () => bridgeControlQueue.filter(({ task }) => task.status === 'running'),
+    [bridgeControlQueue]
+  );
+
+  function openConversationalCommander(missionMode) {
+    if (!bridgeIntent.trim()) return;
+    onNavigate?.('missions', {
+      missionComposerDraft: {
+        intent: bridgeIntent.trim(),
+        missionMode,
+      },
+    });
+  }
+
+  async function runBridgeAction(label, fn) {
+    setBridgeActionLoading(label);
+    setBridgeActionError('');
+    try {
+      await fn();
+    } catch (error) {
+      setBridgeActionError(error?.message || `${label} failed.`);
+    } finally {
+      setBridgeActionLoading('');
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -359,6 +621,15 @@ export function OverviewView({ agents, tasks, loading, onOpenDetail, onNavigate 
             operatorCount={operatorAgents.length}
             summary={overviewSummary}
             readiness={readiness}
+            policyDelta={topPolicyDelta}
+            policyActionGuidance={topPolicyActionGuidance}
+            tradeoffOutcome={topTradeoffOutcome}
+            tradeoffCorrectiveAction={topTradeoffCorrectiveAction}
+            onOpenRoutingPolicy={() => topPolicy && onNavigate?.('intelligence', { intelligenceRouteState: { tab: 'routing', selectedPolicyId: topPolicy.id, actionContext: topPolicyActionGuidance.open } })}
+            onHardenPolicy={() => topPolicy && topPolicyActionGuidance.harden.enabled && onNavigate?.('intelligence', { intelligenceRouteState: { tab: 'routing', selectedPolicyId: topPolicy.id, adjustment: 'harden', actionContext: topPolicyActionGuidance.harden } })}
+            onLoosenPolicy={() => topPolicy && topPolicyActionGuidance.loosen.enabled && onNavigate?.('intelligence', { intelligenceRouteState: { tab: 'routing', selectedPolicyId: topPolicy.id, adjustment: 'loosen', actionContext: topPolicyActionGuidance.loosen } })}
+            onSwapPolicyLane={() => topPolicy && topPolicyActionGuidance.swap.enabled && onNavigate?.('intelligence', { intelligenceRouteState: { tab: 'routing', selectedPolicyId: topPolicy.id, actionContext: topPolicyActionGuidance.swap, providerSwap: topPolicyActionGuidance.swap.provider, modelSwap: topPolicyActionGuidance.swap.model, fallbackSwap: topPolicyActionGuidance.swap.currentLane, stageFallback: topPolicyActionGuidance.swap.stageFallback } })}
+            onStageTradeoffCorrection={() => topPolicy && topTradeoffCorrectiveAction.routeState && onNavigate?.('intelligence', { intelligenceRouteState: { tab: 'routing', selectedPolicyId: topPolicy.id, actionContext: topTradeoffCorrectiveAction, ...topTradeoffCorrectiveAction.routeState } })}
             onNavigate={onNavigate}
             onOpenDetail={onOpenDetail}
           />
@@ -367,6 +638,303 @@ export function OverviewView({ agents, tasks, loading, onOpenDetail, onNavigate 
         <Motion.div variants={item}>
           <CommandReadFirst items={readFirstItems} />
         </Motion.div>
+
+        <Motion.section variants={item} className="ui-panel p-5">
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div>
+              <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.18em] text-text-muted">
+                <Workflow className="h-3.5 w-3.5 text-aurora-violet" />
+                One-Screen Bridge Mode
+              </div>
+              <div className="mt-2 text-lg font-semibold text-text-primary">Compress executive, mission, and intelligence signals into one cockpit.</div>
+              <div className="mt-1 text-[12px] leading-relaxed text-text-body">
+                This bridge mode keeps the command pulse, live deck, and doctrine rail readable in one place so you can move without page-hopping.
+              </div>
+            </div>
+            <button
+              onClick={() => setBridgeMode((prev) => !prev)}
+              className={cn(
+                'inline-flex items-center gap-2 rounded-2xl border px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.16em] transition-colors',
+                bridgeMode
+                  ? 'border-aurora-teal/20 bg-aurora-teal/10 text-aurora-teal'
+                  : 'border-border bg-surface text-text-muted hover:bg-surface-raised hover:text-text-primary'
+              )}
+            >
+              <Sparkles className="h-4 w-4" />
+              {bridgeMode ? 'Bridge mode live' : 'Open bridge mode'}
+            </button>
+          </div>
+
+          {bridgeMode && (
+            <div className="mt-5 space-y-4">
+              <div className="rounded-[24px] border border-aurora-teal/15 bg-[linear-gradient(135deg,rgba(45,212,191,0.08),rgba(96,165,250,0.04))] p-4">
+                <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+                  <div className="max-w-2xl">
+                    <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.18em] text-aurora-teal font-semibold">
+                      <Sparkles className="h-3.5 w-3.5" />
+                      Interruptible Conversational Commander
+                    </div>
+                    <div className="mt-2 text-[15px] font-semibold text-text-primary">Tell Commander the mission from the bridge.</div>
+                    <div className="mt-2 text-[12px] leading-relaxed text-text-body">
+                      Type the mission naturally, choose the posture, and Commander will hand you straight into Mission Control with the briefing already staged.
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => onNavigate?.('missions')}
+                    className="inline-flex items-center gap-2 rounded-2xl border border-white/[0.08] bg-white/[0.04] px-3 py-2 text-[11px] font-semibold text-text-primary transition-colors hover:bg-white/[0.07]"
+                  >
+                    Open live deck
+                  </button>
+                </div>
+
+                <textarea
+                  value={bridgeIntent}
+                  onChange={(event) => setBridgeIntent(event.target.value)}
+                  rows={4}
+                  placeholder="Tell Commander what you want next. Example: Review stalled quotes, identify the best follow-up angle, and draft outreach for the top opportunities."
+                  className="mt-4 w-full rounded-[20px] border border-white/[0.08] bg-black/20 px-4 py-4 text-sm text-text-primary placeholder:text-text-disabled focus:outline-none focus:border-aurora-teal/40 resize-none leading-relaxed"
+                />
+
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <button
+                    onClick={() => openConversationalCommander('do_now')}
+                    disabled={!bridgeIntent.trim()}
+                    className="rounded-2xl bg-aurora-teal px-4 py-2 text-[11px] font-semibold text-black transition-colors hover:bg-[#00ebd8] disabled:opacity-50"
+                  >
+                    Do now
+                  </button>
+                  <button
+                    onClick={() => openConversationalCommander('plan_first')}
+                    disabled={!bridgeIntent.trim()}
+                    className="rounded-2xl border border-aurora-blue/20 bg-aurora-blue/10 px-4 py-2 text-[11px] font-semibold text-aurora-blue transition-colors hover:bg-aurora-blue/15 disabled:opacity-50"
+                  >
+                    Plan first
+                  </button>
+                  <button
+                    onClick={() => openConversationalCommander('watch_and_approve')}
+                    disabled={!bridgeIntent.trim()}
+                    className="rounded-2xl border border-aurora-amber/20 bg-aurora-amber/10 px-4 py-2 text-[11px] font-semibold text-aurora-amber transition-colors hover:bg-aurora-amber/15 disabled:opacity-50"
+                  >
+                    Watch and approve
+                  </button>
+                  <button
+                    onClick={() => onNavigate?.('missions')}
+                    className="rounded-2xl border border-white/[0.08] bg-white/[0.04] px-4 py-2 text-[11px] font-semibold text-text-primary transition-colors hover:bg-white/[0.07]"
+                  >
+                    Redirect live work
+                  </button>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+                {bridgeModeCards.map((card) => (
+                  <BridgeModeCard key={card.key} {...card} />
+                ))}
+              </div>
+
+              <div className="rounded-[24px] border border-aurora-blue/15 bg-[linear-gradient(135deg,rgba(96,165,250,0.08),rgba(255,255,255,0.02))] p-4">
+                <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+                  <div className="max-w-2xl">
+                    <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.18em] text-aurora-blue font-semibold">
+                      <Target className="h-3.5 w-3.5" />
+                      Bridge Intervention
+                    </div>
+                    <div className="mt-2 text-[15px] font-semibold text-text-primary">Act on the highest-pressure branch without leaving the cockpit.</div>
+                    <div className="mt-2 text-[12px] leading-relaxed text-text-body">
+                      Commander surfaces the branch with the strongest approval, recovery, or live-execution pressure first so you can intervene from the flagship bridge.
+                    </div>
+                  </div>
+                  {bridgeControlQueue.length > 0 && (
+                    <div className="rounded-full border border-aurora-blue/20 bg-aurora-blue/10 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-aurora-blue">
+                      {bridgeControlQueue.length} live interventions
+                    </div>
+                  )}
+                </div>
+
+                {bridgeControlQueue.length > 0 ? (
+                  <div className="mt-4 space-y-3">
+                    <div className="flex flex-wrap gap-2">
+                      {approvalQueue.length > 1 && (
+                        <button
+                          onClick={() => runBridgeAction('BatchApprove', async () => {
+                            await Promise.all(approvalQueue.map(({ task }) => approveMissionTask(task.id)));
+                            await recordBatchCommandEvent({ actionType: 'approve', tasks: approvalQueue.map(({ task }) => task) });
+                          })}
+                          disabled={!!bridgeActionLoading}
+                          className="rounded-2xl bg-aurora-teal px-4 py-2 text-[11px] font-semibold text-black transition-colors hover:bg-[#00ebd8] disabled:opacity-50"
+                        >
+                          {bridgeActionLoading === 'BatchApprove' ? 'Approving queue...' : `Approve ${approvalQueue.length} branches`}
+                        </button>
+                      )}
+                      {recoveryQueue.length > 1 && (
+                        <button
+                          onClick={() => runBridgeAction('BatchRetry', async () => {
+                            await Promise.all(recoveryQueue.map(({ task }) => retryTask(task.id)));
+                            await recordBatchCommandEvent({ actionType: 'retry', tasks: recoveryQueue.map(({ task }) => task) });
+                          })}
+                          disabled={!!bridgeActionLoading}
+                          className="rounded-2xl border border-aurora-amber/20 bg-aurora-amber/10 px-4 py-2 text-[11px] font-semibold text-aurora-amber transition-colors hover:bg-aurora-amber/15 disabled:opacity-50"
+                        >
+                          {bridgeActionLoading === 'BatchRetry' ? 'Retrying queue...' : `Retry ${recoveryQueue.length} branches`}
+                        </button>
+                      )}
+                      {liveQueue.length > 1 && (
+                        <button
+                          onClick={() => runBridgeAction('BatchStop', async () => {
+                            await Promise.all(liveQueue.map(({ task }) => stopTask(task.id)));
+                            await recordBatchCommandEvent({ actionType: 'stop', tasks: liveQueue.map(({ task }) => task) });
+                          })}
+                          disabled={!!bridgeActionLoading}
+                          className="rounded-2xl border border-aurora-rose/20 bg-aurora-rose/10 px-4 py-2 text-[11px] font-semibold text-aurora-rose transition-colors hover:bg-aurora-rose/15 disabled:opacity-50"
+                        >
+                          {bridgeActionLoading === 'BatchStop' ? 'Stabilizing queue...' : `Stabilize ${liveQueue.length} branches`}
+                        </button>
+                      )}
+                      {safestRedirectAgent && bridgeControlQueue.length > 1 && (
+                        <button
+                          onClick={() => runBridgeAction('BatchRedirect', async () => {
+                            await Promise.all(bridgeControlQueue.map(({ task }) => interruptAndRedirectTask(task.id, {
+                              agentId: safestRedirectAgent.id,
+                              providerOverride: safestRedirectAgent.provider || null,
+                              modelOverride: safestRedirectAgent.model || null,
+                            }, agents)));
+                            await recordBatchCommandEvent({
+                              actionType: 'redirect',
+                              tasks: bridgeControlQueue.map(({ task }) => task),
+                              targetAgent: safestRedirectAgent,
+                            });
+                          })}
+                          disabled={!!bridgeActionLoading}
+                          className="rounded-2xl border border-aurora-blue/20 bg-aurora-blue/10 px-4 py-2 text-[11px] font-semibold text-aurora-blue transition-colors hover:bg-aurora-blue/15 disabled:opacity-50"
+                        >
+                          {bridgeActionLoading === 'BatchRedirect' ? 'Redirecting queue...' : `Redirect top ${bridgeControlQueue.length} to ${safestRedirectAgent.name}`}
+                        </button>
+                      )}
+                    </div>
+
+                    {bridgeControlQueue.map(({ task, posture, correctiveAction }, index) => (
+                      <div key={task.id} className="rounded-[20px] border border-white/[0.08] bg-black/20 p-4">
+                        <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-aurora-blue/10 text-[10px] font-bold text-aurora-blue">{index + 1}</span>
+                              <div className="text-[9px] uppercase tracking-[0.16em] text-text-muted">Target branch</div>
+                            </div>
+                            <div className="mt-2 text-[14px] font-semibold text-text-primary">{task.name || task.title}</div>
+                            <div className="mt-1 text-[11px] leading-relaxed text-text-body">
+                              {task.routingReason || 'Commander has not persisted a route rationale for this branch yet.'}
+                            </div>
+                            {correctiveAction?.label ? (
+                              <div className="mt-2 ui-panel-soft px-3 py-2 text-[11px] leading-relaxed text-text-body">
+                                <span className="font-semibold text-text-primary">Corrective action:</span> {correctiveAction.label}. {correctiveAction.detail}
+                                {topPolicy?.id && correctiveAction.routeState ? (
+                                  <div className="mt-3">
+                                    <button
+                                      type="button"
+                                      onClick={() => onNavigate?.('intelligence', { intelligenceRouteState: { tab: 'routing', selectedPolicyId: topPolicy.id, actionContext: correctiveAction, ...correctiveAction.routeState } })}
+                                      className="rounded-2xl border border-aurora-violet/20 bg-aurora-violet/10 px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-aurora-violet transition-colors hover:bg-aurora-violet/15"
+                                    >
+                                      Stage corrective action
+                                    </button>
+                                  </div>
+                                ) : null}
+                              </div>
+                            ) : null}
+                          </div>
+                          <div className="grid grid-cols-3 gap-2 xl:min-w-[320px]">
+                            <div className="rounded-2xl border border-white/[0.08] bg-white/[0.03] px-3 py-2">
+                              <div className="text-[9px] uppercase tracking-[0.16em] text-text-muted">Posture</div>
+                              <div className="mt-1 text-[12px] font-semibold text-text-primary">{posture}</div>
+                            </div>
+                            <div className="rounded-2xl border border-white/[0.08] bg-white/[0.03] px-3 py-2">
+                              <div className="text-[9px] uppercase tracking-[0.16em] text-text-muted">Status</div>
+                              <div className="mt-1 text-[12px] font-semibold text-text-primary">{task.status}</div>
+                            </div>
+                            <div className="rounded-2xl border border-white/[0.08] bg-white/[0.03] px-3 py-2">
+                              <div className="text-[9px] uppercase tracking-[0.16em] text-text-muted">Agent</div>
+                              <div className="mt-1 text-[12px] font-semibold text-text-primary">{task.agentName || 'Unassigned'}</div>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="mt-4 flex flex-wrap gap-2">
+                          {task.status === 'needs_approval' && (
+                            <button
+                              onClick={() => runBridgeAction(`Approve-${task.id}`, () => approveMissionTask(task.id))}
+                              disabled={!!bridgeActionLoading}
+                              className="rounded-2xl bg-aurora-teal px-4 py-2 text-[11px] font-semibold text-black transition-colors hover:bg-[#00ebd8] disabled:opacity-50"
+                            >
+                              {bridgeActionLoading === `Approve-${task.id}` ? 'Approving...' : 'Approve branch'}
+                            </button>
+                          )}
+                          {['failed', 'error', 'blocked'].includes(task.status) && (
+                            <button
+                              onClick={() => runBridgeAction(`Retry-${task.id}`, () => retryTask(task.id))}
+                              disabled={!!bridgeActionLoading}
+                              className="rounded-2xl border border-aurora-amber/20 bg-aurora-amber/10 px-4 py-2 text-[11px] font-semibold text-aurora-amber transition-colors hover:bg-aurora-amber/15 disabled:opacity-50"
+                            >
+                              {bridgeActionLoading === `Retry-${task.id}` ? 'Retrying...' : 'Retry branch'}
+                            </button>
+                          )}
+                          {task.status === 'running' && (
+                            <button
+                              onClick={() => runBridgeAction(`Stop-${task.id}`, () => stopTask(task.id))}
+                              disabled={!!bridgeActionLoading}
+                              className="rounded-2xl border border-aurora-rose/20 bg-aurora-rose/10 px-4 py-2 text-[11px] font-semibold text-aurora-rose transition-colors hover:bg-aurora-rose/15 disabled:opacity-50"
+                            >
+                              {bridgeActionLoading === `Stop-${task.id}` ? 'Stopping...' : 'Stabilize branch'}
+                            </button>
+                          )}
+                          {safestRedirectAgent && (
+                            <button
+                              onClick={() => runBridgeAction(`Redirect-${task.id}`, () => interruptAndRedirectTask(task.id, {
+                                agentId: safestRedirectAgent.id,
+                                providerOverride: safestRedirectAgent.provider || null,
+                                modelOverride: safestRedirectAgent.model || null,
+                              }, agents))}
+                              disabled={!!bridgeActionLoading}
+                              className="rounded-2xl border border-aurora-blue/20 bg-aurora-blue/10 px-4 py-2 text-[11px] font-semibold text-aurora-blue transition-colors hover:bg-aurora-blue/15 disabled:opacity-50"
+                            >
+                              {bridgeActionLoading === `Redirect-${task.id}` ? 'Redirecting...' : `Redirect to ${safestRedirectAgent.name}`}
+                            </button>
+                          )}
+                          <button
+                            onClick={() => onNavigate?.('missions')}
+                            className="rounded-2xl border border-white/[0.08] bg-white/[0.04] px-4 py-2 text-[11px] font-semibold text-text-primary transition-colors hover:bg-white/[0.07]"
+                          >
+                            Open full intervention console
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+
+                    {bridgeActionError && (
+                      <div className="rounded-2xl border border-aurora-rose/20 bg-aurora-rose/10 px-3 py-2 text-[11px] text-aurora-rose">
+                        {bridgeActionError}
+                      </div>
+                    )}
+
+                    {latestBatchAudit && (
+                      <div className="rounded-[20px] border border-white/[0.08] bg-white/[0.03] px-4 py-3">
+                        <div className="text-[9px] uppercase tracking-[0.16em] text-text-muted">Batch command audit</div>
+                        <div className="mt-2 text-[11px] leading-relaxed text-text-body">{latestBatchAudit.message}</div>
+                        <div className="mt-2 text-[10px] font-mono text-text-disabled">
+                          {typeof latestBatchAudit.timestamp === 'string'
+                            ? new Date(latestBatchAudit.timestamp).toLocaleString()
+                            : new Date(latestBatchAudit.timestamp).toLocaleString()}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="mt-4 rounded-[20px] border border-aurora-teal/20 bg-aurora-teal/10 px-4 py-3 text-[12px] text-text-body">
+                    No branch currently needs inline bridge intervention. The cockpit is clear enough to launch the next wave.
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </Motion.section>
 
         <Motion.div variants={item}>
           <TruthAuditStrip truth={truth} />
