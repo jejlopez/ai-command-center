@@ -26,14 +26,14 @@ import {
   YAxis,
 } from 'recharts';
 import { container, item } from '../utils/variants';
-import { useActivityLog, useAgents, useCostData, usePendingReviews, useSystemRecommendations, useTaskInterventions, useTaskOutcomes, useTasks } from '../utils/useSupabase';
+import { useActivityLog, useAgents, useCostData, usePendingReviews, useSpecialistLifecycle, useSystemRecommendations, useTaskInterventions, useTaskOutcomes, useTasks } from '../utils/useSupabase';
 import { AnimatedNumber } from '../components/command/AnimatedNumber';
 import { CommandSectionHeader } from '../components/command/CommandSectionHeader';
 import { useLearningMemory } from '../utils/useLearningMemory';
 import { DoctrineCards } from '../components/command/DoctrineCards';
 import { TruthAuditStrip } from '../components/command/TruthAuditStrip';
 import { useCommandCenterTruth } from '../utils/useCommandCenterTruth';
-import { buildPolicyDemotionSummary, buildProviderEscalationExplanation, getAutomationCandidates, getAutomationRoiSummary, getAutonomyMetrics, getObservedModelBenchmarks, getPrimaryBottleneck, parseAutomationGuardrailEvents, parseDoctrineFeedbackLogs, parseOutcomeScoreLogs, scoreTaskOutcome } from '../utils/commanderAnalytics';
+import { buildPolicyDemotionSummary, buildProviderEscalationExplanation, getAutomationCandidates, getAutomationRoiSummary, getAutonomyMetrics, getObservedModelBenchmarks, getPrimaryBottleneck, parseAutomationGuardrailEvents, parseDoctrineFeedbackLogs, parseOutcomeScoreLogs, rankCommanderRecommendations, scoreTaskOutcome } from '../utils/commanderAnalytics';
 import { createMission, updateRecurringMissionFlow } from '../lib/api';
 
 const PERIOD_OPTIONS = ['30d', '90d', 'QTD'];
@@ -415,6 +415,7 @@ export function ReportsView() {
   const { reviews } = usePendingReviews();
   const { logs } = useActivityLog();
   const { recommendations: persistedRecommendations } = useSystemRecommendations();
+  const { events: lifecycleEvents } = useSpecialistLifecycle();
   const truth = useCommandCenterTruth();
   const humanHourlyRate = 150;
 
@@ -533,6 +534,16 @@ export function ReportsView() {
       }, tasks, interventions, logs),
     };
   }, [automationDraft, interventions, logs, tasks]);
+  const rankedRecommendations = useMemo(() => (
+    rankCommanderRecommendations({
+      recommendations: persistedRecommendations,
+      tasks,
+      interventions,
+      logs,
+      lifecycleEvents,
+      agents,
+    }).slice(0, 4)
+  ), [agents, interventions, lifecycleEvents, logs, persistedRecommendations, tasks]);
 
   const managedRecurringFlows = useMemo(() => {
     const recurringRoots = tasks.filter((task) => task.scheduleType === 'recurring' && (task.rootMissionId || task.id) === task.id);
@@ -1339,8 +1350,8 @@ export function ReportsView() {
                 accent="blue"
               >
                 <div className="grid gap-3 md:grid-cols-2">
-                  {persistedRecommendations.length === 0 && <div className="text-[12px] text-text-muted">No persisted recommendations yet. Commander will fill this rail as doctrine and outcome memory harden.</div>}
-                  {persistedRecommendations.slice(0, 4).map((entry) => (
+                  {rankedRecommendations.length === 0 && <div className="text-[12px] text-text-muted">No persisted recommendations yet. Commander will fill this rail as doctrine and outcome memory harden.</div>}
+                  {rankedRecommendations.map((entry) => (
                     <div key={entry.id} className="rounded-[18px] border border-white/8 bg-[#111827] p-3">
                       <div className="flex items-center justify-between gap-3">
                         <div className="text-[12px] font-semibold text-text-primary">{entry.title}</div>
@@ -1349,6 +1360,7 @@ export function ReportsView() {
                         </div>
                       </div>
                       <div className="mt-2 text-[11px] leading-5 text-text-body">{entry.description}</div>
+                      {entry.whyNow && <div className="mt-2 text-[10px] leading-5 text-aurora-blue">Why now: {entry.whyNow}</div>}
                       {entry.savings && <div className="mt-2 text-[10px] uppercase tracking-[0.16em] text-aurora-teal">{entry.savings}</div>}
                     </div>
                   ))}

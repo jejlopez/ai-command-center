@@ -75,6 +75,9 @@ This is the live build tracker for the Jarvis / Stark / Musk Commander program.
 - Mission preflight and confidence readback
 - Single bottleneck rail and autonomy ratio visibility
 - Mission-pattern memory and rescue-aware learning
+- Specialist lifecycle visibility consistency across fleet surfaces
+- Trend-aware doctrine scoring deeper into recommendation rank
+- Recurring tuning outcomes feeding recommendation rank more directly
 
 ## Epic Experience Layer
 
@@ -192,8 +195,8 @@ Default posture:
 
 Build next:
 
-1. keep fleet lifecycle memory visible across Intelligence and Mission Control
-2. deepen doctrine scoring with recurring-flow and intervention trend data
-3. make recurring tuning outcomes feed recommendations automatically
-4. keep the preflight layer aligned with actual launch behavior as routing evolves
-5. turn mission-pattern and rescue memory into stronger recommendation rank shifts
+1. keep the preflight layer aligned with actual launch behavior as routing evolves
+2. turn mission-pattern and rescue memory into stronger recommendation rank shifts
+3. surface doctrine-rank deltas more explicitly in Reports and Intelligence
+4. start closing the confidence-to-runtime loop for launch estimates
+5. use lifecycle and recommendation pressure to tune persistent-lane promotion guidance

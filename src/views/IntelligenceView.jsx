@@ -40,7 +40,7 @@ import { TruthAuditStrip } from '../components/command/TruthAuditStrip';
 import { useCommandCenterTruth } from '../utils/useCommandCenterTruth';
 import { normalizeModelProvider } from '../utils/commanderPolicy';
 import { getWorkflowMeta } from '../utils/missionLifecycle';
-import { buildPolicyDemotionSummary, getObservedModelBenchmarks, getSpecialistLifecycleSummary, scoreTaskOutcome } from '../utils/commanderAnalytics';
+import { buildPolicyDemotionSummary, getFleetPostureSummary, getObservedModelBenchmarks, getSpecialistLifecycleSummary, rankCommanderRecommendations, scoreTaskOutcome } from '../utils/commanderAnalytics';
 
 const tabs = [
   { id: 'models', label: 'Model Command Matrix', icon: Cpu },
@@ -221,6 +221,11 @@ function OptimizationCard({ recommendation }) {
             )}
           </div>
           <p className="mt-2 text-[12px] leading-relaxed text-text-muted">{recommendation.description}</p>
+          {recommendation.whyNow && (
+            <div className="mt-3 rounded-[14px] border border-white/8 bg-black/10 px-3 py-2 text-[11px] leading-relaxed text-text-body">
+              <span className="font-semibold text-text-primary">Why now:</span> {recommendation.whyNow}
+            </div>
+          )}
         </div>
         <ChevronRight className="mt-0.5 h-4 w-4 text-text-disabled" />
       </div>
@@ -1709,6 +1714,7 @@ function SpecialistFleetTab({ agents, lifecycleEvents, skills }) {
   const persistentSpecialists = agents.filter((agent) => !agent.isEphemeral && !['commander', 'executor'].includes(agent.role || ''));
   const spawnedSpecialists = agents.filter((agent) => agent.isEphemeral);
   const fleetHistory = getSpecialistLifecycleSummary(lifecycleEvents, agents);
+  const fleetPosture = getFleetPostureSummary(lifecycleEvents, agents);
   const recentLifecycleEvents = fleetHistory.events.slice(0, 6);
   const promotionHistory = fleetHistory.promotions.slice(0, 6);
   const [objective, setObjective] = useState('');
@@ -1811,6 +1817,27 @@ function SpecialistFleetTab({ agents, lifecycleEvents, skills }) {
             <div className={cn('mt-2 text-2xl font-semibold', metric.tone)}>{metric.value}</div>
           </div>
         ))}
+      </div>
+
+      <div className="mt-4 rounded-[22px] border border-white/8 bg-[linear-gradient(180deg,rgba(45,212,191,0.06),rgba(255,255,255,0.02))] p-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Fleet posture</div>
+            <div className="mt-1 text-sm font-semibold text-text-primary">{fleetPosture.label}</div>
+            <p className="mt-2 max-w-2xl text-[12px] leading-relaxed text-text-body">{fleetPosture.detail}</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <span className="rounded-full border border-aurora-blue/20 bg-aurora-blue/10 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-aurora-blue">
+              roles {fleetPosture.activeRoles}
+            </span>
+            <span className="rounded-full border border-aurora-violet/20 bg-aurora-violet/10 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-aurora-violet">
+              retirements {fleetPosture.retirementCount}
+            </span>
+            <span className="rounded-full border border-aurora-teal/20 bg-aurora-teal/10 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-aurora-teal">
+              cleanup {fleetPosture.cleanedCount}
+            </span>
+          </div>
+        </div>
       </div>
 
       <div className="mt-4 grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
@@ -2313,8 +2340,15 @@ export function IntelligenceView() {
       });
     }
 
-    return recommendations.slice(0, 5);
-  }, [persistedRecommendations, tasks]);
+    return rankCommanderRecommendations({
+      recommendations,
+      tasks,
+      interventions,
+      logs,
+      lifecycleEvents,
+      agents,
+    }).slice(0, 5);
+  }, [agents, interventions, lifecycleEvents, logs, persistedRecommendations, tasks]);
 
   const economics = useMemo(() => {
     const durationHours = tasks.reduce((sum, task) => sum + Number(task.durationMs || 0), 0) / (1000 * 60 * 60);

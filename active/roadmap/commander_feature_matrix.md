@@ -136,10 +136,10 @@ Legend:
 
 ## Immediate Next Four
 
-1. Recurring tuning feedback into recommendations
-2. Preflight-to-runtime alignment checks
-3. Fleet lifecycle visibility consistency
-4. Recommendation-rank shifts from pattern and rescue memory
+1. Preflight-to-runtime alignment checks
+2. Recommendation-rank shifts from pattern and rescue memory
+3. Doctrine-rank delta readback in Intelligence and Reports
+4. Persistent-lane promotion guidance from lifecycle pressure
 
 ## Epic Experience Layer Additions
 
@@ -173,12 +173,12 @@ These are not separate feature IDs yet. They should be implemented as depth adde
 
 ## Updated Immediate Next Order
 
-1. Keep specialist lifecycle memory unified across fleet surfaces
-2. Push trend-aware doctrine scoring deeper into recommendations
-3. Feed recurring tuning outcomes back into recommendation rank
-4. Keep preflight readback aligned with actual routing behavior
-5. Turn autonomy and rescue signals into recommendation pressure
-6. Promote mission-pattern winners into stronger recommendation rank shifts
+1. Keep preflight readback aligned with actual routing behavior
+2. Turn autonomy and rescue signals into recommendation pressure
+3. Promote mission-pattern winners into stronger recommendation rank shifts
+4. Show doctrine-rank deltas and “why now” pressure more explicitly
+5. Use lifecycle pressure to guide persistent-lane promotions
+6. Close the confidence rail with actual post-launch outcomes
 
 ## Autodrive Program Rule
 

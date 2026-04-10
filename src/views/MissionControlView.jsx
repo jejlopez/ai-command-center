@@ -43,7 +43,7 @@ import { TacticalInterventionConsole } from '../components/command/TacticalInter
 import { buildTimelineEntries } from '../utils/buildCommandTimeline';
 import { TaskDAG } from '../components/TaskDAG';
 import { getWorkflowMeta } from '../utils/missionLifecycle';
-import { getOutcomeMemorySummary, parseDoctrineFeedbackLogs } from '../utils/commanderAnalytics';
+import { getFleetPostureSummary, getOutcomeMemorySummary, parseDoctrineFeedbackLogs } from '../utils/commanderAnalytics';
 
 // ═══════════════════════════════════════════════════════════════
 // UI ATOMS
@@ -417,6 +417,7 @@ function MissionGraphPanel({ tasks, agents, logs, outcomes, interventions, lifec
   const rootLifecycleEvents = lifecycleEvents
     .filter((entry) => !selectedRootMissionId || entry.rootMissionId === selectedRootMissionId)
     .slice(0, 10);
+  const fleetPosture = useMemo(() => getFleetPostureSummary(lifecycleEvents, agents), [lifecycleEvents, agents]);
   const outcomeHistory = rootOutcomes.slice(0, 6).map((entry) => ({
     id: entry.id,
     score: entry.score,
@@ -520,6 +521,26 @@ function MissionGraphPanel({ tasks, agents, logs, outcomes, interventions, lifec
             onSelect(targetId);
           }}
         />
+      </div>
+      <div className="mt-4 rounded-[20px] border border-white/8 bg-[linear-gradient(180deg,rgba(96,165,250,0.08),rgba(255,255,255,0.02))] p-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Fleet posture</div>
+            <div className="mt-1 text-sm font-semibold text-text-primary">{fleetPosture.label}</div>
+            <p className="mt-2 max-w-2xl text-[12px] leading-relaxed text-text-body">{fleetPosture.detail}</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <span className="rounded-full border border-aurora-blue/20 bg-aurora-blue/10 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-aurora-blue">
+              persistent {fleetPosture.persistentCount}
+            </span>
+            <span className="rounded-full border border-aurora-violet/20 bg-aurora-violet/10 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-aurora-violet">
+              spawned {fleetPosture.spawnedCount}
+            </span>
+            <span className="rounded-full border border-aurora-teal/20 bg-aurora-teal/10 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-aurora-teal">
+              promotions {fleetPosture.promotionCount}
+            </span>
+          </div>
+        </div>
       </div>
       {selectedTask && (
         <div className="mt-4 grid gap-3 xl:grid-cols-[0.9fr_1.1fr]">

@@ -501,6 +501,158 @@ export function getSpecialistLifecycleSummary(lifecycleEvents = [], agents = [])
   };
 }
 
+export function getFleetPostureSummary(lifecycleEvents = [], agents = []) {
+  const lifecycle = getSpecialistLifecycleSummary(lifecycleEvents, agents);
+  const persistentCount = agents.filter((agent) => !agent.isEphemeral && !['commander', 'executor'].includes(agent.role || '')).length;
+  const spawnedCount = agents.filter((agent) => agent.isEphemeral).length;
+  const promotionCount = lifecycle.promotions.length;
+  const retirementCount = lifecycle.retirements.length;
+  const cleanedCount = lifecycle.cleaned.length;
+  const activeRoles = Object.keys(lifecycle.coverageByRole).length;
+  const churnScore = retirementCount + cleanedCount + Math.max(0, spawnedCount - promotionCount);
+  const posture = persistentCount >= 4 && churnScore <= Math.max(2, Math.ceil(persistentCount / 2))
+    ? 'stable'
+    : persistentCount <= 1 || activeRoles <= 1
+      ? 'thin'
+      : churnScore >= Math.max(3, persistentCount)
+        ? 'churn-heavy'
+        : 'forming';
+  const label = posture === 'stable'
+    ? 'Stable fleet'
+    : posture === 'thin'
+      ? 'Thin coverage'
+      : posture === 'churn-heavy'
+        ? 'Churn-heavy'
+        : 'Forming fleet';
+  const detail = posture === 'stable'
+    ? 'Persistent specialist coverage is broad enough that Commander is not leaning heavily on disposable lanes.'
+    : posture === 'thin'
+      ? 'Too few persistent specialists are covering too much of the workload, so Commander still depends on ad-hoc execution.'
+      : posture === 'churn-heavy'
+        ? 'Spawn and retirement pressure is high relative to persistent coverage, which usually means the fleet is still too brittle.'
+        : 'The fleet is filling in, but Commander still needs more durable role coverage before the posture feels settled.';
+
+  return {
+    posture,
+    label,
+    detail,
+    persistentCount,
+    spawnedCount,
+    promotionCount,
+    retirementCount,
+    cleanedCount,
+    activeRoles,
+    coverageByRole: lifecycle.coverageByRole,
+    recentEvents: lifecycle.events.slice(0, 6),
+  };
+}
+
+function getRecommendationKeywordBoost(recommendation, signals) {
+  const text = `${recommendation.title || ''} ${recommendation.description || ''}`.toLowerCase();
+  let score = 0;
+  const reasons = [];
+
+  if (/(routing|lane|provider|model|doctrine|escalat)/.test(text)) {
+    const routingPressure = (signals.reroutePressure * 6) + (signals.rescuePressure * 4) + (signals.policyDemotionPressure * 2);
+    if (routingPressure > 0) {
+      score += routingPressure;
+      reasons.push(`${signals.reroutePressure} reroutes and ${signals.rescuePressure} rescue events are still stressing lane choice.`);
+    }
+  }
+
+  if (/(automation|recurring|cadence|approval posture|guardrail)/.test(text)) {
+    const automationPressure = (signals.recurringGuardrailPressure * 8) + (signals.recurringTuningPressure * 5);
+    if (automationPressure > 0) {
+      score += automationPressure;
+      reasons.push(`${signals.recurringGuardrailPressure} recurring guardrails and ${signals.recurringTuningPressure} tuning signals are still landing on managed flows.`);
+    }
+  }
+
+  if (/(specialist|fleet|promotion|persistent|spawn)/.test(text)) {
+    const fleetPressure = signals.fleetPosture.posture === 'thin'
+      ? 18
+      : signals.fleetPosture.posture === 'churn-heavy'
+        ? 16
+        : signals.fleetPosture.posture === 'forming'
+          ? 8
+          : 0;
+    if (fleetPressure > 0) {
+      score += fleetPressure;
+      reasons.push(signals.fleetPosture.detail);
+    }
+  }
+
+  if (/(failure|rescue|stabil|recover|throughput|bottleneck)/.test(text)) {
+    const executionPressure = (signals.failedTasks * 6) + (signals.runningTasks > 4 ? 8 : 0) + (signals.rescuePressure * 4);
+    if (executionPressure > 0) {
+      score += executionPressure;
+      reasons.push(`${signals.failedTasks} failed branches and ${signals.rescuePressure} rescue interventions are still shaping throughput.`);
+    }
+  }
+
+  return {
+    score,
+    reasons,
+  };
+}
+
+export function rankCommanderRecommendations({
+  recommendations = [],
+  tasks = [],
+  interventions = [],
+  logs = [],
+  lifecycleEvents = [],
+  agents = [],
+} = {}) {
+  const normalizedInterventions = normalizeInterventionEvents(interventions, logs);
+  const fleetPosture = getFleetPostureSummary(lifecycleEvents, agents);
+  const policyDemotionPressure = recommendations.reduce((sum, recommendation) => {
+    if (!recommendation?.taskDomain && !recommendation?.intentType) return sum;
+    return sum + buildPolicyDemotionSummary(recommendation, tasks, interventions, logs).score;
+  }, 0);
+  const signals = {
+    failedTasks: tasks.filter((task) => ['failed', 'error', 'blocked'].includes(String(task.status || '').toLowerCase()) || task.workflowStatus === 'failed').length,
+    runningTasks: tasks.filter((task) => String(task.status || '').toLowerCase() === 'running' || task.workflowStatus === 'running').length,
+    rescuePressure: normalizedInterventions.filter((entry) => ['stop', 'cancel', 'retry'].includes(entry.eventType)).length,
+    reroutePressure: normalizedInterventions.filter((entry) => ['reroute', 'dependency'].includes(entry.eventType)).length,
+    recurringGuardrailPressure: normalizedInterventions.filter((entry) => entry.eventType === 'guardrail').length,
+    recurringTuningPressure: normalizedInterventions.filter((entry) => {
+      const scheduleType = String(entry.scheduleType || entry.metadata?.scheduleType || '').toLowerCase();
+      const eventType = String(entry.eventType || '').toLowerCase();
+      return scheduleType === 'recurring' && eventType !== 'guardrail';
+    }).length,
+    policyDemotionPressure,
+    fleetPosture,
+  };
+
+  return recommendations
+    .map((recommendation) => {
+      const baseImpact = recommendation.impact === 'critical'
+        ? 70
+        : recommendation.impact === 'high'
+          ? 56
+          : recommendation.impact === 'medium'
+            ? 44
+            : 34;
+      const keywordBoost = getRecommendationKeywordBoost(recommendation, signals);
+      const score = baseImpact + keywordBoost.score;
+      const whyNow = keywordBoost.reasons[0]
+        || (signals.failedTasks > 0 ? `${signals.failedTasks} failed branches are still active and keeping pressure on execution quality.` : 'This recommendation is persistent because Commander keeps seeing the same leverage point.');
+
+      return {
+        ...recommendation,
+        rankingScore: score,
+        whyNow,
+        signalCount: keywordBoost.reasons.length,
+        rankingReasons: keywordBoost.reasons,
+      };
+    })
+    .sort((left, right) => {
+      if (right.rankingScore !== left.rankingScore) return right.rankingScore - left.rankingScore;
+      return String(left.title || '').localeCompare(String(right.title || ''));
+    });
+}
+
 export function getAutomationCandidates(tasks = [], humanHourlyRate = 150) {
   const grouped = new Map();
 
