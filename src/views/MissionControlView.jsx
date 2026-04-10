@@ -715,12 +715,12 @@ export function MissionControlView() {
             { label: 'awaiting human input', value: approvalItems.length, tone: 'amber' },
           ]}
           actions={
-            <button onClick={() => setCreatorOpen(true)} className="flex items-center justify-center gap-2 rounded-2xl bg-aurora-teal px-4 py-3 text-sm font-semibold text-black transition-colors hover:bg-[#00ebd8] shadow-glow-teal">
+            <button onClick={() => setCreatorOpen(true)} className="ui-button-primary flex items-center justify-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold text-black shadow-glow-teal">
               <Plus className="w-4 h-4" /> Spin up a Mission
             </button>
           }
           sideContent={
-            <div className="deck-panel min-w-[260px] px-4 py-4 backdrop-blur-sm">
+            <div className="ui-panel min-w-[260px] px-4 py-4 backdrop-blur-sm">
               <div className="flex items-center justify-between mb-3">
                 <span className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Command Pulse</span>
                 <span className="text-[10px] font-mono text-aurora-teal">LIVE</span>
@@ -738,7 +738,7 @@ export function MissionControlView() {
                   <span className="text-text-muted">Blocked / failed</span>
                   <span className="text-aurora-rose font-semibold"><AnimatedNumber value={failed} /></span>
                 </div>
-                <div className="deck-panel-soft mt-1 px-3 py-2.5 ring-1 ring-white/[0.05]">
+                <div className="ui-panel-soft mt-1 px-3 py-2.5">
                   <div className="text-[10px] uppercase tracking-[0.14em] text-text-muted mb-1">Readback</div>
                   <p className="text-[12px] leading-relaxed text-text-body">
                     {approvalItems.length > 0
@@ -761,7 +761,7 @@ export function MissionControlView() {
           <ReactorCoreBoard truth={truth} summary={{ burnRate: totalMissionCost }} />
         </div>
 
-        <div className="mt-4 flex items-center gap-1 rounded-2xl border border-white/[0.06] bg-black/20 p-1.5 backdrop-blur-sm">
+        <div className="mt-4 ui-segmented flex items-center gap-1 rounded-2xl p-1.5 backdrop-blur-sm">
           {[
             { id: 'ops', lb: 'Operations', ic: Radio, ct: running },
             { id: 'plan', lb: 'Planner', ic: Calendar, ct: schedules.filter(s => s.enabled).length },
@@ -784,7 +784,7 @@ export function MissionControlView() {
           { lb: 'Needs Decision', desc: 'Waiting on your judgment', v: approvalItems.length, c: 'text-aurora-amber' },
           { lb: 'Completed', desc: 'Closed without drag', v: completedItems.length, c: 'text-aurora-teal' },
         ].map(s => (
-          <div key={s.lb} className="deck-panel-soft px-4 py-3.5 ring-1 ring-white/[0.05]">
+          <div key={s.lb} className="ui-stat px-4 py-3.5">
             <div className="flex items-center justify-between">
               <span className="text-[10px] font-medium text-text-muted uppercase tracking-[0.18em]">{s.lb}</span>
               <span className={cn("text-2xl font-mono font-bold", s.c)}><AnimatedNumber value={s.v} /></span>
@@ -814,7 +814,7 @@ export function MissionControlView() {
 
       {/* Main: content + intel sidebar */}
       <div className="flex-1 flex gap-4 overflow-hidden min-h-0">
-        <div className="deck-shell flex-[3.2] min-w-0 overflow-hidden backdrop-blur-sm">
+        <div className="ui-shell flex-[3.2] min-w-0 overflow-hidden backdrop-blur-sm">
           <div className="h-full overflow-y-auto no-scrollbar space-y-2 pr-1 px-4 py-4">
             <div className="flex items-center justify-between mb-2 px-1">
               <CommandSectionHeader
@@ -831,9 +831,9 @@ export function MissionControlView() {
                 tone={tab === 'ops' ? 'teal' : tab === 'plan' ? 'blue' : 'amber'}
               />
               {tab === 'ops' && (
-                <button onClick={() => setCreatorOpen(true)} className="flex items-center gap-2 px-3 py-2 rounded-xl border border-aurora-teal/20 bg-aurora-teal/8 text-aurora-teal text-[11px] font-semibold hover:bg-aurora-teal/12 transition-colors">
-                  <Plus className="w-3.5 h-3.5" /> New Mission
-                </button>
+                  <button onClick={() => setCreatorOpen(true)} className="ui-button-secondary flex items-center gap-2 px-3 py-2 rounded-xl text-[11px] font-semibold text-aurora-teal hover:bg-aurora-teal/12">
+                    <Plus className="w-3.5 h-3.5" /> New Mission
+                  </button>
               )}
             </div>
 
@@ -854,19 +854,19 @@ export function MissionControlView() {
             </AnimatePresence>
           )}
           {tab === 'ops' && operationalTasks.length === 0 && (
-            <div className="deck-panel-soft px-6 py-8 ring-1 ring-white/[0.05]">
+            <div className="ui-panel-soft px-6 py-8">
               <div className="grid gap-5 xl:grid-cols-[1.2fr_0.8fr]">
                 <div>
                   <p className="text-base font-semibold text-text-primary">No live missions right now</p>
                   <p className="mt-2 text-sm text-text-muted">The deck is clear. Launch something new, check approvals, or let the scheduled systems take the next pass.</p>
                   <div className="mt-4 flex flex-wrap gap-2">
-                    <button onClick={() => setCreatorOpen(true)} className="rounded-xl border border-aurora-teal/20 bg-aurora-teal/10 px-3 py-2 text-[11px] font-semibold text-aurora-teal transition-colors hover:bg-aurora-teal/14">
+                    <button onClick={() => setCreatorOpen(true)} className="ui-button-secondary rounded-xl border-aurora-teal/20 bg-aurora-teal/10 px-3 py-2 text-[11px] font-semibold text-aurora-teal transition-colors hover:bg-aurora-teal/14">
                       Launch mission
                     </button>
-                    <button onClick={() => setTab('app')} className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-[11px] font-semibold text-text-primary transition-colors hover:bg-white/[0.06]">
+                    <button onClick={() => setTab('app')} className="ui-button-secondary rounded-xl px-3 py-2 text-[11px] font-semibold text-text-primary transition-colors hover:bg-white/[0.06]">
                       Review approvals
                     </button>
-                    <button onClick={() => setTab('plan')} className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-[11px] font-semibold text-text-primary transition-colors hover:bg-white/[0.06]">
+                    <button onClick={() => setTab('plan')} className="ui-button-secondary rounded-xl px-3 py-2 text-[11px] font-semibold text-text-primary transition-colors hover:bg-white/[0.06]">
                       Open planner
                     </button>
                   </div>
@@ -877,7 +877,7 @@ export function MissionControlView() {
                     { label: 'Blocked', value: failed },
                     { label: 'Scheduled', value: schedules.filter(s => s.enabled).length },
                   ].map((metric) => (
-                    <div key={metric.label} className="deck-panel-soft px-3 py-3 ring-1 ring-white/[0.05]">
+                    <div key={metric.label} className="ui-stat px-3 py-3">
                       <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">{metric.label}</div>
                       <div className="mt-2 text-lg font-semibold text-text-primary">{metric.value}</div>
                     </div>
@@ -954,7 +954,7 @@ export function MissionControlView() {
         </div>
         </div>
 
-        <div className="deck-shell w-[320px] shrink-0 overflow-y-auto no-scrollbar p-3 backdrop-blur-sm">
+        <div className="ui-shell w-[320px] shrink-0 overflow-y-auto no-scrollbar p-3 backdrop-blur-sm">
           <IntelSidebar
             tasks={tasks}
             approvals={approvalItems}

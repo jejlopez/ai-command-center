@@ -114,7 +114,7 @@ function TabButton({ icon: Icon, label, active, onClick }) {
       type="button"
       onClick={onClick}
       className={cn(
-        'inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aurora-teal/40',
+        'ui-chip inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aurora-teal/40',
         active
           ? 'border-[#d6c7a1]/25 bg-[#d6c7a1]/[0.1] text-[#f4e6c2]'
           : 'border-white/[0.08] bg-white/[0.03] text-text-muted hover:text-text-primary'
@@ -128,16 +128,16 @@ function TabButton({ icon: Icon, label, active, onClick }) {
 
 function SectionCard({ eyebrow, title, description, action, children }) {
   return (
-    <section className="deck-panel p-4">
+    <section className="ui-panel p-4">
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
-          <div className="deck-kicker text-[10px] font-semibold uppercase">{eyebrow}</div>
+          <div className="ui-kicker text-[10px] font-semibold uppercase">{eyebrow}</div>
           <h3 className="mt-2 text-lg font-semibold text-text-primary text-balance">{title}</h3>
           {description ? <p className="mt-2 max-w-2xl text-[13px] leading-6 text-text-muted">{description}</p> : null}
         </div>
         {action}
       </div>
-      <div className="deck-rule my-4" />
+      <div className="my-4 h-px bg-gradient-to-r from-transparent via-white/10 to-transparent" />
       {children}
     </section>
   );
@@ -164,7 +164,7 @@ function SegmentedControl({ options, value, onChange }) {
           type="button"
           onClick={() => onChange(option.value)}
           className={cn(
-            'rounded-full border px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aurora-teal/40',
+            'ui-chip rounded-full border px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aurora-teal/40',
             value === option.value
               ? 'border-aurora-teal/25 bg-aurora-teal/10 text-aurora-teal'
               : 'border-white/[0.08] bg-white/[0.03] text-text-muted hover:text-text-primary'
@@ -182,7 +182,7 @@ function TextInput(props) {
     <input
       {...props}
       className={cn(
-        'w-full rounded-xl border border-white/[0.08] bg-black/20 px-3 py-2.5 text-sm text-text-primary transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aurora-teal/35',
+        'w-full rounded-xl border border-hairline bg-panel-soft px-3 py-2.5 text-sm text-text-primary transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aurora-teal/35',
         props.className
       )}
     />
@@ -361,7 +361,7 @@ function RoutingTab() {
 
 function ApiKeyField({ value, onChange, placeholder }) {
   return (
-    <div className="deck-panel-soft p-3 ring-1 ring-white/[0.05]">
+    <div className="ui-panel-soft p-3">
       <label className="flex items-start gap-3">
         <div className="rounded-xl border border-aurora-teal/20 bg-aurora-teal/10 p-2">
           <LockKeyhole className="h-4 w-4 text-aurora-teal" />
@@ -493,14 +493,14 @@ function IntegrationsTab() {
           ))}
         </div>
 
-        <div className="mt-5 deck-panel-soft p-4 ring-1 ring-white/[0.05]">
+        <div className="mt-5 ui-panel-soft p-4">
           <div className="flex items-start justify-between gap-3">
             <div>
               <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Selected integration</div>
               <div className="mt-2 text-lg font-semibold text-text-primary">{selected.name}</div>
               <p className="mt-2 text-[12px] leading-5 text-text-muted">{selected.desc}</p>
             </div>
-            <div className="rounded-full border border-white/[0.08] bg-white/[0.03] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-text-muted">
+            <div className="ui-chip px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-text-muted">
               {selected.category}
             </div>
           </div>
@@ -528,8 +528,8 @@ function IntegrationsTab() {
               className={cn(
                 'inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aurora-teal/40',
                 apiKey.trim() && !saving
-                  ? 'bg-aurora-teal text-black hover:bg-[#00ebd8]'
-                  : 'bg-white/[0.04] text-text-disabled'
+                  ? 'ui-button-primary bg-aurora-teal text-black hover:bg-[#00ebd8]'
+                  : 'ui-button-secondary bg-white/[0.04] text-text-disabled'
               )}
             >
               {currentConnection ? <Check className="h-4 w-4" /> : <ShieldCheck className="h-4 w-4" />}
@@ -545,14 +545,14 @@ function IntegrationsTab() {
         description="This list is the only one that matters after setup: what is connected, when it was last verified, and whether it should stay."
       >
         {loading ? (
-          <div className="deck-panel-soft p-4 text-[12px] text-text-muted ring-1 ring-white/[0.05]">
+          <div className="ui-panel-soft p-4 text-[12px] text-text-muted">
             Loading connected systems…
           </div>
         ) : null}
 
         <div className="grid gap-3">
           {connected.map((entry) => (
-            <div key={entry.id} className="deck-panel-soft p-4 ring-1 ring-white/[0.05]">
+            <div key={entry.id} className="ui-panel-soft p-4">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div className="min-w-0">
                   <div className="text-sm font-semibold text-text-primary">{entry.name}</div>
@@ -565,7 +565,7 @@ function IntegrationsTab() {
               </div>
 
               <div className="mt-4 grid gap-3 md:grid-cols-[1fr_auto] md:items-center">
-                <div className="rounded-xl bg-black/20 px-3 py-2.5 ring-1 ring-white/[0.05]">
+                <div className="ui-stat rounded-xl px-3 py-2.5">
                   <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Security</div>
                   <div className="mt-1 text-[12px] text-text-body">{entry.securityState}</div>
                 </div>
@@ -573,14 +573,14 @@ function IntegrationsTab() {
                   <button
                     type="button"
                     onClick={() => refreshSystem(entry.id, { status: 'connected', lastVerifiedAt: new Date().toISOString() })}
-                    className="rounded-xl border border-white/[0.08] bg-white/[0.03] px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-text-muted transition-colors hover:text-aurora-teal focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aurora-teal/40"
+                    className="ui-button-secondary px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-text-muted transition-colors hover:text-aurora-teal focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aurora-teal/40"
                   >
                     Check Link
                   </button>
                   <button
                     type="button"
                     onClick={() => removeSystem(entry.id)}
-                    className="rounded-xl border border-white/[0.08] bg-white/[0.03] px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-text-muted transition-colors hover:text-aurora-rose focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aurora-teal/40"
+                    className="ui-button-secondary px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-text-muted transition-colors hover:text-aurora-rose focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aurora-teal/40"
                   >
                     Remove
                   </button>
@@ -590,7 +590,7 @@ function IntegrationsTab() {
               <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
                 <div className="flex flex-wrap gap-2">
                   {entry.capabilities.map((capability) => (
-                    <span key={capability} className="deck-chip px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em]">
+                    <span key={capability} className="ui-chip px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em]">
                       {capability}
                     </span>
                   ))}
@@ -603,7 +603,7 @@ function IntegrationsTab() {
           ))}
 
           {!loading && connected.length === 0 ? (
-            <div className="deck-panel-soft p-6 text-center ring-1 ring-white/[0.05]">
+            <div className="ui-panel-soft p-6 text-center">
               <div className="text-sm font-semibold text-text-primary">No systems connected yet</div>
               <p className="mt-2 text-[12px] leading-5 text-text-muted">Authorize a service above and it will appear here with status, identity, and capabilities.</p>
             </div>
@@ -641,14 +641,14 @@ export function SettingsPanel({ settingsOpen, setSettingsOpen }) {
             animate={{ x: 0, opacity: 1 }}
             exit={{ x: 460, opacity: 0 }}
             transition={{ type: 'spring', damping: 30, stiffness: 220 }}
-            className="fixed inset-y-0 right-0 z-50 flex w-[560px] max-w-[96vw] flex-col overflow-hidden border-l border-white/[0.08] bg-[linear-gradient(180deg,rgba(8,10,14,0.98),rgba(6,9,12,0.98))] shadow-[-18px_0_60px_rgba(0,0,0,0.55)]"
+            className="ui-drawer fixed inset-y-0 right-0 z-50 flex w-[560px] max-w-[96vw] flex-col overflow-hidden shadow-[-18px_0_60px_rgba(0,0,0,0.55)]"
           >
             <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(45,212,191,0.10),transparent_24%),radial-gradient(circle_at_18%_8%,rgba(214,199,161,0.08),transparent_22%),linear-gradient(180deg,rgba(255,255,255,0.02),transparent_24%)]" />
 
-            <div className="relative border-b border-white/[0.08] px-5 py-5">
+            <div className="relative border-b border-hairline px-5 py-5">
               <div className="flex items-start justify-between gap-4">
                 <div>
-                  <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.22em] text-text-muted">
+                  <div className="ui-kicker inline-flex items-center gap-2 rounded-full border border-hairline bg-panel-soft px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.22em] text-text-muted">
                     <Settings className="h-3.5 w-3.5 text-[#d6c7a1]" />
                     Systems Control
                   </div>
@@ -663,14 +663,14 @@ export function SettingsPanel({ settingsOpen, setSettingsOpen }) {
                   type="button"
                   aria-label="Close settings"
                   onClick={() => setSettingsOpen(false)}
-                  className="rounded-2xl border border-white/[0.08] bg-white/[0.03] p-2 text-text-muted transition-colors hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aurora-teal/40"
+                  className="ui-button-secondary p-2 text-text-muted transition-colors hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aurora-teal/40"
                 >
                   <X className="h-4.5 w-4.5" />
                 </button>
               </div>
             </div>
 
-            <div className="relative border-b border-white/[0.08] px-5 py-4">
+            <div className="relative border-b border-hairline px-5 py-4">
               <div className="flex flex-wrap gap-2">
                 {tabs.map((tab) => (
                   <TabButton

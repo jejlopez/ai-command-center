@@ -29,11 +29,11 @@ export function TasksView({ onOpenDetail }) {
           <p className="text-sm text-text-muted">High-fidelity tracing and task pipeline visualization.</p>
         </div>
         <div className="flex gap-4">
-          <div className="flex items-center gap-2 px-4 py-2 spatial-panel">
+          <div className="ui-card-row flex items-center gap-2 px-4 py-2">
             <CheckCircle2 className="w-4 h-4 text-aurora-green" />
             <span className="text-sm font-mono text-text-primary">{tasks.length ? Math.round((completed / tasks.length) * 100) : 0}% success</span>
           </div>
-          <div className="flex items-center gap-2 px-4 py-2 spatial-panel">
+          <div className="ui-card-row flex items-center gap-2 px-4 py-2">
             <Zap className="w-4 h-4 text-aurora-amber" />
             <span className="text-sm font-mono text-text-primary">{active} active tasks</span>
           </div>
@@ -44,7 +44,7 @@ export function TasksView({ onOpenDetail }) {
         
         {/* Tier 1: Neural Task DAG */}
         <motion.div variants={item} className="grid grid-cols-12 gap-6 min-h-[380px]">
-          <div className="col-span-8 spatial-panel p-6 flex flex-col relative group">
+          <div className="col-span-8 ui-shell p-6 flex flex-col relative group">
             <WidgetActions onExpand={() => {}} onConfigure={() => {}} onRemove={() => {}} />
             <h3 className="text-xs uppercase tracking-widest text-text-muted mb-4 absolute top-6 left-6 z-10 flex items-center gap-2">
               <GitBranch className="w-4 h-4" /> Neural Execution Graph
@@ -55,7 +55,7 @@ export function TasksView({ onOpenDetail }) {
             </div>
           </div>
 
-          <div className="col-span-4 spatial-panel p-6 flex flex-col justify-between group overflow-hidden relative">
+          <div className="col-span-4 ui-shell p-6 flex flex-col justify-between group overflow-hidden relative">
             <WidgetActions onExpand={() => {}} onConfigure={() => {}} onRemove={() => {}} />
             <div className="absolute -right-12 -bottom-12 w-48 h-48 bg-aurora-blue/10 rounded-full blur-3xl pointer-events-none" />
             <div>
@@ -90,7 +90,7 @@ export function TasksView({ onOpenDetail }) {
                 whileHover={{ x: 4, backgroundColor: 'rgba(255,255,255,0.03)' }}
                 onClick={() => run.agentId && onOpenDetail(run.agentId)}
                 className={cn(
-                  "spatial-panel p-4 flex items-center justify-between group cursor-pointer mb-2 border hover:shadow-card transition-all",
+                  "ui-card-row p-4 flex items-center justify-between group cursor-pointer mb-2 border hover:shadow-card transition-all",
                   statusStyles[run.status] || "row-idle"
                 )}
               >
@@ -127,7 +127,7 @@ export function TasksView({ onOpenDetail }) {
               </motion.div>
             ))}
             {tasks.length === 0 && (
-              <div className="spatial-panel p-6 text-sm text-text-muted">
+              <div className="ui-panel p-6 text-sm text-text-muted">
                 No tasks have been created for this account yet.
               </div>
             )}

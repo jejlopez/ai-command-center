@@ -31,37 +31,37 @@ export function AnalyticsView({ context }) {
 
       {/* Top KPIs */}
       <div className="grid grid-cols-3 gap-6">
-        <div className="spatial-panel p-6 rounded-2xl flex flex-col justify-between">
-          <span className="text-xs font-mono uppercase text-modern-muted">Workspace Burn</span>
+        <div className="ui-panel p-6 rounded-2xl flex flex-col justify-between">
+          <span className="text-xs font-mono uppercase text-text-muted">Workspace Burn</span>
           <div className="mt-4 flex items-baseline gap-2">
-            <h3 className="text-4xl font-light text-white">${cCost}</h3>
-            <span className="text-sm text-modern-muted">USD</span>
+            <h3 className="text-4xl font-light text-text-primary">${cCost}</h3>
+            <span className="text-sm text-text-muted">USD</span>
           </div>
         </div>
         
-        <div className="spatial-panel p-6 rounded-2xl flex flex-col justify-between">
-          <span className="text-xs font-mono uppercase text-modern-muted">Token Consumption</span>
+        <div className="ui-panel p-6 rounded-2xl flex flex-col justify-between">
+          <span className="text-xs font-mono uppercase text-text-muted">Token Consumption</span>
           <div className="mt-4 flex items-baseline gap-2">
-            <h3 className="text-4xl font-light text-white">{cTokens}</h3>
-            <span className="text-sm text-modern-muted">ms tracked</span>
+            <h3 className="text-4xl font-light text-text-primary">{cTokens}</h3>
+            <span className="text-sm text-text-muted">ms tracked</span>
           </div>
         </div>
         
-        <div className="spatial-panel p-6 rounded-2xl flex flex-col justify-between bg-modern-highlight/5 border-modern-highlight/20">
-          <span className="text-xs font-mono uppercase text-modern-highlight">Efficiency Score</span>
+        <div className="ui-panel p-6 rounded-2xl flex flex-col justify-between border-aurora-teal/20 bg-aurora-teal/[0.04]">
+          <span className="text-xs font-mono uppercase text-aurora-teal">Efficiency Score</span>
           <div className="mt-4 flex items-baseline gap-2">
-            <h3 className="text-4xl font-light text-white">98.2</h3>
-            <span className="text-sm text-modern-highlight">index</span>
+            <h3 className="text-4xl font-light text-text-primary">98.2</h3>
+            <span className="text-sm text-aurora-teal">index</span>
           </div>
         </div>
       </div>
 
       {/* Main Chart Area */}
-      <div className="spatial-panel flex-1 rounded-3xl p-8 flex flex-col min-h-[300px]">
+      <div className="ui-shell flex-1 rounded-3xl p-8 flex flex-col min-h-[300px]">
         <div className="flex justify-between items-end mb-8">
           <div>
-            <h3 className="text-lg font-medium text-white">Consumption Velocity</h3>
-            <p className="text-sm text-modern-muted mt-1">API usage limits are well within bounds for this billing cycle.</p>
+            <h3 className="text-lg font-medium text-text-primary">Consumption Velocity</h3>
+            <p className="text-sm text-text-muted mt-1">API usage limits are well within bounds for this billing cycle.</p>
           </div>
         </div>
         
@@ -86,7 +86,7 @@ export function AnalyticsView({ context }) {
               </AreaChart>
             </ResponsiveContainer>
           ) : (
-            <div className="flex h-full items-center justify-center text-sm text-modern-muted">
+            <div className="flex h-full items-center justify-center text-sm text-text-muted">
               No analytics data for this account yet.
             </div>
           )}

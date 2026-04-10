@@ -405,14 +405,14 @@ export function OverviewView({ agents, tasks, loading, onOpenDetail, onNavigate 
             <FleetHealthPanel summary={overviewSummary} onOpenDetail={onOpenDetail} />
           </div>
           <div className="space-y-5">
-            <div className="deck-panel p-5">
+            <div className="ui-panel p-5">
               <CommandSectionHeader
                 eyebrow="Strategic Control Zone"
                 title="Doctrine and learned command patterns"
                 description="The same memory engine powering Mission Control, Reports, and Intelligence surfaces now drives the flagship bridge."
                 icon={BrainCircuit}
                 tone="teal"
-                action={<span className="rounded-full border border-aurora-teal/20 bg-aurora-teal/10 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-aurora-teal">Live doctrine</span>}
+                action={<span className="ui-chip border-aurora-teal/20 bg-aurora-teal/10 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-aurora-teal">Live doctrine</span>}
               />
               <DoctrineCards items={learningMemory.topThree} compact />
             </div>
@@ -426,7 +426,7 @@ export function OverviewView({ agents, tasks, loading, onOpenDetail, onNavigate 
         </Motion.section>
 
         <Motion.section variants={item} className="space-y-5">
-          <div className="deck-panel p-5">
+          <div className="ui-panel p-5">
             <CommandSectionHeader
               eyebrow="Research Direction"
               title="What this bridge is borrowing from elite command surfaces"
@@ -435,7 +435,7 @@ export function OverviewView({ agents, tasks, loading, onOpenDetail, onNavigate 
               tone="blue"
             />
             <div className="grid gap-3 md:grid-cols-3">
-              <div className="deck-panel-soft p-4 ring-1 ring-white/[0.05]">
+              <div className="ui-panel-soft p-4">
                 <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.16em] text-text-muted">
                   <Sparkles className="h-3.5 w-3.5 text-aurora-teal" />
                   Borrow
@@ -444,7 +444,7 @@ export function OverviewView({ agents, tasks, loading, onOpenDetail, onNavigate 
                   Cinematic hero framing, dense operational sidecars, launch-readiness language, and control-room information hierarchy.
                 </p>
               </div>
-              <div className="deck-panel-soft p-4 ring-1 ring-white/[0.05]">
+              <div className="ui-panel-soft p-4">
                 <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.16em] text-text-muted">
                   <ShieldCheck className="h-3.5 w-3.5 text-aurora-blue" />
                   Keep grounded
@@ -453,7 +453,7 @@ export function OverviewView({ agents, tasks, loading, onOpenDetail, onNavigate 
                   Every dramatic cue maps back to real app data, current actions, or trusted state. No fake sci-fi clutter.
                 </p>
               </div>
-              <div className="deck-panel-soft p-4 ring-1 ring-white/[0.05]">
+              <div className="ui-panel-soft p-4">
                 <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.16em] text-text-muted">
                   <BrainCircuit className="h-3.5 w-3.5 text-aurora-violet" />
                   Avoid

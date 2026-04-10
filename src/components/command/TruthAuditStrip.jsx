@@ -22,7 +22,7 @@ export function TruthAuditStrip({ truth }) {
     .slice(0, 3);
 
   return (
-    <div className="deck-panel p-4">
+    <div className="ui-panel p-4">
       <div className="flex items-start justify-between gap-4">
         <div>
           <div className="flex items-center gap-2">
@@ -36,7 +36,7 @@ export function TruthAuditStrip({ truth }) {
         <button
           type="button"
           onClick={() => setShowPlaybook((current) => !current)}
-          className="deck-chip inline-flex items-center gap-2 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.16em] transition-colors hover:text-text-primary"
+          className="ui-button-secondary inline-flex items-center gap-2 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.16em] transition-colors hover:text-text-primary"
         >
           {showPlaybook ? 'Hide Playbook' : 'Open Playbook'}
           <ChevronDown className={cn('h-3.5 w-3.5 transition-transform', showPlaybook && 'rotate-180')} />
@@ -44,13 +44,13 @@ export function TruthAuditStrip({ truth }) {
       </div>
       <div className="mt-4 grid grid-cols-2 gap-2.5 xl:grid-cols-6">
         {items.map((item) => (
-          <div key={item.label} className="deck-panel-soft px-3 py-2.5 ring-1 ring-white/[0.05]">
+          <div key={item.label} className="ui-stat px-3 py-2.5">
             <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">{item.label}</div>
             <div className="mt-2 text-sm font-semibold text-text-primary">{item.value}</div>
           </div>
         ))}
       </div>
-      <div className="mt-4 deck-panel-soft p-4 ring-1 ring-white/[0.05]">
+      <div className="mt-4 ui-panel-soft p-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-text-muted">Launch Readiness</div>
@@ -65,7 +65,7 @@ export function TruthAuditStrip({ truth }) {
         </div>
         <div className="mt-4 grid gap-2.5 md:grid-cols-3">
           {leadChecks.map((item) => (
-            <div key={item.id} className="deck-panel-soft px-3 py-3 ring-1 ring-white/[0.05]">
+            <div key={item.id} className="ui-card-row px-3 py-3">
               <div className="flex items-center justify-between gap-2">
                 <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-text-muted">{item.label}</div>
                 <div className={cn(
@@ -83,7 +83,7 @@ export function TruthAuditStrip({ truth }) {
         </div>
       </div>
       {showPlaybook && (
-        <div className="mt-4 deck-panel-soft p-4 ring-1 ring-white/[0.05]">
+        <div className="mt-4 ui-panel-soft p-4">
           <div className="flex items-center gap-2">
             <CheckCircle2 className="h-4 w-4 text-aurora-teal" />
             <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-text-muted">Final Truth Checklist</div>
@@ -104,26 +104,26 @@ export function TruthAuditStrip({ truth }) {
             </div>
           )}
           <div className="mt-4 grid gap-3 md:grid-cols-4">
-            <div className="deck-panel-soft px-3 py-3 ring-1 ring-white/[0.05]">
+            <div className="ui-stat px-3 py-3">
               <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Profile state</div>
               <div className="mt-2 text-sm font-semibold text-text-primary">{truth.profileState}</div>
             </div>
-            <div className="deck-panel-soft px-3 py-3 ring-1 ring-white/[0.05]">
+            <div className="ui-stat px-3 py-3">
               <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Route posture</div>
               <div className="mt-2 text-sm font-semibold text-text-primary">{truth.alertPosture} via {truth.notificationRoute}</div>
             </div>
-            <div className="deck-panel-soft px-3 py-3 ring-1 ring-white/[0.05]">
+            <div className="ui-stat px-3 py-3">
               <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Trust doctrine</div>
               <div className="mt-2 text-sm font-semibold text-text-primary">{truth.trustedWriteMode} / {truth.approvalDoctrine}</div>
             </div>
-            <div className="deck-panel-soft px-3 py-3 ring-1 ring-white/[0.05]">
+            <div className="ui-stat px-3 py-3">
               <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Intelligence truth</div>
               <div className="mt-2 text-sm font-semibold text-text-primary">{truth.namespacesCount} ns · {truth.directivesCount} dir · {truth.recommendationsCount} rec</div>
             </div>
           </div>
           <div className="mt-4 space-y-3">
             {truth.checklist.map((item) => (
-              <div key={item.id} className="deck-panel-soft px-4 py-3 ring-1 ring-white/[0.05]">
+              <div key={item.id} className="ui-card-row px-4 py-3">
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-text-muted">{item.label}</div>

@@ -31,7 +31,7 @@ const MapWidget = () => {
   });
 
   return (
-    <div className="col-span-12 spatial-panel relative overflow-hidden h-[340px] flex items-center justify-center border-aurora-teal/20 shadow-glow-teal group">
+    <div className="col-span-12 ui-shell relative overflow-hidden h-[340px] flex items-center justify-center border-aurora-teal/20 shadow-glow-teal group">
       <div className="absolute top-6 left-6 z-10 pointer-events-none">
         <h3 className="text-xl font-bold text-text-primary tracking-wide">Global Protocol Trajectory</h3>
         <p className="text-sm font-mono text-aurora-teal mt-1">24 Active Satellite Downlinks</p>
@@ -85,7 +85,7 @@ export function FleetOperationsView({ agents, tasks, logData, loading, usingMock
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
             onClick={() => setCreateModalOpen(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-aurora-teal text-black rounded-xl text-sm font-semibold hover:bg-aurora-teal/90 transition-colors shadow-glow-teal"
+            className="ui-button-primary flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold shadow-glow-teal"
           >
             <Plus className="w-4 h-4" />
             Deploy Agent
@@ -97,19 +97,19 @@ export function FleetOperationsView({ agents, tasks, logData, loading, usingMock
             const errored = agents.filter(a => a.status === 'error').length;
             return (
               <>
-                <div className="flex items-center gap-2 px-4 py-2 spatial-panel">
+                <div className="flex items-center gap-2 px-4 py-2 ui-card-row">
                   <span className="relative flex h-2 w-2">
                     <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-aurora-teal opacity-75" />
                     <span className="relative inline-flex rounded-full h-2 w-2 bg-aurora-teal" />
                   </span>
                   <span className="text-sm font-mono text-aurora-teal">{active} Active</span>
                 </div>
-                <div className="flex items-center gap-2 px-4 py-2 spatial-panel">
+                <div className="flex items-center gap-2 px-4 py-2 ui-card-row">
                   <span className="w-2 h-2 rounded-full bg-text-muted" />
                   <span className="text-sm font-mono text-text-muted">{idle} Idle</span>
                 </div>
                 {errored > 0 && (
-                  <div className="flex items-center gap-2 px-4 py-2 spatial-panel border border-aurora-rose/30 shadow-[0_0_12px_rgba(251,113,133,0.1)]">
+                  <div className="flex items-center gap-2 px-4 py-2 ui-card-row border border-aurora-rose/30 shadow-[0_0_12px_rgba(251,113,133,0.1)]">
                     <span className="relative flex h-2 w-2">
                       <span className="animate-pulse absolute inline-flex h-full w-full rounded-full bg-aurora-rose opacity-75" />
                       <span className="relative inline-flex rounded-full h-2 w-2 bg-aurora-rose" />
@@ -120,7 +120,7 @@ export function FleetOperationsView({ agents, tasks, logData, loading, usingMock
               </>
             );
           })()}
-          <div className="flex items-center gap-2 px-4 py-2 border border-aurora-teal/30 bg-aurora-teal/10 rounded-xl shadow-glow-teal">
+          <div className="flex items-center gap-2 px-4 py-2 border border-aurora-teal/30 bg-aurora-teal/10 rounded-xl shadow-glow-teal ui-card-row">
             <span className="text-sm font-mono font-bold text-aurora-teal">{agents.length} Total</span>
           </div>
         </div>
@@ -148,7 +148,7 @@ export function FleetOperationsView({ agents, tasks, logData, loading, usingMock
         </motion.div>
 
         <motion.div variants={itemVariant} className="grid grid-cols-12 gap-6 min-h-[380px]">
-          <div className="col-span-8 spatial-panel p-6 flex flex-col relative group">
+          <div className="col-span-8 ui-shell p-6 flex flex-col relative group">
             <WidgetActions onExpand={() => {}} onConfigure={() => {}} onRemove={() => {}} />
             <h3 className="text-xs uppercase tracking-widest text-text-muted mb-4 absolute top-6 left-6 z-10 flex items-center gap-2">
               <GitBranch className="w-4 h-4" /> Neural Execution Graph
@@ -159,7 +159,7 @@ export function FleetOperationsView({ agents, tasks, logData, loading, usingMock
             </div>
           </div>
 
-          <div className="col-span-4 spatial-panel p-6 flex flex-col justify-between group overflow-hidden relative">
+          <div className="col-span-4 ui-shell p-6 flex flex-col justify-between group overflow-hidden relative">
             <WidgetActions onExpand={() => {}} onConfigure={() => {}} onRemove={() => {}} />
             <div className="absolute -right-12 -bottom-12 w-48 h-48 bg-aurora-blue/10 rounded-full blur-3xl pointer-events-none" />
             <div>
@@ -191,7 +191,7 @@ export function FleetOperationsView({ agents, tasks, logData, loading, usingMock
                 whileHover={{ x: 4, backgroundColor: 'rgba(255,255,255,0.03)' }}
                 onClick={() => run.agentId && onOpenDetail(run.agentId)}
                 className={cn(
-                  "spatial-panel p-4 flex items-center justify-between group mb-2 border hover:shadow-card transition-all cursor-pointer",
+                  "ui-card-row p-4 flex items-center justify-between group mb-2 border hover:shadow-card transition-all cursor-pointer",
                   statusStyles[run.status] || "row-idle"
                 )}
               >

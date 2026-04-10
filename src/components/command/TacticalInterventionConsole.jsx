@@ -14,7 +14,7 @@ function InterventionButton({ icon, label, detail, tone = 'teal', onClick }) {
     <button
       type="button"
       onClick={onClick}
-      className="rounded-[18px] border border-white/8 bg-black/20 p-4 text-left transition-transform hover:-translate-y-0.5"
+      className="ui-card-row p-4 text-left transition-transform hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aurora-teal/35"
     >
       <div className="flex items-start justify-between gap-3">
         <div className={cn('rounded-xl border p-2', toneClass[tone])}>
@@ -35,7 +35,7 @@ export function TacticalInterventionConsole({
   onOpenOps,
 }) {
   return (
-    <div className="rounded-[24px] border border-white/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.015))] p-4">
+    <div className="ui-panel p-4">
       <div className="flex items-center justify-between gap-3">
         <div>
           <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Tactical Intervention</div>
@@ -85,7 +85,7 @@ export function TacticalInterventionConsole({
       </div>
 
       {truth.readinessFailures.length > 0 && (
-        <div className="mt-4 rounded-[18px] border border-aurora-amber/20 bg-aurora-amber/[0.07] px-4 py-3">
+        <div className="mt-4 ui-card-row border-aurora-amber/20 bg-aurora-amber/[0.07] px-4 py-3">
           <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-aurora-amber">
             <AlertTriangle className="h-3.5 w-3.5" />
             Current blockers

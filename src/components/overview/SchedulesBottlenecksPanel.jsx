@@ -37,7 +37,7 @@ export function SchedulesBottlenecksPanel({ summary, schedules, loading, referen
   const blockersTotal = blockers.reduce((sum, item) => sum + item.value, 0);
 
   return (
-    <div className="jarvis-console p-5">
+    <div className="ui-panel p-5">
       <CommandSectionHeader
         eyebrow="Immediate Action Zone"
         title="Automation Radar"
@@ -47,27 +47,27 @@ export function SchedulesBottlenecksPanel({ summary, schedules, loading, referen
       />
 
       <div className="grid gap-4 lg:grid-cols-2">
-        <div className="jarvis-column p-4">
+        <div className="ui-panel-soft p-4">
           <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.16em] text-text-disabled">
             <Clock3 className="h-3.5 w-3.5 text-aurora-blue" />
             Schedule Visibility
           </div>
           <div className="mt-4 space-y-3 text-sm">
-            <div className="jarvis-kpi flex items-center justify-between px-3 py-2">
+            <div className="ui-stat flex items-center justify-between px-3 py-2">
               <span className="text-text-muted">Cron jobs tracked</span>
               <span className="font-mono text-text-primary">{loading ? '...' : schedules.length}</span>
             </div>
-            <div className="jarvis-kpi flex items-center justify-between px-3 py-2">
+            <div className="ui-stat flex items-center justify-between px-3 py-2">
               <span className="text-text-muted">Late schedules</span>
               <span className="font-mono text-text-primary">{loading ? '...' : summary.lateSchedules}</span>
             </div>
             {loading && (
-              <div className="jarvis-schedule-card px-4 py-4 text-text-muted">
+              <div className="ui-card-row px-4 py-4 text-text-muted">
                 Loading schedules...
               </div>
             )}
             {!loading && schedules.length === 0 && (
-              <div className="jarvis-schedule-card px-4 py-4 text-text-muted">
+              <div className="ui-card-row px-4 py-4 text-text-muted">
                 No scheduled jobs are configured yet.
               </div>
             )}
@@ -76,7 +76,7 @@ export function SchedulesBottlenecksPanel({ summary, schedules, loading, referen
               return (
                 <div
                   key={job.id}
-                  className={`jarvis-schedule-card px-5 py-4 ${isLate ? 'jarvis-schedule-card-late' : ''}`}
+                  className={`ui-card-row px-5 py-4 ${isLate ? 'border-aurora-rose/22 bg-aurora-rose/[0.05]' : ''}`}
                 >
                   <div className="flex items-center justify-between gap-3">
                     <div className="min-w-0">
@@ -85,11 +85,11 @@ export function SchedulesBottlenecksPanel({ summary, schedules, loading, referen
                     </div>
                     <div className="flex items-center gap-2">
                       {isLate && (
-                        <span className={`jarvis-badge ${badgeClasses('late')}`}>
+                        <span className={`ui-chip px-2.5 py-1 ${badgeClasses('late')}`}>
                           Late
                         </span>
                       )}
-                      <span className={`jarvis-badge ${badgeClasses(job.status)}`}>
+                      <span className={`ui-chip px-2.5 py-1 ${badgeClasses(job.status)}`}>
                         {job.status}
                       </span>
                     </div>
@@ -110,13 +110,13 @@ export function SchedulesBottlenecksPanel({ summary, schedules, loading, referen
           </div>
         </div>
 
-        <div className="jarvis-column p-4">
+        <div className="ui-panel-soft p-4">
           <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.16em] text-text-disabled">
             <GitBranch className="h-3.5 w-3.5 text-aurora-violet" />
             Bottleneck Map
           </div>
           {blockersTotal === 0 && (
-            <div className="jarvis-callout mt-4 px-4 py-4 text-base font-medium leading-8 text-aurora-green">
+            <div className="mt-4 ui-card-row border-aurora-green/15 bg-aurora-green/5 px-4 py-4 text-base font-medium leading-8 text-aurora-green">
               All clear right now. No active approval, failure, or stalled-agent bottlenecks detected.
             </div>
           )}
@@ -142,15 +142,15 @@ export function SchedulesBottlenecksPanel({ summary, schedules, loading, referen
           </div>
 
           <div className="mt-4 grid gap-3">
-            <div className="jarvis-kpi flex items-center justify-between px-3 py-2 text-sm">
+            <div className="ui-stat flex items-center justify-between px-3 py-2 text-sm">
               <span className="flex items-center gap-2 text-text-muted"><PauseCircle className="h-4 w-4 text-aurora-amber" /> Oldest pending</span>
               <span className="font-mono text-text-primary">{summary.oldestPendingLabel}</span>
             </div>
-            <div className="jarvis-kpi flex items-center justify-between px-3 py-2 text-sm">
+            <div className="ui-stat flex items-center justify-between px-3 py-2 text-sm">
               <span className="flex items-center gap-2 text-text-muted"><Clock3 className="h-4 w-4 text-aurora-blue" /> Avg approval wait</span>
               <span className="font-mono text-text-primary">{summary.avgApprovalWaitLabel}</span>
             </div>
-            <div className="jarvis-kpi flex items-center justify-between px-3 py-2 text-sm">
+            <div className="ui-stat flex items-center justify-between px-3 py-2 text-sm">
               <span className="flex items-center gap-2 text-text-muted"><Clock3 className="h-4 w-4 text-aurora-rose" /> Longest approval wait</span>
               <span className="font-mono text-text-primary">{summary.longestApprovalWaitLabel}</span>
             </div>

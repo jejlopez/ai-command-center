@@ -34,7 +34,7 @@ export function TraceWaterfall({ spans }) {
         <div className="text-[10px] uppercase tracking-[0.15em] text-text-muted font-semibold">
           Execution Trace
         </div>
-        <div className="spatial-panel px-2 py-1 text-[10px] font-mono text-text-muted border-none bg-white/[0.02]">
+        <div className="ui-card-row px-2 py-1 text-[10px] font-mono text-text-muted border-none bg-white/[0.02]">
           Total: {totalMs}ms
         </div>
       </div>
@@ -88,7 +88,7 @@ export function TraceWaterfall({ spans }) {
       </div>
 
       {hoveredSpan && (
-        <div className="absolute bottom-6 right-6 spatial-panel p-3 text-xs bg-surface/90 border-border shadow-2xl z-10 w-48 pointer-events-none">
+        <div className="absolute bottom-6 right-6 ui-shell p-3 text-xs bg-surface/90 border-border shadow-2xl z-10 w-48 pointer-events-none">
           <div className="font-semibold text-text-primary truncate mb-1">{hoveredSpan.name}</div>
           <div className="flex justify-between items-center text-[10px] text-text-muted font-mono mb-2">
             <span>{hoveredSpan.type}</span>

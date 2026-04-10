@@ -10,7 +10,7 @@ const toneClass = {
 function ReactorMetric({ label, value, detail, icon, tone = 'ready', bordered = true }) {
   const IconComponent = icon;
   return (
-    <div className={cn('px-4 py-3', bordered && 'border-l border-white/[0.05]')}>
+    <div className={cn('ui-stat px-4 py-3', bordered && 'md:border-l md:border-l-hairline md:rounded-l-none')}>
       <div className="flex items-center justify-between gap-2">
         <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">{label}</div>
         <div className={cn('rounded-xl border p-2', toneClass[tone])}>
@@ -28,10 +28,10 @@ export function ReactorCoreBoard({ truth, summary }) {
   const interventionCount = truth.pendingApprovals + truth.blockedMissions + truth.criticalAlerts;
 
   return (
-    <div className="deck-panel p-5">
+    <div className="ui-panel p-5">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <div className="deck-chip inline-flex items-center gap-2 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em]">
+          <div className="ui-kicker inline-flex items-center gap-2 rounded-full border border-hairline bg-panel-soft px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em]">
             <Activity className="h-3.5 w-3.5 text-aurora-teal" />
             Reactor Core Readiness
           </div>
@@ -45,8 +45,7 @@ export function ReactorCoreBoard({ truth, summary }) {
         </div>
       </div>
 
-      <div className="mt-5 overflow-hidden rounded-[22px] bg-black/20 ring-1 ring-white/[0.05]">
-        <div className="grid gap-0 md:grid-cols-2 xl:grid-cols-4">
+      <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
         <ReactorMetric
           label="Interventions"
           value={interventionCount}
@@ -76,7 +75,6 @@ export function ReactorCoreBoard({ truth, summary }) {
           icon={Gauge}
           tone={Number(summary?.burnRate || 0) > 0 ? 'caution' : 'ready'}
         />
-        </div>
       </div>
     </div>
   );

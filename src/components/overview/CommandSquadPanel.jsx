@@ -11,12 +11,12 @@ function getRiskState(agent, flaggedIds) {
 
 function roleConfig(role) {
   const config = {
-    researcher: { label: 'Research', className: 'delegate-role-research' },
-    qa: { label: 'QA', className: 'delegate-role-qa' },
-    ops: { label: 'Ops', className: 'delegate-role-ops' },
-    'ui-agent': { label: 'Interface', className: 'delegate-role-ui' },
+    researcher: { label: 'Research', className: 'border-aurora-blue/20 bg-aurora-blue/10 text-aurora-blue' },
+    qa: { label: 'QA', className: 'border-aurora-violet/20 bg-aurora-violet/10 text-aurora-violet' },
+    ops: { label: 'Ops', className: 'border-aurora-amber/20 bg-aurora-amber/10 text-aurora-amber' },
+    'ui-agent': { label: 'Interface', className: 'border-aurora-teal/20 bg-aurora-teal/10 text-aurora-teal' },
   };
-  return config[role] || { label: role || 'Operator', className: 'delegate-role-default' };
+  return config[role] || { label: role || 'Operator', className: 'border-hairline bg-panel-soft text-text-primary' };
 }
 
 function DelegateCard({ agent, providerByModel, flaggedIds, onOpenDetail }) {
@@ -27,37 +27,49 @@ function DelegateCard({ agent, providerByModel, flaggedIds, onOpenDetail }) {
     <button
       type="button"
       onClick={() => onOpenDetail?.(agent.id)}
-      className={`delegate-council-card delegate-council-card-${risk.tone} text-left transition-transform hover:-translate-y-0.5`}
+      className={cn(
+        'ui-card-row text-left transition-transform hover:-translate-y-0.5 p-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aurora-teal/35',
+        risk.tone === 'active' && 'border-aurora-teal/18',
+        risk.tone === 'critical' && 'border-aurora-rose/20 bg-aurora-rose/[0.05]',
+        risk.tone === 'warning' && 'border-aurora-amber/20 bg-aurora-amber/[0.04]',
+        risk.tone === 'info' && 'border-aurora-blue/18'
+      )}
     >
       <div className="flex items-start justify-between gap-3">
-        <div className="delegate-agent-mark">
+        <div className="ui-panel-soft flex h-11 w-11 items-center justify-center rounded-2xl">
           <Bot className="h-4.5 w-4.5 text-aurora-blue" />
         </div>
-        <span className={`delegate-status-badge ${risk.tone}`}>
+        <span className={cn(
+          'ui-chip px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em]',
+          risk.tone === 'active' && 'border-aurora-teal/20 bg-aurora-teal/10 text-aurora-teal',
+          risk.tone === 'critical' && 'border-aurora-rose/20 bg-aurora-rose/10 text-aurora-rose',
+          risk.tone === 'warning' && 'border-aurora-amber/20 bg-aurora-amber/10 text-aurora-amber',
+          risk.tone === 'info' && 'border-aurora-blue/20 bg-aurora-blue/10 text-aurora-blue'
+        )}>
           {risk.label}
         </span>
       </div>
 
       <div className="mt-5">
         <div className="truncate text-2xl font-semibold tracking-[-0.03em] text-text-primary">{agent.name}</div>
-        <div className={`mt-3 inline-flex items-center rounded-full px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.22em] ${role.className}`}>
+        <div className={`mt-3 inline-flex items-center rounded-full border px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.22em] ${role.className}`}>
           {role.label}
         </div>
       </div>
 
       <div className="mt-5 grid gap-3">
-        <div className="delegate-runtime-stack">
-          <div className="delegate-runtime-heading">Runtime</div>
+        <div className="ui-panel-soft p-3">
+          <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Runtime</div>
           <div className="mt-2 text-sm font-semibold text-text-primary">{providerByModel.get(agent.model) || 'Unknown'}</div>
           <div className="mt-1 truncate font-mono text-[12px] text-text-muted">{agent.model || 'Unassigned'}</div>
         </div>
 
-        <div className={`delegate-status-panel ${risk.tone}`}>
+        <div className="ui-panel-soft flex items-center justify-between gap-3 p-3">
           <div>
-            <div className="delegate-runtime-heading">Operator status</div>
+            <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Operator status</div>
             <div className={`mt-2 text-sm font-semibold ${risk.accent}`}>{risk.label}</div>
           </div>
-          <div className="delegate-config-icon">
+          <div className="ui-panel-soft flex h-9 w-9 items-center justify-center rounded-xl">
             <Settings2 className="h-4 w-4 text-aurora-teal" />
           </div>
         </div>
@@ -71,9 +83,9 @@ function OpenSlotCard({ onAddOperator }) {
     <button
       type="button"
       onClick={onAddOperator}
-      className="delegate-open-slot text-left transition-transform hover:-translate-y-0.5"
+      className="ui-card-row text-left transition-transform hover:-translate-y-0.5 p-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aurora-teal/35"
     >
-      <div className="delegate-open-slot-icon">
+      <div className="ui-panel-soft flex h-11 w-11 items-center justify-center rounded-2xl">
         <Plus className="h-5 w-5 text-aurora-teal" />
       </div>
       <div className="mt-5 text-xl font-semibold tracking-[-0.03em] text-text-primary">Open slot</div>
@@ -93,20 +105,20 @@ export function CommandSquadPanel({ operators, providerByModel, flaggedIds, onOp
   const hasOperators = operators.length > 0;
 
   return (
-    <div className="jarvis-console p-5">
+    <div className="ui-panel p-5">
       <CommandSectionHeader
-        eyebrow="Fleet Command Zone"
-        title="Specialist Operator Deck"
+        eyebrow="Operator Deck"
+        title="Specialist coverage"
         description={hasOperators
-          ? `${operators.length} specialist operator${operators.length === 1 ? '' : 's'} attached to the commander and ready for deployment.`
-          : 'Commander online. Add specialist operators to give the bridge more range.'}
+          ? `${operators.length} specialist operator${operators.length === 1 ? '' : 's'} attached and available for live routing.`
+          : 'Add specialist operators to expand research, execution, QA, and ops coverage.'}
         icon={Bot}
         tone="blue"
         action={(
           <button
             type="button"
             onClick={onAddOperator}
-            className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-sm font-semibold text-text-primary transition-colors hover:bg-white/[0.05]"
+            className="ui-button-secondary inline-flex items-center gap-2 px-3 py-2 text-sm font-semibold text-text-primary"
           >
             <Plus className="h-4 w-4 text-aurora-teal" />
             Add Operator
@@ -131,7 +143,7 @@ export function CommandSquadPanel({ operators, providerByModel, flaggedIds, onOp
       </div>
 
       {!hasOperators && (
-        <div className="mt-4 rounded-[22px] border border-aurora-teal/15 bg-aurora-teal/[0.04] px-4 py-4">
+        <div className="mt-4 ui-card-row border-aurora-teal/15 bg-aurora-teal/[0.04] px-4 py-4">
           <div className="text-[10px] uppercase tracking-[0.18em] text-aurora-teal">Bridge readiness</div>
           <p className="mt-2 text-sm leading-6 text-text-body">
             The commander is live, but the bridge is still single-threaded. Add specialists to turn this into a real execution deck.

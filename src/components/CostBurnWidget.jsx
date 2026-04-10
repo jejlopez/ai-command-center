@@ -14,7 +14,7 @@ export function CostBurnWidget() {
   const displayTotal = useAnimatedCounter(costData.total, { decimals: 2 });
 
   return (
-    <div className="spatial-panel p-6 h-full flex flex-col justify-between">
+    <div className="ui-shell p-6 h-full flex flex-col justify-between">
       <div>
         <div className="text-[10px] uppercase tracking-[0.15em] text-text-muted mb-2 font-semibold">Cost Today</div>
         <div className="font-mono text-3xl font-light text-text-primary font-tabular flex items-baseline">

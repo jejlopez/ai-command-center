@@ -67,7 +67,7 @@ function FilterButton({ active, label, onClick }) {
       type="button"
       onClick={onClick}
       className={cn(
-        'rounded-full border px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aurora-teal/40',
+        'ui-chip rounded-full border px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aurora-teal/40',
         active
           ? 'border-aurora-teal/25 bg-aurora-teal/10 text-aurora-teal'
           : 'border-white/[0.08] bg-white/[0.03] text-text-muted hover:text-text-primary'
@@ -91,7 +91,7 @@ function AlertCard({ alert, onClick, onDismiss }) {
       exit={{ opacity: 0, x: 32 }}
       whileHover={{ y: -2 }}
       onClick={() => onClick(alert)}
-      className="deck-panel w-full p-4 text-left transition-colors hover:bg-white/[0.04]"
+      className="ui-panel w-full p-4 text-left transition-colors hover:bg-white/[0.04]"
     >
       <div className={cn('absolute left-0 top-0 bottom-0 w-[3px]', meta.rail)} />
       <div className="flex items-start gap-3">
@@ -108,7 +108,7 @@ function AlertCard({ alert, onClick, onDismiss }) {
           </div>
           <p className="mt-3 text-[12px] leading-6 text-text-body">{alert.detail}</p>
           <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-            <span className="deck-chip px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.14em]">{alert.actionLabel}</span>
+            <span className="ui-chip px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.14em]">{alert.actionLabel}</span>
             <button
               type="button"
               aria-label={`Dismiss ${alert.headline}`}
@@ -178,14 +178,14 @@ export function NotificationsPanel({ notificationsOpen, setNotificationsOpen, on
             animate={{ x: 0, opacity: 1 }}
             exit={{ x: 420, opacity: 0 }}
             transition={{ type: 'spring', damping: 30, stiffness: 220 }}
-            className="fixed inset-y-0 right-0 z-50 flex w-[440px] max-w-[96vw] flex-col overflow-hidden border-l border-white/8 bg-[linear-gradient(180deg,rgba(8,10,14,0.98),rgba(6,9,12,0.98))] shadow-[-18px_0_60px_rgba(0,0,0,0.55)]"
+            className="ui-drawer fixed inset-y-0 right-0 z-50 flex w-[440px] max-w-[96vw] flex-col overflow-hidden shadow-[-18px_0_60px_rgba(0,0,0,0.55)]"
           >
             <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(214,199,161,0.08),transparent_24%),radial-gradient(circle_at_18%_8%,rgba(45,212,191,0.10),transparent_22%),linear-gradient(180deg,rgba(255,255,255,0.02),transparent_24%)]" />
 
-            <div className="relative border-b border-white/[0.08] px-5 py-5">
+            <div className="relative border-b border-hairline px-5 py-5">
               <div className="flex items-start justify-between gap-4">
                 <div>
-                  <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.22em] text-text-muted">
+                  <div className="ui-kicker inline-flex items-center gap-2 rounded-full border border-hairline bg-panel-soft px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.22em] text-text-muted">
                     <Bell className="h-3.5 w-3.5 text-[#d6c7a1]" />
                     Command Alerts
                   </div>
@@ -200,7 +200,7 @@ export function NotificationsPanel({ notificationsOpen, setNotificationsOpen, on
                   type="button"
                   aria-label="Close notifications"
                   onClick={() => setNotificationsOpen(false)}
-                  className="rounded-2xl border border-white/[0.08] bg-white/[0.03] p-2 text-text-muted transition-colors hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aurora-teal/40"
+                  className="ui-button-secondary p-2 text-text-muted transition-colors hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aurora-teal/40"
                 >
                   <X className="h-4.5 w-4.5" />
                 </button>
@@ -212,7 +212,7 @@ export function NotificationsPanel({ notificationsOpen, setNotificationsOpen, on
                   { label: 'Critical', value: criticalCount },
                   { label: 'Approvals', value: approvalCount },
                 ].map((item) => (
-                  <div key={item.label} className="deck-panel-soft p-3 ring-1 ring-white/[0.05]">
+                  <div key={item.label} className="ui-stat p-3">
                     <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">{item.label}</div>
                     <div className="mt-2 text-2xl font-semibold text-text-primary">{item.value}</div>
                   </div>
@@ -220,10 +220,10 @@ export function NotificationsPanel({ notificationsOpen, setNotificationsOpen, on
               </div>
 
               <div className="mt-4 flex flex-wrap gap-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-text-muted">
-                <span className="deck-chip px-3 py-1">Posture: {alertPosture === 'critical_only' ? 'Critical Only' : alertPosture === 'full_feed' ? 'Full Feed' : 'Balanced'}</span>
-                <span className="deck-chip px-3 py-1">Route: {notificationRoute === 'command_center' ? 'In-App' : notificationRoute}</span>
-                <span className="deck-chip px-3 py-1">Persona: {commanderPersona}</span>
-                {quietActive ? <span className="rounded-full border border-aurora-violet/20 bg-aurora-violet/10 px-3 py-1 text-aurora-violet">Quiet Hours</span> : null}
+                <span className="ui-chip px-3 py-1">Posture: {alertPosture === 'critical_only' ? 'Critical Only' : alertPosture === 'full_feed' ? 'Full Feed' : 'Balanced'}</span>
+                <span className="ui-chip px-3 py-1">Route: {notificationRoute === 'command_center' ? 'In-App' : notificationRoute}</span>
+                <span className="ui-chip px-3 py-1">Persona: {commanderPersona}</span>
+                {quietActive ? <span className="ui-chip border-aurora-violet/20 bg-aurora-violet/10 px-3 py-1 text-aurora-violet">Quiet Hours</span> : null}
               </div>
             </div>
 
@@ -232,7 +232,7 @@ export function NotificationsPanel({ notificationsOpen, setNotificationsOpen, on
                 type="button"
                 onClick={() => handleAlertClick({ action: directive.action })}
                 className={cn(
-                  'deck-panel w-full p-4 text-left transition-colors hover:bg-white/[0.04]',
+                  'ui-panel w-full p-4 text-left transition-colors hover:bg-white/[0.04]',
                   directive.tone === 'rose'
                     ? 'border-aurora-rose/20'
                     : directive.tone === 'amber'
@@ -242,7 +242,7 @@ export function NotificationsPanel({ notificationsOpen, setNotificationsOpen, on
               >
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <div className="deck-kicker text-[10px] font-semibold uppercase">{directive.eyebrow}</div>
+                    <div className="ui-kicker text-[10px] font-semibold uppercase">{directive.eyebrow}</div>
                     <div className="mt-2 text-base font-semibold text-text-primary">{directive.title}</div>
                     <p className="mt-2 text-[12px] leading-6 text-text-muted">{directive.detail}</p>
                   </div>
@@ -267,7 +267,7 @@ export function NotificationsPanel({ notificationsOpen, setNotificationsOpen, on
                 <button
                   type="button"
                   onClick={clearAll}
-                  className="inline-flex items-center gap-2 rounded-full border border-white/[0.08] bg-white/[0.03] px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-text-muted transition-colors hover:text-aurora-rose focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aurora-teal/40"
+                  className="ui-chip inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-text-muted transition-colors hover:text-aurora-rose focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aurora-teal/40"
                 >
                   <Trash2 className="h-3.5 w-3.5" />
                   Clear All
@@ -283,7 +283,7 @@ export function NotificationsPanel({ notificationsOpen, setNotificationsOpen, on
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
                     exit={{ opacity: 0 }}
-                    className="deck-panel flex h-52 flex-col items-center justify-center p-6 text-center"
+                    className="ui-panel flex h-52 flex-col items-center justify-center p-6 text-center"
                   >
                     <Sparkles className="h-5 w-5 text-aurora-teal" />
                     <div className="mt-3 text-sm font-semibold text-text-primary">This lane is clear</div>

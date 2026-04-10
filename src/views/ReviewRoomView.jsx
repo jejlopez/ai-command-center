@@ -66,7 +66,7 @@ function QueueCard({ item, isActive, onClick }) {
       transition={{ duration: 0.18 }}
       onClick={onClick}
       className={cn(
-        "spatial-panel p-4 flex flex-col gap-2 text-left transition-all border w-full",
+        "ui-card-row p-4 flex flex-col gap-2 text-left transition-all border w-full",
         isActive
           ? "border-aurora-teal/40 bg-aurora-teal/5 shadow-[0_0_15px_rgba(0,217,200,0.1)]"
           : "border-white/5 opacity-70 hover:opacity-100 hover:border-white/15"
@@ -99,7 +99,7 @@ function FilterPills({ label, options, active, onChange }) {
   return (
     <div className="flex items-center gap-1">
       <span className="text-[9px] font-mono text-text-disabled uppercase tracking-widest mr-1">{label}</span>
-      <div className="flex items-center gap-1 bg-black/40 rounded-md p-0.5 border border-border">
+      <div className="ui-segmented flex items-center gap-1 rounded-md p-0.5 border border-border">
         {options.map(opt => (
           <button
             key={opt.value}
@@ -339,7 +339,7 @@ export function ReviewRoomView() {
         </div>
         <div className="flex items-center gap-3">
           {approvals.length > 0 && (
-            <div className="flex items-center gap-2 px-4 py-2 spatial-panel border border-aurora-amber/30">
+            <div className="ui-card-row flex items-center gap-2 px-4 py-2 border border-aurora-amber/30">
               <BellRing className="w-4 h-4 text-aurora-amber animate-pulse" />
               <span className="text-sm font-mono text-text-primary">{approvals.length} Pending</span>
             </div>
@@ -456,7 +456,7 @@ export function ReviewRoomView() {
 
         {/* Right: Inspector */}
         {!selected ? (
-          <div className="flex-1 flex flex-col items-center justify-center spatial-panel bg-[#09090b] text-text-disabled">
+          <div className="ui-panel flex-1 flex flex-col items-center justify-center text-text-disabled">
             <CheckCircle2 className="w-12 h-12 mb-3 opacity-20" />
             <span className="text-sm">Nothing selected</span>
             <span className="text-xs mt-1 opacity-50">
@@ -466,9 +466,9 @@ export function ReviewRoomView() {
             </span>
           </div>
         ) : (
-          <div className="flex-1 flex flex-col min-w-0 spatial-panel overflow-hidden border-border/50 shadow-lg relative bg-[#09090b]">
+          <div className="ui-shell flex-1 flex flex-col min-w-0 overflow-hidden border-border/50 shadow-lg relative">
             {/* Header bar */}
-            <div className="h-14 flex items-center justify-between px-6 border-b border-white/5 bg-white/[0.03] shrink-0">
+            <div className="h-14 flex items-center justify-between px-6 border-b border-hairline bg-panel-soft shrink-0">
               <div className="flex items-center gap-3 min-w-0">
                 <TypeIcon className={cn("w-5 h-5 shrink-0", urgency ? urgency.text : "text-aurora-teal")} />
                 <div className="min-w-0">
@@ -503,7 +503,7 @@ export function ReviewRoomView() {
             </div>
 
             {/* Summary */}
-            <div className="px-6 py-3 border-b border-white/5 bg-white/[0.015]">
+            <div className="px-6 py-3 border-b border-hairline bg-panel-soft/60">
               <p className="text-xs text-text-body leading-relaxed">{selected.summary}</p>
             </div>
 
@@ -538,7 +538,7 @@ export function ReviewRoomView() {
 
             {/* Action bar — approvals only */}
             {activeTab === 'approvals' && (
-              <div className="shrink-0 bg-black/60 border-t border-white/10 p-5 z-20 shadow-[0_-10px_30px_rgba(0,0,0,0.5)]">
+              <div className="shrink-0 bg-canvas/70 border-t border-hairline p-5 z-20 shadow-[0_-10px_30px_rgba(0,0,0,0.5)]">
                 <AnimatePresence mode="wait">
                   {!showReviseForm ? (
                     <motion.div
@@ -550,13 +550,13 @@ export function ReviewRoomView() {
                     >
                       <button
                         onClick={() => setShowReviseForm(true)}
-                        className="flex-1 h-12 flex items-center justify-center gap-2 border border-aurora-amber/40 bg-aurora-amber/5 text-aurora-amber hover:bg-aurora-amber/10 hover:border-aurora-amber rounded-xl font-bold tracking-wider uppercase text-sm transition-all"
+                        className="ui-button-secondary flex-1 h-12 flex items-center justify-center gap-2 border-aurora-amber/40 bg-aurora-amber/5 text-aurora-amber hover:bg-aurora-amber/10 hover:border-aurora-amber rounded-xl font-bold tracking-wider uppercase text-sm transition-all"
                       >
                         <XCircle className="w-4 h-4" /> Reject
                       </button>
                       <button
                         onClick={handleApprove}
-                        className="flex-[2] h-12 flex items-center justify-center gap-2 bg-aurora-teal text-black hover:bg-[#00ebd8] rounded-xl font-bold tracking-wider uppercase text-sm transition-all shadow-[0_0_20px_rgba(0,217,200,0.4)] hover:shadow-[0_0_30px_rgba(0,217,200,0.6)]"
+                        className="ui-button-primary flex-[2] h-12 flex items-center justify-center gap-2 rounded-xl font-bold tracking-wider uppercase text-sm transition-all shadow-[0_0_20px_rgba(0,217,200,0.4)] hover:shadow-[0_0_30px_rgba(0,217,200,0.6)]"
                       >
                         <CheckCircle2 className="w-4 h-4" /> Approve <kbd className="ml-1 px-1 py-0.5 bg-black/20 rounded text-[10px] font-mono normal-case tracking-normal">↵</kbd>
                       </button>
@@ -580,11 +580,11 @@ export function ReviewRoomView() {
                           onChange={e => setFeedback(e.target.value)}
                           onKeyDown={e => { if (e.key === 'Enter' && feedback.trim()) handleReject(); }}
                           placeholder="e.g. 'Reduce batch size', 'Extract styles to variables'..."
-                          className="flex-1 h-12 bg-[#121212] border border-aurora-amber/50 rounded-xl px-4 text-sm font-mono text-text-primary focus:outline-none focus:shadow-[0_0_20px_rgba(251,191,36,0.15)] transition-all placeholder:text-text-disabled"
+                          className="flex-1 h-12 bg-panel-soft border border-aurora-amber/50 rounded-xl px-4 text-sm font-mono text-text-primary focus:outline-none focus:shadow-[0_0_20px_rgba(251,191,36,0.15)] transition-all placeholder:text-text-disabled"
                         />
                         <button
                           onClick={() => { setShowReviseForm(false); setFeedback(''); }}
-                          className="h-12 px-5 border border-white/10 hover:bg-white/5 rounded-xl text-text-muted font-semibold transition-all text-sm"
+                          className="ui-button-secondary h-12 px-5 rounded-xl text-text-muted font-semibold transition-all text-sm"
                         >
                           Cancel
                         </button>
