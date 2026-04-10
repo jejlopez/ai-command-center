@@ -38,7 +38,20 @@ async function ensureModelBankEntry(user, modelKey, provider = DEFAULT_MODEL_PRO
   return data;
 }
 
-async function ensureCommanderAgent(user) {
+async function getUserSettings(userId) {
+  if (!userId) return null;
+
+  const { data, error } = await supabase
+    .from('user_settings')
+    .select('*')
+    .eq('user_id', userId)
+    .maybeSingle();
+
+  if (error) throw error;
+  return data;
+}
+
+export async function ensureCommanderAgent(user) {
   if (!user?.id) return null;
 
   const commanderName = getCommanderDisplayName(user);
@@ -979,6 +992,83 @@ export function useSkillBank() {
   return { skills, loading, refetch: fetchSkills };
 }
 
+export function useMcpServers(workspaceId = null) {
+  const { user } = useAuth();
+  const [servers, setServers] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetchServers = useCallback(async () => {
+    if (!user) {
+      setServers([]);
+      setLoading(false);
+      return;
+    }
+
+    try {
+      let query = supabase
+        .from('mcp_servers')
+        .select('*')
+        .eq('user_id', user.id);
+
+      if (workspaceId) query = query.eq('workspace_id', workspaceId);
+
+      const { data, error } = await query.order('created_at', { ascending: true });
+
+      if (error) throw error;
+      setServers((data || []).map(mapMcpServerFromDb));
+    } catch (error) {
+      console.error('[useMcpServers] Fetch error:', error);
+      setServers([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [user, workspaceId]);
+
+  useEffect(() => {
+    fetchServers();
+  }, [fetchServers]);
+
+  return { servers, loading, refetch: fetchServers };
+}
+
+export function useProviderCredentials() {
+  const { user } = useAuth();
+  const [credentials, setCredentials] = useState({
+    anthropic: false,
+    openai: false,
+    google: false,
+  });
+  const [loading, setLoading] = useState(true);
+
+  const fetchCredentials = useCallback(async () => {
+    if (!user) {
+      setCredentials({ anthropic: false, openai: false, google: false });
+      setLoading(false);
+      return;
+    }
+
+    try {
+      const data = await getUserSettings(user.id);
+      setCredentials({
+        anthropic: Boolean(data?.anthropic_api_key),
+        openai: Boolean(data?.openai_api_key),
+        google: Boolean(data?.google_api_key),
+      });
+    } catch (error) {
+      console.error('[useProviderCredentials] Fetch error:', error);
+      setCredentials({ anthropic: false, openai: false, google: false });
+    } finally {
+      setLoading(false);
+    }
+  }, [user]);
+
+  useEffect(() => {
+    fetchCredentials();
+  }, [fetchCredentials]);
+
+  return { credentials, loading, refetch: fetchCredentials };
+}
+
 export function useTaskOutcomes() {
   const { user } = useAuth();
   const [outcomes, setOutcomes] = useState([]);
@@ -1477,6 +1567,67 @@ export async function updateAgentSkills(agentId, skills) {
   return mapAgentFromDb(data);
 }
 
+export async function updateAgentConfig(agentId, patch) {
+  const row = {
+    model: patch.model,
+    temperature: patch.temperature,
+    response_length: patch.responseLength,
+    system_prompt: patch.systemPrompt,
+    can_spawn: patch.canSpawn,
+    spawn_pattern: patch.spawnPattern,
+  };
+
+  const sanitized = Object.fromEntries(
+    Object.entries(row).filter(([, value]) => value !== undefined)
+  );
+
+  const { data, error } = await supabase
+    .from('agents')
+    .update(sanitized)
+    .eq('id', agentId)
+    .select()
+    .single();
+
+  if (error) throw error;
+  return mapAgentFromDb(data);
+}
+
+export async function createMcpServer(serverData) {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('Not authenticated');
+
+  const url = serverData.url?.trim();
+  if (!url) throw new Error('Server URL is required');
+
+  const row = {
+    user_id: user.id,
+    workspace_id: serverData.workspaceId ?? null,
+    name: serverData.name?.trim() || deriveMcpServerName(url),
+    url,
+    status: serverData.status?.trim() || 'configured',
+    tool_count: Number(serverData.toolCount ?? 0),
+  };
+
+  const { data, error } = await supabase
+    .from('mcp_servers')
+    .upsert(row, { onConflict: 'workspace_id,url' })
+    .select()
+    .single();
+
+  if (error) throw error;
+  return mapMcpServerFromDb(data);
+}
+
+export async function deleteMcpServer(serverId) {
+  const { error } = await supabase
+    .from('mcp_servers')
+    .delete()
+    .eq('id', serverId);
+
+  if (error) throw error;
+  return serverId;
+}
+
 // ── Mappers ────────────────────────────────────────────────────
 
 function mapAgentFromDb(row) {
@@ -1651,6 +1802,20 @@ function mapSkillFromDb(row) {
   };
 }
 
+function mapMcpServerFromDb(row) {
+  return {
+    id: row.id,
+    userId: row.user_id,
+    workspaceId: row.workspace_id || null,
+    name: row.name,
+    url: row.url,
+    status: row.status || 'configured',
+    toolCount: Number(row.tool_count || 0),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
 function mapConnectedSystemFromDb(row) {
   return {
     id: row.id,
@@ -1779,4 +1944,13 @@ function inferSkillIcon(source, reference) {
   if (source === 'local') return 'FolderOpen';
   if (reference?.includes('http')) return 'Globe';
   return 'Zap';
+}
+
+function deriveMcpServerName(url) {
+  try {
+    const parsed = new URL(url);
+    return parsed.hostname.replace(/^www\./, '') || 'MCP Server';
+  } catch {
+    return 'MCP Server';
+  }
 }
