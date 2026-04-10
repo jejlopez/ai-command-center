@@ -26,7 +26,7 @@ import {
   deriveRoutingDecision,
   mapRoutingPolicyFromDb,
 } from '../utils/routingPolicy';
-import { getPersistentPromotionGuidance, inferAgentProvider } from '../utils/commanderAnalytics';
+import { getPersistentPromotionGuidance, getRecurringAutonomyTuningSummary, inferAgentProvider } from '../utils/commanderAnalytics';
 
 // True when real Supabase env vars are set (not the placeholder)
 const isSupabaseConfigured = import.meta.env.VITE_SUPABASE_URL
@@ -462,6 +462,7 @@ function enforceRecurringMissionGuardrails(payload = {}) {
   const lightHistory = Number(candidate.runs || 0) > 0 && Number(candidate.runs || 0) < 3;
   const financeSensitive = ['finance', 'money', 'billing', 'banking'].includes(domain);
   const externalDraft = ['email_drafts', 'crm_notes'].includes(String(payload.outputType || '').toLowerCase());
+  const trustTuning = getRecurringAutonomyTuningSummary(candidate);
 
   if (lowRoi || lightHistory || financeSensitive || externalDraft) {
     if (nextPayload.missionMode !== 'watch_and_approve') {
@@ -481,6 +482,23 @@ function enforceRecurringMissionGuardrails(payload = {}) {
 
   if (lowRoi) {
     guardrails.push('Low ROI automation remains gated until the economics improve.');
+  }
+
+  if (trustTuning.posture === 'tighten') {
+    if (nextPayload.missionMode !== trustTuning.recommendedMissionMode) {
+      nextPayload.missionMode = trustTuning.recommendedMissionMode;
+      guardrails.push('Tightened recurring mission mode from runtime trust memory.');
+    }
+    if (nextPayload.repeat.approvalPosture !== trustTuning.recommendedApprovalPosture) {
+      nextPayload.repeat = {
+        ...nextPayload.repeat,
+        approvalPosture: trustTuning.recommendedApprovalPosture,
+      };
+      guardrails.push('Raised recurring approval posture because runtime trust is still fragile.');
+    }
+  } else if (trustTuning.posture === 'watch' && nextPayload.missionMode === 'do_now') {
+    nextPayload.missionMode = trustTuning.recommendedMissionMode;
+    guardrails.push('Shifted recurring mission into plan-first while runtime trust is still forming.');
   }
 
   return { payload: nextPayload, guardrails };
@@ -829,8 +847,23 @@ async function resolveBranchAssignment({
     || 'executor';
   const fallbackOrder = Array.isArray(routingPolicy?.fallbackOrder) ? routingPolicy.fallbackOrder : [];
   const roleFallback = fallbackOrder.find((entry) => entry.role === branchRole) || null;
-  const modelOverride = branch.modelOverride || roleFallback?.model || observedWinningLane?.model || routingPolicy?.preferredModel || null;
-  const providerOverride = branch.providerOverride || roleFallback?.provider || observedWinningLane?.provider || routingPolicy?.preferredProvider || null;
+  const shouldLeanOnWinningLane = Boolean(
+    observedWinningLane
+    && (
+      observedWinningLane.confidence === 'high'
+      || (observedWinningLane.confidence === 'medium' && Number(observedWinningLane.avgScore || 0) >= 82)
+    )
+  );
+  const modelOverride = branch.modelOverride
+    || (shouldLeanOnWinningLane ? observedWinningLane?.model : null)
+    || roleFallback?.model
+    || routingPolicy?.preferredModel
+    || null;
+  const providerOverride = branch.providerOverride
+    || (shouldLeanOnWinningLane ? observedWinningLane?.provider : null)
+    || roleFallback?.provider
+    || routingPolicy?.preferredProvider
+    || null;
   const recommendedSkillNames = Array.isArray(branch.recommendedSkillNames)
     ? branch.recommendedSkillNames
     : [];
@@ -872,10 +905,8 @@ async function resolveBranchAssignment({
       tasks: persistentLaneSignals?.tasks || [],
     });
     const durableGap = Boolean(
-      promotionGuidance.shouldAutoCreate
-      && promotionGuidance.topGap
-      && promotionGuidance.topGap.role === branchRole
-      && !promotionGuidance.topGap.covered
+      Array.isArray(promotionGuidance.autoCreateRoles)
+      && promotionGuidance.autoCreateRoles.includes(branchRole)
     );
 
     assignedAgent = await (durableGap ? createPersistentBranchSpecialist : ensureBranchSpecialistAgent)({
@@ -1176,8 +1207,8 @@ async function selectOutcomeWinningLane(user, routingDecision) {
       avgCost: entry.runs ? entry.totalCost / entry.runs : 0,
       confidence: entry.runs >= 8 ? 'high' : entry.runs >= 4 ? 'medium' : 'low',
       rank: (entry.runs ? entry.totalScore / entry.runs : 0)
-        + Math.min(18, entry.runs * 2.5)
-        - ((entry.runs ? entry.totalCost / entry.runs : 0) * 7),
+        + Math.min(24, entry.runs * 3)
+        - ((entry.runs ? entry.totalCost / entry.runs : 0) * 5.5),
     }))
     .sort((left, right) => {
       if (right.rank !== left.rank) return right.rank - left.rank;

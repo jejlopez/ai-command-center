@@ -1832,6 +1832,11 @@ function SpecialistFleetTab({ agents, lifecycleEvents, skills, tasks }) {
             <div className="mt-1 text-sm font-semibold text-text-primary">{fleetPosture.label}</div>
             <p className="mt-2 max-w-2xl text-[12px] leading-relaxed text-text-body">{fleetPosture.detail}</p>
             <p className="mt-2 max-w-2xl text-[11px] leading-relaxed text-aurora-blue">{promotionGuidance.recommendation}</p>
+            {promotionGuidance.autoCreateRoles?.length > 1 && (
+              <p className="mt-2 max-w-2xl text-[11px] leading-relaxed text-aurora-violet">
+                Durable pressure is now high enough that Commander can justify auto-creating coverage for: {promotionGuidance.autoCreateRoles.join(', ')}.
+              </p>
+            )}
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <span className="rounded-full border border-aurora-blue/20 bg-aurora-blue/10 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-aurora-blue">

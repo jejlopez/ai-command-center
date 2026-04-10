@@ -34,7 +34,7 @@ import { DoctrineCards } from '../components/command/DoctrineCards';
 import { cn } from '../utils/cn';
 import { TruthAuditStrip } from '../components/command/TruthAuditStrip';
 import { useCommandCenterTruth } from '../utils/useCommandCenterTruth';
-import { buildPolicyDemotionSummary, buildProviderEscalationExplanation, getAutomationCandidates, getAutomationRoiSummary, getAutonomyMetrics, getDoctrineDeltaSummary, getObservedModelBenchmarks, getPostLaunchConfidenceSummary, getPrimaryBottleneck, parseAutomationGuardrailEvents, parseDoctrineFeedbackLogs, parseOutcomeScoreLogs, rankCommanderRecommendations, scoreTaskOutcome } from '../utils/commanderAnalytics';
+import { buildPolicyDemotionSummary, buildProviderEscalationExplanation, getAutomationCandidates, getAutomationRoiSummary, getAutonomyMetrics, getDoctrineDeltaSummary, getObservedModelBenchmarks, getPostLaunchConfidenceSummary, getPrimaryBottleneck, getRecurringAutonomyTuningSummary, parseAutomationGuardrailEvents, parseDoctrineFeedbackLogs, parseOutcomeScoreLogs, rankCommanderRecommendations, scoreTaskOutcome } from '../utils/commanderAnalytics';
 import { createMission, updateRecurringMissionFlow } from '../lib/api';
 
 const PERIOD_OPTIONS = ['30d', '90d', 'QTD'];
@@ -595,6 +595,7 @@ export function ReportsView() {
   }, [tasks, outcomes, interventions]);
 
   function openAutomationDraft(candidate) {
+    const trustTuning = getRecurringAutonomyTuningSummary(candidate);
     setAutomationMessage('');
     setAutomationDraft({
       mode: 'create',
@@ -602,14 +603,20 @@ export function ReportsView() {
       frequency: candidate.runs >= 4 ? 'daily' : 'weekly',
       time: '09:00',
       outputType: candidate.intentType === 'report' ? 'summary' : 'action_plan',
-      missionMode: candidate.roi >= 3 ? 'plan_first' : 'watch_and_approve',
-      approvalPosture: ['finance', 'money', 'billing'].includes(String(candidate.domain || '').toLowerCase()) ? 'human_required' : 'risk_weighted',
+      missionMode: trustTuning.recommendedMissionMode || (candidate.roi >= 3 ? 'plan_first' : 'watch_and_approve'),
+      approvalPosture: ['finance', 'money', 'billing'].includes(String(candidate.domain || '').toLowerCase())
+        ? 'human_required'
+        : trustTuning.recommendedApprovalPosture || 'risk_weighted',
     });
   }
 
   function openManagedFlowDraft(flow) {
     const candidateKey = `${flow.domain || 'general'}::${flow.intentType || 'general'}::${flow.title}`;
     const candidateMetrics = automationCandidateLookup.get(candidateKey);
+    const trustTuning = getRecurringAutonomyTuningSummary(candidateMetrics || {
+      domain: flow.domain,
+      intentType: flow.intentType,
+    });
     setAutomationMessage('');
     setAutomationDraft({
       mode: 'manage',
@@ -627,19 +634,22 @@ export function ReportsView() {
       frequency: flow.frequency,
       time: flow.time,
       outputType: 'summary',
-      missionMode: flow.missionMode,
-      approvalPosture: flow.approvalPosture,
+      missionMode: flow.missionMode || trustTuning.recommendedMissionMode,
+      approvalPosture: flow.approvalPosture || trustTuning.recommendedApprovalPosture,
       paused: flow.paused,
     });
   }
 
   function getAutomationGuardrails(candidate, draft) {
     if (!candidate || !draft) return [];
+    const trustTuning = getRecurringAutonomyTuningSummary(candidate);
     return [
       candidate.roi < 1.5 ? 'ROI is still modest, so keep this in watch-and-approve until the workflow proves itself.' : null,
       candidate.runs < 3 ? 'This flow is only lightly repeated so far. Start with a slower cadence before scaling it.' : null,
       ['finance', 'money', 'billing'].includes(String(candidate.domain || '').toLowerCase()) ? 'Financial or money-adjacent work should stay human-gated by default.' : null,
       draft.frequency === 'daily' && candidate.runs < 4 ? 'Daily cadence is aggressive for a flow with limited history. Weekly may be safer first.' : null,
+      trustTuning.posture === 'tighten' ? `Runtime trust memory says to use ${trustTuning.recommendedMissionMode.replaceAll('_', ' ')} with ${trustTuning.recommendedApprovalPosture.replaceAll('_', ' ')} approval.` : null,
+      trustTuning.posture === 'watch' && draft.missionMode === 'do_now' ? 'Runtime trust is still forming here, so do-now is probably too aggressive for this recurring flow.' : null,
     ].filter(Boolean);
   }
 
@@ -806,6 +816,7 @@ export function ReportsView() {
                   {(() => {
                     const candidateKey = `${flow.domain || 'general'}::${flow.intentType || 'general'}::${flow.title}`;
                     const trustSignals = automationCandidateLookup.get(candidateKey) || null;
+                    const trustTuning = getRecurringAutonomyTuningSummary(trustSignals);
                     return (
                       <>
                   <div className="flex flex-wrap items-start justify-between gap-3">
@@ -818,6 +829,7 @@ export function ReportsView() {
                       <TelemetryTag label="Mode" value={flow.missionMode.replaceAll('_', ' ')} tone="teal" />
                       <TelemetryTag label="Approval" value={flow.approvalPosture.replaceAll('_', ' ')} tone={flow.approvalPosture === 'human_required' ? 'amber' : 'violet'} />
                       {trustSignals && <TelemetryTag label="Trust" value={trustSignals.trustLabel} tone={trustSignals.trustLabel === 'Stable' ? 'teal' : trustSignals.trustLabel === 'Watch' ? 'amber' : 'violet'} />}
+                      {trustSignals && <TelemetryTag label="Posture" value={trustTuning.posture} tone={trustTuning.posture === 'stable' ? 'teal' : trustTuning.posture === 'watch' ? 'amber' : 'violet'} />}
                       {flow.paused && <TelemetryTag label="State" value="Paused" tone="amber" />}
                     </div>
                   </div>
@@ -837,7 +849,8 @@ export function ReportsView() {
                   </div>
                   {trustSignals && (
                     <div className="mt-3 rounded-[14px] border border-white/8 bg-black/20 px-3 py-2 text-[11px] text-text-body">
-                      {trustSignals.trustDetail}
+                      <div>{trustSignals.trustDetail}</div>
+                      <div className="mt-2 text-aurora-blue">{trustTuning.actionLabel}. {trustTuning.detail}</div>
                     </div>
                   )}
                   <div className="mt-3 flex flex-wrap justify-between gap-3 text-[11px] text-text-muted">

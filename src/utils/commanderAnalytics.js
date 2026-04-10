@@ -858,6 +858,15 @@ export function getPersistentPromotionGuidance({ lifecycleEvents = [], agents = 
       return right.count - left.count;
     });
   const topGap = rankedRoleDemand.find((entry) => !entry.covered) || rankedRoleDemand[0] || null;
+  const autoCreateRoles = rankedRoleDemand
+    .filter((entry) => !entry.covered)
+    .filter((entry) => {
+      const entryPressure = (entry.count * 8) + ((entry.spawnedCount || 0) * 10)
+        + (fleetPosture.posture === 'thin' ? 18 : 0)
+        + (fleetPosture.posture === 'churn-heavy' ? 14 : 0);
+      return entryPressure >= 32 || entry.count >= 4 || (entry.count >= 2 && (entry.spawnedCount || 0) >= 2);
+    })
+    .map((entry) => entry.role);
   const pressureScore = topGap
     ? (topGap.count * 8) + ((topGap.spawnedCount || 0) * 10)
       + (fleetPosture.posture === 'thin' ? 18 : 0)
@@ -887,6 +896,7 @@ export function getPersistentPromotionGuidance({ lifecycleEvents = [], agents = 
     recommendation,
     pressureScore,
     shouldAutoCreate,
+    autoCreateRoles,
   };
 }
 
@@ -915,6 +925,67 @@ export function getMissionPatternDefaultSummary(learningMemory = null) {
     tone,
     label: `${winningPattern.domain} / ${winningPattern.intentType} is the strongest reusable pattern`,
     detail: `${winningPattern.executionStrategy} with ${winningPattern.approvalLevel} approval is closing ${(winningPattern.completionRate * 100).toFixed(0)}% of ${winningPattern.runs} runs, so Commander should bias defaults toward that shape more aggressively.`,
+  };
+}
+
+export function getRecurringAutonomyTuningSummary(candidate = null) {
+  if (!candidate) {
+    return {
+      posture: 'forming',
+      recommendedMissionMode: 'watch_and_approve',
+      recommendedApprovalPosture: 'risk_weighted',
+      actionLabel: 'Keep this in supervised automation',
+      detail: 'Commander still needs enough runtime memory before it should loosen recurring autonomy safely.',
+      reasons: [],
+    };
+  }
+
+  const rescuePressure = Number(candidate.rescueCount || 0);
+  const guardrailPressure = Number(candidate.guardrailCount || 0);
+  const tuningPressure = Number(candidate.tuningCount || 0);
+  const maturityScore = Number(candidate.maturityScore || 0);
+  const trustLabel = String(candidate.trustLabel || '');
+  const avgOutcome = Number(candidate.avgOutcome || 0);
+  const lowTrust = trustLabel === 'Fragile' || maturityScore < 48;
+  const watchTrust = trustLabel === 'Watch' || maturityScore < 72;
+
+  let posture = 'stable';
+  let recommendedMissionMode = 'do_now';
+  let recommendedApprovalPosture = 'auto_low_risk';
+  let actionLabel = 'This recurring flow can carry more autonomy';
+
+  if (lowTrust || rescuePressure >= 2 || guardrailPressure >= 2 || avgOutcome < 58) {
+    posture = 'tighten';
+    recommendedMissionMode = 'watch_and_approve';
+    recommendedApprovalPosture = rescuePressure >= 3 || guardrailPressure >= 3 ? 'human_required' : 'risk_weighted';
+    actionLabel = 'Tighten autonomy posture before this scales';
+  } else if (watchTrust || tuningPressure >= 2 || avgOutcome < 72) {
+    posture = 'watch';
+    recommendedMissionMode = 'plan_first';
+    recommendedApprovalPosture = 'risk_weighted';
+    actionLabel = 'Keep this in managed review posture';
+  }
+
+  const reasons = [
+    rescuePressure > 0 ? `${rescuePressure} rescue intervention${rescuePressure === 1 ? '' : 's'} landed on this flow.` : null,
+    guardrailPressure > 0 ? `${guardrailPressure} recurring guardrail${guardrailPressure === 1 ? '' : 's'} already triggered on this flow.` : null,
+    tuningPressure > 0 ? `${tuningPressure} tuning change${tuningPressure === 1 ? '' : 's'} suggest the workflow is still settling.` : null,
+    avgOutcome > 0 ? `Average runtime quality is ${avgOutcome}.` : null,
+  ].filter(Boolean);
+
+  const detail = posture === 'tighten'
+    ? 'Runtime trust is drifting enough that Commander should raise the human bar and slow the automation down before it creates more cleanup.'
+    : posture === 'watch'
+      ? 'Economics are promising, but runtime memory still says this flow should stay in a managed planning posture for now.'
+      : 'This recurring flow is holding cleanly enough that Commander can let it run with a lighter approval posture.';
+
+  return {
+    posture,
+    recommendedMissionMode,
+    recommendedApprovalPosture,
+    actionLabel,
+    detail,
+    reasons,
   };
 }
 
