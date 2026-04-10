@@ -66,7 +66,7 @@ function HudFrame({ eyebrow, title, detail, accent = 'teal', children, className
       initial={{ opacity: 0, y: 18 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.45, ease: 'easeOut' }}
-      className={`relative overflow-hidden rounded-[24px] border border-white/8 bg-black/20 p-4 ${className}`}
+      className={`ui-panel relative overflow-hidden p-4 ${className}`}
     >
       <div className={`pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r ${accents[accent] || accents.teal}`} />
       <div className="pointer-events-none absolute right-4 top-4 h-12 w-12 rounded-full bg-white/[0.03] blur-2xl" />
@@ -98,7 +98,7 @@ function TelemetryTag({ label, value, tone = 'teal' }) {
     blue: 'border-aurora-blue/20 bg-aurora-blue/10 text-aurora-blue',
   };
   return (
-    <div className={`rounded-full border px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] ${styles[tone] || styles.teal}`}>
+    <div className={`ui-chip rounded-full border px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] ${styles[tone] || styles.teal}`}>
       {label}: {value}
     </div>
   );
@@ -113,7 +113,7 @@ function ExecutiveReadFirst({ items }) {
           initial={{ opacity: 0, y: 18 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.4, ease: 'easeOut' }}
-          className="rounded-[24px] border border-white/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.04),rgba(255,255,255,0.015))] p-4"
+          className="ui-panel p-4"
         >
           <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">{entry.eyebrow}</div>
           <div className="mt-2 text-base font-semibold text-text-primary">{entry.title}</div>
@@ -147,7 +147,7 @@ function ExecutiveKpi({ label, value, detail, tone = 'teal', icon, valueNode }) 
   };
 
   return (
-    <div className="rounded-[24px] border border-white/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.015))] p-4">
+    <div className="ui-panel p-4">
       <div className="flex items-center justify-between">
         <span className="text-[10px] uppercase tracking-[0.22em] text-text-muted">{label}</span>
         <div className={`rounded-xl border px-2.5 py-2 ${toneStyles[tone]}`}>
@@ -167,14 +167,14 @@ function DoctrineTimelinePanel({ learningMemory }) {
     .slice(0, 4);
 
   return (
-    <div className="rounded-[24px] border border-white/8 bg-black/20 p-4">
+    <div className="ui-panel-soft p-4">
       <div className="flex items-center gap-2">
         <History className="h-4 w-4 text-aurora-violet" />
         <span className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Doctrine timeline</span>
       </div>
       <div className="mt-4 space-y-3">
         {timeline.map((item) => (
-          <div key={item.id} className="rounded-2xl border border-white/8 bg-white/[0.02] px-3 py-3">
+          <div key={item.id} className="ui-card-row px-3 py-3">
             <div className="flex items-center justify-between gap-3">
               <div className="text-[12px] font-semibold text-text-primary">{item.owner}</div>
               <div className="text-[10px] font-mono text-aurora-teal">{item.confidence}%</div>
@@ -217,9 +217,9 @@ function ExecutiveSignalRail({ learningMemory, summary, burnByModel }) {
   ];
 
   return (
-    <div className="space-y-5">
-      <div className="rounded-[28px] border border-white/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.015))] p-2">
-        <div className="flex flex-wrap gap-2 rounded-[24px] bg-black/20 p-2">
+      <div className="space-y-5">
+      <div className="ui-panel p-2">
+        <div className="ui-segmented flex flex-wrap gap-2 rounded-[24px] p-2">
           {[
             { id: 'doctrine', label: 'Doctrine' },
             { id: 'orders', label: 'Orders' },
@@ -240,7 +240,7 @@ function ExecutiveSignalRail({ learningMemory, summary, burnByModel }) {
       </div>
 
       {focus === 'doctrine' && (
-        <div className="rounded-[28px] border border-white/8 bg-[linear-gradient(180deg,rgba(167,139,250,0.06),rgba(255,255,255,0.02))] p-5">
+        <div className="ui-panel border-aurora-violet/15 bg-[linear-gradient(180deg,rgba(167,139,250,0.06),rgba(255,255,255,0.02))] p-5">
           <CommandSectionHeader
             eyebrow="Boardroom Doctrine"
             title="What the system has learned this cycle"
@@ -253,7 +253,7 @@ function ExecutiveSignalRail({ learningMemory, summary, burnByModel }) {
       )}
 
       {focus === 'orders' && (
-        <div className="rounded-[28px] border border-white/8 bg-[linear-gradient(180deg,rgba(45,212,191,0.05),rgba(255,255,255,0.02))] p-5">
+        <div className="ui-panel border-aurora-teal/15 bg-[linear-gradient(180deg,rgba(45,212,191,0.05),rgba(255,255,255,0.02))] p-5">
           <CommandSectionHeader
             eyebrow="Executive Orders"
             title="What Tony and Elon would do next"
@@ -263,7 +263,7 @@ function ExecutiveSignalRail({ learningMemory, summary, burnByModel }) {
           />
           <div className="mt-5 space-y-3">
             {orders.map((entry) => (
-              <div key={entry.title} className="rounded-[22px] border border-white/8 bg-black/20 p-4">
+              <div key={entry.title} className="ui-card-row p-4">
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <div className="text-sm font-semibold text-text-primary">{entry.title}</div>
@@ -286,7 +286,7 @@ function ExecutiveSignalRail({ learningMemory, summary, burnByModel }) {
 
 function PressureModeIntro({ title, description }) {
   return (
-    <div className="mb-4 rounded-[18px] border border-white/8 bg-white/[0.03] px-4 py-3">
+    <div className="mb-4 ui-card-row px-4 py-3">
       <div className="text-sm font-semibold text-text-primary">{title}</div>
       <p className="mt-1 text-[12px] leading-relaxed text-text-muted">{description}</p>
     </div>
@@ -432,13 +432,13 @@ export function ReportsView() {
               { label: 'approvals in queue', value: summary.approvalPressure, tone: 'amber' },
             ]}
             actions={
-              <button className="inline-flex items-center gap-2 rounded-xl bg-aurora-violet px-4 py-2 text-sm font-semibold text-black shadow-glow-violet transition-colors hover:bg-aurora-violet/90">
+              <button className="ui-button-primary inline-flex items-center gap-2 rounded-xl bg-aurora-violet px-4 py-2 text-sm font-semibold text-black shadow-glow-violet transition-colors hover:bg-aurora-violet/90">
                 <FileText className="h-4 w-4" />
                 Generate Brief
               </button>
             }
             sideContent={
-              <div className="flex w-full flex-col gap-3 rounded-[24px] border border-white/10 bg-black/25 p-4 backdrop-blur-sm">
+              <div className="ui-panel flex w-full flex-col gap-3 p-4 backdrop-blur-sm">
                 <div className="flex items-center justify-between">
                   <span className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Board controls</span>
                   <span className="text-[10px] font-mono text-aurora-violet">LIVE</span>
@@ -448,7 +448,7 @@ export function ReportsView() {
                     <button
                       key={option}
                       onClick={() => setPeriod(option)}
-                      className={`rounded-full border px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] transition-colors ${
+                      className={`ui-chip rounded-full border px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] transition-colors ${
                         period === option
                           ? 'border-aurora-teal/30 bg-aurora-teal/10 text-aurora-teal'
                           : 'border-white/8 bg-white/[0.03] text-text-muted hover:text-text-primary'
@@ -459,11 +459,11 @@ export function ReportsView() {
                   ))}
                 </div>
                 <div className="grid grid-cols-2 gap-3">
-                  <div className="rounded-2xl border border-white/8 bg-white/[0.02] p-3">
+                  <div className="ui-stat p-3">
                     <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Burn today</div>
                     <div className="mt-2 text-2xl font-semibold text-text-primary">{formatCurrency(summary.totalCost)}</div>
                   </div>
-                  <div className="rounded-2xl border border-white/8 bg-white/[0.02] p-3">
+                  <div className="ui-stat p-3">
                     <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Cost / mission</div>
                     <div className="mt-2 text-2xl font-semibold text-text-primary">{formatCurrency(summary.avgCost)}</div>
                   </div>
@@ -504,14 +504,14 @@ export function ReportsView() {
         <TruthAuditStrip truth={truth} />
 
         <Motion.section variants={item} className="space-y-5">
-          <div className="rounded-[28px] border border-white/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.015))] p-5">
+          <div className="ui-panel p-5">
             <CommandSectionHeader
               eyebrow="Pressure Map"
               title="Where the board is heating up"
               description="A reactor-style readout of pace, burn, and operational pressure."
               icon={Gauge}
               tone="teal"
-              action={<span className="rounded-full border border-aurora-teal/20 bg-aurora-teal/10 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-aurora-teal">Live telemetry</span>}
+              action={<span className="ui-chip border-aurora-teal/20 bg-aurora-teal/10 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-aurora-teal">Live telemetry</span>}
             />
 
             <div className="mt-5">
@@ -531,7 +531,7 @@ export function ReportsView() {
                       key={tab.id}
                       type="button"
                       onClick={() => setPressureFocus(tab.id)}
-                      className={`rounded-full border px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] transition-colors ${
+                      className={`ui-chip rounded-full border px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] transition-colors ${
                         pressureFocus === tab.id
                           ? 'border-aurora-teal/25 bg-aurora-teal/10 text-aurora-teal'
                           : 'border-white/8 bg-white/[0.03] text-text-muted hover:text-text-primary'
@@ -580,7 +580,7 @@ export function ReportsView() {
                         </div>
                       </div>
                     )}
-                    <div className="mt-3 rounded-2xl border border-aurora-teal/15 bg-aurora-teal/[0.05] px-3 py-2 text-[11px] text-text-body">
+                    <div className="mt-3 ui-card-row border-aurora-teal/15 bg-aurora-teal/[0.05] px-3 py-2 text-[11px] text-text-body">
                       Readback: the highest recent activity was <span className="font-semibold text-aurora-teal">{peakActivity.name}</span> with <span className="font-semibold text-aurora-teal">{peakActivity.volume}</span> logged events.
                     </div>
                   </>
@@ -632,7 +632,7 @@ export function ReportsView() {
                         </div>
                       </div>
                     )}
-                    <div className="mt-3 rounded-2xl border border-aurora-amber/15 bg-aurora-amber/[0.05] px-3 py-2 text-[11px] text-text-body">
+                    <div className="mt-3 ui-card-row border-aurora-amber/15 bg-aurora-amber/[0.05] px-3 py-2 text-[11px] text-text-body">
                       Threshold marker: {topCostCenter ? <><span className="font-semibold text-aurora-amber">{topCostCenter.name}</span> is the hottest spend lane at <span className="font-semibold text-aurora-amber">{formatCurrency(topCostCenter.cost)}</span>.</> : 'No spend concentration detected yet.'}
                     </div>
                   </>
@@ -684,24 +684,24 @@ export function ReportsView() {
                         </div>
                       </div>
                     )}
-                    <div className="mt-3 rounded-2xl border border-aurora-violet/15 bg-aurora-violet/[0.05] px-3 py-2 text-[11px] text-text-body">
+                    <div className="mt-3 ui-card-row border-aurora-violet/15 bg-aurora-violet/[0.05] px-3 py-2 text-[11px] text-text-body">
                       State readback: {statusPressure[0] ? <><span className="font-semibold text-aurora-violet">{statusPressure[0].status}</span> is owning the board with <span className="font-semibold text-aurora-violet">{statusPressure[0].count}</span> missions.</> : 'No dominant state yet.'}
                     </div>
                   </>
                 )}
               </HudFrame>
               <div className="mt-4 grid gap-3 md:grid-cols-3">
-                <div className="rounded-[22px] border border-white/8 bg-black/20 p-4">
+                <div className="ui-stat p-4">
                   <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Peak burst</div>
                   <div className="mt-2 text-sm font-semibold text-text-primary">{peakActivity.name} with {peakActivity.volume} events</div>
                   <p className="mt-2 text-[12px] leading-relaxed text-text-muted">The highest recent pressure spike on the board.</p>
                 </div>
-                <div className="rounded-[22px] border border-white/8 bg-black/20 p-4">
+                <div className="ui-stat p-4">
                   <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Top cost lane</div>
                   <div className="mt-2 text-sm font-semibold text-text-primary">{topCostCenter ? `${topCostCenter.name} at ${formatCurrency(topCostCenter.cost)}` : 'No spend leader yet'}</div>
                   <p className="mt-2 text-[12px] leading-relaxed text-text-muted">The branch drawing the most budget right now.</p>
                 </div>
-                <div className="rounded-[22px] border border-white/8 bg-black/20 p-4">
+                <div className="ui-stat p-4">
                   <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">State owner</div>
                   <div className="mt-2 text-sm font-semibold text-text-primary">{statusPressure[0] ? `${statusPressure[0].status} with ${statusPressure[0].count}` : 'No dominant state yet'}</div>
                   <p className="mt-2 text-[12px] leading-relaxed text-text-muted">The operational state owning the board at a glance.</p>
@@ -716,7 +716,7 @@ export function ReportsView() {
         </Motion.section>
 
         <Motion.section variants={item}>
-          <div className="rounded-[28px] border border-white/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.015))] p-5">
+          <div className="ui-panel p-5">
             <CommandSectionHeader
               eyebrow="Top Operators"
               title="Who is carrying the work"
@@ -726,15 +726,15 @@ export function ReportsView() {
             />
             <div className="mt-5 grid gap-3 lg:grid-cols-2">
               {summary.topAgents.length === 0 && (
-                <div className="rounded-[22px] border border-white/8 bg-black/20 p-4 text-sm text-text-muted">
+                <div className="ui-card-row p-4 text-sm text-text-muted">
                   No mission traffic yet. Once tasks land, this panel will rank agents by volume, cost, and closure rate.
                 </div>
               )}
               {summary.topAgents.map((agent, index) => (
-                <div key={agent.name} className="rounded-[22px] border border-white/8 bg-black/20 p-4">
+                <div key={agent.name} className="ui-card-row p-4">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
-                      <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.04] text-sm font-semibold text-text-primary">
+                      <div className="ui-panel-soft flex h-10 w-10 items-center justify-center rounded-2xl text-sm font-semibold text-text-primary">
                         {String(index + 1).padStart(2, '0')}
                       </div>
                       <div>

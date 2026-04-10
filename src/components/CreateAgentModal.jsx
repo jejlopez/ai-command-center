@@ -42,7 +42,7 @@ const RESPONSE_OPTIONS = [
 
 function SectionShell({ eyebrow, title, description, children }) {
   return (
-    <section className="jarvis-column overflow-hidden rounded-[1.35rem] px-5 py-5">
+    <section className="ui-panel overflow-hidden rounded-[1.35rem] px-5 py-5">
       <div className="mb-4">
         <div className="text-[10px] font-semibold uppercase tracking-[0.22em] text-text-muted">{eyebrow}</div>
         <h3 className="mt-2 text-base font-semibold text-text-primary">{title}</h3>
@@ -55,7 +55,7 @@ function SectionShell({ eyebrow, title, description, children }) {
 
 function SummaryChip({ label, value, tone = 'text-text-primary' }) {
   return (
-    <div className="min-w-0 rounded-[1.15rem] border border-white/[0.08] bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.012))] px-4 py-3">
+    <div className="ui-stat min-w-0 px-4 py-3">
       <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-text-muted">{label}</div>
       <div className={cn('mt-2 truncate text-lg font-semibold tracking-[-0.02em]', tone)}>{value}</div>
     </div>
@@ -71,7 +71,7 @@ function SegmentedControl({ options, value, onChange }) {
           type="button"
           onClick={() => onChange(option.value)}
           className={cn(
-            'rounded-full border px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.16em] transition-colors',
+            'ui-chip rounded-full border px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.16em] transition-colors',
             value === option.value
               ? 'border-aurora-teal/30 bg-aurora-teal/10 text-aurora-teal'
               : 'border-white/[0.08] bg-white/[0.03] text-text-body hover:bg-white/[0.05] hover:text-text-primary'
@@ -86,7 +86,7 @@ function SegmentedControl({ options, value, onChange }) {
 
 function CapabilityBadge({ children }) {
   return (
-    <span className="rounded-full border border-white/[0.08] bg-white/[0.04] px-2.5 py-1 text-[10px] font-mono uppercase tracking-[0.14em] text-text-body">
+    <span className="ui-chip rounded-full px-2.5 py-1 text-[10px] font-mono uppercase tracking-[0.14em] text-text-body">
       {children}
     </span>
   );
@@ -219,9 +219,9 @@ export function CreateAgentModal({ isOpen, onClose, onCreated }) {
             animate={{ x: 0 }}
             exit={{ x: '100%' }}
             transition={{ type: 'spring', damping: 30, stiffness: 300 }}
-            className="fixed right-0 top-0 z-50 flex h-full w-[560px] flex-col border-l border-white/[0.06] bg-[#0a0a0a]/95 backdrop-blur-xl"
+            className="ui-drawer fixed right-0 top-0 z-50 flex h-full w-[560px] flex-col backdrop-blur-xl"
           >
-            <div className="border-b border-white/[0.06] px-6 py-5">
+            <div className="border-b border-hairline px-6 py-5">
               <div className="flex items-center justify-between gap-4">
                 <div className="flex items-center gap-3">
                   <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-aurora-teal/20 bg-aurora-teal/10">
@@ -232,7 +232,7 @@ export function CreateAgentModal({ isOpen, onClose, onCreated }) {
                     <p className="text-[11px] text-text-body">Creation now follows the same setup language as configuration.</p>
                   </div>
                 </div>
-                <button onClick={onClose} className="rounded-lg p-2 text-text-body transition-colors hover:bg-white/[0.05] hover:text-text-primary">
+                <button onClick={onClose} className="ui-button-secondary rounded-lg p-2 text-text-body transition-colors hover:bg-white/[0.05] hover:text-text-primary">
                   <X className="h-5 w-5" />
                 </button>
               </div>
