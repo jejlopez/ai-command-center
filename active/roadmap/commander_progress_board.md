@@ -110,6 +110,8 @@ This is the live build tracker for the Jarvis / Stark / Musk Commander program.
 - Manual reroutes now inherit selected lane provider/model defaults instead of dropping back to blank overrides
 - Retry and approve actions now preserve or inherit lane defaults when Commander resumes work
 - Recurring management now calls out when flows are actually ready to reclaim autonomy, not just improving
+- Schedule-driven launches now inherit provider/model lane defaults instead of starting blank
+- Executive briefing now explicitly recognizes when a recurring flow has earned autonomy back
 
 ## Epic Experience Layer
 

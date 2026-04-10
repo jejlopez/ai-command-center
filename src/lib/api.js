@@ -2491,6 +2491,7 @@ export async function dispatchFromSchedule(schedule, agents) {
 
   const agent = agents.find(a => a.id === schedule.agentId);
   const taskId = crypto.randomUUID();
+  const laneDefaults = await inferAgentLaneDefaults(schedule.agentId);
   const { error } = await supabase
     .from('tasks')
     .insert({
@@ -2503,6 +2504,8 @@ export async function dispatchFromSchedule(schedule, agents) {
       root_mission_id: taskId,
       agent_id: schedule.agentId,
       agent_name: agent?.name || 'Unknown',
+      provider_override: laneDefaults.provider || inferAgentProvider(agent) || null,
+      model_override: laneDefaults.model || agent?.model || null,
       duration_ms: 0,
       cost_usd: 0,
     });

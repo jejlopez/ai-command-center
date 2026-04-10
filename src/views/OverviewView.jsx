@@ -523,10 +523,14 @@ export function OverviewView({ agents, tasks, loading, addOptimistic, onOpenDeta
       const topRecovery = recurringRecoveryItems[0];
       return {
         primary: {
-          title: `Recover ${topRecovery.title} before scaling automation`,
-          detail: topRecovery.recommendedPaused
-            ? `${topRecovery.recoveryLabel} Commander should hold this recurring product in a safer posture until it earns autonomy back.`
-            : `${topRecovery.recoveryLabel} Tightening this recurring product now will restore trust faster than launching something new.`,
+          title: topRecovery.earnedAutonomy
+            ? `${topRecovery.title} is ready to reclaim autonomy`
+            : `Recover ${topRecovery.title} before scaling automation`,
+          detail: topRecovery.earnedAutonomy
+            ? `${topRecovery.recoveryUpgradeLabel} Commander can now let this recurring product run with a lighter posture again.`
+            : topRecovery.recommendedPaused
+              ? `${topRecovery.recoveryLabel} Commander should hold this recurring product in a safer posture until it earns autonomy back.`
+              : `${topRecovery.recoveryLabel} Tightening this recurring product now will restore trust faster than launching something new.`,
           cta: 'Review recurring flows',
           type: 'navigate',
           target: 'reports',
@@ -534,7 +538,7 @@ export function OverviewView({ agents, tasks, loading, addOptimistic, onOpenDeta
         secondary: [
           {
             eyebrow: 'Recovery',
-            title: topRecovery.recommendedPaused ? 'Paused until trust improves' : 'Managed recovery underway',
+            title: topRecovery.earnedAutonomy ? 'Autonomy earned back' : topRecovery.recommendedPaused ? 'Paused until trust improves' : 'Managed recovery underway',
             detail: topRecovery.detail,
           },
           {
@@ -544,8 +548,10 @@ export function OverviewView({ agents, tasks, loading, addOptimistic, onOpenDeta
           },
           {
             eyebrow: 'Why now',
-            title: 'Recurring trust is part of bridge posture',
-            detail: 'Recovery drag on recurring products now affects how aggressively Commander should scale automation elsewhere.',
+            title: topRecovery.earnedAutonomy ? 'Recurring trust can now scale again' : 'Recurring trust is part of bridge posture',
+            detail: topRecovery.earnedAutonomy
+              ? topRecovery.recoveryUpgradeLabel
+              : 'Recovery drag on recurring products now affects how aggressively Commander should scale automation elsewhere.',
           },
         ],
       };
