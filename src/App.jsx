@@ -1,4 +1,4 @@
-import { useState, useEffect, lazy, Suspense } from 'react';
+import { useState, useEffect, lazy, Suspense, useRef } from 'react';
 import { AnimatePresence } from 'framer-motion';
 import { NavRail } from './components/NavRail';
 import { CommandPalette } from './components/CommandPalette';
@@ -17,6 +17,9 @@ import { TimeRangeProvider } from './utils/useTimeRange';
 import { useSystemState } from './context/SystemStateContext';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { useAgents, usePendingReviews, useTasks } from './utils/useSupabase';
+import { useDerivedAlerts } from './utils/useDerivedAlerts';
+import { useCommandCenterTruth } from './utils/useCommandCenterTruth';
+import { runCommanderHeartbeat } from './lib/api';
 import { Bell, Settings, User, Loader2, Search } from 'lucide-react';
 import { cn } from './utils/cn';
 import { ProjectSwitcher } from './components/ProjectSwitcher';
@@ -51,6 +54,28 @@ function TacticalTopbarButton({ active, onClick, children, tone = 'teal', pulse 
   );
 }
 
+function CommandReadinessChip({ truth, onClick }) {
+  const tone = truth.readinessState === 'ready'
+    ? 'border-aurora-green/20 bg-aurora-green/10 text-aurora-green'
+    : truth.readinessState === 'blocked'
+      ? 'border-aurora-rose/20 bg-aurora-rose/10 text-aurora-rose'
+      : 'border-aurora-amber/20 bg-aurora-amber/10 text-aurora-amber';
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        'hidden xl:inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.18em] transition-colors',
+        tone
+      )}
+    >
+      <span className="h-2 w-2 rounded-full bg-current" />
+      {truth.readinessLabel}
+    </button>
+  );
+}
+
 function Dashboard() {
   const [activeRoute, setActiveRoute] = useState('overview');
   const [cmdOpen, setCmdOpen] = useState(false);
@@ -59,6 +84,9 @@ function Dashboard() {
   const { agents, loading: loadingAgents, addOptimistic } = useAgents();
   const { tasks, loading: loadingTasks } = useTasks();
   const { reviews } = usePendingReviews();
+  const { unreadCount, criticalCount } = useDerivedAlerts();
+  const truth = useCommandCenterTruth();
+  const heartbeatInFlight = useRef(false);
 
   useEffect(() => {
     const handleKeyDown = (e) => {
@@ -74,6 +102,31 @@ function Dashboard() {
   useEffect(() => {
     setPendingCount(reviews.length);
   }, [reviews.length, setPendingCount]);
+
+  useEffect(() => {
+    if (loadingAgents || loadingTasks) return undefined;
+    if (!agents.some((agent) => agent.role === 'commander' && !agent.isSyntheticCommander)) return undefined;
+
+    let cancelled = false;
+
+    const tick = async () => {
+      if (cancelled || heartbeatInFlight.current) return;
+      heartbeatInFlight.current = true;
+      try {
+        await runCommanderHeartbeat(agents, tasks, reviews);
+      } finally {
+        heartbeatInFlight.current = false;
+      }
+    };
+
+    tick();
+    const intervalId = window.setInterval(tick, 20000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [agents, tasks, reviews, loadingAgents, loadingTasks]);
 
   function openAgentWorkspace(agentId, options = {}) {
     if (!agentId) return;
@@ -125,6 +178,10 @@ function Dashboard() {
             </div>
 
             <div className="flex items-center justify-end gap-1.5 shrink-0">
+              <CommandReadinessChip
+                truth={truth}
+                onClick={() => setActiveRoute('overview')}
+              />
               <button
                 onClick={() => setCmdOpen(true)}
                 className="flex items-center justify-center w-10 h-10 rounded-2xl border border-white/[0.06] bg-white/[0.03] hover:bg-white/[0.055] transition-colors text-text-muted shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
@@ -140,7 +197,7 @@ function Dashboard() {
                 onClick={() => setNotificationsOpen(!notificationsOpen)}
                 active={notificationsOpen}
                 tone="amber"
-                pulse={reviews.length > 0}
+                pulse={criticalCount > 0 || unreadCount > 0}
                 ariaLabel="Open command alerts"
               >
                 <span className="pointer-events-none absolute inset-0 rounded-2xl">

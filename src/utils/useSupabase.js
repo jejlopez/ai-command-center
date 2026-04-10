@@ -1,6 +1,15 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../lib/supabaseClient';
 import { useAuth } from '../context/AuthContext';
+import {
+  DEFAULT_MODEL_PROVIDER,
+  SYNTHETIC_COMMANDER_ID,
+  getCommanderDisplayName,
+  getCommanderLane,
+  normalizeModelProvider,
+} from './commanderPolicy';
+import { getTaskGraphShape } from './missionLifecycle';
+import { buildDefaultRoutingPolicy, mapRoutingPolicyFromDb } from './routingPolicy';
 
 function createRealtimeChannelName(prefix, userId) {
   const uniqueSuffix = typeof crypto !== 'undefined' && crypto.randomUUID
@@ -9,18 +18,64 @@ function createRealtimeChannelName(prefix, userId) {
   return `${prefix}-${userId}-${uniqueSuffix}`;
 }
 
-async function ensureCommanderAgent(user) {
+async function ensureModelBankEntry(user, modelKey, provider = DEFAULT_MODEL_PROVIDER) {
+  if (!user?.id || !modelKey) return null;
+
+  const row = {
+    user_id: user.id,
+    model_key: modelKey,
+    label: modelKey,
+    provider: normalizeModelProvider(provider),
+  };
+
+  const { data, error } = await supabase
+    .from('model_bank')
+    .upsert(row, { onConflict: 'user_id,model_key' })
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data;
+}
+
+async function getUserSettings(userId) {
+  if (!userId) return null;
+
+  const { data, error } = await supabase
+    .from('user_settings')
+    .select('*')
+    .eq('user_id', userId)
+    .maybeSingle();
+
+  if (error) throw error;
+  return data;
+}
+
+export async function ensureCommanderAgent(user) {
   if (!user?.id) return null;
 
-  const commanderName = user.user_metadata?.full_name?.trim()
-    ? `${user.user_metadata.full_name.trim()} Command`
-    : 'Jarvis Commander';
+  const commanderName = getCommanderDisplayName(user);
+  const commanderLane = getCommanderLane();
+
+  const { data: existingCommander, error: existingError } = await supabase
+    .from('agents')
+    .select('*')
+    .eq('user_id', user.id)
+    .eq('role', 'commander')
+    .order('created_at', { ascending: true })
+    .limit(1)
+    .maybeSingle();
+
+  if (existingError) throw existingError;
+  if (existingCommander) return existingCommander;
+
+  await ensureModelBankEntry(user, commanderLane.model, commanderLane.provider);
 
   const row = {
     id: crypto.randomUUID(),
     user_id: user.id,
     name: commanderName,
-    model: 'Claude Opus 4.6',
+    model: commanderLane.model,
     status: 'idle',
     role: 'commander',
     color: '#00D9C8',
@@ -39,15 +94,14 @@ async function ensureCommanderAgent(user) {
 }
 
 function buildSyntheticCommander(user) {
-  const commanderName = user?.user_metadata?.full_name?.trim()
-    ? `${user.user_metadata.full_name.trim()} Command`
-    : 'Jarvis Commander';
+  const commanderName = getCommanderDisplayName(user);
+  const commanderLane = getCommanderLane();
 
   return {
-    id: 'synthetic-commander',
+    id: SYNTHETIC_COMMANDER_ID,
     userId: user?.id || null,
     name: commanderName,
-    model: 'Claude Opus 4.6',
+    model: commanderLane.model,
     status: 'idle',
     role: 'commander',
     roleDescription: 'Fallback command agent while the persistent commander record is unavailable.',
@@ -420,6 +474,311 @@ export function useSchedules() {
   return { schedules, loading, refetch: fetchSchedules };
 }
 
+export function useConnectedSystems() {
+  const { user } = useAuth();
+  const [connectedSystems, setConnectedSystems] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetchConnectedSystems = useCallback(async () => {
+    if (!user) {
+      setConnectedSystems([]);
+      setLoading(false);
+      return;
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from('connected_systems')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      setConnectedSystems((data || []).map(mapConnectedSystemFromDb));
+    } catch (error) {
+      console.error('[useConnectedSystems] Fetch error:', error);
+      setConnectedSystems([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) return undefined;
+
+    fetchConnectedSystems();
+
+    const channel = supabase
+      .channel(createRealtimeChannelName('connected-systems-user', user.id))
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'connected_systems', filter: `user_id=eq.${user.id}` },
+        () => fetchConnectedSystems()
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user, fetchConnectedSystems]);
+
+  const upsertSystem = useCallback(async (system) => {
+    if (!user) throw new Error('Not authenticated');
+
+    const row = mapConnectedSystemToDb(user.id, system);
+    const { data, error } = await supabase
+      .from('connected_systems')
+      .upsert(row, { onConflict: 'user_id,integration_key' })
+      .select()
+      .single();
+
+    if (error) throw error;
+    return mapConnectedSystemFromDb(data);
+  }, [user]);
+
+  const removeSystem = useCallback(async (systemId) => {
+    if (!user || !systemId) return;
+    const { error } = await supabase
+      .from('connected_systems')
+      .delete()
+      .eq('user_id', user.id)
+      .eq('id', systemId);
+
+    if (error) throw error;
+  }, [user]);
+
+  const refreshSystem = useCallback(async (systemId, patch = {}) => {
+    if (!user || !systemId) return;
+    const row = {
+      status: patch.status || 'connected',
+      last_verified_at: patch.lastVerifiedAt || new Date().toISOString(),
+      metadata: patch.metadata,
+    };
+
+    const { error } = await supabase
+      .from('connected_systems')
+      .update(row)
+      .eq('user_id', user.id)
+      .eq('id', systemId);
+
+    if (error) throw error;
+  }, [user]);
+
+  return {
+    connectedSystems,
+    loading,
+    refetch: fetchConnectedSystems,
+    upsertSystem,
+    removeSystem,
+    refreshSystem,
+  };
+}
+
+export function useRoutingPolicies() {
+  const { user } = useAuth();
+  const [policies, setPolicies] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetchPolicies = useCallback(async () => {
+    if (!user) {
+      setPolicies([]);
+      setLoading(false);
+      return;
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from('routing_policies')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('is_default', { ascending: false })
+        .order('updated_at', { ascending: false });
+
+      if (error) throw error;
+      setPolicies((data || []).map(mapRoutingPolicyFromDb));
+    } catch (error) {
+      console.error('[useRoutingPolicies] Fetch error:', error);
+      setPolicies([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) return undefined;
+    fetchPolicies();
+    return undefined;
+  }, [user, fetchPolicies]);
+
+  const upsertPolicy = useCallback(async (policy) => {
+    if (!user) throw new Error('Not authenticated');
+
+    const row = {
+      user_id: user.id,
+      name: policy.name?.trim() || 'Adaptive Commander Default',
+      description: policy.description?.trim() || '',
+      is_default: policy.isDefault ?? false,
+      task_domain: policy.taskDomain || 'general',
+      intent_type: policy.intentType || 'general',
+      risk_level: policy.riskLevel || 'medium',
+      budget_class: policy.budgetClass || 'balanced',
+      latency_class: policy.latencyClass || 'balanced',
+      preferred_provider: normalizeModelProvider(policy.preferredProvider),
+      preferred_model: policy.preferredModel || null,
+      preferred_agent_role: policy.preferredAgentRole || 'commander',
+      fallback_order: policy.fallbackOrder || [],
+      approval_rule: policy.approvalRule || 'risk_weighted',
+      context_policy: policy.contextPolicy || 'minimal',
+      parallelization_policy: policy.parallelizationPolicy || 'adaptive',
+      evidence_required: policy.evidenceRequired ?? false,
+      active: policy.active ?? true,
+    };
+
+    const query = supabase.from('routing_policies');
+    const { data, error } = policy.id
+      ? await query.update(row).eq('id', policy.id).eq('user_id', user.id).select('*').single()
+      : await query.insert(row).select('*').single();
+
+    if (error) throw error;
+    await fetchPolicies();
+    return mapRoutingPolicyFromDb(data);
+  }, [fetchPolicies, user]);
+
+  const ensureDefaultPolicy = useCallback(async () => {
+    if (!user) throw new Error('Not authenticated');
+    const existing = policies.find((policy) => policy.isDefault);
+    if (existing) return existing;
+
+    const { data, error } = await supabase
+      .from('routing_policies')
+      .insert(buildDefaultRoutingPolicy(user.id))
+      .select('*')
+      .single();
+
+    if (error) throw error;
+    await fetchPolicies();
+    return mapRoutingPolicyFromDb(data);
+  }, [fetchPolicies, policies, user]);
+
+  return { policies, loading, refetch: fetchPolicies, upsertPolicy, ensureDefaultPolicy };
+}
+
+export function useKnowledgeNamespaces() {
+  const { user } = useAuth();
+  const [namespaces, setNamespaces] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetchNamespaces = useCallback(async () => {
+    if (!user) {
+      setNamespaces([]);
+      setLoading(false);
+      return;
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from('knowledge_namespaces')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('updated_at', { ascending: false });
+
+      if (error) throw error;
+      setNamespaces((data || []).map(mapKnowledgeNamespaceFromDb));
+    } catch (error) {
+      console.error('[useKnowledgeNamespaces] Fetch error:', error);
+      setNamespaces([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) return undefined;
+    fetchNamespaces();
+    return undefined;
+  }, [user, fetchNamespaces]);
+
+  return { namespaces, loading, refetch: fetchNamespaces };
+}
+
+export function useSharedDirectives() {
+  const { user } = useAuth();
+  const [directives, setDirectives] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetchDirectives = useCallback(async () => {
+    if (!user) {
+      setDirectives([]);
+      setLoading(false);
+      return;
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from('shared_directives')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('priority', { ascending: false })
+        .order('updated_at', { ascending: false });
+
+      if (error) throw error;
+      setDirectives((data || []).map(mapSharedDirectiveFromDb));
+    } catch (error) {
+      console.error('[useSharedDirectives] Fetch error:', error);
+      setDirectives([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) return undefined;
+    fetchDirectives();
+    return undefined;
+  }, [user, fetchDirectives]);
+
+  return { directives, loading, refetch: fetchDirectives };
+}
+
+export function useSystemRecommendations() {
+  const { user } = useAuth();
+  const [recommendations, setRecommendations] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetchRecommendations = useCallback(async () => {
+    if (!user) {
+      setRecommendations([]);
+      setLoading(false);
+      return;
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from('system_recommendations')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('priority', { ascending: false })
+        .order('updated_at', { ascending: false });
+
+      if (error) throw error;
+      setRecommendations((data || []).map(mapSystemRecommendationFromDb));
+    } catch (error) {
+      console.error('[useSystemRecommendations] Fetch error:', error);
+      setRecommendations([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) return undefined;
+    fetchRecommendations();
+    return undefined;
+  }, [user, fetchRecommendations]);
+
+  return { recommendations, loading, refetch: fetchRecommendations };
+}
+
 /**
  * Hook for cost data.
  */
@@ -633,6 +992,300 @@ export function useSkillBank() {
   return { skills, loading, refetch: fetchSkills };
 }
 
+export function useMcpServers(workspaceId = null) {
+  const { user } = useAuth();
+  const [servers, setServers] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetchServers = useCallback(async () => {
+    if (!user) {
+      setServers([]);
+      setLoading(false);
+      return;
+    }
+
+    try {
+      let query = supabase
+        .from('mcp_servers')
+        .select('*')
+        .eq('user_id', user.id);
+
+      if (workspaceId) query = query.eq('workspace_id', workspaceId);
+
+      const { data, error } = await query.order('created_at', { ascending: true });
+
+      if (error) throw error;
+      setServers((data || []).map(mapMcpServerFromDb));
+    } catch (error) {
+      console.error('[useMcpServers] Fetch error:', error);
+      setServers([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [user, workspaceId]);
+
+  useEffect(() => {
+    fetchServers();
+  }, [fetchServers]);
+
+  return { servers, loading, refetch: fetchServers };
+}
+
+export function useProviderCredentials() {
+  const { user } = useAuth();
+  const [credentials, setCredentials] = useState({
+    anthropic: false,
+    openai: false,
+    google: false,
+  });
+  const [loading, setLoading] = useState(true);
+
+  const fetchCredentials = useCallback(async () => {
+    if (!user) {
+      setCredentials({ anthropic: false, openai: false, google: false });
+      setLoading(false);
+      return;
+    }
+
+    try {
+      const data = await getUserSettings(user.id);
+      setCredentials({
+        anthropic: Boolean(data?.anthropic_api_key),
+        openai: Boolean(data?.openai_api_key),
+        google: Boolean(data?.google_api_key),
+      });
+    } catch (error) {
+      console.error('[useProviderCredentials] Fetch error:', error);
+      setCredentials({ anthropic: false, openai: false, google: false });
+    } finally {
+      setLoading(false);
+    }
+  }, [user]);
+
+  useEffect(() => {
+    fetchCredentials();
+  }, [fetchCredentials]);
+
+  return { credentials, loading, refetch: fetchCredentials };
+}
+
+export function useTaskOutcomes() {
+  const { user } = useAuth();
+  const [outcomes, setOutcomes] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetchOutcomes = useCallback(async () => {
+    if (!user) {
+      setOutcomes([]);
+      setLoading(false);
+      return;
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from('task_outcomes')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      setOutcomes((data || []).map((row) => ({
+        id: row.id,
+        taskId: row.task_id,
+        rootMissionId: row.root_mission_id,
+        agentId: row.agent_id,
+        outcomeStatus: row.outcome_status || 'completed',
+        score: Number(row.score || 0),
+        trust: row.trust || 'medium',
+        doctrineFeedback: row.doctrine_feedback || '',
+        model: row.model || '',
+        provider: normalizeModelProvider(row.provider),
+        domain: row.domain || 'general',
+        intentType: row.intent_type || 'general',
+        budgetClass: row.budget_class || 'balanced',
+        riskLevel: row.risk_level || 'medium',
+        approvalLevel: row.approval_level || 'risk_weighted',
+        executionStrategy: row.execution_strategy || 'sequential',
+        costUsd: Number(row.cost_usd || 0),
+        durationMs: Number(row.duration_ms || 0),
+        contextPackIds: Array.isArray(row.context_pack_ids) ? row.context_pack_ids : [],
+        requiredCapabilities: Array.isArray(row.required_capabilities) ? row.required_capabilities : [],
+        metadata: row.metadata || {},
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+      })));
+    } catch (error) {
+      console.error('[useTaskOutcomes] Fetch error:', error);
+      setOutcomes([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) return;
+
+    fetchOutcomes();
+    const channel = supabase
+      .channel(createRealtimeChannelName('task-outcomes-user', user.id))
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'task_outcomes',
+        filter: `user_id=eq.${user.id}`,
+      }, () => {
+        fetchOutcomes();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user, fetchOutcomes]);
+
+  return { outcomes, loading, refetch: fetchOutcomes };
+}
+
+export function useTaskInterventions() {
+  const { user } = useAuth();
+  const [interventions, setInterventions] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetchInterventions = useCallback(async () => {
+    if (!user) {
+      setInterventions([]);
+      setLoading(false);
+      return;
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from('task_interventions')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      setInterventions((data || []).map(mapTaskInterventionFromDb));
+    } catch (error) {
+      console.error('[useTaskInterventions] Fetch error:', error);
+      setInterventions([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) return;
+
+    fetchInterventions();
+    const channel = supabase
+      .channel(createRealtimeChannelName('task-interventions-user', user.id))
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'task_interventions',
+        filter: `user_id=eq.${user.id}`,
+      }, () => {
+        fetchInterventions();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user, fetchInterventions]);
+
+  return { interventions, loading, refetch: fetchInterventions };
+}
+
+export function useSpecialistLifecycle() {
+  const { user } = useAuth();
+  const [events, setEvents] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetchLifecycle = useCallback(async () => {
+    if (!user) {
+      setEvents([]);
+      setLoading(false);
+      return;
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from('specialist_lifecycle')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      setEvents((data || []).map(mapSpecialistLifecycleFromDb));
+    } catch (error) {
+      console.error('[useSpecialistLifecycle] Fetch error:', error);
+      setEvents([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) return;
+
+    fetchLifecycle();
+    const channel = supabase
+      .channel(createRealtimeChannelName('specialist-lifecycle-user', user.id))
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'specialist_lifecycle',
+        filter: `user_id=eq.${user.id}`,
+      }, () => {
+        fetchLifecycle();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user, fetchLifecycle]);
+
+  return { events, loading, refetch: fetchLifecycle };
+}
+
+async function recordSpecialistLifecycleEvent({
+  userId,
+  agentId = null,
+  rootMissionId = null,
+  eventType = 'spawned',
+  eventSource = 'ui',
+  role = 'specialist',
+  provider = null,
+  model = null,
+  isEphemeral = true,
+  message = '',
+  metadata = {},
+}) {
+  if (!userId || !message) return;
+
+  const { error } = await supabase.from('specialist_lifecycle').insert({
+    user_id: userId,
+    agent_id: agentId,
+    root_mission_id: rootMissionId,
+    event_type: eventType,
+    event_source: eventSource,
+    role,
+    provider,
+    model,
+    is_ephemeral: isEphemeral,
+    message,
+    metadata,
+  });
+
+  if (error) {
+    console.error('[recordSpecialistLifecycleEvent] Insert error:', error);
+  }
+}
+
 /**
  * Insert a new agent into Supabase.
  */
@@ -662,6 +1315,7 @@ export async function createTempAgent({ objective, role, model, commanderId }) {
     user_id: user.id,
     name: `temp-${slug}`,
     model,
+    provider: normalizeModelProvider(model?.includes('local') ? 'Ollama' : DEFAULT_MODEL_PROVIDER),
     status: 'idle',
     role: role || 'researcher',
     parent_id: commanderId,
@@ -673,6 +1327,133 @@ export async function createTempAgent({ objective, role, model, commanderId }) {
   };
   const { data, error } = await supabase.from('agents').insert([row]).select().single();
   if (error) throw error;
+  const message = `[specialist-spawned] ${data.name} (${row.role}) created from Intelligence for "${objective}" on ${model}.`;
+  await supabase.from('activity_log').insert([{
+    user_id: user.id,
+    agent_id: data.id,
+    type: 'SYS',
+    message,
+  }]);
+  await recordSpecialistLifecycleEvent({
+    userId: user.id,
+    agentId: data.id,
+    eventType: 'spawned',
+    eventSource: 'intelligence',
+    role: row.role,
+    provider: row.provider,
+    model: row.model,
+    isEphemeral: true,
+    message,
+    metadata: {
+      objective,
+      commanderId: commanderId || null,
+    },
+  });
+  return mapAgentFromDb(data);
+}
+
+export async function createPersistentSpecialist({ name, objective, role, model, commanderId, skills = [] }) {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('Not authenticated');
+
+  const trimmedName = String(name || '').trim() || `${role || 'specialist'}-lane`;
+  const row = {
+    id: crypto.randomUUID(),
+    user_id: user.id,
+    name: trimmedName,
+    model,
+    provider: normalizeModelProvider(model?.includes('local') ? 'Ollama' : DEFAULT_MODEL_PROVIDER),
+    status: 'idle',
+    role: role || 'researcher',
+    parent_id: commanderId,
+    can_spawn: false,
+    spawn_pattern: 'persistent',
+    is_ephemeral: false,
+    system_prompt: `You are a persistent ${role || 'specialist'} lane. Objective: ${objective || trimmedName}`,
+    role_description: objective?.trim() || `Persistent ${role || 'specialist'} lane for Commander.`,
+    color: '#60a5fa',
+    skills,
+  };
+
+  const { data, error } = await supabase.from('agents').insert([row]).select().single();
+  if (error) throw error;
+  const message = `[specialist-persistent] ${data.name} (${row.role}) promoted as a persistent lane on ${model}.`;
+  await supabase.from('activity_log').insert([{
+    user_id: user.id,
+    agent_id: data.id,
+    type: 'SYS',
+    message,
+  }]);
+  await recordSpecialistLifecycleEvent({
+    userId: user.id,
+    agentId: data.id,
+    eventType: 'persistent_created',
+    eventSource: 'intelligence',
+    role: row.role,
+    provider: row.provider,
+    model: row.model,
+    isEphemeral: false,
+    message,
+    metadata: {
+      objective: objective || trimmedName,
+      skills,
+      commanderId: commanderId || null,
+    },
+  });
+  return mapAgentFromDb(data);
+}
+
+export async function promoteAgentToPersistent(agentId, patch = {}) {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('Not authenticated');
+
+  const { data: current, error: fetchError } = await supabase
+    .from('agents')
+    .select('*')
+    .eq('user_id', user.id)
+    .eq('id', agentId)
+    .single();
+
+  if (fetchError) throw fetchError;
+
+  const { data, error } = await supabase
+    .from('agents')
+    .update({
+      is_ephemeral: false,
+      spawn_pattern: 'persistent',
+      status: patch.status || current.status || 'idle',
+      role_description: patch.roleDescription || current.role_description || `Persistent ${current.role || 'specialist'} lane for Commander.`,
+      skills: Array.isArray(patch.skills) ? patch.skills : current.skills,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('user_id', user.id)
+    .eq('id', agentId)
+    .select()
+    .single();
+
+  if (error) throw error;
+  const message = `[specialist-persistent] ${data.name} (${data.role}) promoted from ephemeral to persistent coverage.`;
+  await supabase.from('activity_log').insert([{
+    user_id: user.id,
+    agent_id: data.id,
+    type: 'SYS',
+    message,
+  }]);
+  await recordSpecialistLifecycleEvent({
+    userId: user.id,
+    agentId: data.id,
+    eventType: 'promoted',
+    eventSource: 'intelligence',
+    role: data.role || 'specialist',
+    provider: normalizeModelProvider(data.provider),
+    model: data.model || null,
+    isEphemeral: false,
+    message,
+    metadata: {
+      fromEphemeral: true,
+      skills: Array.isArray(data.skills) ? data.skills : [],
+    },
+  });
   return mapAgentFromDb(data);
 }
 
@@ -682,6 +1463,35 @@ export async function createTempAgent({ objective, role, model, commanderId }) {
 export async function cleanupTempAgents() {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error('Not authenticated');
+
+  const { data: idleAgents, error: fetchError } = await supabase
+    .from('agents')
+    .select('id,name,role,model')
+    .eq('user_id', user.id)
+    .eq('is_ephemeral', true)
+    .in('status', ['idle', 'error']);
+
+  if (fetchError) throw fetchError;
+  if (!idleAgents?.length) return 0;
+
+  await supabase.from('activity_log').insert(
+    idleAgents.map((agent) => ({
+      user_id: user.id,
+      agent_id: agent.id,
+      type: 'SYS',
+      message: `[specialist-retired] ${agent.name} (${agent.role || 'specialist'}) retired from Intelligence cleanup on ${agent.model || 'adaptive lane'}.`,
+    }))
+  );
+  await Promise.all(idleAgents.map((agent) => recordSpecialistLifecycleEvent({
+    userId: user.id,
+    agentId: agent.id,
+    eventType: 'cleaned_up',
+    eventSource: 'intelligence',
+    role: agent.role || 'specialist',
+    model: agent.model || null,
+    isEphemeral: true,
+    message: `[specialist-retired] ${agent.name} (${agent.role || 'specialist'}) retired from Intelligence cleanup on ${agent.model || 'adaptive lane'}.`,
+  })));
 
   const { data, error } = await supabase
     .from('agents')
@@ -703,7 +1513,7 @@ export async function createModelBankEntry(modelData) {
     user_id: user.id,
     model_key: modelData.modelKey?.trim() || modelData.label?.trim(),
     label: modelData.label?.trim() || modelData.modelKey?.trim(),
-    provider: modelData.provider?.trim() || 'Custom',
+    provider: normalizeModelProvider(modelData.provider),
     cost_per_1k: Number(modelData.costPer1k ?? 0),
   };
 
@@ -757,6 +1567,67 @@ export async function updateAgentSkills(agentId, skills) {
   return mapAgentFromDb(data);
 }
 
+export async function updateAgentConfig(agentId, patch) {
+  const row = {
+    model: patch.model,
+    temperature: patch.temperature,
+    response_length: patch.responseLength,
+    system_prompt: patch.systemPrompt,
+    can_spawn: patch.canSpawn,
+    spawn_pattern: patch.spawnPattern,
+  };
+
+  const sanitized = Object.fromEntries(
+    Object.entries(row).filter(([, value]) => value !== undefined)
+  );
+
+  const { data, error } = await supabase
+    .from('agents')
+    .update(sanitized)
+    .eq('id', agentId)
+    .select()
+    .single();
+
+  if (error) throw error;
+  return mapAgentFromDb(data);
+}
+
+export async function createMcpServer(serverData) {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('Not authenticated');
+
+  const url = serverData.url?.trim();
+  if (!url) throw new Error('Server URL is required');
+
+  const row = {
+    user_id: user.id,
+    workspace_id: serverData.workspaceId ?? null,
+    name: serverData.name?.trim() || deriveMcpServerName(url),
+    url,
+    status: serverData.status?.trim() || 'configured',
+    tool_count: Number(serverData.toolCount ?? 0),
+  };
+
+  const { data, error } = await supabase
+    .from('mcp_servers')
+    .upsert(row, { onConflict: 'workspace_id,url' })
+    .select()
+    .single();
+
+  if (error) throw error;
+  return mapMcpServerFromDb(data);
+}
+
+export async function deleteMcpServer(serverId) {
+  const { error } = await supabase
+    .from('mcp_servers')
+    .delete()
+    .eq('id', serverId);
+
+  if (error) throw error;
+  return serverId;
+}
+
 // ── Mappers ────────────────────────────────────────────────────
 
 function mapAgentFromDb(row) {
@@ -765,6 +1636,7 @@ function mapAgentFromDb(row) {
     userId:           row.user_id,
     name:             row.name,
     model:            row.model,
+    provider:         normalizeModelProvider(row.provider),
     status:           row.status,
     role:             row.role,
     roleDescription:  row.role_description || '',
@@ -802,6 +1674,7 @@ function mapAgentToDb(agent) {
   return {
     name:             agent.name,
     model:            agent.model,
+    provider:         normalizeModelProvider(agent.provider || DEFAULT_MODEL_PROVIDER),
     status:           agent.status || 'idle',
     role:             agent.role || 'researcher',
     role_description: agent.roleDescription || null,
@@ -825,14 +1698,46 @@ function mapAgentToDb(agent) {
 }
 
 function mapTaskFromDb(row) {
+  const taskGraph = getTaskGraphShape(row);
   return {
     id:         row.id,
+    title:      row.title || row.name,
+    description: row.description || row.prompt_text || '',
     userId:     row.user_id,
     name:       row.name,
     status:     row.status,
+    workflowStatus: taskGraph.workflowStatus,
+    nodeType: taskGraph.nodeType,
+    rootMissionId: taskGraph.rootMissionId,
     parentId:   row.parent_id,
+    dependsOn: taskGraph.dependsOn,
     agentId:    row.agent_id,
     agentName:  row.agent_name,
+    routingPolicyId: row.routing_policy_id,
+    routingReason: row.routing_reason || '',
+    domain: row.domain || 'general',
+    intentType: row.intent_type || 'general',
+    budgetClass: row.budget_class || 'balanced',
+    riskLevel: row.risk_level || 'medium',
+    contextPackIds: Array.isArray(row.context_pack_ids) ? row.context_pack_ids : [],
+    requiredCapabilities: Array.isArray(row.required_capabilities) ? row.required_capabilities : [],
+    approvalLevel: row.approval_level || 'risk_weighted',
+    agentRole: row.agent_role || 'executor',
+    executionStrategy: row.execution_strategy || 'sequential',
+    branchLabel: row.branch_label || '',
+    mode: row.mode || 'balanced',
+    scheduleType: row.schedule_type || 'once',
+    runAt: row.run_at || null,
+    recurrenceRule: row.recurrence_rule || null,
+    outputType: row.output_type || 'summary',
+    outputSpec: row.output_spec || '',
+    providerOverride: row.provider_override || null,
+    modelOverride: row.model_override || null,
+    requiresApproval: !!row.requires_approval,
+    lastRunAt: row.last_run_at || null,
+    nextRunAt: row.next_run_at || null,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
     durationMs: row.duration_ms || 0,
     costUsd:    parseFloat(row.cost_usd) || 0,
   };
@@ -857,7 +1762,7 @@ function mapModelFromDb(row) {
     id: row.id,
     modelKey: row.model_key,
     label: row.label,
-    provider: row.provider || 'Custom',
+    provider: normalizeModelProvider(row.provider),
     costPer1k: Number(row.cost_per_1k || 0),
     createdAt: row.created_at,
   };
@@ -897,9 +1802,155 @@ function mapSkillFromDb(row) {
   };
 }
 
+function mapMcpServerFromDb(row) {
+  return {
+    id: row.id,
+    userId: row.user_id,
+    workspaceId: row.workspace_id || null,
+    name: row.name,
+    url: row.url,
+    status: row.status || 'configured',
+    toolCount: Number(row.tool_count || 0),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function mapConnectedSystemFromDb(row) {
+  return {
+    id: row.id,
+    userId: row.user_id,
+    integrationKey: row.integration_key,
+    displayName: row.display_name,
+    category: row.category || 'System',
+    status: row.status || 'connected',
+    identifier: row.identifier || '',
+    capabilities: Array.isArray(row.capabilities) ? row.capabilities : [],
+    domain: row.domain || 'general',
+    trustLevel: row.trust_level || 'standard',
+    riskLevel: row.risk_level || 'medium',
+    permissionScope: Array.isArray(row.permission_scope) ? row.permission_scope : [],
+    capabilityDetails: row.metadata?.capabilityDetails || {},
+    metadata: row.metadata || {},
+    lastVerifiedAt: row.last_verified_at,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function mapConnectedSystemToDb(userId, system) {
+  return {
+    user_id: userId,
+    integration_key: system.integrationKey,
+    display_name: system.displayName,
+    category: system.category || 'System',
+    status: system.status || 'connected',
+    identifier: system.identifier || '',
+    capabilities: system.capabilities || [],
+    domain: system.domain || 'general',
+    trust_level: system.trustLevel || 'standard',
+    risk_level: system.riskLevel || 'medium',
+    permission_scope: system.permissionScope || [],
+    metadata: {
+      ...(system.metadata || {}),
+      capabilityDetails: system.capabilityDetails || system.metadata?.capabilityDetails || {},
+    },
+    last_verified_at: system.lastVerifiedAt || new Date().toISOString(),
+  };
+}
+
+function mapKnowledgeNamespaceFromDb(row) {
+  return {
+    id: row.id,
+    name: row.name,
+    vectors: row.vectors || 0,
+    sizeLabel: row.size_label || '0 MB',
+    lastSyncAt: row.last_sync_at,
+    status: row.status || 'idle',
+    agents: Array.isArray(row.agents) ? row.agents : [],
+    description: row.description || '',
+    updatedAt: row.updated_at,
+  };
+}
+
+function mapSharedDirectiveFromDb(row) {
+  return {
+    id: row.id,
+    name: row.name,
+    scope: row.scope || 'all',
+    appliedTo: Array.isArray(row.applied_to) ? row.applied_to : [],
+    content: row.content || '',
+    priority: row.priority || 'normal',
+    icon: row.icon || 'ShieldCheck',
+    updatedAt: row.updated_at,
+  };
+}
+
+function mapSystemRecommendationFromDb(row) {
+  return {
+    id: row.id,
+    type: row.rec_type || 'optimization',
+    title: row.title,
+    description: row.description || '',
+    impact: row.impact || 'medium',
+    savings: row.savings_label || '',
+    updatedAt: row.updated_at,
+  };
+}
+
+function mapTaskInterventionFromDb(row) {
+  return {
+    id: row.id,
+    userId: row.user_id,
+    taskId: row.task_id || null,
+    rootMissionId: row.root_mission_id || null,
+    agentId: row.agent_id || null,
+    eventType: row.event_type || 'override',
+    eventSource: row.event_source || 'runtime',
+    tone: row.tone || 'blue',
+    message: row.message || '',
+    domain: row.domain || 'general',
+    intentType: row.intent_type || 'general',
+    provider: normalizeModelProvider(row.provider),
+    model: row.model || '',
+    scheduleType: row.schedule_type || 'once',
+    metadata: row.metadata || {},
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function mapSpecialistLifecycleFromDb(row) {
+  return {
+    id: row.id,
+    userId: row.user_id,
+    agentId: row.agent_id || null,
+    rootMissionId: row.root_mission_id || null,
+    eventType: row.event_type || 'spawned',
+    eventSource: row.event_source || 'runtime',
+    role: row.role || 'specialist',
+    provider: normalizeModelProvider(row.provider),
+    model: row.model || '',
+    isEphemeral: row.is_ephemeral ?? true,
+    message: row.message || '',
+    metadata: row.metadata || {},
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
 function inferSkillIcon(source, reference) {
   if (source === 'github') return 'Monitor';
   if (source === 'local') return 'FolderOpen';
   if (reference?.includes('http')) return 'Globe';
   return 'Zap';
+}
+
+function deriveMcpServerName(url) {
+  try {
+    const parsed = new URL(url);
+    return parsed.hostname.replace(/^www\./, '') || 'MCP Server';
+  } catch {
+    return 'MCP Server';
+  }
 }

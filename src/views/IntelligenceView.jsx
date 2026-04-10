@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { motion as Motion } from 'framer-motion';
 import {
   BarChart3,
@@ -9,6 +9,7 @@ import {
   Database,
   FileJson,
   Gauge,
+  GitBranch,
   History,
   Layers3,
   Lock,
@@ -22,30 +23,28 @@ import {
   Bar,
   BarChart,
   CartesianGrid,
-  Cell,
   ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
 } from 'recharts';
-import {
-  directiveTemplates,
-  knowledgeNamespaces,
-  modelBenchmarks,
-  systemRecommendations,
-} from '../utils/staticCatalog';
 import { container, item } from '../utils/variants';
-import { useActivityLog, useAgents, useModelBank, useTasks } from '../utils/useSupabase';
-import { CommandDeckHero } from '../components/command/CommandDeckHero';
+import { cleanupTempAgents, createPersistentSpecialist, createTempAgent, promoteAgentToPersistent, useActivityLog, useAgents, useKnowledgeNamespaces, useModelBank, useRoutingPolicies, useSharedDirectives, useSkillBank, useSpecialistLifecycle, useSystemRecommendations, useTaskInterventions, useTaskOutcomes, useTasks } from '../utils/useSupabase';
 import { AnimatedNumber } from '../components/command/AnimatedNumber';
 import { CommandSectionHeader } from '../components/command/CommandSectionHeader';
 import { useCommanderPreferences } from '../utils/useCommanderPreferences';
 import { useLearningMemory } from '../utils/useLearningMemory';
 import { DoctrineCards } from '../components/command/DoctrineCards';
 import { cn } from '../utils/cn';
+import { TruthAuditStrip } from '../components/command/TruthAuditStrip';
+import { useCommandCenterTruth } from '../utils/useCommandCenterTruth';
+import { normalizeModelProvider } from '../utils/commanderPolicy';
+import { getWorkflowMeta } from '../utils/missionLifecycle';
+import { buildPolicyDemotionSummary, getDoctrineDeltaSummary, getFleetPostureSummary, getObservedModelBenchmarks, getPersistentPromotionGuidance, getSpecialistLifecycleSummary, rankCommanderRecommendations, scoreTaskOutcome } from '../utils/commanderAnalytics';
 
 const tabs = [
   { id: 'models', label: 'Model Command Matrix', icon: Cpu },
+  { id: 'routing', label: 'Routing Doctrine', icon: GitBranch },
   { id: 'knowledge', label: 'Knowledge Terrain', icon: Database },
   { id: 'directives', label: 'Directive Pressure', icon: ShieldCheck },
 ];
@@ -61,12 +60,77 @@ const modelColors = {
 
 const directiveIconMap = { ShieldCheck, FileJson, Lock, Zap, TrendingUp };
 const capabilityMetrics = [
-  { key: 'reasoning', label: 'Reasoning' },
-  { key: 'codeGen', label: 'Code generation' },
-  { key: 'extraction', label: 'Extraction' },
-  { key: 'latency', label: 'Speed' },
-  { key: 'costEfficiency', label: 'Cost efficiency' },
+  { key: 'reliability', label: 'Reliability' },
+  { key: 'missionLoad', label: 'Mission load' },
+  { key: 'agentCoverage', label: 'Agent coverage' },
+  { key: 'speed', label: 'Speed' },
+  { key: 'costDiscipline', label: 'Cost discipline' },
 ];
+
+function deriveAvailableModels(models, agents, tasks) {
+  const modelKeys = new Map();
+
+  models.forEach((model) => {
+    modelKeys.set(model.label || model.modelKey, {
+      model: model.label || model.modelKey,
+      provider: normalizeModelProvider(model.provider),
+      costPer1k: Number(model.costPer1k || 0),
+      contextWindow: model.provider ? `${model.provider} lane` : 'Custom lane',
+    });
+  });
+
+  agents.forEach((agent) => {
+    if (!agent.model) return;
+    if (!modelKeys.has(agent.model)) {
+      modelKeys.set(agent.model, {
+        model: agent.model,
+        provider: 'Live agent',
+        costPer1k: 0,
+        contextWindow: 'Live lane',
+      });
+    }
+  });
+
+  const byModel = Array.from(modelKeys.values()).map((entry) => {
+    const modelAgents = agents.filter((agent) => agent.model === entry.model);
+    const modelTasks = tasks.filter((task) => {
+      const agent = agents.find((candidate) => candidate.id === task.agentId);
+      return agent?.model === entry.model;
+    });
+
+    const avgSuccess = modelAgents.length
+      ? modelAgents.reduce((sum, agent) => sum + Number(agent.successRate || 0), 0) / modelAgents.length
+      : modelTasks.length
+        ? (modelTasks.filter((task) => ['done', 'completed'].includes(String(task.status || '').toLowerCase())).length / modelTasks.length) * 100
+        : 0;
+    const avgLatency = modelAgents.length
+      ? modelAgents.reduce((sum, agent) => sum + Number(agent.latencyMs || 0), 0) / modelAgents.length
+      : 0;
+    const costDiscipline = entry.costPer1k > 0
+      ? Math.max(18, Math.round(100 - Math.min(80, entry.costPer1k * 10)))
+      : 96;
+
+    return {
+      ...entry,
+      reliability: Math.round(avgSuccess || 0),
+      missionLoad: modelTasks.length,
+      agentCoverage: modelAgents.length,
+      speed: avgLatency > 0 ? Math.max(12, Math.round(100 - Math.min(85, avgLatency / 12))) : 50,
+      costDiscipline,
+      tokensPerSec: 0,
+      monthlyCost: modelTasks.reduce((sum, task) => sum + Number(task.costUsd || 0), 0),
+    };
+  });
+
+  const maxLoad = Math.max(...byModel.map((model) => model.missionLoad), 1);
+  const maxCoverage = Math.max(...byModel.map((model) => model.agentCoverage), 1);
+
+  return byModel.map((model) => ({
+    ...model,
+    missionLoad: Math.round((model.missionLoad / maxLoad) * 100),
+    agentCoverage: Math.round((model.agentCoverage / maxCoverage) * 100),
+  }));
+}
 
 function HudPanel({ eyebrow, title, description, accent = 'teal', children, className = '' }) {
   const accents = {
@@ -123,11 +187,11 @@ function StrategicReadFirst({ items }) {
           initial={{ opacity: 0, y: 18 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.4, ease: 'easeOut' }}
-          className="rounded-[24px] border border-white/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.04),rgba(255,255,255,0.015))] p-4"
+          className="rounded-[22px] border border-white/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.04),rgba(255,255,255,0.015))] p-3.5"
         >
           <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">{entry.eyebrow}</div>
-          <div className="mt-2 text-base font-semibold text-text-primary">{entry.title}</div>
-          <p className="mt-2 text-[12px] leading-relaxed text-text-body">{entry.detail}</p>
+          <div className="mt-1.5 text-[15px] font-semibold text-text-primary">{entry.title}</div>
+          <p className="mt-1.5 text-[11px] leading-5 text-text-body">{entry.detail}</p>
         </Motion.div>
       ))}
     </Motion.section>
@@ -157,6 +221,11 @@ function OptimizationCard({ recommendation }) {
             )}
           </div>
           <p className="mt-2 text-[12px] leading-relaxed text-text-muted">{recommendation.description}</p>
+          {recommendation.whyNow && (
+            <div className="mt-3 rounded-[14px] border border-white/8 bg-black/10 px-3 py-2 text-[11px] leading-relaxed text-text-body">
+              <span className="font-semibold text-text-primary">Why now:</span> {recommendation.whyNow}
+            </div>
+          )}
         </div>
         <ChevronRight className="mt-0.5 h-4 w-4 text-text-disabled" />
       </div>
@@ -214,8 +283,8 @@ function StrategyRail({ derivedRecommendations, learningMemory, humanHourlyRate,
 
   return (
     <div className="space-y-5">
-      <div className="rounded-[28px] border border-white/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.015))] p-2">
-        <div className="flex flex-wrap gap-2 rounded-[24px] bg-black/20 p-2">
+      <div className="rounded-[24px] border border-white/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.015))] p-1.5">
+        <div className="flex flex-wrap gap-2 rounded-[20px] bg-black/20 p-1.5">
           {[
             { id: 'economics', label: 'Economics' },
             { id: 'doctrine', label: 'Doctrine' },
@@ -226,7 +295,7 @@ function StrategyRail({ derivedRecommendations, learningMemory, humanHourlyRate,
               type="button"
               onClick={() => setFocus(tab.id)}
               className={cn(
-                'flex-1 rounded-[18px] px-4 py-3 text-[12px] font-semibold transition-all',
+                'flex-1 rounded-[16px] px-3 py-2.5 text-[11px] font-semibold transition-all',
                 focus === tab.id ? 'border border-white/10 bg-white/[0.05] text-text-primary' : 'text-text-muted hover:text-text-primary'
               )}
             >
@@ -240,13 +309,13 @@ function StrategyRail({ derivedRecommendations, learningMemory, humanHourlyRate,
         <HudPanel
           eyebrow="Economics"
           title="Human vs agent"
-          description={`Warren would want the savings line. Elon would want the efficiency multiple. Baseline is $${humanHourlyRate}/hour.`}
+          description={`Baseline is $${humanHourlyRate}/hour.`}
           accent="amber"
         >
           <CommandSectionHeader
             eyebrow="Command Economics"
             title="What the stack is actually buying"
-            description="Keep the economics ruthless and visible."
+            description="Quick economics read."
             icon={TrendingUp}
             tone="amber"
           />
@@ -285,19 +354,19 @@ function StrategyRail({ derivedRecommendations, learningMemory, humanHourlyRate,
 
       {focus === 'doctrine' && (
         <>
-          <HudPanel
-            eyebrow="Shared Doctrine"
-            title="What the system is starting to believe"
-            description="Tony wants signal clarity. Elon wants the shortest path to the next better default."
-            accent="violet"
-          >
+        <HudPanel
+          eyebrow="Shared Doctrine"
+          title="What the system is starting to believe"
+          description="The strongest live signals."
+          accent="violet"
+        >
             <CommandSectionHeader
               eyebrow="Doctrine Stack"
               title="Three live beliefs"
-              description="No clutter, just the strongest shared signals."
-              icon={Sparkles}
-              tone="violet"
-            />
+            description="Three live beliefs."
+            icon={Sparkles}
+            tone="violet"
+          />
             <DoctrineCards items={learningMemory.doctrine.slice(0, 3)} columns="one" />
           </HudPanel>
           <DoctrineSignalRail learningMemory={learningMemory} />
@@ -308,13 +377,13 @@ function StrategyRail({ derivedRecommendations, learningMemory, humanHourlyRate,
         <HudPanel
           eyebrow="Optimization Orders"
           title="Where to tighten the stack"
-          description="The shortest ruthless list, not a dashboard sermon."
+          description="Three high-leverage moves."
           accent="blue"
         >
           <CommandSectionHeader
             eyebrow="Command Orders"
             title="Three system moves"
-            description="These are the upgrades most likely to increase throughput and lower drag."
+            description="Highest leverage next."
             icon={Gauge}
             tone="teal"
           />
@@ -329,9 +398,158 @@ function StrategyRail({ derivedRecommendations, learningMemory, humanHourlyRate,
   );
 }
 
-function ModelRegistryTab({ availableModels, agents, tasks }) {
+function StrategicKpi({ label, detail, tone = 'teal', icon, valueNode }) {
+  const KpiIcon = icon;
+  const toneStyles = {
+    teal: 'text-aurora-teal border-aurora-teal/20 bg-aurora-teal/8',
+    amber: 'text-aurora-amber border-aurora-amber/20 bg-aurora-amber/8',
+    rose: 'text-aurora-rose border-aurora-rose/20 bg-aurora-rose/8',
+    blue: 'text-aurora-blue border-aurora-blue/20 bg-aurora-blue/8',
+  };
+
+  return (
+    <div className="rounded-[22px] border border-white/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.015))] p-3.5">
+      <div className="flex items-center justify-between">
+        <span className="text-[10px] uppercase tracking-[0.22em] text-text-muted">{label}</span>
+        <div className={`rounded-xl border px-2.5 py-2 ${toneStyles[tone]}`}>
+          <KpiIcon className="h-4 w-4" />
+        </div>
+      </div>
+      <div className="mt-3 text-[30px] font-semibold tracking-tight text-text-primary">{valueNode}</div>
+      <p className="mt-1.5 text-[11px] leading-5 text-text-muted">{detail}</p>
+    </div>
+  );
+}
+
+function SystemsOperatorTable({ models }) {
+  return (
+    <div className="rounded-[24px] border border-white/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.015))] p-4">
+      <CommandSectionHeader
+        eyebrow="Model Roles"
+        title="Which branch wins which role"
+        description="Simple ranked answers instead of more floating cards."
+        icon={Cpu}
+        tone="blue"
+      />
+      <div className="mt-4 overflow-hidden rounded-[20px] border border-white/8 bg-black/20">
+        <div className="grid grid-cols-[1.4fr_0.9fr_0.9fr] border-b border-white/8 px-4 py-2.5 text-[10px] uppercase tracking-[0.16em] text-text-muted">
+          <div>Model</div>
+          <div>Reliability</div>
+          <div>Cost discipline</div>
+        </div>
+        {models.length === 0 ? (
+          <div className="px-4 py-6 text-sm text-text-muted">
+            No live model data yet.
+          </div>
+        ) : (
+          models.slice(0, 5).map((model, index) => (
+            <div
+              key={model.model}
+              className={`grid grid-cols-[1.4fr_0.9fr_0.9fr] px-4 py-2.5 text-[13px] ${index !== Math.min(models.length, 5) - 1 ? 'border-b border-white/8' : ''}`}
+            >
+              <div className="font-semibold text-text-primary">{model.model}</div>
+              <div className="text-text-body">{model.reliability}</div>
+              <div className="text-text-body">{model.costDiscipline}</div>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
+function CollapsedPanel({ eyebrow, title, summary, children }) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div className="rounded-[24px] border border-white/8 bg-[#111827]/90 p-4">
+      <div className="flex items-center justify-between gap-4">
+        <div>
+          <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">{eyebrow}</div>
+          <div className="mt-1 text-base font-semibold text-text-primary">{title}</div>
+          <div className="mt-1 text-[11px] leading-5 text-text-muted">{summary}</div>
+        </div>
+        <button
+          type="button"
+          onClick={() => setOpen((value) => !value)}
+          className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-[11px] font-semibold text-text-primary transition-colors hover:bg-white/[0.06]"
+        >
+          {open ? 'Hide' : 'Open'}
+        </button>
+      </div>
+      {open ? <div className="mt-4">{children}</div> : null}
+    </div>
+  );
+}
+
+function IntelligenceHeaderChip({ label, value, tone = 'teal' }) {
+  const tones = {
+    teal: 'border-aurora-teal/20 bg-aurora-teal/10 text-aurora-teal',
+    amber: 'border-aurora-amber/20 bg-aurora-amber/10 text-aurora-amber',
+    blue: 'border-aurora-blue/20 bg-aurora-blue/10 text-aurora-blue',
+  };
+
+  return (
+    <div className={`rounded-full border px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] ${tones[tone]}`}>
+      {value} {label}
+    </div>
+  );
+}
+
+function IntelligenceHeader({ activeTab, setActiveTab, systemSummary, availableModels, truth }) {
+  return (
+    <div className="rounded-[24px] border border-white/8 bg-[#111827]/92 p-5">
+      <div className="grid gap-5 xl:grid-cols-[1.2fr_0.8fr] xl:items-start">
+        <div>
+          <div className="text-[10px] uppercase tracking-[0.22em] text-text-muted">Strategic Systems</div>
+          <h1 className="mt-2 text-[clamp(1.8rem,2.5vw,2.55rem)] font-semibold tracking-[-0.04em] text-text-primary">Strategic Systems</h1>
+          <p className="mt-2 max-w-xl text-[13px] leading-5 text-text-muted">A clean board for models, routing, and system efficiency.</p>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <IntelligenceHeaderChip label="models online" value={availableModels.length} tone="teal" />
+            <IntelligenceHeaderChip label="active agents" value={systemSummary.activeAgents} tone="blue" />
+            <IntelligenceHeaderChip label="routed missions" value={systemSummary.routedMissions} tone="amber" />
+          </div>
+        </div>
+        <div className="rounded-[20px] border border-white/8 bg-[#0d1420] p-4">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] uppercase tracking-[0.18em] text-text-muted">System Controls</span>
+            <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-aurora-teal">Live</span>
+          </div>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {tabs.map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`rounded-xl border px-3 py-2 text-[11px] font-semibold transition-colors ${
+                  activeTab === tab.id
+                    ? 'border-aurora-teal/25 bg-aurora-teal/10 text-aurora-teal'
+                    : 'border-white/8 bg-white/[0.03] text-text-muted hover:text-text-primary'
+                }`}
+              >
+                {tab.label.replace('Model Command Matrix', 'Models').replace('Routing Doctrine', 'Routing').replace('Knowledge Terrain', 'Knowledge').replace('Directive Pressure', 'Directives')}
+              </button>
+            ))}
+          </div>
+          <div className="mt-4 grid grid-cols-2 gap-3">
+            <div className="rounded-[18px] border border-white/8 bg-[#111827] p-3">
+              <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Recommendations</div>
+              <div className="mt-2 text-2xl font-semibold text-text-primary"><AnimatedNumber value={systemSummary.recommendationCount} /></div>
+            </div>
+            <div className="rounded-[18px] border border-white/8 bg-[#111827] p-3">
+              <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Connected systems</div>
+              <div className="mt-2 text-2xl font-semibold text-text-primary"><AnimatedNumber value={truth.connectedSystemsCount} /></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ModelRegistryTab({ availableModels, agents, tasks, logs, interventions }) {
   const [detailView, setDetailView] = useState('constellation');
   const radarSelection = availableModels.slice(0, 4);
+  const observedBenchmarks = useMemo(() => getObservedModelBenchmarks(tasks, agents, logs, interventions).slice(0, 6), [tasks, agents, logs, interventions]);
 
   const groupedComparisonData = useMemo(() => (
     capabilityMetrics.map((metric) => {
@@ -362,9 +580,9 @@ function ModelRegistryTab({ availableModels, agents, tasks }) {
       .sort((a, b) => b.tasks - a.tasks);
   }, [agents, tasks]);
 
-  const primaryReasoner = [...availableModels].sort((a, b) => b.reasoning - a.reasoning)[0];
-  const fastestModel = [...availableModels].sort((a, b) => b.latency - a.latency)[0];
-  const cheapestModel = [...availableModels].sort((a, b) => b.costEfficiency - a.costEfficiency)[0];
+  const primaryReasoner = [...availableModels].sort((a, b) => b.reliability - a.reliability)[0];
+  const fastestModel = [...availableModels].sort((a, b) => b.speed - a.speed)[0];
+  const cheapestModel = [...availableModels].sort((a, b) => b.costDiscipline - a.costDiscipline)[0];
   const heaviestLoad = modelLoad.slice().sort((a, b) => b.tasks - a.tasks)[0];
 
   return (
@@ -374,6 +592,7 @@ function ModelRegistryTab({ availableModels, agents, tasks }) {
             {[
               { id: 'constellation', label: 'Constellation' },
               { id: 'load', label: 'Load' },
+              { id: 'benchmarks', label: 'Benchmarks' },
               { id: 'registry', label: 'Registry' },
             ].map((tab) => (
               <button
@@ -400,16 +619,16 @@ function ModelRegistryTab({ availableModels, agents, tasks }) {
         >
           <CommandSectionHeader
             eyebrow="Capability Constellation"
-            title="Reasoning, code, extraction, speed, and cost in one view"
-            description="Grouped bars are easier to compare than overlapping radar shapes."
+            title="Reliability, load, coverage, speed, and cost in one view"
+            description="Real operating metrics are easier to compare than decorative capability guesses."
             icon={RadarIcon}
             tone="violet"
           />
           <div className="mt-5 grid gap-3 md:grid-cols-3">
             {[
-              { label: 'Best reasoner', value: primaryReasoner?.model || 'No model bank yet', detail: 'Highest-quality planning and ambiguity handling.' },
-              { label: 'Fastest branch', value: fastestModel?.model || 'No model bank yet', detail: 'Best for speed-sensitive workflows and volume dispatch.' },
-              { label: 'Most efficient', value: cheapestModel?.model || 'No model bank yet', detail: 'Best for inexpensive background work and utility jobs.' },
+              { label: 'Most reliable', value: primaryReasoner?.model || 'No live model data yet', detail: 'Strongest completion and success posture from your active bank.' },
+              { label: 'Fastest branch', value: fastestModel?.model || 'No live model data yet', detail: 'Best current latency posture across routed branches.' },
+              { label: 'Most disciplined', value: cheapestModel?.model || 'No live model data yet', detail: 'Best cost discipline based on configured spend profile.' },
             ].map((card) => (
               <div key={card.label} className="rounded-[20px] border border-white/8 bg-black/20 p-4">
                 <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">{card.label}</div>
@@ -461,7 +680,7 @@ function ModelRegistryTab({ availableModels, agents, tasks }) {
             </div>
           </div>
           <div className="mt-3 rounded-2xl border border-aurora-violet/15 bg-aurora-violet/[0.05] px-3 py-2 text-[11px] text-text-body">
-            Readback: one chart, five metrics, four model families. The winner strip tells you the default choice; the bars tell you how close the alternatives really are.
+            Readback: one chart, five operating metrics, real routed model lanes. The winner strip gives the quick answer; the bars show how close the alternatives really are.
           </div>
         </HudPanel>
         )}
@@ -523,6 +742,85 @@ function ModelRegistryTab({ availableModels, agents, tasks }) {
         </HudPanel>
         )}
 
+        {detailView === 'benchmarks' && (
+        <HudPanel
+          eyebrow="Observed Benchmarks"
+          title="Which model lanes are actually winning"
+          description="Benchmarks score real routed missions by quality, success, speed, and spend discipline."
+          accent="amber"
+        >
+          <CommandSectionHeader
+            eyebrow="Observed Winners"
+            title="Live model benchmark board"
+            description="Use real outcomes to steer doctrine instead of static assumptions."
+            icon={Gauge}
+            tone="amber"
+          />
+          <div className="mt-5 grid gap-3 md:grid-cols-3">
+            {[
+              { label: 'Top benchmark', value: observedBenchmarks[0]?.model || 'No benchmark data yet', detail: observedBenchmarks[0] ? `${observedBenchmarks[0].provider} is leading with score ${observedBenchmarks[0].benchmarkScore}.` : 'Run more routed missions to establish a clear winner.' },
+              { label: 'Highest quality', value: [...observedBenchmarks].sort((a, b) => b.avgQuality - a.avgQuality)[0]?.model || 'No benchmark data yet', detail: 'Quality favors completion quality, trust, and clean routing posture.' },
+              { label: 'Best value', value: [...observedBenchmarks].sort((a, b) => b.costScore - a.costScore)[0]?.model || 'No benchmark data yet', detail: 'Value favors low-cost lanes that still close work reliably.' },
+            ].map((card) => (
+              <div key={card.label} className="rounded-[20px] border border-white/8 bg-black/20 p-4">
+                <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">{card.label}</div>
+                <div className="mt-2 text-sm font-semibold text-text-primary">{card.value}</div>
+                <p className="mt-2 text-[12px] leading-relaxed text-text-muted">{card.detail}</p>
+              </div>
+            ))}
+          </div>
+          <div className="mt-5 space-y-3">
+            {observedBenchmarks.length === 0 ? (
+              <div className="rounded-[22px] border border-dashed border-white/10 bg-black/10 p-6 text-center">
+                <div className="text-sm font-semibold text-text-primary">No observed benchmark data yet.</div>
+                <p className="mt-2 text-[12px] leading-relaxed text-text-muted">This board fills in as Commander accumulates more routed mission outcomes.</p>
+              </div>
+            ) : (
+              observedBenchmarks.map((entry, index) => (
+                <div key={entry.key} className="rounded-[22px] border border-white/8 bg-black/20 p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="flex h-7 w-7 items-center justify-center rounded-full border border-white/10 bg-white/[0.03] text-[10px] font-semibold text-text-primary">
+                          {String(index + 1).padStart(2, '0')}
+                        </span>
+                        <span className="text-sm font-semibold text-text-primary">{entry.model}</span>
+                      </div>
+                      <div className="mt-1 text-[11px] text-text-muted">{entry.provider}</div>
+                    </div>
+                    <div className="rounded-full border border-aurora-amber/20 bg-aurora-amber/10 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-aurora-amber">
+                      Score {entry.benchmarkScore}
+                    </div>
+                  </div>
+                  <div className="mt-4 grid grid-cols-2 gap-3 text-[11px] md:grid-cols-5">
+                    <div>
+                      <div className="text-text-disabled">Runs</div>
+                      <div className="mt-1 font-mono text-text-primary">{entry.runs}</div>
+                    </div>
+                    <div>
+                      <div className="text-text-disabled">Quality</div>
+                      <div className="mt-1 font-mono text-text-primary">{entry.avgQuality}</div>
+                    </div>
+                    <div>
+                      <div className="text-text-disabled">Success</div>
+                      <div className="mt-1 font-mono text-text-primary">{entry.successRate}%</div>
+                    </div>
+                    <div>
+                      <div className="text-text-disabled">Avg cost</div>
+                      <div className="mt-1 font-mono text-text-primary">${entry.avgCost.toFixed(2)}</div>
+                    </div>
+                    <div>
+                      <div className="text-text-disabled">Speed</div>
+                      <div className="mt-1 font-mono text-text-primary">{entry.speedScore}</div>
+                    </div>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </HudPanel>
+        )}
+
         {detailView === 'registry' && (
         <div className="rounded-[28px] border border-white/8 bg-[linear-gradient(180deg,rgba(45,212,191,0.05),rgba(255,255,255,0.02))] p-5">
           <CommandSectionHeader
@@ -552,18 +850,18 @@ function ModelRegistryTab({ availableModels, agents, tasks }) {
                     {model.contextWindow}
                   </span>
                 </div>
-                <div className="mt-4 grid grid-cols-3 gap-3 text-[11px]">
+                    <div className="mt-4 grid grid-cols-3 gap-3 text-[11px]">
                   <div>
-                    <div className="text-text-disabled">Tok / sec</div>
-                    <div className="mt-1 font-mono text-text-primary">{model.tokensPerSec || 0}</div>
+                    <div className="text-text-disabled">Live spend</div>
+                    <div className="mt-1 font-mono text-text-primary">{model.monthlyCost ? `$${model.monthlyCost.toFixed(2)}` : '$0.00'}</div>
                   </div>
                   <div>
-                    <div className="text-text-disabled">Reasoning</div>
-                    <div className="mt-1 font-mono text-text-primary">{model.reasoning}</div>
+                    <div className="text-text-disabled">Reliability</div>
+                    <div className="mt-1 font-mono text-text-primary">{model.reliability}</div>
                   </div>
                   <div>
-                    <div className="text-text-disabled">Monthly cost</div>
-                    <div className="mt-1 font-mono text-text-primary">{model.monthlyCost ? `$${model.monthlyCost}` : 'Free'}</div>
+                    <div className="text-text-disabled">Active agents</div>
+                    <div className="mt-1 font-mono text-text-primary">{Math.round((model.agentCoverage / 100) * Math.max(availableModels.length, 1))}</div>
                   </div>
                 </div>
               </div>
@@ -580,8 +878,1254 @@ function ModelRegistryTab({ availableModels, agents, tasks }) {
   );
 }
 
-function KnowledgeMapTab() {
-  const totalVectors = knowledgeNamespaces.reduce((sum, namespace) => sum + namespace.vectors, 0);
+function RoutingDoctrineTab({ routingPolicies, tasks, agents, logs, interventions, lifecycleEvents, skills, upsertPolicy, ensureDefaultPolicy }) {
+  const [selectedPolicyId, setSelectedPolicyId] = useState('');
+  const [draft, setDraft] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState('');
+  const [saveMessage, setSaveMessage] = useState('');
+
+  useEffect(() => {
+    if (!routingPolicies.length) {
+      setSelectedPolicyId('');
+      setDraft(null);
+      return;
+    }
+
+    const fallbackPolicy = routingPolicies.find((policy) => policy.isDefault) || routingPolicies[0];
+    const selected = routingPolicies.find((policy) => policy.id === selectedPolicyId) || fallbackPolicy;
+    setSelectedPolicyId(selected?.id || '');
+    setDraft(selected ? { ...selected } : null);
+  }, [routingPolicies, selectedPolicyId]);
+
+  const workflowDistribution = useMemo(() => {
+    const counts = new Map();
+    tasks.forEach((task) => {
+      const key = task.workflowStatus || 'intake';
+      counts.set(key, (counts.get(key) || 0) + 1);
+    });
+
+    return Array.from(counts.entries())
+      .map(([status, count]) => ({
+        status,
+        count,
+        meta: getWorkflowMeta(status),
+      }))
+      .sort((a, b) => b.count - a.count);
+  }, [tasks]);
+
+  const capabilityDemand = useMemo(() => {
+    const counts = new Map();
+    tasks.forEach((task) => {
+      (task.requiredCapabilities || []).forEach((capability) => {
+        counts.set(capability, (counts.get(capability) || 0) + 1);
+      });
+    });
+
+    return Array.from(counts.entries())
+      .map(([capability, count]) => ({ capability, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 6);
+  }, [tasks]);
+
+  const contextDemand = useMemo(() => {
+    const counts = new Map();
+    tasks.forEach((task) => {
+      (task.contextPackIds || []).forEach((packId) => {
+        counts.set(packId, (counts.get(packId) || 0) + 1);
+      });
+    });
+
+    return Array.from(counts.entries())
+      .map(([packId, count]) => ({ packId, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 6);
+  }, [tasks]);
+
+  const observedBestLanes = useMemo(() => {
+    const grouped = new Map();
+    tasks
+      .filter((task) => ['completed', 'done'].includes(String(task.status || '').toLowerCase()) || task.workflowStatus === 'completed')
+      .forEach((task) => {
+        const agent = agents.find((candidate) => candidate.id === task.agentId);
+        const key = `${task.domain || 'general'}::${task.intentType || 'general'}`;
+        const current = grouped.get(key) || [];
+        current.push({
+          lane: `${agent?.name || task.agentRole || 'unassigned'} · ${agent?.model || task.modelOverride || 'adaptive'}`,
+          cost: Number(task.costUsd || 0),
+          quality: scoreTaskOutcome(task).score,
+        });
+        grouped.set(key, current);
+      });
+
+    return Array.from(grouped.entries())
+      .map(([key, entries]) => {
+        const laneGroups = new Map();
+        entries.forEach((entry) => {
+          const current = laneGroups.get(entry.lane) || { lane: entry.lane, count: 0, totalCost: 0, totalQuality: 0 };
+          current.count += 1;
+          current.totalCost += entry.cost;
+          current.totalQuality += entry.quality;
+          laneGroups.set(entry.lane, current);
+        });
+        const ranked = Array.from(laneGroups.values()).sort((left, right) => {
+          const leftQuality = left.count ? left.totalQuality / left.count : 0;
+          const rightQuality = right.count ? right.totalQuality / right.count : 0;
+          if (rightQuality !== leftQuality) return rightQuality - leftQuality;
+          if (right.count !== left.count) return right.count - left.count;
+          return left.totalCost - right.totalCost;
+        });
+        const [domain, intentType] = key.split('::');
+        return {
+          domain,
+          intentType,
+          winner: ranked[0] ? { ...ranked[0], avgQuality: Math.round(ranked[0].totalQuality / ranked[0].count) } : null,
+          runnersUp: ranked.slice(1, 3),
+          sampleCount: entries.length,
+        };
+      })
+      .filter((entry) => entry.winner)
+      .sort((left, right) => right.sampleCount - left.sampleCount)
+      .slice(0, 6);
+  }, [agents, tasks]);
+
+  const routedTasks = tasks.filter((task) => task.routingReason);
+  const premiumBranches = routedTasks.filter((task) => task.budgetClass === 'premium').length;
+  const humanGates = routedTasks.filter((task) => task.approvalLevel === 'human_required').length;
+  const delegatedBranches = agents.filter((agent) => agent.canSpawn).length;
+  const matchingTasks = useMemo(() => (
+    draft
+      ? routedTasks.filter((task) => {
+        const domainMatch = (draft.taskDomain || 'general') === 'general' || task.domain === draft.taskDomain;
+        const intentMatch = (draft.intentType || 'general') === 'general' || task.intentType === draft.intentType;
+        return domainMatch && intentMatch;
+      })
+      : []
+  ), [draft, routedTasks]);
+  const modelOptions = useMemo(() => {
+    const seen = new Map();
+    agents.forEach((agent) => {
+      if (!agent.model) return;
+      seen.set(agent.model, { model: agent.model, provider: normalizeModelProvider(agent.provider || 'Live agent') });
+    });
+    return Array.from(seen.values());
+  }, [agents]);
+  const demotionSummary = useMemo(() => buildPolicyDemotionSummary(draft, tasks, interventions, logs), [draft, tasks, interventions, logs]);
+  const trendTone = demotionSummary.trend === 'improving'
+    ? 'text-aurora-teal border-aurora-teal/20 bg-aurora-teal/10'
+    : demotionSummary.trend === 'demoted'
+      ? 'text-aurora-rose border-aurora-rose/20 bg-aurora-rose/10'
+      : demotionSummary.trend === 'forming'
+        ? 'text-aurora-amber border-aurora-amber/20 bg-aurora-amber/10'
+        : 'text-aurora-blue border-aurora-blue/20 bg-aurora-blue/10';
+
+  function updateFallback(index, field, value) {
+    setDraft((current) => {
+      if (!current) return current;
+      const nextFallback = Array.isArray(current.fallbackOrder) ? [...current.fallbackOrder] : [];
+      const existing = nextFallback[index] || { role: 'executor', provider: 'Anthropic', model: '' };
+      nextFallback[index] = { ...existing, [field]: value };
+      return { ...current, fallbackOrder: nextFallback };
+    });
+    setSaveError('');
+    setSaveMessage('');
+  }
+
+  function addFallback() {
+    setDraft((current) => {
+      if (!current) return current;
+      return {
+        ...current,
+        fallbackOrder: [
+          ...(Array.isArray(current.fallbackOrder) ? current.fallbackOrder : []),
+          { role: 'executor', provider: 'Anthropic', model: '' },
+        ],
+      };
+    });
+    setSaveError('');
+    setSaveMessage('');
+  }
+
+  function removeFallback(index) {
+    setDraft((current) => {
+      if (!current) return current;
+      const nextFallback = (Array.isArray(current.fallbackOrder) ? current.fallbackOrder : []).filter((_, itemIndex) => itemIndex !== index);
+      return { ...current, fallbackOrder: nextFallback };
+    });
+    setSaveError('');
+    setSaveMessage('');
+  }
+
+  function updateDraft(field, value) {
+    setDraft((current) => current ? { ...current, [field]: value } : current);
+    setSaveError('');
+    setSaveMessage('');
+  }
+
+  async function handleSavePolicy() {
+    if (!draft) return;
+    setSaving(true);
+    setSaveError('');
+    setSaveMessage('');
+
+    try {
+      await upsertPolicy(draft);
+      setSaveMessage('Routing policy updated.');
+    } catch (error) {
+      setSaveError(error.message || 'Could not update routing policy.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleCreateDefaultPolicy() {
+    setSaving(true);
+    setSaveError('');
+    setSaveMessage('');
+
+    try {
+      const policy = await ensureDefaultPolicy();
+      setSelectedPolicyId(policy.id);
+      setSaveMessage('Default routing policy created.');
+    } catch (error) {
+      setSaveError(error.message || 'Could not create default routing policy.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="space-y-5">
+      <HudPanel
+        eyebrow="Routing Doctrine"
+        title="Canonical routing is live"
+        description="This is the first visible layer of Commander doctrine: what the system is routing, where risk is rising, and which policies own the work."
+        accent="teal"
+      >
+        <CommandSectionHeader
+          eyebrow="Routing Command"
+          title="Policy, workflow, and capability pressure"
+          description="The goal is simple: one routing truth, visible enough to trust."
+          icon={GitBranch}
+          tone="teal"
+        />
+        <div className="mt-5 grid gap-3 md:grid-cols-4">
+          {[
+            { label: 'Policies live', value: routingPolicies.length },
+            { label: 'Routed missions', value: routedTasks.length },
+            { label: 'Human gates', value: humanGates },
+            { label: 'Spawn lanes', value: delegatedBranches },
+          ].map((metric) => (
+            <div key={metric.label} className="rounded-[20px] border border-white/8 bg-black/20 p-4">
+              <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">{metric.label}</div>
+              <div className="mt-2 text-2xl font-semibold text-text-primary">
+                <AnimatedNumber value={metric.value} />
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="mt-3 rounded-2xl border border-aurora-blue/15 bg-aurora-blue/[0.05] px-3 py-2 text-[11px] text-text-body">
+          Routing readback: {premiumBranches > 0
+            ? `${premiumBranches} missions are already marked premium, so cost discipline is now explicit instead of implied.`
+            : 'No premium-only branches are live yet, which is good while doctrine is still being hardened.'}
+        </div>
+      </HudPanel>
+
+      <div className="grid gap-5 xl:grid-cols-[1.15fr_0.85fr]">
+        <div className="rounded-[28px] border border-white/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.015))] p-5">
+          <CommandSectionHeader
+            eyebrow="Policy Stack"
+            title="Routing policies in command"
+            description="Default first, overrides second, now editable instead of just observable."
+            icon={Layers3}
+            tone="blue"
+          />
+          <div className="mt-4 space-y-3">
+            {routingPolicies.length === 0 && (
+              <div className="rounded-[22px] border border-dashed border-white/10 bg-black/10 p-5 text-sm text-text-muted">
+                No routing policies are stored yet. Create the first default policy and Commander will start using it for mission routing.
+                <div className="mt-4">
+                  <button
+                    type="button"
+                    onClick={handleCreateDefaultPolicy}
+                    disabled={saving}
+                    className="rounded-xl border border-aurora-teal/20 bg-aurora-teal/10 px-3 py-2 text-[11px] font-semibold text-aurora-teal transition-colors hover:bg-aurora-teal/14 disabled:opacity-50"
+                  >
+                    Create default policy
+                  </button>
+                </div>
+              </div>
+            )}
+            {routingPolicies.map((policy) => (
+              <button
+                key={policy.id}
+                type="button"
+                onClick={() => setSelectedPolicyId(policy.id)}
+                className={cn(
+                  'w-full rounded-[22px] border bg-black/20 p-4 text-left transition-colors',
+                  selectedPolicyId === policy.id ? 'border-aurora-teal/30 shadow-glow-teal' : 'border-white/8 hover:border-white/12'
+                )}
+              >
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <div className="text-sm font-semibold text-text-primary">{policy.name}</div>
+                      {policy.isDefault && (
+                        <span className="rounded-full border border-aurora-teal/20 bg-aurora-teal/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-aurora-teal">
+                          Default
+                        </span>
+                      )}
+                    </div>
+                    <div className="mt-1 text-[11px] text-text-muted">{policy.description || 'Adaptive Commander doctrine.'}</div>
+                  </div>
+                  <div className="rounded-full border border-white/8 bg-white/[0.03] px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-text-muted">
+                    {policy.preferredProvider} / {policy.preferredAgentRole}
+                  </div>
+                </div>
+                <div className="mt-4 grid grid-cols-2 gap-3 text-[11px] md:grid-cols-4">
+                  <div>
+                    <div className="text-text-disabled">Domain</div>
+                    <div className="mt-1 font-semibold text-text-primary">{policy.taskDomain}</div>
+                  </div>
+                  <div>
+                    <div className="text-text-disabled">Intent</div>
+                    <div className="mt-1 font-semibold text-text-primary">{policy.intentType}</div>
+                  </div>
+                  <div>
+                    <div className="text-text-disabled">Budget</div>
+                    <div className="mt-1 font-semibold text-text-primary">{policy.budgetClass}</div>
+                  </div>
+                  <div>
+                    <div className="text-text-disabled">Approval</div>
+                    <div className="mt-1 font-semibold text-text-primary">{policy.approvalRule}</div>
+                  </div>
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="space-y-5">
+          <HudPanel
+            eyebrow="Policy Editor"
+            title="Tune Commander routing live"
+            description="Preferred provider, model, role, approval posture, and parallelization live here."
+            accent="teal"
+          >
+            {!draft && (
+              <div className="rounded-[22px] border border-white/8 bg-black/20 p-4 text-[12px] text-text-muted">
+                Select a routing policy to edit it here.
+              </div>
+            )}
+            {draft && (
+              <div className="space-y-4">
+                <div className="grid gap-3 md:grid-cols-2">
+                  <label className="rounded-[20px] border border-white/8 bg-black/20 p-3">
+                    <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Task domain</div>
+                    <select
+                      value={draft.taskDomain || 'general'}
+                      onChange={(event) => updateDraft('taskDomain', event.target.value)}
+                      className="mt-2 w-full bg-transparent text-sm font-semibold text-text-primary outline-none"
+                    >
+                      {['general', 'build', 'research', 'ops', 'crm', 'finance', 'personal'].map((domain) => (
+                        <option key={domain} value={domain} className="bg-[#0d1015]">{domain}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="rounded-[20px] border border-white/8 bg-black/20 p-3">
+                    <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Intent type</div>
+                    <select
+                      value={draft.intentType || 'general'}
+                      onChange={(event) => updateDraft('intentType', event.target.value)}
+                      className="mt-2 w-full bg-transparent text-sm font-semibold text-text-primary outline-none"
+                    >
+                      {['general', 'planning', 'research', 'execution', 'verification', 'reporting'].map((intent) => (
+                        <option key={intent} value={intent} className="bg-[#0d1015]">{intent}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="rounded-[20px] border border-white/8 bg-black/20 p-3">
+                    <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Policy name</div>
+                    <input
+                      value={draft.name || ''}
+                      onChange={(event) => updateDraft('name', event.target.value)}
+                      className="mt-2 w-full bg-transparent text-sm font-semibold text-text-primary outline-none"
+                    />
+                  </label>
+                  <label className="rounded-[20px] border border-white/8 bg-black/20 p-3">
+                    <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Preferred role</div>
+                    <select
+                      value={draft.preferredAgentRole || 'commander'}
+                      onChange={(event) => updateDraft('preferredAgentRole', event.target.value)}
+                      className="mt-2 w-full bg-transparent text-sm font-semibold text-text-primary outline-none"
+                    >
+                      {['commander', 'planner', 'researcher', 'builder', 'verifier', 'executor'].map((role) => (
+                        <option key={role} value={role} className="bg-[#0d1015]">{role}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="rounded-[20px] border border-white/8 bg-black/20 p-3">
+                    <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Preferred provider</div>
+                    <select
+                      value={draft.preferredProvider || 'Anthropic'}
+                      onChange={(event) => updateDraft('preferredProvider', event.target.value)}
+                      className="mt-2 w-full bg-transparent text-sm font-semibold text-text-primary outline-none"
+                    >
+                      {['Anthropic', 'OpenAI', 'Google', 'Ollama', 'Custom'].map((provider) => (
+                        <option key={provider} value={provider} className="bg-[#0d1015]">{provider}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="rounded-[20px] border border-white/8 bg-black/20 p-3">
+                    <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Preferred model</div>
+                    <select
+                      value={draft.preferredModel || ''}
+                      onChange={(event) => updateDraft('preferredModel', event.target.value)}
+                      className="mt-2 w-full bg-transparent text-sm font-semibold text-text-primary outline-none"
+                    >
+                      <option value="" className="bg-[#0d1015]">No hard override</option>
+                      {modelOptions.map((model) => (
+                        <option key={model.model} value={model.model} className="bg-[#0d1015]">{model.model}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="rounded-[20px] border border-white/8 bg-black/20 p-3">
+                    <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Approval rule</div>
+                    <select
+                      value={draft.approvalRule || 'risk_weighted'}
+                      onChange={(event) => updateDraft('approvalRule', event.target.value)}
+                      className="mt-2 w-full bg-transparent text-sm font-semibold text-text-primary outline-none"
+                    >
+                      {['risk_weighted', 'human_required', 'auto_low_risk'].map((rule) => (
+                        <option key={rule} value={rule} className="bg-[#0d1015]">{rule}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="rounded-[20px] border border-white/8 bg-black/20 p-3">
+                    <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Parallelization</div>
+                    <select
+                      value={draft.parallelizationPolicy || 'adaptive'}
+                      onChange={(event) => updateDraft('parallelizationPolicy', event.target.value)}
+                      className="mt-2 w-full bg-transparent text-sm font-semibold text-text-primary outline-none"
+                    >
+                      {['adaptive', 'parallel_first', 'sequential_first'].map((policy) => (
+                        <option key={policy} value={policy} className="bg-[#0d1015]">{policy}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="rounded-[20px] border border-white/8 bg-black/20 p-3">
+                    <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Context policy</div>
+                    <select
+                      value={draft.contextPolicy || 'minimal'}
+                      onChange={(event) => updateDraft('contextPolicy', event.target.value)}
+                      className="mt-2 w-full bg-transparent text-sm font-semibold text-text-primary outline-none"
+                    >
+                      {['minimal', 'balanced', 'max_context'].map((policy) => (
+                        <option key={policy} value={policy} className="bg-[#0d1015]">{policy}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="rounded-[20px] border border-white/8 bg-black/20 p-3">
+                    <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Budget class</div>
+                    <select
+                      value={draft.budgetClass || 'balanced'}
+                      onChange={(event) => updateDraft('budgetClass', event.target.value)}
+                      className="mt-2 w-full bg-transparent text-sm font-semibold text-text-primary outline-none"
+                    >
+                      {['lean', 'balanced', 'premium'].map((budget) => (
+                        <option key={budget} value={budget} className="bg-[#0d1015]">{budget}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="rounded-[20px] border border-white/8 bg-black/20 p-3">
+                    <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Risk level</div>
+                    <select
+                      value={draft.riskLevel || 'medium'}
+                      onChange={(event) => updateDraft('riskLevel', event.target.value)}
+                      className="mt-2 w-full bg-transparent text-sm font-semibold text-text-primary outline-none"
+                    >
+                      {['low', 'medium', 'high'].map((level) => (
+                        <option key={level} value={level} className="bg-[#0d1015]">{level}</option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+                <label className="rounded-[20px] border border-white/8 bg-black/20 p-3 block">
+                  <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Description</div>
+                  <textarea
+                    value={draft.description || ''}
+                    onChange={(event) => updateDraft('description', event.target.value)}
+                    className="mt-2 min-h-[88px] w-full bg-transparent text-[12px] leading-relaxed text-text-primary outline-none"
+                  />
+                </label>
+                <label className="flex items-center gap-3 rounded-[20px] border border-white/8 bg-black/20 p-3">
+                  <input
+                    type="checkbox"
+                    checked={draft.evidenceRequired ?? false}
+                    onChange={(event) => updateDraft('evidenceRequired', event.target.checked)}
+                    className="h-4 w-4 rounded border-white/20 bg-transparent"
+                  />
+                  <div>
+                    <div className="text-sm font-semibold text-text-primary">Require evidence before execution</div>
+                    <div className="mt-1 text-[11px] text-text-muted">Use for research-sensitive or high-stakes branches.</div>
+                  </div>
+                </label>
+                <div className="rounded-[20px] border border-white/8 bg-black/20 p-3">
+                  <div className="grid gap-3 md:grid-cols-4">
+                    {[
+                      { label: 'Policy reach', value: matchingTasks.length, hint: 'matching tasks' },
+                      { label: 'Fallback lanes', value: (draft.fallbackOrder || []).length, hint: 'backup routes' },
+                      { label: 'Evidence mode', value: draft.evidenceRequired ? 'On' : 'Off', hint: 'pre-execution proof' },
+                      { label: 'Parallel bias', value: draft.parallelizationPolicy || 'adaptive', hint: 'execution posture' },
+                    ].map((entry) => (
+                      <div key={entry.label} className="rounded-[16px] border border-white/8 bg-white/[0.02] px-3 py-3">
+                        <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">{entry.label}</div>
+                        <div className="mt-2 text-sm font-semibold text-text-primary">{entry.value}</div>
+                        <div className="mt-1 text-[10px] text-text-disabled">{entry.hint}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div className="rounded-[20px] border border-white/8 bg-black/20 p-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Fallback order</div>
+                      <div className="mt-1 text-[11px] text-text-muted">These are the backup lanes Commander will try when the preferred lane is unavailable or mismatched.</div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={addFallback}
+                      className="rounded-xl border border-aurora-teal/20 bg-aurora-teal/10 px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-aurora-teal transition-colors hover:bg-aurora-teal/14"
+                    >
+                      Add lane
+                    </button>
+                  </div>
+                  <div className="mt-4 space-y-3">
+                    {(draft.fallbackOrder || []).length === 0 && (
+                      <div className="rounded-[16px] border border-dashed border-white/10 bg-black/10 px-3 py-3 text-[11px] text-text-muted">
+                        No explicit fallback lanes yet. Commander will rely on the preferred lane and general heuristics.
+                      </div>
+                    )}
+                    {(draft.fallbackOrder || []).map((entry, index) => (
+                      <div key={`${entry.role || 'lane'}-${index}`} className="rounded-[18px] border border-white/8 bg-white/[0.02] p-3">
+                        <div className="grid gap-3 md:grid-cols-[0.9fr_0.9fr_1fr_auto]">
+                          <label>
+                            <div className="text-[10px] uppercase tracking-[0.14em] text-text-muted">Role</div>
+                            <select
+                              value={entry.role || 'executor'}
+                              onChange={(event) => updateFallback(index, 'role', event.target.value)}
+                              className="mt-2 w-full bg-transparent text-[12px] font-semibold text-text-primary outline-none"
+                            >
+                              {['commander', 'planner', 'researcher', 'builder', 'verifier', 'executor'].map((role) => (
+                                <option key={role} value={role} className="bg-[#0d1015]">{role}</option>
+                              ))}
+                            </select>
+                          </label>
+                          <label>
+                            <div className="text-[10px] uppercase tracking-[0.14em] text-text-muted">Provider</div>
+                            <select
+                              value={entry.provider || 'Anthropic'}
+                              onChange={(event) => updateFallback(index, 'provider', event.target.value)}
+                              className="mt-2 w-full bg-transparent text-[12px] font-semibold text-text-primary outline-none"
+                            >
+                              {['Anthropic', 'OpenAI', 'Google', 'Ollama', 'Custom'].map((provider) => (
+                                <option key={provider} value={provider} className="bg-[#0d1015]">{provider}</option>
+                              ))}
+                            </select>
+                          </label>
+                          <label>
+                            <div className="text-[10px] uppercase tracking-[0.14em] text-text-muted">Model</div>
+                            <select
+                              value={entry.model || ''}
+                              onChange={(event) => updateFallback(index, 'model', event.target.value)}
+                              className="mt-2 w-full bg-transparent text-[12px] font-semibold text-text-primary outline-none"
+                            >
+                              <option value="" className="bg-[#0d1015]">No hard override</option>
+                              {modelOptions.map((model) => (
+                                <option key={model.model} value={model.model} className="bg-[#0d1015]">{model.model}</option>
+                              ))}
+                            </select>
+                          </label>
+                          <div className="flex items-end">
+                            <button
+                              type="button"
+                              onClick={() => removeFallback(index)}
+                              className="rounded-xl border border-aurora-rose/20 bg-aurora-rose/10 px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-aurora-rose transition-colors hover:bg-aurora-rose/14"
+                            >
+                              Remove
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div className="rounded-[20px] border border-aurora-blue/15 bg-aurora-blue/[0.05] p-3">
+                  <div className="text-[10px] uppercase tracking-[0.16em] text-aurora-blue">Doctrine readback</div>
+                  <div className="mt-2 text-[12px] leading-relaxed text-text-body">
+                    Commander will prefer <span className="font-semibold text-text-primary">{draft.preferredAgentRole || 'commander'}</span> on the{' '}
+                    <span className="font-semibold text-text-primary">{draft.preferredProvider || 'adaptive'}</span> lane
+                    {draft.preferredModel ? <> using <span className="font-semibold text-text-primary">{draft.preferredModel}</span></> : ' without a hard model lock'}.
+                    {' '}This policy is targeting <span className="font-semibold text-text-primary">{draft.taskDomain || 'general'}</span> /{' '}
+                    <span className="font-semibold text-text-primary">{draft.intentType || 'general'}</span> work and currently matches{' '}
+                    <span className="font-semibold text-text-primary">{matchingTasks.length}</span> routed mission{matchingTasks.length === 1 ? '' : 's'}.
+                  </div>
+                </div>
+                <div className="rounded-[20px] border border-white/8 bg-black/20 p-3">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Policy trend and demotion pressure</div>
+                      <div className="mt-1 text-[11px] text-text-muted">
+                        {demotionSummary.interventionCount > 0
+                          ? `${demotionSummary.interventionCount} intervention signals are shaping this policy across ${demotionSummary.matchingRuns} matching run${demotionSummary.matchingRuns === 1 ? '' : 's'}.`
+                          : 'This policy has not accumulated enough intervention pressure to rank as weak yet.'}
+                      </div>
+                    </div>
+                    <span className={cn('rounded-full border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em]', trendTone)}>
+                      {demotionSummary.trend}
+                    </span>
+                  </div>
+                  <div className="mt-3 grid gap-3 md:grid-cols-4">
+                    {[
+                      { label: 'Confidence', value: demotionSummary.confidence },
+                      { label: 'Recent quality', value: demotionSummary.recentOutcome || 'n/a' },
+                      { label: 'Recent rescue rate', value: demotionSummary.recentInterventionRate || 0 },
+                      { label: 'Trend delta', value: demotionSummary.trendDelta },
+                    ].map((entry) => (
+                      <div key={entry.label} className="rounded-[14px] border border-white/8 bg-white/[0.03] px-3 py-2">
+                        <div className="text-[10px] uppercase tracking-[0.14em] text-text-muted">{entry.label}</div>
+                        <div className="mt-1 text-[12px] font-semibold text-text-primary">{entry.value}</div>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="mt-3 rounded-[14px] border border-white/8 bg-white/[0.03] px-3 py-2 text-[11px] text-text-body">
+                    {demotionSummary.trendDetail}
+                  </div>
+                  <div className="mt-3 grid gap-3 xl:grid-cols-2">
+                    <div className="rounded-[16px] border border-aurora-teal/15 bg-aurora-teal/[0.05] p-3">
+                      <div className="text-[10px] uppercase tracking-[0.14em] text-aurora-teal">Why this lane still wins</div>
+                      <div className="mt-2 space-y-2">
+                        {demotionSummary.laneStrengths.length === 0 && (
+                          <div className="text-[11px] text-text-muted">Commander still needs more matching runs before this lane has a durable strength signature.</div>
+                        )}
+                        {demotionSummary.laneStrengths.map((reason) => (
+                          <div key={reason} className="rounded-[12px] border border-white/8 bg-black/10 px-3 py-2 text-[11px] text-text-body">
+                            {reason}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="rounded-[16px] border border-aurora-amber/15 bg-aurora-amber/[0.05] p-3">
+                      <div className="text-[10px] uppercase tracking-[0.14em] text-aurora-amber">Why this lane is losing trust</div>
+                      <div className="mt-2 space-y-2">
+                        {demotionSummary.pressureSources.map((source) => (
+                          <div key={source.key} className="rounded-[12px] border border-white/8 bg-black/10 px-3 py-2 text-[11px] text-text-body">
+                            <span className="font-semibold text-text-primary">{source.label}:</span> {source.count} signal{source.count === 1 ? '' : 's'}. {source.detail}
+                          </div>
+                        ))}
+                        {demotionSummary.reasons.map((reason) => (
+                          <div key={reason} className="rounded-[12px] border border-white/8 bg-black/10 px-3 py-2 text-[11px] text-text-body">
+                            {reason}
+                          </div>
+                        ))}
+                        {demotionSummary.interventionCount > 0 && demotionSummary.pressureSources.length === 0 && demotionSummary.reasons.length === 0 && (
+                          <div className="rounded-[12px] border border-dashed border-white/10 bg-black/10 px-3 py-2 text-[11px] text-text-muted">
+                            Rescue pressure exists, but Commander still needs a little more run density before the losing signals become specific.
+                          </div>
+                        )}
+                        {demotionSummary.interventionCount === 0 && demotionSummary.laneRisks.length === 0 && (
+                          <div className="rounded-[12px] border border-dashed border-white/10 bg-black/10 px-3 py-2 text-[11px] text-text-muted">
+                            No meaningful demotion pressure is registered yet.
+                          </div>
+                        )}
+                        {demotionSummary.laneRisks.map((reason) => (
+                          <div key={reason} className="rounded-[12px] border border-white/8 bg-black/10 px-3 py-2 text-[11px] text-text-body">
+                            {reason}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                {(saveError || saveMessage) && (
+                  <div className={cn(
+                    'rounded-[18px] border px-3 py-2 text-[11px]',
+                    saveError ? 'border-aurora-rose/20 bg-aurora-rose/10 text-aurora-rose' : 'border-aurora-teal/20 bg-aurora-teal/10 text-aurora-teal'
+                  )}>
+                    {saveError || saveMessage}
+                  </div>
+                )}
+                <div className="flex justify-end">
+                  <button
+                    type="button"
+                    onClick={handleSavePolicy}
+                    disabled={saving}
+                    className="rounded-xl border border-aurora-teal/20 bg-aurora-teal/10 px-4 py-2 text-[11px] font-semibold text-aurora-teal transition-colors hover:bg-aurora-teal/14 disabled:opacity-50"
+                  >
+                    {saving ? 'Saving...' : 'Save routing policy'}
+                  </button>
+                </div>
+              </div>
+            )}
+          </HudPanel>
+
+          <HudPanel
+            eyebrow="Workflow Status"
+            title="Canonical mission posture"
+            description="This is the live split between intake, ready, running, blocked, and human-gated work."
+            accent="violet"
+          >
+            <div className="space-y-3">
+              {workflowDistribution.length === 0 && (
+                <div className="rounded-[22px] border border-white/8 bg-black/20 p-4 text-[12px] text-text-muted">
+                  No task workflow data is live yet.
+                </div>
+              )}
+              {workflowDistribution.map((entry) => (
+                <div key={entry.status} className="rounded-[20px] border border-white/8 bg-black/20 p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <div className="text-sm font-semibold text-text-primary">{entry.meta.label}</div>
+                      <div className="mt-1 text-[11px] text-text-muted">Canonical state: `{entry.status}`</div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-xl font-semibold text-text-primary">
+                        <AnimatedNumber value={entry.count} />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </HudPanel>
+
+          <HudPanel
+            eyebrow="Capability Demand"
+            title="What missions are asking for"
+            description="Capability pressure is the first step toward a real system capability graph."
+            accent="amber"
+          >
+            <div className="space-y-3">
+              {capabilityDemand.length === 0 && (
+                <div className="rounded-[22px] border border-white/8 bg-black/20 p-4 text-[12px] text-text-muted">
+                  No required capabilities have been inferred yet.
+                </div>
+              )}
+              {capabilityDemand.map((entry) => (
+                <div key={entry.capability} className="rounded-[20px] border border-white/8 bg-black/20 p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="text-sm font-semibold capitalize text-text-primary">{entry.capability}</div>
+                    <div className="text-sm font-mono text-aurora-amber">{entry.count}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </HudPanel>
+        </div>
+      </div>
+
+      <div className="grid gap-5 xl:grid-cols-[1.05fr_0.95fr]">
+        <HudPanel
+          eyebrow="Observed Winners"
+          title="Best lane recommendations from real outcomes"
+          description="This is the first evidence-based layer for 'use the best model for the job' instead of relying only on policy intent."
+          accent="blue"
+        >
+          <div className="space-y-3">
+            {observedBestLanes.length === 0 && (
+              <div className="rounded-[22px] border border-white/8 bg-black/20 p-4 text-[12px] text-text-muted">
+                Not enough completed routed missions yet to name winner lanes with confidence.
+              </div>
+            )}
+            {observedBestLanes.map((entry) => (
+              <div key={`${entry.domain}-${entry.intentType}`} className="rounded-[20px] border border-white/8 bg-black/20 p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">{entry.domain} / {entry.intentType}</div>
+                    <div className="mt-1 text-sm font-semibold text-text-primary">{entry.winner?.lane}</div>
+                    <div className="mt-1 text-[11px] text-text-muted">{entry.sampleCount} successful mission sample{entry.sampleCount === 1 ? '' : 's'}</div>
+                  </div>
+                  <div className="rounded-full border border-aurora-teal/20 bg-aurora-teal/10 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-aurora-teal">
+                    {entry.winner?.agentRole || 'lane winner'}
+                  </div>
+                </div>
+                {entry.runnersUp.length > 0 && (
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {entry.runnersUp.map((runner) => (
+                      <span key={`${entry.domain}-${entry.intentType}-${runner.lane}`} className="rounded-full border border-white/8 bg-white/[0.03] px-2 py-1 text-[10px] font-semibold text-text-muted">
+                        fallback {runner.lane}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </HudPanel>
+
+        <HudPanel
+          eyebrow="Context Discipline"
+          title="Context packs and skill pressure"
+          description="The machine gets cheaper and cleaner when each branch sees only the right context and the right playbook."
+          accent="amber"
+        >
+          <div className="grid gap-4">
+            <div className="rounded-[20px] border border-white/8 bg-black/20 p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Top context packs</div>
+                <div className="text-[10px] font-mono text-aurora-amber">{contextDemand.length} active</div>
+              </div>
+              <div className="mt-3 space-y-2">
+                {contextDemand.length === 0 && <div className="text-[11px] text-text-muted">No context-pack usage yet.</div>}
+                {contextDemand.map((entry) => (
+                  <div key={entry.packId} className="flex items-center justify-between rounded-[16px] border border-white/8 bg-white/[0.02] px-3 py-2.5">
+                    <div className="text-[12px] font-semibold text-text-primary">{entry.packId}</div>
+                    <div className="text-[10px] font-mono text-aurora-amber">{entry.count}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="rounded-[20px] border border-white/8 bg-black/20 p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Skill bank coverage</div>
+                <div className="text-[10px] font-mono text-aurora-blue">{skills.length} skills</div>
+              </div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {skills.length === 0 && <div className="text-[11px] text-text-muted">No reusable skills stored yet.</div>}
+                {skills.slice(0, 8).map((skill) => (
+                  <span key={skill.id || skill.name} className="rounded-full border border-aurora-blue/20 bg-aurora-blue/10 px-2 py-1 text-[10px] font-semibold text-aurora-blue">
+                    {skill.name}
+                  </span>
+                ))}
+              </div>
+            </div>
+          </div>
+        </HudPanel>
+      </div>
+
+      <SpecialistFleetTab agents={agents} lifecycleEvents={lifecycleEvents} skills={skills} tasks={tasks} />
+    </div>
+  );
+}
+
+function SpecialistFleetTab({ agents, lifecycleEvents, skills, tasks }) {
+  const commander = agents.find((agent) => agent.role === 'commander' && !agent.isSyntheticCommander) || agents.find((agent) => agent.role === 'commander') || null;
+  const modelOptions = [...new Set(agents.map((agent) => agent.model).filter(Boolean))];
+  const persistentSpecialists = agents.filter((agent) => !agent.isEphemeral && !['commander', 'executor'].includes(agent.role || ''));
+  const spawnedSpecialists = agents.filter((agent) => agent.isEphemeral);
+  const fleetHistory = getSpecialistLifecycleSummary(lifecycleEvents, agents);
+  const fleetPosture = getFleetPostureSummary(lifecycleEvents, agents);
+  const promotionGuidance = getPersistentPromotionGuidance({ lifecycleEvents, agents, tasks });
+  const recommendedPromotionAgent = useMemo(() => (
+    promotionGuidance.topGap
+      ? spawnedSpecialists.find((agent) => (agent.role || 'specialist') === promotionGuidance.topGap.role) || null
+      : null
+  ), [promotionGuidance.topGap, spawnedSpecialists]);
+  const recentLifecycleEvents = fleetHistory.events.slice(0, 6);
+  const promotionHistory = fleetHistory.promotions.slice(0, 6);
+  const [objective, setObjective] = useState('');
+  const [persistentName, setPersistentName] = useState('');
+  const [persistentObjective, setPersistentObjective] = useState('');
+  const [role, setRole] = useState('researcher');
+  const [model, setModel] = useState(modelOptions[0] || '');
+  const [selectedSkills, setSelectedSkills] = useState([]);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState('');
+
+  async function handleSpawn() {
+    if (!objective.trim() || !model) return;
+    setBusy(true);
+    setMessage('');
+    try {
+      const agent = await createTempAgent({ objective: objective.trim(), role, model, commanderId: commander?.id || null });
+      setObjective('');
+      setMessage(`Spawned ${agent.name}. Refresh the dock after the next live event to see it on the deck.`);
+    } catch (error) {
+      setMessage(error.message || 'Could not spawn specialist.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleCleanup() {
+    setBusy(true);
+    setMessage('');
+    try {
+      const removed = await cleanupTempAgents();
+      setMessage(removed > 0 ? `Retired ${removed} idle specialist lane${removed === 1 ? '' : 's'}.` : 'No idle spawned specialists were eligible for cleanup.');
+    } catch (error) {
+      setMessage(error.message || 'Could not clean up specialists.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleCreatePersistent() {
+    if (!model) return;
+    setBusy(true);
+    setMessage('');
+    try {
+      const agent = await createPersistentSpecialist({
+        name: persistentName.trim(),
+        objective: persistentObjective.trim() || objective.trim(),
+        role,
+        model,
+        commanderId: commander?.id || null,
+        skills: selectedSkills,
+      });
+      setPersistentName('');
+      setPersistentObjective('');
+      setSelectedSkills([]);
+      setMessage(`Persistent lane ${agent.name} is now live for Commander.`);
+    } catch (error) {
+      setMessage(error.message || 'Could not create persistent specialist.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handlePromote(agentId) {
+    setBusy(true);
+    setMessage('');
+    try {
+      const promoted = await promoteAgentToPersistent(agentId, { skills: selectedSkills.length ? selectedSkills : undefined });
+      setMessage(`${promoted.name} is now a persistent specialist lane.`);
+    } catch (error) {
+      setMessage(error.message || 'Could not promote specialist.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleCreateRecommendedPersistent(target) {
+    if (!target?.role || !model) return;
+    setBusy(true);
+    setMessage('');
+    try {
+      const laneName = `${target.role}-${target.domain || 'core'}-lane`;
+      const objectiveText = target.domain
+        ? `Persistent ${target.role} coverage for ${target.domain}${target.intentType ? ` / ${target.intentType}` : ''} missions.`
+        : `Persistent ${target.role} coverage for Commander where durable fleet pressure is highest.`;
+      const agent = await createPersistentSpecialist({
+        name: laneName,
+        objective: objectiveText,
+        role: target.role,
+        model,
+        commanderId: commander?.id || null,
+        skills: selectedSkills,
+      });
+      setMessage(`Persistent lane ${agent.name} is now live for ${target.domain ? `${target.domain} coverage` : `${target.role} coverage`}.`);
+    } catch (error) {
+      setMessage(error.message || 'Could not create recommended persistent specialist.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function toggleSkill(name) {
+    setSelectedSkills((current) => (
+      current.includes(name)
+        ? current.filter((entry) => entry !== name)
+        : [...current, name]
+    ));
+  }
+
+  return (
+    <HudPanel
+      eyebrow="Specialist Fleet"
+      title="Persistent and spawned lanes"
+      description="Keep the specialist rack visible, spawn utility lanes on demand, and retire idle ephemeral lanes without leaving Intelligence."
+      accent="violet"
+    >
+      <div className="grid gap-3 md:grid-cols-3">
+        {[
+          { label: 'Persistent', value: persistentSpecialists.length, tone: 'text-aurora-blue' },
+          { label: 'Spawned', value: spawnedSpecialists.length, tone: 'text-aurora-violet' },
+          { label: 'Promotions', value: fleetHistory.promotions.length, tone: 'text-aurora-teal' },
+        ].map((metric) => (
+          <div key={metric.label} className="rounded-[20px] border border-white/8 bg-black/20 p-4">
+            <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">{metric.label}</div>
+            <div className={cn('mt-2 text-2xl font-semibold', metric.tone)}>{metric.value}</div>
+          </div>
+        ))}
+      </div>
+
+      <div className="mt-4 rounded-[22px] border border-white/8 bg-[linear-gradient(180deg,rgba(45,212,191,0.06),rgba(255,255,255,0.02))] p-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Fleet posture</div>
+            <div className="mt-1 text-sm font-semibold text-text-primary">{fleetPosture.label}</div>
+            <p className="mt-2 max-w-2xl text-[12px] leading-relaxed text-text-body">{fleetPosture.detail}</p>
+            <p className="mt-2 max-w-2xl text-[11px] leading-relaxed text-aurora-blue">{promotionGuidance.recommendation}</p>
+            {promotionGuidance.autoCreateRoles?.length > 1 && (
+              <p className="mt-2 max-w-2xl text-[11px] leading-relaxed text-aurora-violet">
+                Durable pressure is now high enough that Commander can justify auto-creating coverage for: {promotionGuidance.autoCreateRoles.join(', ')}.
+              </p>
+            )}
+            {promotionGuidance.domainTargets?.length > 0 && (
+              <div className="mt-3 flex flex-wrap gap-2">
+                {promotionGuidance.domainTargets.map((entry) => (
+                  <span
+                    key={`${entry.domain}-${entry.intentType}-${entry.role}`}
+                    className="rounded-full border border-aurora-blue/20 bg-aurora-blue/10 px-2 py-1 text-[10px] font-semibold text-aurora-blue"
+                  >
+                    {entry.domain}/{entry.intentType}: {entry.role} x{entry.count}
+                  </span>
+                ))}
+              </div>
+            )}
+            {promotionGuidance.domainPackTargets?.length > 0 && (
+              <div className="mt-3 flex flex-wrap gap-2">
+                {promotionGuidance.domainPackTargets.map((entry) => (
+                  <span
+                    key={`${entry.domain}-${entry.role}-pack`}
+                    className="rounded-full border border-aurora-violet/20 bg-aurora-violet/10 px-2 py-1 text-[10px] font-semibold text-aurora-violet"
+                  >
+                    {entry.domain} pack: {entry.role} x{entry.count}
+                  </span>
+                ))}
+              </div>
+            )}
+            {(promotionGuidance.autoCreateRoles?.length > 0 || promotionGuidance.domainPackTargets?.length > 0) && (
+              <div className="mt-4 rounded-[18px] border border-white/8 bg-black/20 p-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Fleet-shaping actions</div>
+                    <div className="mt-1 text-[11px] text-text-body">Recommended next coverage defaults from lifecycle pressure and recurring branch demand.</div>
+                  </div>
+                  {promotionGuidance.recommendedActions?.[0] && (
+                    <span className="rounded-full border border-aurora-amber/20 bg-aurora-amber/10 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-aurora-amber">
+                      next: {promotionGuidance.recommendedActions[0].label}
+                    </span>
+                  )}
+                </div>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {promotionGuidance.recommendedActions?.map((entry) => (
+                    <button
+                      key={entry.key}
+                      type="button"
+                      disabled={busy || !model}
+                      onClick={() => handleCreateRecommendedPersistent(entry)}
+                      className={cn(
+                        'rounded-full border px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] transition-colors disabled:opacity-50',
+                        entry.tone === 'violet'
+                          ? 'border-aurora-violet/20 bg-aurora-violet/10 text-aurora-violet hover:bg-aurora-violet/14'
+                          : 'border-aurora-blue/20 bg-aurora-blue/10 text-aurora-blue hover:bg-aurora-blue/14'
+                      )}
+                    >
+                      {busy ? 'Working...' : entry.label}
+                    </button>
+                  ))}
+                </div>
+                <p className="mt-3 text-[11px] leading-relaxed text-text-muted">
+                  These actions turn durable coverage pressure into persistent lanes immediately, so Commander does not have to keep relearning the same missing role through spawned specialists.
+                </p>
+              </div>
+            )}
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="rounded-full border border-aurora-blue/20 bg-aurora-blue/10 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-aurora-blue">
+              roles {fleetPosture.activeRoles}
+            </span>
+            <span className="rounded-full border border-aurora-violet/20 bg-aurora-violet/10 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-aurora-violet">
+              retirements {fleetPosture.retirementCount}
+            </span>
+            <span className="rounded-full border border-aurora-teal/20 bg-aurora-teal/10 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-aurora-teal">
+              cleanup {fleetPosture.cleanedCount}
+            </span>
+            {recommendedPromotionAgent && (
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => handlePromote(recommendedPromotionAgent.id)}
+                className="rounded-full border border-aurora-blue/20 bg-aurora-blue/10 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-aurora-blue transition-colors hover:bg-aurora-blue/14 disabled:opacity-50"
+              >
+                {busy ? 'Working...' : `Promote ${recommendedPromotionAgent.role}`}
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-4 grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
+        <div className="rounded-[22px] border border-white/8 bg-black/20 p-4">
+          <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Create lane</div>
+          <div className="mt-3 space-y-3">
+            <input
+              value={objective}
+              onChange={(event) => setObjective(event.target.value)}
+              placeholder="Objective for the next specialist lane"
+              className="w-full rounded-xl border border-white/8 bg-black/20 px-3 py-2 text-[12px] text-text-primary outline-none placeholder:text-text-disabled"
+            />
+            <input
+              value={persistentName}
+              onChange={(event) => setPersistentName(event.target.value)}
+              placeholder="Optional persistent lane name"
+              className="w-full rounded-xl border border-white/8 bg-black/20 px-3 py-2 text-[12px] text-text-primary outline-none placeholder:text-text-disabled"
+            />
+            <input
+              value={persistentObjective}
+              onChange={(event) => setPersistentObjective(event.target.value)}
+              placeholder="Persistent lane mission focus"
+              className="w-full rounded-xl border border-white/8 bg-black/20 px-3 py-2 text-[12px] text-text-primary outline-none placeholder:text-text-disabled"
+            />
+            <div className="grid gap-3 md:grid-cols-2">
+              <select value={role} onChange={(event) => setRole(event.target.value)} className="w-full rounded-xl border border-white/8 bg-black/20 px-3 py-2 text-[12px] text-text-primary outline-none">
+                {['planner', 'researcher', 'builder', 'verifier', 'executor'].map((entry) => (
+                  <option key={entry} value={entry}>{entry}</option>
+                ))}
+              </select>
+              <select value={model} onChange={(event) => setModel(event.target.value)} className="w-full rounded-xl border border-white/8 bg-black/20 px-3 py-2 text-[12px] text-text-primary outline-none">
+                {modelOptions.map((entry) => (
+                  <option key={entry} value={entry}>{entry}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <div className="text-[10px] uppercase tracking-[0.14em] text-text-muted">Attach skills</div>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {skills.length === 0 && <div className="text-[11px] text-text-muted">No skill bank entries yet.</div>}
+                {skills.slice(0, 8).map((skill) => (
+                  <button
+                    key={skill.id || skill.name}
+                    type="button"
+                    onClick={() => toggleSkill(skill.name)}
+                    className={cn(
+                      'rounded-full border px-2 py-1 text-[10px] font-semibold transition-colors',
+                      selectedSkills.includes(skill.name)
+                        ? 'border-aurora-blue/20 bg-aurora-blue/10 text-aurora-blue'
+                        : 'border-white/8 bg-black/20 text-text-muted hover:border-white/12'
+                    )}
+                  >
+                    {skill.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <button type="button" disabled={busy || !objective.trim() || !model} onClick={handleSpawn} className="rounded-xl border border-aurora-violet/20 bg-aurora-violet/10 px-3 py-2 text-[11px] font-semibold text-aurora-violet transition-colors hover:bg-aurora-violet/14 disabled:opacity-50">
+                {busy ? 'Working...' : 'Spawn specialist'}
+              </button>
+              <button type="button" disabled={busy || !model} onClick={handleCreatePersistent} className="rounded-xl border border-aurora-blue/20 bg-aurora-blue/10 px-3 py-2 text-[11px] font-semibold text-aurora-blue transition-colors hover:bg-aurora-blue/14 disabled:opacity-50">
+                Create persistent lane
+              </button>
+              <button type="button" disabled={busy} onClick={handleCleanup} className="rounded-xl border border-aurora-teal/20 bg-aurora-teal/10 px-3 py-2 text-[11px] font-semibold text-aurora-teal transition-colors hover:bg-aurora-teal/14 disabled:opacity-50">
+                Cleanup idle spawned
+              </button>
+            </div>
+            {message && (
+              <div className="rounded-xl border border-white/8 bg-white/[0.02] px-3 py-2 text-[11px] text-text-body">
+                {message}
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="grid gap-4">
+          <div className="rounded-[22px] border border-white/8 bg-black/20 p-4">
+            <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Persistent lanes</div>
+            <div className="mt-3 space-y-2">
+              {persistentSpecialists.length === 0 && <div className="text-[11px] text-text-muted">No persistent specialist lanes yet.</div>}
+              {persistentSpecialists.slice(0, 5).map((agent) => (
+                <div key={agent.id} className="rounded-[16px] border border-white/8 bg-white/[0.02] px-3 py-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <div className="text-[12px] font-semibold text-text-primary">{agent.name}</div>
+                      <div className="mt-1 text-[10px] font-mono uppercase text-aurora-blue">{agent.role}</div>
+                    </div>
+                    <div className="text-[10px] font-mono text-text-disabled">{agent.model || 'Adaptive lane'}</div>
+                  </div>
+                  {(agent.skills || []).length > 0 && (
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {agent.skills.slice(0, 4).map((skillName) => (
+                        <span key={`${agent.id}-${skillName}`} className="rounded-full border border-aurora-blue/20 bg-aurora-blue/10 px-2 py-0.5 text-[9px] font-semibold text-aurora-blue">
+                          {skillName}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="rounded-[22px] border border-white/8 bg-black/20 p-4">
+            <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Spawned lanes</div>
+            <div className="mt-3 space-y-2">
+              {spawnedSpecialists.length === 0 && <div className="text-[11px] text-text-muted">No spawned specialists are active right now.</div>}
+              {spawnedSpecialists.map((agent) => (
+                <div key={agent.id} className="rounded-[16px] border border-white/8 bg-white/[0.02] px-3 py-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <div className="text-[12px] font-semibold text-text-primary">{agent.name}</div>
+                      <div className="mt-1 text-[10px] font-mono uppercase text-aurora-violet">{agent.role || 'specialist'}</div>
+                    </div>
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => handlePromote(agent.id)}
+                      className="rounded-xl border border-aurora-blue/20 bg-aurora-blue/10 px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-aurora-blue transition-colors hover:bg-aurora-blue/14 disabled:opacity-50"
+                    >
+                      Promote
+                    </button>
+                  </div>
+                  <div className="mt-2 text-[10px] font-mono text-text-disabled">{agent.model || 'Adaptive lane'}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="rounded-[22px] border border-white/8 bg-black/20 p-4">
+            <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Coverage map</div>
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              {['planner', 'researcher', 'builder', 'verifier'].map((roleName) => (
+                <div key={roleName} className="rounded-[16px] border border-white/8 bg-white/[0.02] px-3 py-3">
+                  <div className="text-[10px] uppercase tracking-[0.14em] text-text-muted">{roleName}</div>
+                  <div className="mt-2 text-lg font-semibold text-text-primary">{fleetHistory.coverageByRole[roleName] || 0}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="rounded-[22px] border border-white/8 bg-black/20 p-4">
+            <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Lifecycle rail</div>
+            <div className="mt-3 space-y-2">
+              {lifecycleEvents.length === 0 && <div className="text-[11px] text-text-muted">No specialist lifecycle events yet.</div>}
+              {recentLifecycleEvents.map((entry) => (
+                <div key={entry.id} className="rounded-[16px] border border-white/8 bg-white/[0.02] px-3 py-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="text-[10px] font-mono uppercase text-text-muted">{entry.type}</div>
+                    <div className="text-[10px] font-mono text-text-disabled">{entry.timestamp ? new Date(entry.timestamp).toLocaleTimeString() : 'Live'}</div>
+                  </div>
+                  <div className="mt-2 text-[11px] leading-relaxed text-text-body">
+                    {entry.cleanMessage}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="rounded-[22px] border border-white/8 bg-black/20 p-4">
+            <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Promotion history</div>
+            <div className="mt-3 space-y-2">
+              {promotionHistory.length === 0 && <div className="text-[11px] text-text-muted">No promotion events yet.</div>}
+              {promotionHistory.map((entry) => (
+                <div key={entry.id} className="rounded-[16px] border border-white/8 bg-white/[0.02] px-3 py-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="text-[10px] font-mono uppercase text-aurora-blue">PROMOTED</div>
+                    <div className="text-[10px] font-mono text-text-disabled">{entry.timestamp ? new Date(entry.timestamp).toLocaleString() : 'Live'}</div>
+                  </div>
+                  <div className="mt-2 text-[11px] leading-relaxed text-text-body">
+                    {entry.cleanMessage}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    </HudPanel>
+  );
+}
+
+function KnowledgeMapTab({ namespaces }) {
+  const totalVectors = namespaces.reduce((sum, namespace) => sum + Number(namespace.vectors || 0), 0);
 
   return (
     <div className="grid gap-5 xl:grid-cols-[0.9fr_1.1fr]">
@@ -601,12 +2145,12 @@ function KnowledgeMapTab() {
             </div>
             <div className="rounded-[22px] border border-white/8 bg-black/20 p-4">
               <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Namespaces</div>
-              <div className="mt-2 text-3xl font-semibold text-text-primary">{knowledgeNamespaces.length}</div>
+              <div className="mt-2 text-3xl font-semibold text-text-primary">{namespaces.length}</div>
             </div>
             <div className="rounded-[22px] border border-white/8 bg-black/20 p-4">
               <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Stale terrain</div>
               <div className="mt-2 text-3xl font-semibold text-text-primary">
-                {knowledgeNamespaces.filter((namespace) => namespace.status !== 'active').length}
+                {namespaces.filter((namespace) => namespace.status !== 'active').length}
               </div>
             </div>
           </div>
@@ -621,9 +2165,14 @@ function KnowledgeMapTab() {
             tone="blue"
           />
           <div className="mt-5 space-y-3">
-            {knowledgeNamespaces
+            {namespaces.length === 0 && (
+              <div className="rounded-[22px] border border-dashed border-white/10 bg-black/10 p-4 text-[12px] text-text-muted">
+                No knowledge namespaces are stored yet. Once memory zones are persisted, this terrain will rank them here instead of inventing placeholders.
+              </div>
+            )}
+            {namespaces
               .slice()
-              .sort((a, b) => b.vectors - a.vectors)
+              .sort((a, b) => Number(b.vectors || 0) - Number(a.vectors || 0))
               .map((namespace, index) => (
                 <div key={namespace.id} className="rounded-[22px] border border-white/8 bg-black/20 p-4">
                   <div className="flex items-center justify-between gap-3">
@@ -637,8 +2186,8 @@ function KnowledgeMapTab() {
                       </div>
                     </div>
                     <div className="text-right">
-                      <div className="text-sm font-semibold text-text-primary">{namespace.size}</div>
-                      <div className="mt-1 text-[11px] text-text-muted">{namespace.vectors.toLocaleString()} vectors</div>
+                      <div className="text-sm font-semibold text-text-primary">{namespace.sizeLabel}</div>
+                      <div className="mt-1 text-[11px] text-text-muted">{Number(namespace.vectors || 0).toLocaleString()} vectors</div>
                     </div>
                   </div>
                 </div>
@@ -656,12 +2205,12 @@ function KnowledgeMapTab() {
           tone="violet"
         />
         <div className="mt-5 grid gap-4 md:grid-cols-2">
-          {knowledgeNamespaces.slice(0, 6).map((namespace) => (
+          {namespaces.slice(0, 6).map((namespace) => (
             <div key={namespace.id} className="rounded-[24px] border border-white/8 bg-black/20 p-4">
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <div className="text-sm font-semibold text-text-primary">{namespace.name}</div>
-                  <div className="mt-1 text-[11px] text-text-muted">{namespace.lastSync}</div>
+                  <div className="mt-1 text-[11px] text-text-muted">{namespace.lastSyncAt ? new Date(namespace.lastSyncAt).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Not synced yet'}</div>
                 </div>
                 <span
                   className={`rounded-full border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] ${
@@ -682,7 +2231,7 @@ function KnowledgeMapTab() {
                 <div className="h-1.5 overflow-hidden rounded-full bg-white/[0.05]">
                   <div
                     className="h-full rounded-full bg-gradient-to-r from-aurora-teal to-aurora-blue"
-                    style={{ width: `${Math.max(12, Math.min(100, (namespace.vectors / totalVectors) * 220))}%` }}
+                    style={{ width: `${Math.max(12, Math.min(100, totalVectors > 0 ? (Number(namespace.vectors || 0) / totalVectors) * 220 : 12))}%` }}
                   />
                 </div>
               </div>
@@ -696,9 +2245,9 @@ function KnowledgeMapTab() {
             </div>
           ))}
         </div>
-        {knowledgeNamespaces.length > 6 && (
+        {namespaces.length > 6 && (
           <div className="mt-4 rounded-[22px] border border-dashed border-white/10 bg-black/10 p-4 text-[12px] text-text-muted">
-            {knowledgeNamespaces.length - 6} more namespaces are tracked. The terrain map is showing the strongest and largest zones first.
+            {namespaces.length - 6} more namespaces are tracked. The terrain map is showing the strongest and largest zones first.
           </div>
         )}
       </div>
@@ -706,14 +2255,14 @@ function KnowledgeMapTab() {
   );
 }
 
-function DirectivesTab({ agents, tasks }) {
+function DirectivesTab({ directives, agents, tasks, recommendations }) {
   const directivePressure = useMemo(() => {
-    return directiveTemplates.map((directive) => ({
+    return directives.map((directive) => ({
       ...directive,
       affected: directive.appliedTo.filter((name) => agents.some((agent) => agent.name === name)).length || directive.appliedTo.length,
       drag: directive.priority === 'critical' ? 88 : directive.priority === 'high' ? 64 : 38,
     }));
-  }, [agents]);
+  }, [agents, directives]);
 
   const approvalSensitiveTasks = tasks.filter((task) => task.status === 'needs_approval').length;
 
@@ -800,7 +2349,7 @@ function DirectivesTab({ agents, tasks }) {
             </div>
             <div className="rounded-[22px] border border-white/8 bg-black/20 p-4">
               <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Directives live</div>
-              <div className="mt-2 text-3xl font-semibold text-text-primary">{directiveTemplates.length}</div>
+              <div className="mt-2 text-3xl font-semibold text-text-primary">{directives.length}</div>
               <p className="mt-2 text-[12px] leading-relaxed text-text-muted">
                 Shared command constraints protecting output quality, privacy, and operating cost.
               </p>
@@ -811,29 +2360,19 @@ function DirectivesTab({ agents, tasks }) {
         <div className="rounded-[28px] border border-white/8 bg-[linear-gradient(180deg,rgba(167,139,250,0.06),rgba(255,255,255,0.02))] p-5">
           <CommandSectionHeader
             eyebrow="Optimization Orders"
-            title="Directive upgrades to consider"
-            description="Improvements with the highest leverage on quality and throughput."
+            title="Persisted recommendation pressure"
+            description="Durable recommendations and live upgrades with the highest leverage on quality and throughput."
             icon={Sparkles}
             tone="violet"
           />
           <div className="mt-4 space-y-3">
-            {[
+            {(recommendations.length > 0 ? recommendations : [
               {
-                title: 'Consolidate overlapping output rules',
-                description: 'Several directives are describing formatting and review behavior in parallel. Centralizing that language will reduce drift and approval churn.',
-                impact: 'high',
-              },
-              {
-                title: 'Protect expensive planning lanes',
-                description: 'Premium planning models should stay reserved for strategy, ambiguity, and high-risk work rather than commodity execution.',
-                impact: 'critical',
-              },
-              {
-                title: 'Lower human interrupts',
-                description: 'Make high-confidence CRM and summary tasks resolve through stronger directives instead of asking for operator attention each time.',
+                title: 'No live directive upgrades yet',
+                description: 'Once recommendation rows are persisted, this rail will promote the highest-leverage directive improvements here.',
                 impact: 'normal',
               },
-            ].map((recommendation) => (
+            ]).map((recommendation) => (
               <OptimizationCard key={recommendation.title} recommendation={recommendation} />
             ))}
           </div>
@@ -847,37 +2386,31 @@ export function IntelligenceView() {
   const [activeTab, setActiveTab] = useState('models');
   const { agents } = useAgents();
   const { models } = useModelBank();
+  const { skills } = useSkillBank();
   const { tasks } = useTasks();
+  const { policies: routingPolicies, upsertPolicy, ensureDefaultPolicy } = useRoutingPolicies();
   const { logs } = useActivityLog();
+  const { interventions } = useTaskInterventions();
+  const { outcomes } = useTaskOutcomes();
+  const { events: lifecycleEvents } = useSpecialistLifecycle();
+  const { namespaces: knowledgeNamespaces } = useKnowledgeNamespaces();
+  const { directives: sharedDirectives } = useSharedDirectives();
+  const { recommendations: persistedRecommendations } = useSystemRecommendations();
   const { humanHourlyRate } = useCommanderPreferences();
+  const truth = useCommandCenterTruth();
 
   const availableModels = useMemo(() => {
-    const bankBenchmarks = models.map((model) => {
-      const known = modelBenchmarks.find((entry) => entry.model === model.label || entry.model === model.modelKey);
-      return known || {
-        model: model.label,
-        provider: model.provider || 'Custom',
-        reasoning: 72,
-        codeGen: 72,
-        extraction: 70,
-        latency: 72,
-        costEfficiency: model.costPer1k > 0 ? 58 : 96,
-        tokensPerSec: 0,
-        contextWindow: 'Custom',
-        monthlyCost: 0,
-      };
-    });
-
-    return bankBenchmarks.length > 0 ? bankBenchmarks : modelBenchmarks;
-  }, [models]);
+    return deriveAvailableModels(models, agents, tasks);
+  }, [agents, models, tasks]);
 
   const systemSummary = useMemo(() => {
     const activeAgents = agents.filter((agent) => agent.status === 'processing').length;
     const errorAgents = agents.filter((agent) => agent.status === 'error').length;
     const localModels = availableModels.filter((model) => model.provider === 'Ollama').length;
-    const directivesLive = directiveTemplates.length;
-    const recommendationCount = systemRecommendations.length;
+    const directivesLive = sharedDirectives.length;
+    const recommendationCount = persistedRecommendations.length;
     const liveTraffic = logs.length;
+    const routedMissions = tasks.filter((task) => task.routingPolicyId || task.routingReason).length;
 
     return {
       activeAgents,
@@ -886,13 +2419,32 @@ export function IntelligenceView() {
       directivesLive,
       recommendationCount,
       liveTraffic,
+      routedMissions,
     };
-  }, [agents, availableModels, logs.length]);
+  }, [agents, availableModels, logs.length, persistedRecommendations.length, sharedDirectives.length, tasks]);
 
+  const economics = useMemo(() => {
+    const durationHours = tasks.reduce((sum, task) => sum + Number(task.durationMs || 0), 0) / (1000 * 60 * 60);
+    const humanCost = durationHours * humanHourlyRate;
+    const agentCost = tasks.reduce((sum, task) => sum + Number(task.costUsd || 0), 0);
+    const savings = humanCost - agentCost;
+    const multiplier = agentCost > 0 ? humanCost / agentCost : humanCost > 0 ? humanCost : 0;
+
+    return {
+      durationHours,
+      humanCost,
+      agentCost,
+      savings,
+      multiplier,
+    };
+  }, [humanHourlyRate, tasks]);
+
+  const learningMemory = useLearningMemory({ agents, tasks, logs, approvals: [], costData: { total: economics.agentCost, models: [] }, humanHourlyRate });
+  const doctrineDeltas = useMemo(() => getDoctrineDeltaSummary(learningMemory.doctrine).slice(0, 3), [learningMemory.doctrine]);
   const derivedRecommendations = useMemo(() => {
     const runningTasks = tasks.filter((task) => task.status === 'running').length;
     const failedTasks = tasks.filter((task) => ['failed', 'error', 'blocked'].includes(task.status)).length;
-    const recommendations = [...systemRecommendations];
+    const recommendations = [...persistedRecommendations];
 
     if (failedTasks > 0) {
       recommendations.unshift({
@@ -914,114 +2466,92 @@ export function IntelligenceView() {
       });
     }
 
-    return recommendations.slice(0, 5);
-  }, [tasks]);
-
-  const economics = useMemo(() => {
-    const durationHours = tasks.reduce((sum, task) => sum + Number(task.durationMs || 0), 0) / (1000 * 60 * 60);
-    const humanCost = durationHours * humanHourlyRate;
-    const agentCost = tasks.reduce((sum, task) => sum + Number(task.costUsd || 0), 0);
-    const savings = humanCost - agentCost;
-    const multiplier = agentCost > 0 ? humanCost / agentCost : humanCost > 0 ? humanCost : 0;
-
-    return {
-      durationHours,
-      humanCost,
-      agentCost,
-      savings,
-      multiplier,
-    };
-  }, [humanHourlyRate, tasks]);
-
-  const learningMemory = useLearningMemory({ agents, tasks, logs, approvals: [], costData: { total: economics.agentCost, models: [] }, humanHourlyRate });
+    return rankCommanderRecommendations({
+      recommendations,
+      tasks,
+      outcomes,
+      interventions,
+      logs,
+      lifecycleEvents,
+      agents,
+      learningMemory,
+    }).slice(0, 5);
+  }, [agents, interventions, learningMemory, lifecycleEvents, logs, outcomes, persistedRecommendations, tasks]);
   const readFirstItems = useMemo(() => {
-    const bestReasoner = availableModels.slice().sort((a, b) => b.reasoning - a.reasoning)[0];
-    const fastest = availableModels.slice().sort((a, b) => b.latency - a.latency)[0];
-    const cheapest = availableModels.slice().sort((a, b) => b.costEfficiency - a.costEfficiency)[0];
+    const bestReasoner = availableModels.slice().sort((a, b) => b.reliability - a.reliability)[0];
+    const fastest = availableModels.slice().sort((a, b) => b.speed - a.speed)[0];
+    const cheapest = availableModels.slice().sort((a, b) => b.costDiscipline - a.costDiscipline)[0];
     return [
       {
         eyebrow: 'Use First',
-        title: bestReasoner ? `${bestReasoner.model} is the planning brain` : 'No clear planning brain yet',
+        title: bestReasoner ? `${bestReasoner.model} is the most reliable lane` : 'No clear reliable lane yet',
         detail: bestReasoner
-          ? `For ambiguity, strategy, and high-risk reasoning, this is the strongest first-choice lane right now.`
-          : 'You do not have enough model data yet to pick a dominant strategy lane confidently.',
+          ? `This branch is currently closing the highest-quality work most consistently across the live deck.`
+          : 'You do not have enough live model data yet to pick a dominant lane confidently.',
       },
       {
         eyebrow: 'Move Faster',
         title: fastest ? `${fastest.model} is the speed lane` : 'No clear speed lane yet',
         detail: fastest
-          ? `This branch should be absorbing time-sensitive and repetitive work where latency matters more than maximal depth.`
+          ? `This branch has the best current latency posture for time-sensitive and repetitive work.`
           : 'More live traffic is needed before a true speed winner emerges.',
       },
       {
         eyebrow: 'Spend Smarter',
-        title: cheapest ? `${cheapest.model} is the efficiency lane` : 'No clear efficiency lane yet',
+        title: cheapest ? `${cheapest.model} is the cost-discipline lane` : 'No clear efficiency lane yet',
         detail: cheapest
-          ? `Default cheap utility work here unless the mission explicitly needs a more premium reasoning branch.`
-          : 'Cost-efficiency signals are still too weak to make a hard routing doctrine call.',
+          ? `This is the best current lane for keeping spend disciplined before a mission truly needs premium depth.`
+          : 'Cost signals are still too weak to make a hard routing doctrine call.',
       },
     ];
   }, [availableModels]);
 
   return (
     <div className="relative flex h-full flex-col overflow-y-auto pb-10">
-      <div className="pointer-events-none absolute inset-0 overflow-hidden">
-        <div className="absolute -top-16 left-[-8%] h-[360px] w-[360px] rounded-full bg-aurora-teal/10 blur-[120px]" />
-        <div className="absolute top-[10%] right-[-12%] h-[420px] w-[420px] rounded-full bg-aurora-violet/10 blur-[140px]" />
-        <div className="absolute bottom-[-22%] left-[18%] h-[420px] w-[420px] rounded-full bg-aurora-blue/10 blur-[160px]" />
-      </div>
-
       <Motion.div variants={container} initial="hidden" animate="show" className="relative space-y-5">
         <Motion.div variants={item}>
-          <CommandDeckHero
-            glow="teal"
-            eyebrow="Strategic Systems"
-            eyebrowIcon={BrainCircuit}
-            title="Strategic Systems"
-            description="Model power, doctrine drift, and execution efficiency in one clean command surface."
-            chrome="epic"
-            titleClassName="text-[clamp(2.2rem,4vw,3.4rem)] leading-[1] tracking-[-0.04em]"
-            descriptionClassName="max-w-2xl text-[15px] leading-7 text-text-body"
-            badges={[
-              { label: 'models online', value: availableModels.length, tone: 'teal' },
-              { label: 'active agents', value: systemSummary.activeAgents, tone: 'blue' },
-              { label: 'directives live', value: systemSummary.directivesLive, tone: 'amber' },
-              { label: 'local branches', value: systemSummary.localModels, tone: 'violet' },
-            ]}
-            sideContent={
-              <div className="grid w-full grid-cols-2 gap-3 rounded-[24px] border border-white/10 bg-black/25 p-4 backdrop-blur-sm">
-                <div className="rounded-2xl border border-white/8 bg-white/[0.02] p-3">
-                  <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Recommendations</div>
-                  <div className="mt-2 text-2xl font-semibold text-text-primary"><AnimatedNumber value={systemSummary.recommendationCount} /></div>
-                </div>
-                <div className="rounded-2xl border border-white/8 bg-white/[0.02] p-3">
-                  <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Error agents</div>
-                  <div className="mt-2 text-2xl font-semibold text-text-primary"><AnimatedNumber value={systemSummary.errorAgents} /></div>
-                </div>
-                <div className="rounded-2xl border border-white/8 bg-white/[0.02] p-3">
-                  <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Knowledge zones</div>
-                  <div className="mt-2 text-2xl font-semibold text-text-primary"><AnimatedNumber value={knowledgeNamespaces.length} /></div>
-                </div>
-                <div className="rounded-2xl border border-white/8 bg-white/[0.02] p-3">
-                  <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Live telemetry</div>
-                  <div className="mt-2 text-2xl font-semibold text-text-primary"><AnimatedNumber value={systemSummary.liveTraffic} /></div>
-                </div>
-              </div>
-            }
+          <IntelligenceHeader
+            activeTab={activeTab}
+            setActiveTab={setActiveTab}
+            systemSummary={systemSummary}
+            availableModels={availableModels}
+            truth={truth}
           />
         </Motion.div>
 
-        <StrategicReadFirst items={readFirstItems.slice(0, 2)} />
+        <Motion.section variants={item} className="grid grid-cols-1 gap-3.5 xl:grid-cols-3">
+          <StrategicKpi
+            label="Models Online"
+            valueNode={<AnimatedNumber value={availableModels.length} />}
+            detail="Live model lanes currently available to Commander."
+            tone="teal"
+            icon={Cpu}
+          />
+          <StrategicKpi
+            label="Active Directives"
+            valueNode={<AnimatedNumber value={sharedDirectives.length} />}
+            detail="Shared rules shaping routing, memory, and execution behavior."
+            tone="amber"
+            icon={ShieldCheck}
+          />
+          <StrategicKpi
+            label="Connected Systems"
+            valueNode={<AnimatedNumber value={truth.connectedSystemsCount} />}
+            detail="External systems wired into the live dock and available to the stack."
+            tone="blue"
+            icon={Database}
+          />
+        </Motion.section>
 
-        <Motion.section variants={item} className="grid grid-cols-1 gap-5 xl:grid-cols-[1.55fr_0.45fr]">
+        <Motion.section variants={item} className="space-y-5">
           <div className="space-y-5">
-            <div className="rounded-[28px] border border-white/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.015))] p-2">
-              <div className="flex flex-wrap gap-2 rounded-[24px] bg-black/20 p-2">
+            <div className="rounded-[20px] border border-white/8 bg-[#111827]/90 p-2">
+              <div className="flex flex-wrap gap-2 rounded-[20px] bg-black/20 p-2">
                 {tabs.map((tab) => (
                   <button
                     key={tab.id}
                     onClick={() => setActiveTab(tab.id)}
-                    className={`flex flex-1 items-center justify-center gap-2 rounded-[18px] px-4 py-3 text-[13px] font-semibold transition-all ${
+                    className={`flex flex-1 items-center justify-center gap-2 rounded-[16px] px-3 py-2.5 text-[12px] font-semibold transition-all ${
                       activeTab === tab.id
                         ? 'border border-white/10 bg-white/[0.05] text-text-primary shadow-sm'
                         : 'text-text-muted hover:text-text-primary'
@@ -1034,19 +2564,93 @@ export function IntelligenceView() {
               </div>
             </div>
 
-            <div className="rounded-[28px] border border-white/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.015))] p-5">
-              {activeTab === 'models' && <ModelRegistryTab availableModels={availableModels} agents={agents} tasks={tasks} />}
-              {activeTab === 'knowledge' && <KnowledgeMapTab />}
-              {activeTab === 'directives' && <DirectivesTab agents={agents} tasks={tasks} />}
+            <div className="rounded-[24px] border border-white/8 bg-[#111827]/90 p-4">
+              {activeTab === 'models' && <ModelRegistryTab availableModels={availableModels} agents={agents} tasks={tasks} logs={logs} interventions={interventions} />}
+              {activeTab === 'routing' && <RoutingDoctrineTab routingPolicies={routingPolicies} tasks={tasks} agents={agents} logs={logs} interventions={interventions} lifecycleEvents={lifecycleEvents} skills={skills} upsertPolicy={upsertPolicy} ensureDefaultPolicy={ensureDefaultPolicy} />}
+              {activeTab === 'knowledge' && <KnowledgeMapTab namespaces={knowledgeNamespaces} />}
+              {activeTab === 'directives' && <DirectivesTab directives={sharedDirectives} agents={agents} tasks={tasks} recommendations={derivedRecommendations} />}
+            </div>
+
+            <div className="rounded-[24px] border border-white/8 bg-[#111827]/90 p-4">
+              <CommandSectionHeader
+                eyebrow="Doctrine Delta"
+                title="What is rising or losing trust"
+                description="Confidence movement from persisted doctrine history so you can see which beliefs are strengthening or slipping."
+                icon={TrendingUp}
+                tone="blue"
+              />
+              <div className="mt-4 grid gap-3 xl:grid-cols-3">
+                {doctrineDeltas.map((entry) => (
+                  <div key={entry.id} className="rounded-[20px] border border-white/8 bg-black/20 p-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="text-[12px] font-semibold text-text-primary">{entry.title}</div>
+                      <span className={cn(
+                        'rounded-full border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em]',
+                        entry.trend === 'up'
+                          ? 'border-aurora-teal/20 bg-aurora-teal/10 text-aurora-teal'
+                          : entry.trend === 'down'
+                            ? 'border-aurora-rose/20 bg-aurora-rose/10 text-aurora-rose'
+                            : 'border-white/8 bg-white/[0.03] text-text-muted'
+                      )}>
+                        {entry.trend === 'up' ? `+${entry.delta}` : entry.delta}
+                      </span>
+                    </div>
+                    <div className="mt-2 text-[10px] uppercase tracking-[0.16em] text-text-muted">{entry.owner}</div>
+                    <div className="mt-3 text-[11px] leading-relaxed text-text-body">{entry.changeSummary}</div>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
+        </Motion.section>
 
-          <StrategyRail
-            derivedRecommendations={derivedRecommendations}
-            learningMemory={learningMemory}
-            humanHourlyRate={humanHourlyRate}
-            economics={economics}
-          />
+        <Motion.section variants={item}>
+          <SystemsOperatorTable models={availableModels} />
+        </Motion.section>
+
+        <Motion.section variants={item}>
+          <CollapsedPanel
+            eyebrow="Details"
+            title="Audit and system insights"
+            summary="Open only when you need doctrine, recommendations, economics, and validation."
+          >
+            <div className="space-y-5">
+              <div className="grid grid-cols-1 gap-5 xl:grid-cols-[0.55fr_1.45fr]">
+                <div className="space-y-3">
+                  <div className="rounded-[24px] border border-white/8 bg-[#111827]/90 p-4">
+                    <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Use first</div>
+                    <div className="mt-2 text-[15px] font-semibold text-text-primary">{readFirstItems[0]?.title}</div>
+                    <p className="mt-2 text-[11px] leading-5 text-text-muted">{readFirstItems[0]?.detail}</p>
+                  </div>
+                  <div className="rounded-[24px] border border-white/8 bg-[#111827]/90 p-4">
+                    <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Economics snapshot</div>
+                    <div className="mt-2 text-[15px] font-semibold text-text-primary">Human vs agent</div>
+                    <div className="mt-3 grid gap-2">
+                      <div className="rounded-[16px] border border-white/8 bg-[#0d1420] px-3 py-2.5">
+                        <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Human equivalent</div>
+                        <div className="mt-1 text-lg font-semibold text-text-primary"><AnimatedNumber value={economics.humanCost} prefix="$" decimals={2} /></div>
+                      </div>
+                      <div className="rounded-[16px] border border-white/8 bg-[#0d1420] px-3 py-2.5">
+                        <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Agent spend</div>
+                        <div className="mt-1 text-lg font-semibold text-text-primary"><AnimatedNumber value={economics.agentCost} prefix="$" decimals={2} /></div>
+                      </div>
+                      <div className="rounded-[16px] border border-white/8 bg-[#0d1420] px-3 py-2.5">
+                        <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Efficiency</div>
+                        <div className="mt-1 text-lg font-semibold text-text-primary"><AnimatedNumber value={economics.multiplier} decimals={1} suffix="x" /></div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <StrategyRail
+                  derivedRecommendations={derivedRecommendations}
+                  learningMemory={learningMemory}
+                  humanHourlyRate={humanHourlyRate}
+                  economics={economics}
+                />
+              </div>
+              <TruthAuditStrip truth={truth} />
+            </div>
+          </CollapsedPanel>
         </Motion.section>
       </Motion.div>
     </div>

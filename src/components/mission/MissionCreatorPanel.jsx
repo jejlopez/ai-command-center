@@ -4,13 +4,18 @@ import {
   AlarmClock,
   Calendar,
   ChevronDown,
+  CircleAlert,
   Loader2,
   Play,
+  ShieldCheck,
   Save,
   Sparkles,
   X,
 } from 'lucide-react';
 import { cn } from '../../utils/cn';
+import { useConnectedSystems, useTasks } from '../../utils/useSupabase';
+import { deriveRoutingDecision } from '../../utils/routingPolicy';
+import { getPreflightAlignmentSummary } from '../../utils/commanderAnalytics';
 
 const SESSION_KEY = 'mission-creator-session-v1';
 const SAVED_PRESETS_KEY = 'mission-creator-presets-v1';
@@ -19,6 +24,12 @@ const MODE_OPTIONS = [
   { value: 'fast', label: 'Fast', hint: 'Prioritize speed' },
   { value: 'balanced', label: 'Balanced', hint: 'Default' },
   { value: 'efficient', label: 'Efficient', hint: 'Prioritize cost' },
+];
+
+const MISSION_MODE_OPTIONS = [
+  { value: 'do_now', label: 'Do now', hint: 'Launch immediately with the selected routing lane.' },
+  { value: 'plan_first', label: 'Plan first', hint: 'Build the graph and hold execution until you step in.' },
+  { value: 'watch_and_approve', label: 'Watch and approve', hint: 'Prepare the work and pause at the first human gate.' },
 ];
 
 const WHEN_OPTIONS = [
@@ -62,6 +73,7 @@ const COMMANDER_PRESETS = [
     intent: 'Research 10 new 3PL prospects, rank them by fit, and draft intro emails for the best opportunities.',
     defaults: {
       mode: 'balanced',
+      missionMode: 'do_now',
       when: 'now',
       priority: 'standard',
       outputType: 'email_drafts',
@@ -75,6 +87,7 @@ const COMMANDER_PRESETS = [
     intent: 'Summarize today’s calls, extract decisions and follow-ups, and post clean notes to Pipedrive.',
     defaults: {
       mode: 'efficient',
+      missionMode: 'plan_first',
       when: 'later_today',
       priority: 'standard',
       outputType: 'crm_notes',
@@ -88,6 +101,7 @@ const COMMANDER_PRESETS = [
     intent: 'Review stalled quotes, identify the best follow-up angle for each one, and draft outreach for the top opportunities.',
     defaults: {
       mode: 'fast',
+      missionMode: 'watch_and_approve',
       when: 'now',
       priority: 'critical',
       outputType: 'email_drafts',
@@ -101,6 +115,7 @@ const COMMANDER_PRESETS = [
     intent: 'Check tracking on shipments delayed more than 2 days, summarize root causes, and flag any customers that need outreach.',
     defaults: {
       mode: 'balanced',
+      missionMode: 'watch_and_approve',
       when: 'repeat',
       priority: 'standard',
       outputType: 'summary',
@@ -113,6 +128,7 @@ const COMMANDER_PRESETS = [
 ];
 
 function inferAgentModeBadge(agent) {
+  if (agent?.isSyntheticCommander) return 'SUB';
   const model = String(agent?.model || '').toLowerCase();
   const localHints = ['llama', 'mistral', 'gemma', 'qwen', 'deepseek', 'ollama', 'hermes'];
   return localHints.some(hint => model.includes(hint)) ? 'LOCAL' : 'SUB';
@@ -121,6 +137,7 @@ function inferAgentModeBadge(agent) {
 function pickPrimaryOperationsAgent(agents) {
   return (
     agents.find(agent => /tony|atlas/i.test(agent.name || ''))
+    || agents.find(agent => agent.role === 'commander' && !agent.isSyntheticCommander)
     || agents.find(agent => agent.role === 'commander')
     || agents[0]
     || null
@@ -128,7 +145,8 @@ function pickPrimaryOperationsAgent(agents) {
 }
 
 function inferBestAgent(intent, agents) {
-  const primary = pickPrimaryOperationsAgent(agents);
+  const selectableAgents = agents.filter(agent => !agent.isSyntheticCommander);
+  const primary = pickPrimaryOperationsAgent(selectableAgents.length ? selectableAgents : agents);
   if (!intent.trim()) return primary;
 
   const lower = intent.toLowerCase();
@@ -233,6 +251,7 @@ function initialFormState(agents) {
     intent: '',
     agentId: session.agentId || primaryAgent?.id || '',
     mode: session.mode || 'balanced',
+    missionMode: session.missionMode || 'do_now',
     when: session.when || 'now',
     priority: session.priority || 'standard',
     outputType: session.outputType || 'summary',
@@ -311,11 +330,39 @@ function describeWhyMode(mode) {
   return 'Balanced mode keeps quality, speed, and spend in the middle lane.';
 }
 
+function describeMissionMode(missionMode) {
+  if (missionMode === 'plan_first') return 'Commander will build the mission graph, route the branches, and hold the machine in planning posture until you step in.';
+  if (missionMode === 'watch_and_approve') return 'Commander will prepare the work, but the first runnable branch will stop at a human gate so you can supervise before execution scales.';
+  return 'Commander will route the mission and start the runnable branches as soon as the launch gate is clear.';
+}
+
 function describeSchedule(form) {
   if (form.when === 'now') return 'Launch immediately when you hit the button.';
   if (form.when === 'later_today') return 'Queue for the next clean slot later today.';
   if (form.when === 'pick') return `Hold until ${form.runAt || 'your chosen time'}.`;
   return `Repeat ${form.repeatFrequency} at ${form.repeatTime}${form.repeatEndDate ? ` until ${form.repeatEndDate}` : ''}.`;
+}
+
+function inferSystemsReadback(form, connectedSystems) {
+  const intent = String(form.intent || '').toLowerCase();
+  const systems = [];
+
+  if (form.targetType !== 'internal' || /pipedrive|crm|deal|person/.test(intent)) systems.push('Pipedrive');
+  if (/email|draft|outreach|reply/.test(intent)) systems.push('Email lane');
+  if (/doc|report|summary|notes/.test(intent)) systems.push('Workspace docs');
+  if (/shipment|tracking|ops|delay/.test(intent)) systems.push('Ops telemetry');
+
+  const connectedLabels = connectedSystems
+    .filter((system) => system.status !== 'error')
+    .map((system) => system.integrationKey || system.name || '')
+    .filter(Boolean)
+    .map((value) => String(value).toLowerCase());
+
+  return [...new Set(systems)].map((label) => {
+    const key = label.toLowerCase();
+    const connected = connectedLabels.some((entry) => key.includes(entry) || entry.includes(key.split(' ')[0]));
+    return { label, connected };
+  });
 }
 
 function inferDoctrineDefaults({ intent, agents, learningMemory }) {
@@ -375,6 +422,85 @@ function buildFlightPlan(preview, missionSummary, form) {
   });
 }
 
+function buildBranchPreview(preview) {
+  const branches = Array.isArray(preview?.branches) ? preview.branches : [];
+  const labelByTitle = new Map(branches.map((branch) => [branch.title, branch.branchLabel || branch.title]));
+  return branches.map((branch, index) => ({
+    ...branch,
+    id: `${branch.title}-${index}`,
+    dependencies: Array.isArray(branch.dependsOn) ? branch.dependsOn.map((dependency) => labelByTitle.get(dependency) || dependency) : [],
+    roleLabel: (branch.agentRole || 'executor').toUpperCase(),
+    strategyLabel: branch.executionStrategy === 'parallel' ? 'Parallel' : 'Sequential',
+  }));
+}
+
+function formatApprovalLabel(value) {
+  return String(value || 'risk_weighted').replaceAll('_', ' ');
+}
+
+function estimateBranchCount(intent = '') {
+  const lower = String(intent || '').toLowerCase();
+  let branches = 1;
+  if (/(research|analyze|investigate|find)/.test(lower)) branches += 1;
+  if (/(draft|email|report|summary|notes)/.test(lower)) branches += 1;
+  if (/(verify|review|check|qa|validate)/.test(lower)) branches += 1;
+  return Math.min(4, branches);
+}
+
+function estimateCostRange({ mode = 'balanced', riskLevel = 'medium', branchCount = 1, confidence = 50 }) {
+  const base = mode === 'fast' ? 1.4 : mode === 'efficient' ? 0.55 : 0.9;
+  const riskMultiplier = riskLevel === 'high' ? 1.35 : riskLevel === 'medium' ? 1 : 0.8;
+  const uncertaintyMultiplier = confidence < 55 ? 1.2 : confidence > 80 ? 0.9 : 1;
+  const estimated = base * riskMultiplier * uncertaintyMultiplier * Math.max(1, branchCount * 0.75);
+  if (estimated < 0.9) return '$0.25 - $0.90';
+  if (estimated < 1.8) return '$0.90 - $1.80';
+  if (estimated < 3.5) return '$1.80 - $3.50';
+  return '$3.50+';
+}
+
+function buildPreflightReadback({
+  form,
+  preview,
+  missionSummary,
+  systemsReadback,
+  routingDecision,
+}) {
+  const expectedBranches = Array.isArray(preview?.branches) && preview.branches.length
+    ? preview.branches.length
+    : estimateBranchCount(form.intent);
+  const expectedDuration = preview?.estimatedDuration || (form.missionMode === 'plan_first' ? '2-6 min planning window' : expectedBranches > 2 ? '8-18 min' : '4-12 min');
+  const estimatedCost = preview?.estimatedCostRange || estimateCostRange({
+    mode: form.mode,
+    riskLevel: routingDecision.riskLevel,
+    branchCount: expectedBranches,
+    confidence: missionSummary.confidence,
+  });
+  const disconnectedSystems = systemsReadback.filter((system) => !system.connected);
+  const topRisks = [
+    missionSummary.confidence < 55 ? 'Intent is still broad, so Commander may need to improvise before it can route cleanly.' : null,
+    routingDecision.riskLevel === 'high' ? 'This mission touches higher-risk operations and should stay human-aware.' : null,
+    form.when === 'repeat' && form.missionMode === 'do_now' ? 'Recurring missions launched in do-now mode can scale mistakes faster than planned review modes.' : null,
+    disconnectedSystems.length > 0 ? `${disconnectedSystems.map((system) => system.label).join(', ')} is not fully connected, which can force fallback behavior.` : null,
+    form.outputType === 'custom' && !form.outputSpec.trim() ? 'The final artifact is still underspecified, which increases revision risk.' : null,
+  ].filter(Boolean).slice(0, 3);
+  const uncertainty = [
+    preview ? null : 'Branch graph is still estimated until you run Preview plan.',
+    missionSummary.confidence >= 75 ? null : 'Commander is missing a little specificity on scope, destination, or success criteria.',
+    routingDecision.contextPackIds.length <= 1 ? 'Only the core context pack is loaded so far.' : null,
+  ].filter(Boolean).slice(0, 3);
+
+  return {
+    expectedBranches,
+    expectedDuration,
+    estimatedCost,
+    approvalPosture: form.missionMode === 'watch_and_approve' ? 'human_required' : routingDecision.approvalLevel,
+    contextPacks: routingDecision.contextPackIds,
+    requiredCapabilities: routingDecision.requiredCapabilities,
+    topRisks,
+    uncertainty,
+  };
+}
+
 function SegmentedControl({ options, value, onChange }) {
   return (
     <div className="flex gap-2">
@@ -405,6 +531,8 @@ export function MissionCreatorPanel({
   onLaunch,
   onPreview,
 }) {
+  const { connectedSystems } = useConnectedSystems();
+  const { tasks } = useTasks();
   const [form, setForm] = useState(() => initialFormState(agents));
   const [agentTouched, setAgentTouched] = useState(false);
   const [outputTouched, setOutputTouched] = useState(false);
@@ -423,6 +551,14 @@ export function MissionCreatorPanel({
     () => agents.find(agent => agent.id === form.agentId) || pickPrimaryOperationsAgent(agents),
     [agents, form.agentId]
   );
+  const pipedriveConnected = useMemo(
+    () => connectedSystems.some((system) => system.integrationKey === 'pipedrive' && system.status !== 'error'),
+    [connectedSystems]
+  );
+  const availableTargetOptions = useMemo(
+    () => TARGET_OPTIONS.filter((option) => option.value === 'internal' || pipedriveConnected),
+    [pipedriveConnected]
+  );
   const doctrineDefaults = useMemo(
     () => inferDoctrineDefaults({ intent: form.intent, agents, learningMemory }),
     [agents, form.intent, learningMemory]
@@ -430,8 +566,34 @@ export function MissionCreatorPanel({
   const missionSummary = useMemo(() => summarizeMissionIntent(form.intent), [form.intent]);
   const agentRationale = useMemo(() => describeWhyAgent(form.intent, selectedAgent), [form.intent, selectedAgent]);
   const modeRationale = useMemo(() => describeWhyMode(form.mode), [form.mode]);
+  const missionModeRationale = useMemo(() => describeMissionMode(form.missionMode), [form.missionMode]);
   const scheduleRationale = useMemo(() => describeSchedule(form), [form]);
   const flightPlan = useMemo(() => buildFlightPlan(preview, missionSummary, form), [preview, missionSummary, form]);
+  const branchPreview = useMemo(() => buildBranchPreview(preview), [preview]);
+  const systemsReadback = useMemo(() => inferSystemsReadback(form, connectedSystems), [connectedSystems, form]);
+  const routingDecision = useMemo(() => deriveRoutingDecision({
+    intent: form.intent,
+    targetType: form.targetType,
+    outputType: form.outputType === 'custom' ? form.outputSpec || form.outputType : form.outputType,
+    repeat: form.when === 'repeat' ? { frequency: form.repeatFrequency, time: form.repeatTime } : null,
+    mode: form.mode,
+    requiresApproval: form.missionMode === 'watch_and_approve',
+  }, selectedAgent, null), [form.intent, form.mode, form.missionMode, form.outputSpec, form.outputType, form.repeatFrequency, form.repeatTime, form.targetType, form.when, selectedAgent]);
+  const preflight = useMemo(() => buildPreflightReadback({
+    form,
+    preview,
+    missionSummary,
+    systemsReadback,
+    routingDecision,
+  }), [form, preview, missionSummary, systemsReadback, routingDecision]);
+  const preflightAlignment = useMemo(() => getPreflightAlignmentSummary({
+    tasks,
+    routingDecision,
+    missionSummary,
+    estimatedCost: preflight.estimatedCost,
+    expectedBranches: preflight.expectedBranches,
+  }), [tasks, routingDecision, missionSummary, preflight.estimatedCost, preflight.expectedBranches]);
+  const selectedAgentIsPersistent = !!(selectedAgent && !selectedAgent.isEphemeral && !selectedAgent.isSyntheticCommander);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -486,9 +648,16 @@ export function MissionCreatorPanel({
   }, [doctrineDefaults.mode, form.mode, modeTouched]);
 
   useEffect(() => {
+    if (!availableTargetOptions.some((option) => option.value === form.targetType)) {
+      setForm((prev) => ({ ...prev, targetType: 'internal', targetIdentifier: '' }));
+    }
+  }, [availableTargetOptions, form.targetType]);
+
+  useEffect(() => {
     saveSessionDefaults({
       agentId: form.agentId,
       mode: form.mode,
+      missionMode: form.missionMode,
       when: form.when,
       priority: form.priority,
       outputType: form.outputType,
@@ -517,6 +686,7 @@ export function MissionCreatorPanel({
       intent: preset.intent,
       agentId: preset.defaults.agentId || inferred?.id || prev.agentId,
       mode: preset.defaults.mode || prev.mode,
+      missionMode: preset.defaults.missionMode || prev.missionMode,
       when: preset.defaults.when || prev.when,
       priority: preset.defaults.priority || prev.priority,
       outputType: preset.defaults.outputType || prev.outputType,
@@ -534,10 +704,13 @@ export function MissionCreatorPanel({
   }
 
   function buildPayload() {
+    const launchAgentId = selectedAgent?.isSyntheticCommander ? '' : (form.agentId || selectedAgent?.id || '');
+
     return {
       intent: form.intent.trim(),
-      agentId: form.agentId || selectedAgent?.id || '',
+      agentId: launchAgentId,
       mode: form.mode,
+      missionMode: form.missionMode,
       when: form.when,
       priority: form.priority,
       outputType: form.outputType,
@@ -553,6 +726,8 @@ export function MissionCreatorPanel({
       agentName: selectedAgent?.name || '',
       agentModel: selectedAgent?.model || '',
       agentExecutionMode: inferAgentModeBadge(selectedAgent),
+      planSteps: Array.isArray(preview?.steps) ? preview.steps : [],
+      planBranches: Array.isArray(preview?.branches) ? preview.branches : [],
     };
   }
 
@@ -601,6 +776,7 @@ export function MissionCreatorPanel({
       defaults: {
         agentId: form.agentId,
         mode: form.mode,
+        missionMode: form.missionMode,
         when: form.when,
         priority: form.priority,
         outputType: form.outputType,
@@ -639,25 +815,25 @@ export function MissionCreatorPanel({
             exit={{ x: '100%' }}
             transition={{ type: 'spring', stiffness: 300, damping: 34 }}
             className="fixed top-0 right-0 bottom-0 w-[520px] max-w-[92vw] bg-[linear-gradient(180deg,rgba(7,12,18,0.98),rgba(8,10,14,0.98))] border-l border-aurora-teal/15 z-50 flex flex-col shadow-[-16px_0_48px_rgba(0,0,0,0.55)]"
-            aria-label="Spin up a Mission"
+            aria-label="Tell Commander what you want"
           >
             <div className="relative flex items-start justify-between px-6 py-5 border-b border-white/[0.08] shrink-0 bg-black/20 backdrop-blur overflow-hidden">
               <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(0,217,200,0.14),transparent_38%),linear-gradient(180deg,rgba(96,165,250,0.06),transparent_60%)] pointer-events-none" />
               <div>
                 <div className="flex items-center gap-2 text-aurora-teal mb-2">
                   <Sparkles className="w-4 h-4" />
-                  <span className="text-[10px] font-bold uppercase tracking-[0.18em]">Mission Creator</span>
+                  <span className="text-[10px] font-bold uppercase tracking-[0.18em]">Commander Intake</span>
                 </div>
-                <h2 className="text-xl font-semibold text-text-primary">Spin up a Mission</h2>
-                <p className="text-[12px] text-text-muted mt-1">Tell me what you want, I&apos;ll handle the wiring.</p>
+                <h2 className="text-xl font-semibold text-text-primary">Tell Commander what you want</h2>
+                <p className="text-[12px] text-text-muted mt-1">Describe the outcome naturally. Commander will translate it into a mission, route the lanes, and stage the right posture.</p>
                 <div className="mt-4 flex flex-wrap gap-2">
                   <div className="px-3 py-2 rounded-2xl border border-white/[0.08] bg-black/20">
-                    <div className="text-[9px] uppercase tracking-[0.18em] text-text-muted">Suggested Agent</div>
+                    <div className="text-[9px] uppercase tracking-[0.18em] text-text-muted">Primary Lane</div>
                     <div className="text-[12px] font-semibold text-text-primary mt-1">{selectedAgent?.name || 'Auto-selecting'}</div>
                   </div>
                   <div className="px-3 py-2 rounded-2xl border border-white/[0.08] bg-black/20">
-                    <div className="text-[9px] uppercase tracking-[0.18em] text-text-muted">Execution Branch</div>
-                    <div className="text-[12px] font-semibold text-text-primary mt-1">{inferAgentModeBadge(selectedAgent)}</div>
+                    <div className="text-[9px] uppercase tracking-[0.18em] text-text-muted">Mission Posture</div>
+                    <div className="text-[12px] font-semibold text-text-primary mt-1">{MISSION_MODE_OPTIONS.find((option) => option.value === form.missionMode)?.label || 'Do now'}</div>
                   </div>
                 </div>
               </div>
@@ -672,7 +848,7 @@ export function MissionCreatorPanel({
 
             <div className="flex-1 overflow-y-auto no-scrollbar px-6 py-5 space-y-6">
               <section className="rounded-[24px] border border-white/[0.08] bg-white/[0.02] px-4 py-4">
-                <SectionLabel>What do you want done?</SectionLabel>
+                <SectionLabel>Tell Commander what you want</SectionLabel>
                 <textarea
                   ref={textareaRef}
                   value={form.intent}
@@ -682,7 +858,7 @@ export function MissionCreatorPanel({
                   className="w-full rounded-2xl border border-white/[0.08] bg-black/20 px-4 py-4 text-sm text-text-primary placeholder:text-text-disabled focus:outline-none focus:border-aurora-teal/40 resize-none leading-relaxed"
                 />
                 <div className="flex justify-between items-center mt-2">
-                  <span className="text-[10px] text-text-disabled">Cmd+Enter to launch</span>
+                  <span className="text-[10px] text-text-disabled">Cmd+Enter to launch or stage the mission</span>
                   <span className="text-[10px] font-mono text-text-disabled">{form.intent.length} chars</span>
                 </div>
 
@@ -705,7 +881,12 @@ export function MissionCreatorPanel({
                     </div>
                     <div className="rounded-2xl border border-white/[0.08] bg-black/20 px-3 py-3">
                       <div className="text-[9px] uppercase tracking-[0.18em] text-text-muted">Execution path</div>
-                      <div className="text-[12px] font-semibold text-text-primary mt-1">{selectedAgent?.name || 'Auto-selecting'} • {inferAgentModeBadge(selectedAgent)}</div>
+                      <div className="text-[12px] font-semibold text-text-primary mt-1">{selectedAgent?.name || 'Auto-selecting'} • {selectedAgentIsPersistent ? 'Persistent lane' : inferAgentModeBadge(selectedAgent)}</div>
+                    </div>
+                    <div className="rounded-2xl border border-white/[0.08] bg-black/20 px-3 py-3 col-span-2">
+                      <div className="text-[9px] uppercase tracking-[0.18em] text-text-muted">Commander posture</div>
+                      <div className="text-[12px] font-semibold text-text-primary mt-1">{MISSION_MODE_OPTIONS.find((option) => option.value === form.missionMode)?.label || 'Do now'}</div>
+                      <div className="mt-1 text-[11px] leading-relaxed text-text-body">{missionModeRationale}</div>
                     </div>
                   </div>
 
@@ -715,6 +896,144 @@ export function MissionCreatorPanel({
                         {cue}
                       </span>
                     ))}
+                  </div>
+                </div>
+
+                <div className="mt-4 rounded-[20px] border border-aurora-blue/15 bg-[linear-gradient(135deg,rgba(96,165,250,0.08),rgba(167,139,250,0.05))] px-4 py-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="text-[10px] uppercase tracking-[0.18em] text-aurora-blue font-semibold">Mission Preflight</div>
+                      <div className="mt-1 text-sm font-semibold text-text-primary">Commander briefing before launch</div>
+                      <div className="mt-1 text-[11px] leading-relaxed text-text-body">
+                        Expected branches, loaded context, launch cost, approval posture, and the main uncertainty rail before you commit.
+                      </div>
+                    </div>
+                    <div className="rounded-full border border-aurora-blue/20 bg-aurora-blue/10 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-aurora-blue">
+                      {preview ? 'verified preview' : 'estimated preflight'}
+                    </div>
+                  </div>
+
+                  <div className="mt-4 grid grid-cols-2 gap-3">
+                    <div className="rounded-2xl border border-white/[0.08] bg-black/20 px-3 py-3">
+                      <div className="text-[9px] uppercase tracking-[0.18em] text-text-muted">Expected branches</div>
+                      <div className="mt-1 text-[12px] font-semibold text-text-primary">{preflight.expectedBranches}</div>
+                    </div>
+                    <div className="rounded-2xl border border-white/[0.08] bg-black/20 px-3 py-3">
+                      <div className="text-[9px] uppercase tracking-[0.18em] text-text-muted">Likely cost</div>
+                      <div className="mt-1 text-[12px] font-semibold text-text-primary">{preflight.estimatedCost}</div>
+                    </div>
+                    <div className="rounded-2xl border border-white/[0.08] bg-black/20 px-3 py-3">
+                      <div className="text-[9px] uppercase tracking-[0.18em] text-text-muted">Approval posture</div>
+                      <div className="mt-1 text-[12px] font-semibold text-text-primary">{formatApprovalLabel(preflight.approvalPosture)}</div>
+                    </div>
+                    <div className="rounded-2xl border border-white/[0.08] bg-black/20 px-3 py-3">
+                      <div className="text-[9px] uppercase tracking-[0.18em] text-text-muted">Expected duration</div>
+                      <div className="mt-1 text-[12px] font-semibold text-text-primary">{preflight.expectedDuration}</div>
+                    </div>
+                  </div>
+
+                  <div className="mt-3 grid gap-3 xl:grid-cols-2">
+                    <div className="rounded-2xl border border-white/[0.08] bg-black/20 px-3 py-3">
+                      <div className="flex items-center gap-2">
+                        <ShieldCheck className="h-4 w-4 text-aurora-teal" />
+                        <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Context loaded</div>
+                      </div>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {preflight.contextPacks.map((pack) => (
+                          <span key={pack} className="rounded-full border border-aurora-teal/20 bg-aurora-teal/10 px-2 py-1 text-[10px] font-semibold text-aurora-teal">
+                            {pack}
+                          </span>
+                        ))}
+                      </div>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {preflight.requiredCapabilities.length > 0 ? preflight.requiredCapabilities.map((capability) => (
+                          <span key={capability} className="rounded-full border border-white/[0.08] bg-white/[0.03] px-2 py-1 text-[10px] font-semibold text-text-body">
+                            {capability}
+                          </span>
+                        )) : (
+                          <span className="text-[11px] text-text-muted">No extra capability pressure inferred yet.</span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="rounded-2xl border border-white/[0.08] bg-black/20 px-3 py-3">
+                      <div className="flex items-center gap-2">
+                        <CircleAlert className="h-4 w-4 text-aurora-amber" />
+                        <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Confidence + uncertainty rail</div>
+                      </div>
+                      <div className="mt-3 space-y-2">
+                        {preflight.uncertainty.length === 0 && (
+                          <div className="rounded-2xl border border-aurora-teal/20 bg-aurora-teal/10 px-3 py-2 text-[11px] text-text-body">
+                            Commander has enough clarity to route this mission without a major uncertainty warning.
+                          </div>
+                        )}
+                        {preflight.uncertainty.map((entry) => (
+                          <div key={entry} className="rounded-2xl border border-aurora-amber/20 bg-aurora-amber/10 px-3 py-2 text-[11px] text-text-body">
+                            {entry}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mt-3 rounded-2xl border border-white/[0.08] bg-black/20 px-3 py-3">
+                    <div className="mb-3 flex items-center justify-between gap-3">
+                      <div>
+                        <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Preflight alignment</div>
+                        <div className="mt-1 text-[12px] font-semibold text-text-primary">{preflightAlignment.label}</div>
+                      </div>
+                      <div className={cn(
+                        'rounded-full border px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.16em]',
+                        preflightAlignment.posture === 'aligned'
+                          ? 'border-aurora-teal/20 bg-aurora-teal/10 text-aurora-teal'
+                          : preflightAlignment.posture === 'close'
+                            ? 'border-aurora-amber/20 bg-aurora-amber/10 text-aurora-amber'
+                            : 'border-aurora-rose/20 bg-aurora-rose/10 text-aurora-rose'
+                      )}>
+                        {preflightAlignment.sampleCount > 0 ? `${preflightAlignment.sampleCount} matching runs` : 'forming'}
+                      </div>
+                    </div>
+                  <div className="mb-3 text-[11px] leading-relaxed text-text-body">{preflightAlignment.detail}</div>
+                    {preflightAlignment.sampleCount > 0 && (
+                      <div className="mb-3 grid grid-cols-2 gap-3">
+                        <div className="rounded-2xl border border-white/[0.08] bg-white/[0.03] px-3 py-2">
+                          <div className="text-[9px] uppercase tracking-[0.18em] text-text-muted">Branch delta</div>
+                          <div className="mt-1 text-[12px] font-semibold text-text-primary">{preflightAlignment.branchDelta > 0 ? '+' : ''}{preflightAlignment.branchDelta}</div>
+                        </div>
+                        <div className="rounded-2xl border border-white/[0.08] bg-white/[0.03] px-3 py-2">
+                          <div className="text-[9px] uppercase tracking-[0.18em] text-text-muted">Cost delta</div>
+                          <div className="mt-1 text-[12px] font-semibold text-text-primary">{preflightAlignment.costDelta > 0 ? '+' : ''}${Math.abs(preflightAlignment.costDelta).toFixed(2)}</div>
+                        </div>
+                      </div>
+                    )}
+                    <div className="mb-3 rounded-2xl border border-white/[0.08] bg-white/[0.03] px-3 py-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <div className="text-[9px] uppercase tracking-[0.18em] text-text-muted">Confidence closure</div>
+                          <div className="mt-1 text-[12px] font-semibold text-text-primary">{preflightAlignment.confidenceLabel}</div>
+                        </div>
+                        {preflightAlignment.sampleCount > 0 && (
+                          <div className="text-right">
+                            <div className="text-[9px] uppercase tracking-[0.18em] text-text-muted">Runtime baseline</div>
+                            <div className="mt-1 text-[12px] font-semibold text-text-primary">{preflightAlignment.runtimeConfidence}%</div>
+                          </div>
+                        )}
+                      </div>
+                      <div className="mt-2 text-[11px] leading-relaxed text-text-body">{preflightAlignment.confidenceDetail}</div>
+                    </div>
+                    <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Top risks before launch</div>
+                    <div className="mt-2 space-y-2">
+                      {preflight.topRisks.length === 0 && (
+                        <div className="rounded-2xl border border-aurora-teal/20 bg-aurora-teal/10 px-3 py-2 text-[11px] text-text-body">
+                          No major launch blocker is inferred right now. This looks safe enough to route with the current posture.
+                        </div>
+                      )}
+                      {preflight.topRisks.map((risk) => (
+                        <div key={risk} className="rounded-2xl border border-white/[0.08] bg-white/[0.03] px-3 py-2 text-[11px] text-text-body">
+                          {risk}
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 </div>
 
@@ -762,6 +1081,36 @@ export function MissionCreatorPanel({
 
                 <div className="space-y-4">
                   <div>
+                    <SectionLabel>Mission mode</SectionLabel>
+                    <div className="grid gap-2">
+                      {MISSION_MODE_OPTIONS.map((option) => {
+                        const selected = form.missionMode === option.value;
+                        return (
+                          <button
+                            key={option.value}
+                            type="button"
+                            onClick={() => updateField('missionMode', option.value)}
+                            className={cn(
+                              'w-full rounded-2xl border px-3 py-3 text-left transition-colors',
+                              selected
+                                ? 'border-aurora-teal/30 bg-aurora-teal/8'
+                                : 'border-border bg-surface hover:bg-surface-raised'
+                            )}
+                          >
+                            <div className="flex items-center justify-between gap-3">
+                              <div>
+                                <div className="text-[12px] font-semibold text-text-primary">{option.label}</div>
+                                <div className="mt-1 text-[11px] leading-relaxed text-text-muted">{option.hint}</div>
+                              </div>
+                              {selected && <div className="w-2 h-2 rounded-full bg-aurora-teal shrink-0" />}
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div>
                     <SectionLabel>Agent</SectionLabel>
                     <div className="rounded-2xl border border-white/[0.08] bg-black/20 overflow-hidden">
                       {agents.map(agent => {
@@ -786,7 +1135,7 @@ export function MissionCreatorPanel({
                                   'px-2 py-0.5 rounded-full text-[9px] font-bold',
                                   selected ? 'bg-aurora-teal/15 text-aurora-teal' : 'bg-white/[0.04] text-text-muted'
                                 )}>
-                                  {inferAgentModeBadge(agent)}
+                                  {!agent.isEphemeral && !agent.isSyntheticCommander ? 'PERSIST' : inferAgentModeBadge(agent)}
                                 </span>
                               </div>
                               <p className="text-[11px] text-text-muted mt-1">{agent.model} • {agent.role}</p>
@@ -897,8 +1246,13 @@ export function MissionCreatorPanel({
                       onChange={(event) => updateField('targetType', event.target.value)}
                       className="w-full rounded-xl border border-border bg-surface px-3 py-2.5 text-sm text-text-primary focus:outline-none focus:border-aurora-teal/40"
                     >
-                      {TARGET_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                      {availableTargetOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
                     </select>
+                    {!pipedriveConnected && (
+                      <div className="mt-2 text-[11px] leading-relaxed text-text-muted">
+                        Pipedrive destinations unlock automatically once the CRM is connected in Systems Control.
+                      </div>
+                    )}
                     {form.targetType !== 'internal' && (
                       <input
                         value={form.targetIdentifier}
@@ -1004,6 +1358,16 @@ export function MissionCreatorPanel({
                                 <p className="text-sm font-semibold text-text-primary mt-1">{preview.estimatedCostRange}</p>
                               </div>
                             </div>
+                            <div className="grid grid-cols-2 gap-3">
+                              <div className="rounded-xl border border-border bg-canvas/50 px-3 py-2.5">
+                                <p className="text-[10px] uppercase tracking-[0.15em] text-text-muted">Launch mode</p>
+                                <p className="text-sm font-semibold text-text-primary mt-1">{MISSION_MODE_OPTIONS.find((option) => option.value === form.missionMode)?.label || 'Do now'}</p>
+                              </div>
+                              <div className="rounded-xl border border-border bg-canvas/50 px-3 py-2.5">
+                                <p className="text-[10px] uppercase tracking-[0.15em] text-text-muted">Likely systems</p>
+                                <p className="text-sm font-semibold text-text-primary mt-1">{systemsReadback.length ? systemsReadback.map((system) => system.label).join(', ') : 'Internal lane'}</p>
+                              </div>
+                            </div>
                             <div className="rounded-[20px] border border-white/[0.08] bg-black/20 p-3">
                               <div className="flex items-center justify-between mb-3">
                                 <div>
@@ -1039,6 +1403,43 @@ export function MissionCreatorPanel({
                                 </div>
                               ))}
                             </div>
+                            {branchPreview.length > 0 && (
+                              <div className="rounded-[20px] border border-white/[0.08] bg-black/20 p-3">
+                                <div className="flex items-center justify-between gap-3">
+                                  <div>
+                                    <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Delegation Graph</div>
+                                    <div className="mt-1 text-[12px] text-text-body">Branch ownership, dependency order, and execution posture before launch.</div>
+                                  </div>
+                                  <div className="text-[11px] font-mono text-aurora-violet">{branchPreview.length} branches</div>
+                                </div>
+                                <div className="mt-3 space-y-2">
+                                  {branchPreview.map((branch, index) => (
+                                    <div key={branch.id} className="rounded-2xl border border-white/[0.08] bg-white/[0.03] px-3 py-3">
+                                      <div className="flex flex-wrap items-center gap-2">
+                                        <span className="flex h-5 w-5 items-center justify-center rounded-full bg-aurora-violet/10 text-[10px] font-bold text-aurora-violet">{index + 1}</span>
+                                        <span className="text-[12px] font-semibold text-text-primary">{branch.branchLabel || branch.title}</span>
+                                        <span className="rounded-full border border-white/[0.08] bg-black/20 px-2 py-0.5 text-[9px] font-mono uppercase text-text-muted">{branch.roleLabel}</span>
+                                        <span className="rounded-full border border-aurora-blue/20 bg-aurora-blue/10 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.14em] text-aurora-blue">{branch.strategyLabel}</span>
+                                      </div>
+                                      <div className="mt-2 text-[11px] leading-relaxed text-text-body">{branch.description || branch.title}</div>
+                                      <div className="mt-2 flex flex-wrap gap-2">
+                                        {branch.dependencies.length === 0 ? (
+                                          <span className="rounded-full border border-aurora-teal/20 bg-aurora-teal/10 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-aurora-teal">
+                                            Launch-ready branch
+                                          </span>
+                                        ) : (
+                                          branch.dependencies.map((dependency) => (
+                                            <span key={`${branch.id}-${dependency}`} className="rounded-full border border-white/[0.08] bg-black/20 px-2 py-1 text-[10px] font-semibold text-text-muted">
+                                              depends on {dependency}
+                                            </span>
+                                          ))
+                                        )}
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
                           </div>
                         )}
                       </div>
@@ -1052,7 +1453,7 @@ export function MissionCreatorPanel({
                   <div className="flex items-center gap-2">
                     <AlarmClock className="w-4 h-4 text-aurora-teal" />
                     <p className="text-[12px] text-text-body">
-                      Launching with <span className="text-text-primary font-semibold">{selectedAgent.name}</span> on the <span className="text-text-primary font-semibold">{inferAgentModeBadge(selectedAgent)}</span> branch.
+                      Launching with <span className="text-text-primary font-semibold">{selectedAgent.name}</span> on the <span className="text-text-primary font-semibold">{selectedAgentIsPersistent ? 'persistent specialist' : inferAgentModeBadge(selectedAgent)}</span> lane.
                     </p>
                   </div>
                   <div className="mt-3 grid grid-cols-1 gap-2">
@@ -1062,7 +1463,25 @@ export function MissionCreatorPanel({
                     </div>
                     <div className="rounded-2xl border border-white/[0.08] bg-black/15 px-3 py-2.5">
                       <div className="text-[9px] uppercase tracking-[0.18em] text-text-muted">Why these defaults</div>
-                      <div className="text-[12px] text-text-body mt-1">{modeRationale} {scheduleRationale}</div>
+                      <div className="text-[12px] text-text-body mt-1">{modeRationale} {missionModeRationale} {scheduleRationale}</div>
+                    </div>
+                    <div className="rounded-2xl border border-white/[0.08] bg-black/15 px-3 py-2.5">
+                      <div className="text-[9px] uppercase tracking-[0.18em] text-text-muted">Systems Commander expects to touch</div>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {(systemsReadback.length ? systemsReadback : [{ label: 'Internal lane', connected: true }]).map((system) => (
+                          <span
+                            key={system.label}
+                            className={cn(
+                              'px-2 py-1 rounded-full text-[10px] font-semibold border',
+                              system.connected
+                                ? 'border-aurora-teal/20 bg-aurora-teal/10 text-aurora-teal'
+                                : 'border-aurora-amber/20 bg-aurora-amber/10 text-aurora-amber'
+                            )}
+                          >
+                            {system.label}
+                          </span>
+                        ))}
+                      </div>
                     </div>
                   </div>
                 </section>
@@ -1083,7 +1502,11 @@ export function MissionCreatorPanel({
                 className="flex-1 h-11 rounded-xl bg-aurora-teal text-black text-sm font-semibold hover:bg-[#00ebd8] disabled:opacity-50 transition-colors flex items-center justify-center gap-2"
               >
                 {launching ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
-                Launch Mission
+                {form.missionMode === 'plan_first'
+                  ? 'Create planned mission'
+                  : form.missionMode === 'watch_and_approve'
+                    ? 'Launch with approval gate'
+                    : 'Launch mission'}
               </button>
               <button
                 type="button"

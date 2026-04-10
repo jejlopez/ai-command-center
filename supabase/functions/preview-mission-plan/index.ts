@@ -37,9 +37,18 @@ function fallbackPlan(intent: string, mode = 'balanced') {
   const complexity = Math.min(4, Math.max(1, Math.ceil(intent.length / 80)));
   const durationBase = mode === 'fast' ? 4 : mode === 'efficient' ? 8 : 6;
   const estimatedCostCents = (mode === 'fast' ? 45 : mode === 'efficient' ? 16 : 28) * complexity;
+  const branches = steps.map((step, index) => ({
+    title: step.title,
+    description: step.description,
+    agentRole: index === 0 ? 'planner' : index === steps.length - 1 ? 'verifier' : 'executor',
+    executionStrategy: index === 0 ? 'sequential' : 'parallel',
+    branchLabel: index === 0 ? 'Command' : `Branch ${index}`,
+    dependsOn: index === 0 ? [] : [steps[0].title],
+  }));
 
   return {
     steps,
+    branches,
     estimatedDuration: `${durationBase * complexity}-${durationBase * complexity + 6} min`,
     estimatedCostRange: `$${(estimatedCostCents / 100).toFixed(2)}-$${((estimatedCostCents + 35) / 100).toFixed(2)}`,
     estimatedCostCents,
@@ -99,11 +108,23 @@ Deno.serve(async (req: Request) => {
 Return strict JSON only with shape:
 {
   "steps":[{"title":"...","description":"..."}],
+  "branches":[
+    {
+      "title":"...",
+      "description":"...",
+      "agentRole":"planner|researcher|builder|verifier|executor",
+      "executionStrategy":"sequential|parallel",
+      "branchLabel":"...",
+      "dependsOn":["optional branch titles"]
+    }
+  ],
   "estimatedDuration":"5-12 min",
   "estimatedCostRange":"$0.20-$0.55",
   "estimatedCostCents":35
 }
-Keep between 3 and 5 short steps.`;
+Keep between 3 and 5 short steps.
+Use at least one verifier branch for quality-sensitive work.
+Use parallel branches only when tasks are independent.`;
 
     const prompt = `Mission intent: ${body.intent}
 Mode: ${body.mode || 'balanced'}
@@ -120,7 +141,13 @@ Target destination: ${body.targetType || 'internal'}`;
 
     const text = (response.content[0] as { type: string; text: string }).text;
     const parsed = JSON.parse(text);
-    return corsResponse({ ...parsed, source: 'planner_endpoint' });
+    const fallback = fallbackPlan(body.intent, body.mode);
+    return corsResponse({
+      ...parsed,
+      steps: Array.isArray(parsed.steps) ? parsed.steps : fallback.steps,
+      branches: Array.isArray(parsed.branches) ? parsed.branches : fallback.branches,
+      source: 'planner_endpoint',
+    });
   } catch {
     return corsResponse(fallbackPlan(body.intent, body.mode), 200);
   }

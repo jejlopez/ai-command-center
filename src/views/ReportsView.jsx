@@ -26,12 +26,16 @@ import {
   YAxis,
 } from 'recharts';
 import { container, item } from '../utils/variants';
-import { useActivityLog, useCostData, usePendingReviews, useTasks } from '../utils/useSupabase';
-import { CommandDeckHero } from '../components/command/CommandDeckHero';
+import { useActivityLog, useAgents, useCostData, usePendingReviews, useSpecialistLifecycle, useSystemRecommendations, useTaskInterventions, useTaskOutcomes, useTasks } from '../utils/useSupabase';
 import { AnimatedNumber } from '../components/command/AnimatedNumber';
 import { CommandSectionHeader } from '../components/command/CommandSectionHeader';
 import { useLearningMemory } from '../utils/useLearningMemory';
 import { DoctrineCards } from '../components/command/DoctrineCards';
+import { cn } from '../utils/cn';
+import { TruthAuditStrip } from '../components/command/TruthAuditStrip';
+import { useCommandCenterTruth } from '../utils/useCommandCenterTruth';
+import { buildPolicyDemotionSummary, buildProviderEscalationExplanation, getAutomationCandidates, getAutomationRoiSummary, getAutonomyMetrics, getDoctrineDeltaSummary, getObservedModelBenchmarks, getPatternApprovalBiasSummary, getPostLaunchConfidenceSummary, getPrimaryBottleneck, getRecurringAutonomyTuningSummary, getRecurringTrustRailSummary, parseAutomationGuardrailEvents, parseDoctrineFeedbackLogs, parseOutcomeScoreLogs, rankCommanderRecommendations, scoreTaskOutcome } from '../utils/commanderAnalytics';
+import { createMission, updateRecurringMissionFlow } from '../lib/api';
 
 const PERIOD_OPTIONS = ['30d', '90d', 'QTD'];
 const STATUS_COLORS = {
@@ -111,11 +115,11 @@ function ExecutiveReadFirst({ items }) {
           initial={{ opacity: 0, y: 18 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.4, ease: 'easeOut' }}
-          className="rounded-[24px] border border-white/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.04),rgba(255,255,255,0.015))] p-4"
+          className="rounded-[22px] border border-white/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.04),rgba(255,255,255,0.015))] p-3.5"
         >
           <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">{entry.eyebrow}</div>
-          <div className="mt-2 text-base font-semibold text-text-primary">{entry.title}</div>
-          <p className="mt-2 text-[12px] leading-relaxed text-text-body">{entry.detail}</p>
+          <div className="mt-1.5 text-[15px] font-semibold text-text-primary">{entry.title}</div>
+          <p className="mt-1.5 text-[11px] leading-5 text-text-body">{entry.detail}</p>
         </Motion.div>
       ))}
     </Motion.section>
@@ -216,8 +220,8 @@ function ExecutiveSignalRail({ learningMemory, summary, burnByModel }) {
 
   return (
     <div className="space-y-5">
-      <div className="rounded-[28px] border border-white/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.015))] p-2">
-        <div className="flex flex-wrap gap-2 rounded-[24px] bg-black/20 p-2">
+      <div className="rounded-[24px] border border-white/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.015))] p-1.5">
+        <div className="flex flex-wrap gap-2 rounded-[20px] bg-black/20 p-1.5">
           {[
             { id: 'doctrine', label: 'Doctrine' },
             { id: 'orders', label: 'Orders' },
@@ -227,7 +231,7 @@ function ExecutiveSignalRail({ learningMemory, summary, burnByModel }) {
               key={tab.id}
               type="button"
               onClick={() => setFocus(tab.id)}
-              className={`flex-1 rounded-[18px] px-4 py-3 text-[12px] font-semibold transition-all ${
+              className={`flex-1 rounded-[16px] px-3 py-2.5 text-[11px] font-semibold transition-all ${
                 focus === tab.id ? 'border border-white/10 bg-white/[0.05] text-text-primary' : 'text-text-muted hover:text-text-primary'
               }`}
             >
@@ -238,7 +242,7 @@ function ExecutiveSignalRail({ learningMemory, summary, burnByModel }) {
       </div>
 
       {focus === 'doctrine' && (
-        <div className="rounded-[28px] border border-white/8 bg-[linear-gradient(180deg,rgba(167,139,250,0.06),rgba(255,255,255,0.02))] p-5">
+        <div className="rounded-[24px] border border-white/8 bg-[linear-gradient(180deg,rgba(167,139,250,0.06),rgba(255,255,255,0.02))] p-4">
           <CommandSectionHeader
             eyebrow="Boardroom Doctrine"
             title="What the system has learned this cycle"
@@ -251,7 +255,7 @@ function ExecutiveSignalRail({ learningMemory, summary, burnByModel }) {
       )}
 
       {focus === 'orders' && (
-        <div className="rounded-[28px] border border-white/8 bg-[linear-gradient(180deg,rgba(45,212,191,0.05),rgba(255,255,255,0.02))] p-5">
+        <div className="rounded-[24px] border border-white/8 bg-[linear-gradient(180deg,rgba(45,212,191,0.05),rgba(255,255,255,0.02))] p-4">
           <CommandSectionHeader
             eyebrow="Executive Orders"
             title="What Tony and Elon would do next"
@@ -261,11 +265,11 @@ function ExecutiveSignalRail({ learningMemory, summary, burnByModel }) {
           />
           <div className="mt-5 space-y-3">
             {orders.map((entry) => (
-              <div key={entry.title} className="rounded-[22px] border border-white/8 bg-black/20 p-4">
+              <div key={entry.title} className="rounded-[20px] border border-white/8 bg-black/20 p-3.5">
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <div className="text-sm font-semibold text-text-primary">{entry.title}</div>
-                    <p className="mt-2 text-[12px] leading-relaxed text-text-muted">{entry.detail}</p>
+                    <div className="text-[13px] font-semibold text-text-primary">{entry.title}</div>
+                    <p className="mt-1.5 text-[11px] leading-5 text-text-muted">{entry.detail}</p>
                   </div>
                   <ArrowUpRight className={`mt-0.5 h-4 w-4 ${
                     entry.tone === 'rose' ? 'text-aurora-rose' : entry.tone === 'amber' ? 'text-aurora-amber' : entry.tone === 'blue' ? 'text-aurora-blue' : 'text-aurora-teal'
@@ -284,9 +288,116 @@ function ExecutiveSignalRail({ learningMemory, summary, burnByModel }) {
 
 function PressureModeIntro({ title, description }) {
   return (
-    <div className="mb-4 rounded-[18px] border border-white/8 bg-white/[0.03] px-4 py-3">
-      <div className="text-sm font-semibold text-text-primary">{title}</div>
-      <p className="mt-1 text-[12px] leading-relaxed text-text-muted">{description}</p>
+    <div className="mb-3 rounded-[16px] border border-white/8 bg-white/[0.03] px-3.5 py-2.5">
+      <div className="text-[13px] font-semibold text-text-primary">{title}</div>
+      <p className="mt-1 text-[11px] leading-5 text-text-muted">{description}</p>
+    </div>
+  );
+}
+
+function TopOperatorTable({ agents }) {
+  return (
+    <div className="rounded-[24px] border border-white/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.015))] p-4">
+      <CommandSectionHeader
+        eyebrow="Top Operators"
+        title="Who is carrying the work"
+        description="A simple ranked table instead of another wall of cards."
+        icon={Layers3}
+        tone="blue"
+      />
+      <div className="mt-4 overflow-hidden rounded-[20px] border border-white/8 bg-black/20">
+        <div className="grid grid-cols-[1.3fr_0.8fr_0.8fr] border-b border-white/8 px-4 py-2.5 text-[10px] uppercase tracking-[0.16em] text-text-muted">
+          <div>Operator</div>
+          <div>Missions</div>
+          <div>Cost</div>
+        </div>
+        {agents.length === 0 ? (
+          <div className="px-4 py-6 text-sm text-text-muted">
+            No mission traffic yet. Once work lands, this table will rank the strongest branches.
+          </div>
+        ) : (
+          agents.map((agent, index) => (
+            <div
+              key={agent.name}
+              className={`grid grid-cols-[1.3fr_0.8fr_0.8fr] px-4 py-2.5 text-[13px] ${index !== agents.length - 1 ? 'border-b border-white/8' : ''}`}
+            >
+              <div className="font-semibold text-text-primary">{agent.name}</div>
+              <div className="text-text-body">{agent.tasks}</div>
+              <div className="text-text-body">{formatCurrency(agent.cost)}</div>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
+function CollapsedPanel({ eyebrow, title, summary, children }) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div className="rounded-[24px] border border-white/8 bg-[#111827]/90 p-4">
+      <div className="flex items-center justify-between gap-4">
+        <div>
+          <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">{eyebrow}</div>
+          <div className="mt-1 text-base font-semibold text-text-primary">{title}</div>
+          <div className="mt-1 text-[11px] leading-5 text-text-muted">{summary}</div>
+        </div>
+        <button
+          type="button"
+          onClick={() => setOpen((value) => !value)}
+          className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-[11px] font-semibold text-text-primary transition-colors hover:bg-white/[0.06]"
+        >
+          {open ? 'Hide' : 'Open'}
+        </button>
+      </div>
+      {open ? <div className="mt-4">{children}</div> : null}
+    </div>
+  );
+}
+
+function ReportsDashboardHeader({ period, setPeriod, summary }) {
+  return (
+    <div className="rounded-[24px] border border-white/8 bg-[#111827]/92 p-5">
+      <div className="grid gap-5 xl:grid-cols-[1.15fr_0.85fr] xl:items-start">
+        <div>
+          <div className="text-[10px] uppercase tracking-[0.22em] text-text-muted">Executive Debrief</div>
+          <h1 className="mt-2 text-[clamp(1.8rem,2.5vw,2.55rem)] font-semibold tracking-[-0.04em] text-text-primary">Executive Debrief</h1>
+          <p className="mt-2 max-w-xl text-[13px] leading-5 text-text-muted">One clean board for mission health, approval drag, and spend.</p>
+        </div>
+        <div className="rounded-[20px] border border-white/8 bg-[#0d1420] p-4">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Board controls</span>
+            <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-aurora-teal">Live</span>
+          </div>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {PERIOD_OPTIONS.map((option) => (
+              <button
+                key={option}
+                type="button"
+                onClick={() => setPeriod(option)}
+                className={`rounded-xl border px-3 py-2 text-[11px] font-semibold transition-colors ${
+                  period === option
+                    ? 'border-aurora-teal/25 bg-aurora-teal/10 text-aurora-teal'
+                    : 'border-white/8 bg-white/[0.03] text-text-muted hover:text-text-primary'
+                }`}
+              >
+                {option}
+              </button>
+            ))}
+          </div>
+          <div className="mt-4 grid grid-cols-2 gap-3">
+            <div className="rounded-[16px] border border-white/8 bg-[#111827] p-3">
+              <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Burn today</div>
+              <div className="mt-2 text-2xl font-semibold text-text-primary">{formatCurrency(summary.totalCost)}</div>
+            </div>
+            <div className="rounded-[16px] border border-white/8 bg-[#111827] p-3">
+              <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Cost / mission</div>
+              <div className="mt-2 text-2xl font-semibold text-text-primary">{formatCurrency(summary.avgCost)}</div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
@@ -294,10 +405,20 @@ function PressureModeIntro({ title, description }) {
 export function ReportsView() {
   const [period, setPeriod] = useState('30d');
   const [pressureFocus, setPressureFocus] = useState('activity');
+  const [automationMessage, setAutomationMessage] = useState('');
+  const [automationDraft, setAutomationDraft] = useState(null);
+  const [automationLaunching, setAutomationLaunching] = useState(false);
   const { data: costData } = useCostData();
+  const { agents } = useAgents();
   const { tasks } = useTasks();
+  const { outcomes } = useTaskOutcomes();
+  const { interventions } = useTaskInterventions();
   const { reviews } = usePendingReviews();
   const { logs } = useActivityLog();
+  const { recommendations: persistedRecommendations } = useSystemRecommendations();
+  const { events: lifecycleEvents } = useSpecialistLifecycle();
+  const truth = useCommandCenterTruth();
+  const humanHourlyRate = 150;
 
   const summary = useMemo(() => {
     const completed = tasks.filter((task) => ['completed', 'done'].includes(task.status));
@@ -375,6 +496,249 @@ export function ReportsView() {
   }, [logs]);
 
   const learningMemory = useLearningMemory({ tasks, approvals: reviews, logs, costData });
+  const doctrineDeltas = useMemo(() => getDoctrineDeltaSummary(learningMemory.doctrine).slice(0, 3), [learningMemory.doctrine]);
+  const qualitySummary = useMemo(() => {
+    const scored = tasks.map((task) => ({ task, outcome: scoreTaskOutcome(task) }));
+    const average = scored.length
+      ? Math.round(scored.reduce((sum, entry) => sum + entry.outcome.score, 0) / scored.length)
+      : 0;
+    const top = scored.slice().sort((left, right) => right.outcome.score - left.outcome.score).slice(0, 3);
+    return { average, top };
+  }, [tasks]);
+  const roiSummary = useMemo(() => getAutomationRoiSummary(tasks, humanHourlyRate), [tasks]);
+  const benchmarkBoard = useMemo(() => getObservedModelBenchmarks(outcomes.length ? outcomes : tasks, agents, logs, interventions).slice(0, 5), [outcomes, tasks, agents, logs, interventions]);
+  const providerEscalation = useMemo(() => buildProviderEscalationExplanation(benchmarkBoard), [benchmarkBoard]);
+  const postLaunchConfidence = useMemo(() => getPostLaunchConfidenceSummary({ outcomes, interventions }), [outcomes, interventions]);
+  const automationCandidates = useMemo(() => getAutomationCandidates(tasks, humanHourlyRate, interventions, outcomes).slice(0, 4), [tasks, humanHourlyRate, interventions, outcomes]);
+  const automationCandidateLookup = useMemo(() => {
+    const allCandidates = getAutomationCandidates(tasks, humanHourlyRate, interventions, outcomes);
+    return new Map(allCandidates.map((entry) => [entry.key, entry]));
+  }, [tasks, humanHourlyRate, interventions, outcomes]);
+  const autonomyMetrics = useMemo(() => getAutonomyMetrics(tasks, interventions, logs), [tasks, interventions, logs]);
+  const primaryBottleneck = useMemo(() => getPrimaryBottleneck({ tasks, reviews, schedules: [], agents, interventions, logs, costData }), [tasks, reviews, agents, interventions, logs, costData]);
+  const automationGuardrailEvents = useMemo(() => parseAutomationGuardrailEvents(interventions, logs).slice(0, 4), [interventions, logs]);
+  const persistedOutcomeScores = useMemo(() => (
+    outcomes.length
+      ? outcomes.slice(0, 5).map((entry) => ({ id: entry.id, trust: entry.trust, score: entry.score, cleanMessage: `${entry.outcomeStatus} · ${entry.domain} / ${entry.intentType} · ${entry.model || 'adaptive lane'}`, createdAt: entry.createdAt }))
+      : parseOutcomeScoreLogs(logs).slice(0, 5)
+  ), [outcomes, logs]);
+  const persistedDoctrineFeedback = useMemo(() => parseDoctrineFeedbackLogs(logs).slice(0, 4), [logs]);
+  const automationTuningHistory = useMemo(() => {
+    if (!automationDraft?.candidate) return { entries: [], summary: null };
+    const candidate = automationDraft.candidate;
+    const candidateTasks = tasks.filter((task) => task.domain === candidate.domain && task.intentType === candidate.intentType);
+    const rootIds = new Set(candidateTasks.map((task) => task.rootMissionId || task.id).filter(Boolean));
+    const entries = interventions.filter((entry) => (
+      ((entry.domain === candidate.domain && entry.intentType === candidate.intentType) || rootIds.has(entry.rootMissionId || entry.taskId))
+      && (entry.scheduleType === 'recurring' || entry.eventType === 'guardrail')
+    ));
+
+    return {
+      entries: entries.slice(0, 6),
+      summary: buildPolicyDemotionSummary({
+        taskDomain: candidate.domain,
+        intentType: candidate.intentType,
+      }, tasks, interventions, logs),
+    };
+  }, [automationDraft, interventions, logs, tasks]);
+  const recurringTrustRail = useMemo(() => (
+    automationDraft?.candidate
+      ? getRecurringTrustRailSummary({
+          candidate: automationDraft.candidate,
+          doctrine: learningMemory.doctrine,
+          learningMemory,
+        })
+      : { doctrineDeltas: [], patternSummary: null, trustSummary: null }
+  ), [automationDraft, learningMemory]);
+  const rankedRecommendations = useMemo(() => (
+    rankCommanderRecommendations({
+      recommendations: persistedRecommendations,
+      tasks,
+      outcomes,
+      interventions,
+      logs,
+      lifecycleEvents,
+      agents,
+      learningMemory,
+    }).slice(0, 4)
+  ), [agents, interventions, learningMemory, lifecycleEvents, logs, outcomes, persistedRecommendations, tasks]);
+
+  const managedRecurringFlows = useMemo(() => {
+    const recurringRoots = tasks.filter((task) => task.scheduleType === 'recurring' && (task.rootMissionId || task.id) === task.id);
+
+    return recurringRoots.map((task) => {
+      const recurrence = task.recurrenceRule || {};
+      const rootId = task.rootMissionId || task.id;
+      const latestOutcome = outcomes
+        .filter((entry) => (entry.rootMissionId || entry.taskId) === rootId)
+        .sort((left, right) => new Date(right.createdAt || 0).getTime() - new Date(left.createdAt || 0).getTime())[0] || null;
+      const latestIntervention = interventions
+        .filter((entry) => (entry.rootMissionId || entry.taskId) === rootId)
+        .sort((left, right) => new Date(right.createdAt || 0).getTime() - new Date(left.createdAt || 0).getTime())[0] || null;
+      const latestGuardrail = interventions
+        .filter((entry) => entry.eventType === 'guardrail' && (entry.rootMissionId || entry.taskId) === rootId)
+        .sort((left, right) => new Date(right.createdAt || 0).getTime() - new Date(left.createdAt || 0).getTime())[0] || null;
+
+      return {
+        id: task.id,
+        rootMissionId: rootId,
+        title: task.title || task.name,
+        domain: task.domain || 'general',
+        intentType: task.intentType || 'general',
+        frequency: recurrence.frequency || 'weekly',
+        time: recurrence.time || '09:00',
+        missionMode: recurrence.missionMode || (task.workflowStatus === 'planned' ? 'plan_first' : task.requiresApproval || task.approvalLevel === 'human_required' ? 'watch_and_approve' : 'do_now'),
+        approvalPosture: recurrence.approvalPosture || task.approvalLevel || 'risk_weighted',
+        paused: recurrence.paused ?? (String(task.status || '').toLowerCase() === 'paused'),
+        nextRunAt: task.runAt || null,
+        lastRunAt: task.lastRunAt || latestOutcome?.createdAt || null,
+        latestOutcome,
+        latestIntervention,
+        latestGuardrail,
+      };
+    }).sort((left, right) => {
+      const leftTs = new Date(left.nextRunAt || left.lastRunAt || 0).getTime();
+      const rightTs = new Date(right.nextRunAt || right.lastRunAt || 0).getTime();
+      return rightTs - leftTs;
+    });
+  }, [tasks, outcomes, interventions]);
+  const managedRecurringRecoverySummary = useMemo(() => {
+    const signals = managedRecurringFlows.map((flow) => {
+      const candidateKey = `${flow.domain || 'general'}::${flow.intentType || 'general'}::${flow.title}`;
+      const trustSignals = automationCandidateLookup.get(candidateKey) || null;
+      return trustSignals ? getRecurringAutonomyTuningSummary(trustSignals) : null;
+    }).filter(Boolean);
+    const averageProgress = signals.length
+      ? Math.round(signals.reduce((sum, entry) => sum + Number(entry.recoveryProgress || 0), 0) / signals.length)
+      : 0;
+    return {
+      pausedCount: signals.filter((entry) => entry.recommendedPaused).length,
+      watchCount: signals.filter((entry) => entry.posture === 'watch').length,
+      tighteningCount: signals.filter((entry) => entry.posture === 'tighten').length,
+      readyCount: signals.filter((entry) => entry.recoveryStage === 'ready').length,
+      averageProgress,
+    };
+  }, [automationCandidateLookup, managedRecurringFlows]);
+
+  function openAutomationDraft(candidate) {
+    const trustTuning = getRecurringAutonomyTuningSummary(candidate);
+    setAutomationMessage('');
+    setAutomationDraft({
+      mode: 'create',
+      candidate,
+      frequency: trustTuning.recommendedFrequency || (candidate.runs >= 4 ? 'daily' : 'weekly'),
+      time: '09:00',
+      outputType: candidate.intentType === 'report' ? 'summary' : 'action_plan',
+      missionMode: trustTuning.recommendedMissionMode || (candidate.roi >= 3 ? 'plan_first' : 'watch_and_approve'),
+      approvalPosture: ['finance', 'money', 'billing'].includes(String(candidate.domain || '').toLowerCase())
+        ? 'human_required'
+        : trustTuning.recommendedApprovalPosture || 'risk_weighted',
+      paused: trustTuning.recommendedPaused ?? false,
+    });
+  }
+
+  function openManagedFlowDraft(flow) {
+    const candidateKey = `${flow.domain || 'general'}::${flow.intentType || 'general'}::${flow.title}`;
+    const candidateMetrics = automationCandidateLookup.get(candidateKey);
+    const trustTuning = getRecurringAutonomyTuningSummary(candidateMetrics || {
+      domain: flow.domain,
+      intentType: flow.intentType,
+    });
+    setAutomationMessage('');
+    setAutomationDraft({
+      mode: 'manage',
+      taskId: flow.id,
+      candidate: {
+        title: flow.title,
+        domain: flow.domain,
+        intentType: flow.intentType,
+        runs: tasks.filter((task) => task.domain === flow.domain && task.intentType === flow.intentType).length,
+        roi: candidateMetrics?.roi || 0,
+        maturityScore: candidateMetrics?.maturityScore || 0,
+        trustLabel: candidateMetrics?.trustLabel || 'Watch',
+        trustDetail: candidateMetrics?.trustDetail || 'Commander is still learning how much autonomy this recurring flow can safely carry.',
+      },
+      frequency: flow.frequency,
+      time: flow.time,
+      outputType: 'summary',
+      missionMode: flow.missionMode || trustTuning.recommendedMissionMode,
+      approvalPosture: flow.approvalPosture || trustTuning.recommendedApprovalPosture,
+      paused: flow.paused || trustTuning.recommendedPaused,
+    });
+  }
+
+  function getAutomationGuardrails(candidate, draft) {
+    if (!candidate || !draft) return [];
+    const trustTuning = getRecurringAutonomyTuningSummary(candidate);
+    return [
+      candidate.roi < 1.5 ? 'ROI is still modest, so keep this in watch-and-approve until the workflow proves itself.' : null,
+      candidate.runs < 3 ? 'This flow is only lightly repeated so far. Start with a slower cadence before scaling it.' : null,
+      ['finance', 'money', 'billing'].includes(String(candidate.domain || '').toLowerCase()) ? 'Financial or money-adjacent work should stay human-gated by default.' : null,
+      draft.frequency === 'daily' && candidate.runs < 4 ? 'Daily cadence is aggressive for a flow with limited history. Weekly may be safer first.' : null,
+      trustTuning.posture === 'tighten' ? `Runtime trust memory says to use ${trustTuning.recommendedMissionMode.replaceAll('_', ' ')} with ${trustTuning.recommendedApprovalPosture.replaceAll('_', ' ')} approval.` : null,
+      trustTuning.posture === 'watch' && draft.missionMode === 'do_now' ? 'Runtime trust is still forming here, so do-now is probably too aggressive for this recurring flow.' : null,
+      trustTuning.recommendedPaused ? 'Live trust memory says this recurring flow should stay paused until recovery signals improve.' : null,
+    ].filter(Boolean);
+  }
+
+  async function handleLaunchRecurring() {
+    if (!automationDraft?.candidate) return;
+    const candidate = automationDraft.candidate;
+    try {
+      setAutomationLaunching(true);
+      if (automationDraft.mode === 'manage' && automationDraft.taskId) {
+        const result = await updateRecurringMissionFlow(automationDraft.taskId, {
+          frequency: automationDraft.frequency,
+          time: automationDraft.time,
+          missionMode: automationDraft.missionMode,
+          approvalPosture: automationDraft.approvalPosture,
+          paused: automationDraft.paused ?? false,
+          outputType: automationDraft.outputType,
+          automationCandidate: {
+            runs: candidate.runs,
+            roi: candidate.roi,
+            domain: candidate.domain,
+          },
+        });
+        setAutomationMessage(
+          result?.guardrails?.length
+            ? `Recurring flow updated for ${candidate.title}. Guardrails applied: ${result.guardrails.join(' ')}`
+            : `Recurring flow updated for ${candidate.title}.`
+        );
+      } else {
+        const commander = agents.find((agent) => agent.role === 'commander' && !agent.isSyntheticCommander) || agents.find((agent) => agent.role === 'commander') || agents[0] || null;
+        const cadence = { frequency: automationDraft.frequency, time: automationDraft.time, approvalPosture: automationDraft.approvalPosture, missionMode: automationDraft.missionMode, paused: automationDraft.paused ?? false };
+        const result = await createMission({
+          intent: candidate.title,
+          agentId: commander?.id || null,
+          agentName: commander?.name || 'Commander',
+          missionMode: automationDraft.missionMode,
+          mode: 'normal',
+          when: 'repeat',
+          repeat: cadence,
+          targetType: candidate.domain,
+          outputType: automationDraft.outputType,
+          priority: 'normal',
+          priorityScore: 5,
+          automationCandidate: {
+            runs: candidate.runs,
+            roi: candidate.roi,
+            domain: candidate.domain,
+          },
+        }, agents);
+        setAutomationMessage(
+          result?.guardrails?.length
+            ? `Recurring flow launched for ${candidate.title}. Guardrails applied: ${result.guardrails.join(' ')}`
+            : `Recurring flow launched for ${candidate.title}.`
+        );
+      }
+      setAutomationDraft(null);
+    } catch (error) {
+      setAutomationMessage(error.message || 'Could not launch recurring flow.');
+    } finally {
+      setAutomationLaunching(false);
+    }
+  }
   const peakActivity = useMemo(
     () => activityWave.reduce((best, bucket) => (bucket.volume > best.volume ? bucket : best), activityWave[0] || { name: 'No activity yet', volume: 0 }),
     [activityWave]
@@ -406,71 +770,12 @@ export function ReportsView() {
 
   return (
     <div className="relative flex h-full flex-col overflow-y-auto pb-10">
-      <div className="pointer-events-none absolute inset-0 overflow-hidden">
-        <div className="absolute -top-16 left-[-8%] h-[360px] w-[360px] rounded-full bg-aurora-violet/10 blur-[120px]" />
-        <div className="absolute top-[12%] right-[-12%] h-[420px] w-[420px] rounded-full bg-aurora-teal/10 blur-[140px]" />
-        <div className="absolute bottom-[-20%] left-[22%] h-[420px] w-[420px] rounded-full bg-aurora-blue/10 blur-[160px]" />
-      </div>
-
       <Motion.div variants={container} initial="hidden" animate="show" className="relative space-y-5">
         <Motion.div variants={item}>
-          <CommandDeckHero
-            glow="violet"
-            eyebrow="Executive Debrief"
-            eyebrowIcon={BrainCircuit}
-            title="Executive Debrief"
-            description="Margin, execution drag, and compounding momentum in one readable board."
-            chrome="epic"
-            titleClassName="text-[clamp(2.25rem,4.2vw,3.5rem)] leading-[1] tracking-[-0.04em]"
-            descriptionClassName="max-w-2xl text-[15px] leading-7 text-text-body"
-            badges={[
-              { label: 'mission success', value: `${summary.successRate}%`, tone: 'teal' },
-              { label: 'live missions', value: summary.running, tone: 'blue' },
-              { label: 'approvals in queue', value: summary.approvalPressure, tone: 'amber' },
-            ]}
-            actions={
-              <button className="inline-flex items-center gap-2 rounded-xl bg-aurora-violet px-4 py-2 text-sm font-semibold text-black shadow-glow-violet transition-colors hover:bg-aurora-violet/90">
-                <FileText className="h-4 w-4" />
-                Generate Brief
-              </button>
-            }
-            sideContent={
-              <div className="flex w-full flex-col gap-3 rounded-[24px] border border-white/10 bg-black/25 p-4 backdrop-blur-sm">
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Board controls</span>
-                  <span className="text-[10px] font-mono text-aurora-violet">LIVE</span>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {PERIOD_OPTIONS.map((option) => (
-                    <button
-                      key={option}
-                      onClick={() => setPeriod(option)}
-                      className={`rounded-full border px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] transition-colors ${
-                        period === option
-                          ? 'border-aurora-teal/30 bg-aurora-teal/10 text-aurora-teal'
-                          : 'border-white/8 bg-white/[0.03] text-text-muted hover:text-text-primary'
-                      }`}
-                    >
-                      {option}
-                    </button>
-                  ))}
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="rounded-2xl border border-white/8 bg-white/[0.02] p-3">
-                    <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Burn today</div>
-                    <div className="mt-2 text-2xl font-semibold text-text-primary">{formatCurrency(summary.totalCost)}</div>
-                  </div>
-                  <div className="rounded-2xl border border-white/8 bg-white/[0.02] p-3">
-                    <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Cost / mission</div>
-                    <div className="mt-2 text-2xl font-semibold text-text-primary">{formatCurrency(summary.avgCost)}</div>
-                  </div>
-                </div>
-              </div>
-            }
-          />
+          <ReportsDashboardHeader period={period} setPeriod={setPeriod} summary={summary} />
         </Motion.div>
 
-        <Motion.section variants={item} className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+        <Motion.section variants={item} className="grid grid-cols-1 gap-3.5 xl:grid-cols-3">
           <ExecutiveKpi
             label="Mission Success"
             value={`${summary.successRate}%`}
@@ -497,17 +802,402 @@ export function ReportsView() {
           />
         </Motion.section>
 
-        <ExecutiveReadFirst items={readFirstItems.slice(0, 2)} />
+        <Motion.section variants={item}>
+          <HudFrame
+            eyebrow="Command Constraint"
+            title={primaryBottleneck?.title || 'No dominant bottleneck is visible'}
+            detail={primaryBottleneck?.detail || 'The board is distributed enough that no single drag source is dominating yet.'}
+            accent="violet"
+          >
+            <div className="grid gap-3 md:grid-cols-[1.2fr_0.8fr_0.8fr]">
+              <div className="rounded-[20px] border border-white/8 bg-[#111827] p-4">
+                <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">What to do now</div>
+                <div className="mt-2 text-sm font-semibold text-text-primary">{primaryBottleneck?.action || 'Keep watching the board and let clean lanes scale.'}</div>
+              </div>
+              <div className="rounded-[20px] border border-white/8 bg-[#111827] p-4">
+                <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Autonomy ratio</div>
+                <div className="mt-2 text-2xl font-semibold text-text-primary"><AnimatedNumber value={autonomyMetrics.autonomyRatio} suffix="%" /></div>
+                <div className="mt-1 text-[11px] text-text-muted">{autonomyMetrics.label}</div>
+              </div>
+              <div className="rounded-[20px] border border-white/8 bg-[#111827] p-4">
+                <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Rescue rate</div>
+                <div className="mt-2 text-2xl font-semibold text-text-primary"><AnimatedNumber value={autonomyMetrics.rescueRate} suffix="%" /></div>
+                <div className="mt-1 text-[11px] text-text-muted">{autonomyMetrics.rescueTouchedMissions} rescue-touched missions</div>
+              </div>
+            </div>
+          </HudFrame>
+        </Motion.section>
 
-        <Motion.section variants={item} className="space-y-5">
-          <div className="rounded-[28px] border border-white/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.015))] p-5">
+        <Motion.section variants={item}>
+          <HudFrame
+            eyebrow="Managed Automations"
+            title="Recurring flows under command"
+            detail="These are live recurring products now: tune cadence, posture, and approval instead of relaunching from scratch."
+            accent="violet"
+          >
+            <div className="space-y-3">
+              {(managedRecurringRecoverySummary.pausedCount > 0 || managedRecurringRecoverySummary.watchCount > 0 || managedRecurringRecoverySummary.tighteningCount > 0) && (
+                <div className="rounded-[18px] border border-aurora-amber/20 bg-aurora-amber/10 p-3">
+                  <div className="text-[10px] uppercase tracking-[0.16em] text-aurora-amber">Trust recovery board</div>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {managedRecurringRecoverySummary.pausedCount > 0 && <TelemetryTag label="Paused" value={managedRecurringRecoverySummary.pausedCount} tone="amber" />}
+                    {managedRecurringRecoverySummary.tighteningCount > 0 && <TelemetryTag label="Tighten" value={managedRecurringRecoverySummary.tighteningCount} tone="violet" />}
+                    {managedRecurringRecoverySummary.watchCount > 0 && <TelemetryTag label="Watch" value={managedRecurringRecoverySummary.watchCount} tone="blue" />}
+                    {managedRecurringRecoverySummary.readyCount > 0 && <TelemetryTag label="Ready" value={managedRecurringRecoverySummary.readyCount} tone="teal" />}
+                  </div>
+                  <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/[0.08]">
+                    <div
+                      className="h-full rounded-full bg-gradient-to-r from-aurora-amber via-aurora-violet to-aurora-teal"
+                      style={{ width: `${Math.max(6, managedRecurringRecoverySummary.averageProgress || 0)}%` }}
+                    />
+                  </div>
+                  <div className="mt-2 text-[11px] text-text-body">
+                    Commander is now tracking which recurring products need recovery before they can earn autonomy back. Average recovery progress: {managedRecurringRecoverySummary.averageProgress}%.
+                  </div>
+                  {managedRecurringRecoverySummary.readyCount > 0 && (
+                    <div className="mt-2 text-[11px] text-aurora-teal">
+                      {managedRecurringRecoverySummary.readyCount} recurring flow{managedRecurringRecoverySummary.readyCount === 1 ? ' is' : 's are'} now clean enough to earn a lighter posture.
+                    </div>
+                  )}
+                </div>
+              )}
+              {managedRecurringFlows.length === 0 && (
+                <div className="text-[12px] text-text-muted">No managed recurring flows yet. Launch one from the automation rack and it will appear here for ongoing tuning.</div>
+              )}
+              {managedRecurringFlows.map((flow) => (
+                <div key={flow.id} className="rounded-[18px] border border-white/8 bg-[#111827] p-3">
+                  {(() => {
+                    const candidateKey = `${flow.domain || 'general'}::${flow.intentType || 'general'}::${flow.title}`;
+                    const trustSignals = automationCandidateLookup.get(candidateKey) || null;
+                    const trustTuning = getRecurringAutonomyTuningSummary(trustSignals);
+                    const approvalBias = getPatternApprovalBiasSummary({
+                      winningPattern: learningMemory?.doctrineById?.['doctrine-mission-patterns']?.metrics?.winningPattern,
+                      routingDecision: { approvalLevel: flow.approvalPosture, domain: flow.domain, intentType: flow.intentType },
+                    });
+                    return (
+                      <>
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <div className="text-[12px] font-semibold text-text-primary">{flow.title}</div>
+                      <div className="mt-1 text-[11px] text-text-muted">{flow.domain} / {flow.intentType}</div>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <TelemetryTag label="Cadence" value={`${flow.frequency} ${flow.time}`} tone="blue" />
+                      <TelemetryTag label="Mode" value={flow.missionMode.replaceAll('_', ' ')} tone="teal" />
+                      <TelemetryTag label="Approval" value={flow.approvalPosture.replaceAll('_', ' ')} tone={flow.approvalPosture === 'human_required' ? 'amber' : 'violet'} />
+                      {trustSignals && <TelemetryTag label="Trust" value={trustSignals.trustLabel} tone={trustSignals.trustLabel === 'Stable' ? 'teal' : trustSignals.trustLabel === 'Watch' ? 'amber' : 'violet'} />}
+                      {trustSignals && <TelemetryTag label="Posture" value={trustTuning.posture} tone={trustTuning.posture === 'stable' ? 'teal' : trustTuning.posture === 'watch' ? 'amber' : 'violet'} />}
+                      {trustSignals && <TelemetryTag label="Cadence" value={trustTuning.recommendedFrequency} tone={trustTuning.recommendedFrequency === 'daily' ? 'teal' : 'amber'} />}
+                      {trustSignals && trustTuning.recommendedPaused && <TelemetryTag label="State" value="pause" tone="amber" />}
+                      {approvalBias.available && <TelemetryTag label="Pattern approval" value={approvalBias.recommendedApprovalLevel.replaceAll('_', ' ')} tone={approvalBias.tone} />}
+                      {flow.paused && <TelemetryTag label="State" value="Paused" tone="amber" />}
+                    </div>
+                  </div>
+                  <div className="mt-3 grid gap-3 md:grid-cols-3">
+                    <div className="rounded-[14px] border border-white/8 bg-black/20 px-3 py-2 text-[11px] text-text-body">
+                      <div className="text-[10px] uppercase tracking-[0.14em] text-text-muted">Latest outcome</div>
+                      <div className="mt-1 font-semibold text-text-primary">{flow.latestOutcome ? `${flow.latestOutcome.outcomeStatus} · ${flow.latestOutcome.score}` : 'No outcome yet'}</div>
+                    </div>
+                    <div className="rounded-[14px] border border-white/8 bg-black/20 px-3 py-2 text-[11px] text-text-body">
+                      <div className="text-[10px] uppercase tracking-[0.14em] text-text-muted">Latest intervention</div>
+                      <div className="mt-1 font-semibold text-text-primary">{flow.latestIntervention ? flow.latestIntervention.eventType : 'No intervention yet'}</div>
+                    </div>
+                    <div className="rounded-[14px] border border-white/8 bg-black/20 px-3 py-2 text-[11px] text-text-body">
+                      <div className="text-[10px] uppercase tracking-[0.14em] text-text-muted">Latest guardrail</div>
+                      <div className="mt-1 font-semibold text-text-primary">{flow.latestGuardrail ? 'Triggered' : 'Quiet'}</div>
+                    </div>
+                  </div>
+                  {trustSignals && (
+                    <div className="mt-3 rounded-[14px] border border-white/8 bg-black/20 px-3 py-2 text-[11px] text-text-body">
+                      <div>{trustSignals.trustDetail}</div>
+                      <div className="mt-2 text-aurora-blue">{trustTuning.actionLabel}. {trustTuning.detail}</div>
+                      <div className="mt-2 text-aurora-amber">{trustTuning.recoveryLabel}</div>
+                      <div className="mt-2 text-aurora-teal">{trustTuning.recoveryUpgradeLabel}</div>
+                      <div className="mt-2 h-2 overflow-hidden rounded-full bg-white/[0.08]">
+                        <div
+                          className="h-full rounded-full bg-gradient-to-r from-aurora-amber via-aurora-violet to-aurora-teal"
+                          style={{ width: `${Math.max(8, trustTuning.recoveryProgress || 0)}%` }}
+                        />
+                      </div>
+                      <div className="mt-2 text-[10px] text-text-muted">{trustTuning.recoveryProgressLabel}</div>
+                    </div>
+                  )}
+                  <div className="mt-3 flex flex-wrap justify-between gap-3 text-[11px] text-text-muted">
+                    <div>{flow.nextRunAt ? `Next run ${new Date(flow.nextRunAt).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}` : 'No next run scheduled yet'}</div>
+                    <button
+                      type="button"
+                      onClick={() => openManagedFlowDraft(flow)}
+                      className="rounded-xl border border-aurora-violet/20 bg-aurora-violet/10 px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-aurora-violet transition-colors hover:bg-aurora-violet/14"
+                    >
+                      Tune recurring flow
+                    </button>
+                  </div>
+                      </>
+                    );
+                  })()}
+                </div>
+              ))}
+            </div>
+          </HudFrame>
+        </Motion.section>
+
+        <Motion.section variants={item}>
+          <HudFrame
+            eyebrow="Automate Next"
+            title="What Commander should automate next"
+            detail="This recommendation rack is tied to repetition and ROI, so the next automation targets are measurable."
+            accent="blue"
+          >
+            <div className="space-y-3">
+              {automationCandidates.length === 0 && <div className="text-[12px] text-text-muted">Commander needs at least a little repeated work history before it can recommend the next automation target.</div>}
+              {automationCandidates.map((entry) => (
+                <div key={entry.key} className="rounded-[18px] border border-white/8 bg-[#111827] p-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="text-[12px] font-semibold text-text-primary">{entry.title}</div>
+                    <div className="flex flex-wrap gap-2">
+                      <div className={cn(
+                        'rounded-full border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.16em]',
+                        entry.trustLabel === 'Stable'
+                          ? 'border-aurora-teal/20 bg-aurora-teal/10 text-aurora-teal'
+                          : entry.trustLabel === 'Watch'
+                            ? 'border-aurora-amber/20 bg-aurora-amber/10 text-aurora-amber'
+                            : 'border-aurora-violet/20 bg-aurora-violet/10 text-aurora-violet'
+                      )}>
+                        {entry.trustLabel}
+                      </div>
+                      <div className="rounded-full border border-aurora-blue/20 bg-aurora-blue/10 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-aurora-blue">
+                        {entry.automationScore}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="mt-1 text-[11px] text-text-muted">{entry.domain} / {entry.intentType}</div>
+                  <div className="mt-3 grid grid-cols-3 gap-2 text-[10px] text-text-muted">
+                    <div>{entry.runs} runs</div>
+                    <div>{entry.estimatedHours.toFixed(1)}h</div>
+                    <div>{entry.roi.toFixed(1)}x ROI</div>
+                  </div>
+                  <div className="mt-3 rounded-[14px] border border-white/8 bg-black/20 px-3 py-2 text-[11px] text-text-body">
+                    {entry.trustDetail}
+                  </div>
+                  <div className="mt-3 flex justify-end">
+                    <button
+                      type="button"
+                      onClick={() => openAutomationDraft(entry)}
+                      className="rounded-xl border border-aurora-blue/20 bg-aurora-blue/10 px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-aurora-blue transition-colors hover:bg-aurora-blue/14"
+                    >
+                      Configure recurring flow
+                    </button>
+                  </div>
+                </div>
+              ))}
+              {automationDraft && (
+                <div className="rounded-[18px] border border-aurora-blue/20 bg-[linear-gradient(180deg,rgba(96,165,250,0.08),rgba(255,255,255,0.02))] p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="text-[10px] uppercase tracking-[0.16em] text-aurora-blue">Recurring Flow Editor</div>
+                      <div className="mt-1 text-[13px] font-semibold text-text-primary">{automationDraft.candidate.title}</div>
+                      <div className="mt-1 text-[11px] text-text-muted">{automationDraft.candidate.domain} / {automationDraft.candidate.intentType}</div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setAutomationDraft(null)}
+                      className="rounded-xl border border-white/8 bg-black/20 px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-text-muted"
+                    >
+                      Close
+                    </button>
+                  </div>
+                  <div className="mt-4 grid gap-3 md:grid-cols-2">
+                    <label>
+                      <div className="text-[10px] uppercase tracking-[0.14em] text-text-muted">Cadence</div>
+                      <select
+                        value={automationDraft.frequency}
+                        onChange={(event) => setAutomationDraft((current) => ({ ...current, frequency: event.target.value }))}
+                        className="mt-2 w-full rounded-xl border border-white/8 bg-black/20 px-3 py-2 text-[12px] text-text-primary outline-none"
+                      >
+                        <option value="daily">Daily</option>
+                        <option value="weekly">Weekly</option>
+                      </select>
+                    </label>
+                    <label>
+                      <div className="text-[10px] uppercase tracking-[0.14em] text-text-muted">Time</div>
+                      <input
+                        type="time"
+                        value={automationDraft.time}
+                        onChange={(event) => setAutomationDraft((current) => ({ ...current, time: event.target.value }))}
+                        className="mt-2 w-full rounded-xl border border-white/8 bg-black/20 px-3 py-2 text-[12px] text-text-primary outline-none"
+                      />
+                    </label>
+                    <label>
+                      <div className="text-[10px] uppercase tracking-[0.14em] text-text-muted">Mission mode</div>
+                      <select
+                        value={automationDraft.missionMode}
+                        onChange={(event) => setAutomationDraft((current) => ({ ...current, missionMode: event.target.value }))}
+                        className="mt-2 w-full rounded-xl border border-white/8 bg-black/20 px-3 py-2 text-[12px] text-text-primary outline-none"
+                      >
+                        <option value="do_now">Do now</option>
+                        <option value="plan_first">Plan first</option>
+                        <option value="watch_and_approve">Watch and approve</option>
+                      </select>
+                    </label>
+                    <label>
+                      <div className="text-[10px] uppercase tracking-[0.14em] text-text-muted">Approval posture</div>
+                      <select
+                        value={automationDraft.approvalPosture}
+                        onChange={(event) => setAutomationDraft((current) => ({ ...current, approvalPosture: event.target.value }))}
+                        className="mt-2 w-full rounded-xl border border-white/8 bg-black/20 px-3 py-2 text-[12px] text-text-primary outline-none"
+                      >
+                        <option value="risk_weighted">Risk weighted</option>
+                        <option value="auto_low_risk">Auto low risk</option>
+                        <option value="human_required">Human required</option>
+                      </select>
+                    </label>
+                    <label>
+                      <div className="text-[10px] uppercase tracking-[0.14em] text-text-muted">Output</div>
+                      <select
+                        value={automationDraft.outputType}
+                        onChange={(event) => setAutomationDraft((current) => ({ ...current, outputType: event.target.value }))}
+                        className="mt-2 w-full rounded-xl border border-white/8 bg-black/20 px-3 py-2 text-[12px] text-text-primary outline-none"
+                      >
+                        <option value="summary">Summary</option>
+                        <option value="action_plan">Action plan</option>
+                        <option value="report">Report</option>
+                        <option value="email_drafts">Email drafts</option>
+                      </select>
+                    </label>
+                    <label className="flex items-center gap-3 rounded-xl border border-white/8 bg-black/20 px-3 py-2">
+                      <input
+                        type="checkbox"
+                        checked={automationDraft.paused ?? false}
+                        onChange={(event) => setAutomationDraft((current) => ({ ...current, paused: event.target.checked }))}
+                        className="h-4 w-4 rounded border-white/20 bg-transparent"
+                      />
+                      <div>
+                        <div className="text-[10px] uppercase tracking-[0.14em] text-text-muted">Paused</div>
+                        <div className="mt-1 text-[11px] text-text-body">Keep the recurring flow configured but not runnable.</div>
+                      </div>
+                    </label>
+                  </div>
+                  <div className="mt-4 rounded-[16px] border border-white/8 bg-black/20 p-3">
+                    <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Automation guardrails</div>
+                    <div className="mt-2 space-y-2">
+                      {getAutomationGuardrails(automationDraft.candidate, automationDraft).map((guardrail) => (
+                        <div key={guardrail} className="rounded-[12px] border border-aurora-amber/20 bg-aurora-amber/10 px-3 py-2 text-[11px] text-text-body">
+                          {guardrail}
+                        </div>
+                      ))}
+                      {getAutomationGuardrails(automationDraft.candidate, automationDraft).length === 0 && (
+                        <div className="rounded-[12px] border border-aurora-teal/20 bg-aurora-teal/10 px-3 py-2 text-[11px] text-text-body">
+                          This flow has enough repetition and ROI signal to automate with the selected mission posture.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <div className="mt-4 rounded-[16px] border border-white/8 bg-black/20 p-3">
+                    <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Guardrail and intervention history</div>
+                    <div className="mt-2 space-y-2">
+                      {automationTuningHistory.summary && (
+                        <div className="rounded-[12px] border border-aurora-blue/20 bg-aurora-blue/10 px-3 py-2 text-[11px] text-text-body">
+                          {automationTuningHistory.summary.interventionCount > 0
+                            ? `${automationTuningHistory.summary.interventionCount} historical intervention signals match this flow.`
+                            : 'No recurring intervention pressure has been recorded for this flow yet.'}
+                        </div>
+                      )}
+                      {(automationTuningHistory.summary?.reasons || []).map((reason) => (
+                        <div key={reason} className="rounded-[12px] border border-white/8 bg-white/[0.03] px-3 py-2 text-[11px] text-text-body">
+                          {reason}
+                        </div>
+                      ))}
+                      {automationTuningHistory.entries.map((entry) => (
+                        <div key={entry.id} className="rounded-[12px] border border-white/8 bg-white/[0.03] px-3 py-2 text-[11px] text-text-body">
+                          <div className="font-semibold text-text-primary">{entry.eventType}</div>
+                          <div className="mt-1 text-text-muted">{entry.message}</div>
+                        </div>
+                      ))}
+                      {automationTuningHistory.entries.length === 0 && !(automationTuningHistory.summary?.reasons || []).length && (
+                        <div className="rounded-[12px] border border-dashed border-white/10 bg-black/10 px-3 py-2 text-[11px] text-text-muted">
+                          Commander will start writing recurring-flow history here once this automation sees guardrails, approvals, or human interventions over time.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <div className="mt-4 rounded-[16px] border border-white/8 bg-black/20 p-3">
+                    <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Trust movement</div>
+                    <div className="mt-2 space-y-2">
+                      {(recurringTrustRail.doctrineDeltas || []).map((entry) => (
+                        <div key={entry.id} className="rounded-[12px] border border-white/8 bg-white/[0.03] px-3 py-2 text-[11px] text-text-body">
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="font-semibold text-text-primary">{entry.owner}</div>
+                            <div className={cn(
+                              'rounded-full border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em]',
+                              entry.trend === 'up'
+                                ? 'border-aurora-teal/20 bg-aurora-teal/10 text-aurora-teal'
+                                : entry.trend === 'down'
+                                  ? 'border-aurora-rose/20 bg-aurora-rose/10 text-aurora-rose'
+                                  : 'border-white/10 bg-white/[0.03] text-text-muted'
+                            )}>
+                              {entry.delta > 0 ? '+' : ''}{entry.delta} pts
+                            </div>
+                          </div>
+                          <div className="mt-1 text-text-muted">{entry.changeSummary}</div>
+                        </div>
+                      ))}
+                      {recurringTrustRail.patternSummary?.available && (
+                        <div className="rounded-[12px] border border-aurora-blue/20 bg-aurora-blue/10 px-3 py-2 text-[11px] text-text-body">
+                          {recurringTrustRail.patternSummary.detail}
+                        </div>
+                      )}
+                      {recurringTrustRail.trustSummary && (
+                        <div className="rounded-[12px] border border-aurora-violet/20 bg-aurora-violet/10 px-3 py-2 text-[11px] text-text-body">
+                          {recurringTrustRail.trustSummary.actionLabel}. {recurringTrustRail.trustSummary.detail} Recommended cadence: {recurringTrustRail.trustSummary.recommendedFrequency}.{recurringTrustRail.trustSummary.recommendedPaused ? ' Commander should keep this flow paused until trust recovers.' : ''}
+                          <div className="mt-2 text-aurora-amber">{recurringTrustRail.trustSummary.recoveryLabel}</div>
+                          <div className="mt-2 text-aurora-teal">{recurringTrustRail.trustSummary.recoveryUpgradeLabel}</div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <div className="mt-4 flex justify-end">
+                    <button
+                      type="button"
+                      onClick={handleLaunchRecurring}
+                      disabled={automationLaunching}
+                      className="rounded-xl border border-aurora-blue/20 bg-aurora-blue/10 px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-aurora-blue transition-colors hover:bg-aurora-blue/14 disabled:opacity-50"
+                    >
+                      {automationLaunching ? (automationDraft.mode === 'manage' ? 'Saving...' : 'Launching...') : (automationDraft.mode === 'manage' ? 'Save recurring flow' : 'Launch recurring flow')}
+                    </button>
+                  </div>
+                </div>
+              )}
+              {automationMessage && (
+                <div className="rounded-[14px] border border-white/8 bg-black/20 px-3 py-2 text-[11px] text-text-body">
+                  {automationMessage}
+                </div>
+              )}
+              {automationGuardrailEvents.length > 0 && (
+                <div className="rounded-[16px] border border-aurora-amber/20 bg-aurora-amber/10 p-3">
+                  <div className="text-[10px] uppercase tracking-[0.16em] text-aurora-amber">Recent automation guardrails</div>
+                  <div className="mt-2 space-y-2">
+                    {automationGuardrailEvents.map((entry) => (
+                      <div key={entry.id} className="rounded-[12px] border border-white/8 bg-black/20 px-3 py-2 text-[11px] text-text-body">
+                        {entry.cleanMessage}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </HudFrame>
+
+        </Motion.section>
+
+        <Motion.section variants={item}>
+          <div className="rounded-[24px] border border-white/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.015))] p-4">
             <CommandSectionHeader
               eyebrow="Pressure Map"
-              title="Where the board is heating up"
-              description="A reactor-style readout of pace, burn, and operational pressure."
+              title="Main board trend"
+              description="One chart at a time so you can read the board without decoding it."
               icon={Gauge}
               tone="teal"
-              action={<span className="rounded-full border border-aurora-teal/20 bg-aurora-teal/10 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-aurora-teal">Live telemetry</span>}
+              action={<span className="rounded-full border border-aurora-teal/20 bg-aurora-teal/10 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-aurora-teal">Primary chart</span>}
             />
 
             <div className="mt-5">
@@ -708,45 +1398,269 @@ export function ReportsView() {
         </Motion.section>
 
         <Motion.section variants={item}>
-          <ExecutiveSignalRail learningMemory={learningMemory} summary={summary} burnByModel={burnByModel} />
+          <TopOperatorTable agents={summary.topAgents} />
         </Motion.section>
 
         <Motion.section variants={item}>
-          <div className="rounded-[28px] border border-white/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.015))] p-5">
-            <CommandSectionHeader
-              eyebrow="Top Operators"
-              title="Who is carrying the work"
-              description="The branches absorbing the most load, cost, and closures without turning this page into a spreadsheet."
-              icon={Layers3}
-              tone="blue"
-            />
-            <div className="mt-5 grid gap-3 lg:grid-cols-2">
-              {summary.topAgents.length === 0 && (
-                <div className="rounded-[22px] border border-white/8 bg-black/20 p-4 text-sm text-text-muted">
-                  No mission traffic yet. Once tasks land, this panel will rank agents by volume, cost, and closure rate.
-                </div>
-              )}
-              {summary.topAgents.map((agent, index) => (
-                <div key={agent.name} className="rounded-[22px] border border-white/8 bg-black/20 p-4">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.04] text-sm font-semibold text-text-primary">
-                        {String(index + 1).padStart(2, '0')}
+          <CollapsedPanel
+            eyebrow="Details"
+            title="Audit, doctrine, and deeper analysis"
+            summary="Open only when you want validation, economics, quality scoring, and doctrine moves."
+          >
+            <div className="space-y-5">
+              <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
+                <HudFrame
+                  eyebrow="Outcome Quality"
+                  title="Was the work actually good?"
+                  detail="Completion is not enough. This board scores trust, context discipline, autonomy, and cost posture."
+                  accent="violet"
+                >
+                  <div className="grid gap-3 md:grid-cols-3">
+                    <div className="rounded-[20px] border border-white/8 bg-[#111827] p-4">
+                      <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Average quality</div>
+                      <div className="mt-2 text-2xl font-semibold text-text-primary"><AnimatedNumber value={qualitySummary.average} /></div>
+                    </div>
+                    <div className="rounded-[20px] border border-white/8 bg-[#111827] p-4">
+                      <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Autonomous wins</div>
+                      <div className="mt-2 text-2xl font-semibold text-text-primary"><AnimatedNumber value={roiSummary.autonomousRuns} /></div>
+                    </div>
+                    <div className="rounded-[20px] border border-white/8 bg-[#111827] p-4">
+                      <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Scored missions</div>
+                      <div className="mt-2 text-2xl font-semibold text-text-primary"><AnimatedNumber value={tasks.length} /></div>
+                    </div>
+                  </div>
+                  <div className="mt-4 space-y-2">
+                    {qualitySummary.top.length === 0 && <div className="text-[12px] text-text-muted">No mission outcomes are scored yet.</div>}
+                    {qualitySummary.top.map(({ task, outcome }) => (
+                      <div key={task.id} className="rounded-[18px] border border-white/8 bg-black/20 px-3 py-3">
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="text-[12px] font-semibold text-text-primary">{task.name || task.title || 'Mission'}</div>
+                          <div className="rounded-full border border-aurora-violet/20 bg-aurora-violet/10 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-aurora-violet">
+                            {outcome.score} {outcome.label}
+                          </div>
+                        </div>
+                        <div className="mt-1 text-[11px] text-text-muted">{task.domain} / {task.intentType} / {task.workflowStatus || task.status}</div>
                       </div>
-                      <div>
-                        <div className="text-sm font-semibold text-text-primary">{agent.name}</div>
-                        <div className="mt-1 text-[11px] text-text-muted">{agent.tasks} missions routed through this branch</div>
+                    ))}
+                  </div>
+                </HudFrame>
+
+                <HudFrame
+                  eyebrow="Automation ROI"
+                  title="Where Commander is creating leverage"
+                  detail="This ties mission throughput to time saved and spend."
+                  accent="teal"
+                >
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <div className="rounded-[20px] border border-white/8 bg-[#111827] p-4">
+                      <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Human equivalent</div>
+                      <div className="mt-2 text-2xl font-semibold text-text-primary"><AnimatedNumber value={roiSummary.humanEquivalent} prefix="$" decimals={2} /></div>
+                    </div>
+                    <div className="rounded-[20px] border border-white/8 bg-[#111827] p-4">
+                      <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Agent spend</div>
+                      <div className="mt-2 text-2xl font-semibold text-text-primary"><AnimatedNumber value={roiSummary.totalAgentSpend} prefix="$" decimals={2} /></div>
+                    </div>
+                    <div className="rounded-[20px] border border-white/8 bg-[#111827] p-4">
+                      <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Savings</div>
+                      <div className={`mt-2 text-2xl font-semibold ${roiSummary.savings >= 0 ? 'text-aurora-teal' : 'text-aurora-rose'}`}>
+                        <AnimatedNumber value={Math.abs(roiSummary.savings)} prefix={roiSummary.savings >= 0 ? '$' : '-$'} decimals={2} />
                       </div>
                     </div>
-                    <div className="text-right">
-                      <div className="text-sm font-semibold text-text-primary">{formatCurrency(agent.cost)}</div>
-                      <div className="mt-1 text-[11px] text-aurora-teal">{agent.completed} completed</div>
+                    <div className="rounded-[20px] border border-white/8 bg-[#111827] p-4">
+                      <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">ROI multiple</div>
+                      <div className="mt-2 text-2xl font-semibold text-text-primary"><AnimatedNumber value={roiSummary.roiMultiple} decimals={1} suffix="x" /></div>
+                    </div>
+                  </div>
+                </HudFrame>
+              </div>
+
+              <HudFrame
+                eyebrow="Model Benchmark Board"
+                title="Observed winners by real mission outcomes"
+                detail="Ranks lanes by quality, success, speed, and cost."
+                accent="amber"
+              >
+                <div className="mb-3 rounded-[18px] border border-aurora-amber/20 bg-aurora-amber/10 px-3 py-3">
+                  <div className="text-[10px] uppercase tracking-[0.16em] text-aurora-amber">Provider escalation explanation</div>
+                  <div className="mt-1 text-[13px] font-semibold text-text-primary">{providerEscalation.title}</div>
+                  <div className="mt-1 text-[11px] leading-5 text-text-body">{providerEscalation.detail}</div>
+                </div>
+                <div className="grid gap-3 md:grid-cols-5">
+                  {benchmarkBoard.length === 0 && <div className="text-[12px] text-text-muted">No benchmark data yet. Commander needs more routed mission history.</div>}
+                  {benchmarkBoard.map((entry) => (
+                    <div key={entry.key} className="rounded-[18px] border border-white/8 bg-[#111827] p-3">
+                      <div className="text-[12px] font-semibold text-text-primary">{entry.model}</div>
+                      <div className="mt-1 text-[10px] uppercase tracking-[0.16em] text-text-muted">{entry.provider}</div>
+                      <div className="mt-3 text-xl font-semibold text-text-primary">{entry.benchmarkScore}</div>
+                      <div className="mt-2 space-y-1 text-[10px] text-text-muted">
+                        <div>quality {entry.avgQuality}</div>
+                        <div>success {entry.successRate}%</div>
+                        <div>avg cost ${entry.avgCost.toFixed(2)}</div>
+                        <div>interventions {entry.avgInterventions}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </HudFrame>
+
+              <HudFrame
+                eyebrow="Confidence Closure"
+                title={postLaunchConfidence.label}
+                detail={postLaunchConfidence.detail}
+                accent={postLaunchConfidence.posture === 'grounded' ? 'teal' : postLaunchConfidence.posture === 'cautious' ? 'amber' : 'violet'}
+              >
+                <div className="grid gap-3 md:grid-cols-5">
+                  {[
+                    { label: 'Runtime confidence', value: `${postLaunchConfidence.runtimeConfidence}%`, tone: postLaunchConfidence.posture === 'grounded' ? 'teal' : postLaunchConfidence.posture === 'cautious' ? 'amber' : 'violet' },
+                    { label: 'Avg outcome', value: postLaunchConfidence.outcomeSummary.averageScore || '—', tone: 'blue' },
+                    { label: 'Rescues', value: postLaunchConfidence.rescueEvents, tone: 'rose' },
+                    { label: 'Reroutes', value: postLaunchConfidence.rerouteEvents, tone: 'blue' },
+                    { label: 'Guardrails', value: postLaunchConfidence.guardrailEvents, tone: 'amber' },
+                  ].map((entry) => (
+                    <div key={entry.label} className="rounded-[18px] border border-white/8 bg-[#111827] p-3">
+                      <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">{entry.label}</div>
+                      <div className={cn(
+                        'mt-3 text-xl font-semibold',
+                        entry.tone === 'teal'
+                          ? 'text-aurora-teal'
+                          : entry.tone === 'amber'
+                            ? 'text-aurora-amber'
+                            : entry.tone === 'rose'
+                              ? 'text-aurora-rose'
+                              : entry.tone === 'violet'
+                                ? 'text-aurora-violet'
+                                : 'text-aurora-blue'
+                      )}>
+                        {entry.value}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </HudFrame>
+
+              <HudFrame
+                eyebrow="Persisted Recommendations"
+                title="What the system is explicitly telling you to change"
+                detail="These are durable recommendation rows, not just local UI heuristics."
+                accent="blue"
+              >
+                <div className="grid gap-3 md:grid-cols-2">
+                  {rankedRecommendations.length === 0 && <div className="text-[12px] text-text-muted">No persisted recommendations yet. Commander will fill this rail as doctrine and outcome memory harden.</div>}
+                  {rankedRecommendations.map((entry) => (
+                    <div key={entry.id} className="rounded-[18px] border border-white/8 bg-[#111827] p-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="text-[12px] font-semibold text-text-primary">{entry.title}</div>
+                        <div className="flex flex-wrap justify-end gap-2">
+                          {entry.recommendationClass && (
+                            <div className={cn(
+                              'rounded-full border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.16em]',
+                              entry.recommendationClass.tone === 'teal'
+                                ? 'border-aurora-teal/20 bg-aurora-teal/10 text-aurora-teal'
+                                : entry.recommendationClass.tone === 'amber'
+                                  ? 'border-aurora-amber/20 bg-aurora-amber/10 text-aurora-amber'
+                                  : entry.recommendationClass.tone === 'rose'
+                                    ? 'border-aurora-rose/20 bg-aurora-rose/10 text-aurora-rose'
+                                    : entry.recommendationClass.tone === 'violet'
+                                      ? 'border-aurora-violet/20 bg-aurora-violet/10 text-aurora-violet'
+                                      : entry.recommendationClass.tone === 'blue'
+                                        ? 'border-aurora-blue/20 bg-aurora-blue/10 text-aurora-blue'
+                                        : 'border-white/10 bg-white/[0.03] text-text-muted'
+                            )}>
+                              {entry.recommendationClass.label}
+                            </div>
+                          )}
+                          <div className="rounded-full border border-aurora-blue/20 bg-aurora-blue/10 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-aurora-blue">
+                            {entry.type}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="mt-2 text-[11px] leading-5 text-text-body">{entry.description}</div>
+                      {entry.whyNow && <div className="mt-2 text-[10px] leading-5 text-aurora-blue">Why now: {entry.whyNow}</div>}
+                      {entry.savings && <div className="mt-2 text-[10px] uppercase tracking-[0.16em] text-aurora-teal">{entry.savings}</div>}
+                    </div>
+                  ))}
+                </div>
+              </HudFrame>
+
+              <HudFrame
+                eyebrow="Persisted Feedback"
+                title="Outcome memory and doctrine pressure"
+                detail="These entries are persisted in the runtime log so the system can learn from real outcomes."
+                accent="violet"
+              >
+                <div className="grid gap-3">
+                  <div className="rounded-[18px] border border-white/8 bg-[#111827] p-3">
+                    <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Latest outcome scores</div>
+                    <div className="mt-3 space-y-2">
+                      {persistedOutcomeScores.length === 0 && <div className="text-[11px] text-text-muted">No persisted outcome-score logs yet.</div>}
+                      {persistedOutcomeScores.map((entry) => (
+                        <div key={entry.id} className="rounded-[14px] border border-white/8 bg-black/20 px-3 py-2.5">
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="text-[10px] font-mono uppercase text-aurora-teal">{entry.trust} trust</div>
+                            <div className="text-[10px] font-mono text-text-disabled">{entry.score ?? '—'}</div>
+                          </div>
+                          <div className="mt-1 text-[11px] text-text-body">{entry.cleanMessage}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="rounded-[18px] border border-white/8 bg-[#111827] p-3">
+                    <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Latest doctrine feedback</div>
+                    <div className="mt-3 space-y-2">
+                      {persistedDoctrineFeedback.length === 0 && <div className="text-[11px] text-text-muted">No persisted doctrine feedback yet.</div>}
+                      {persistedDoctrineFeedback.map((entry) => (
+                        <div key={entry.id} className="rounded-[14px] border border-white/8 bg-black/20 px-3 py-2.5 text-[11px] text-text-body">
+                          {entry.cleanMessage}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="rounded-[18px] border border-white/8 bg-[#111827] p-3">
+                    <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Doctrine rank delta</div>
+                    <div className="mt-3 space-y-2">
+                      {doctrineDeltas.length === 0 && <div className="text-[11px] text-text-muted">Commander needs more persisted doctrine snapshots before a real delta rail appears.</div>}
+                      {doctrineDeltas.map((entry) => (
+                        <div key={entry.id} className="rounded-[14px] border border-white/8 bg-black/20 px-3 py-2.5">
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="text-[11px] font-semibold text-text-primary">{entry.title}</div>
+                            <div className={cn(
+                              'rounded-full border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em]',
+                              entry.trend === 'up'
+                                ? 'border-aurora-teal/20 bg-aurora-teal/10 text-aurora-teal'
+                                : entry.trend === 'down'
+                                  ? 'border-aurora-rose/20 bg-aurora-rose/10 text-aurora-rose'
+                                  : 'border-white/8 bg-white/[0.03] text-text-muted'
+                            )}>
+                              {entry.trend === 'up' ? `+${entry.delta}` : entry.delta}
+                            </div>
+                          </div>
+                          <div className="mt-2 text-[11px] leading-5 text-text-body">{entry.changeSummary}</div>
+                        </div>
+                      ))}
                     </div>
                   </div>
                 </div>
-              ))}
+              </HudFrame>
+
+              <div className="grid grid-cols-1 gap-5 xl:grid-cols-[0.6fr_1.4fr]">
+                <div className="space-y-3">
+                  <div className="rounded-[24px] border border-white/8 bg-[#111827]/90 p-4">
+                    <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Read first</div>
+                    <div className="mt-2 text-[15px] font-semibold text-text-primary">{readFirstItems[0]?.title}</div>
+                    <p className="mt-2 text-[11px] leading-5 text-text-muted">{readFirstItems[0]?.detail}</p>
+                  </div>
+                  <div className="rounded-[24px] border border-white/8 bg-[#111827]/90 p-4">
+                    <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Next action</div>
+                    <div className="mt-2 text-[15px] font-semibold text-text-primary">{readFirstItems[1]?.title}</div>
+                    <p className="mt-2 text-[11px] leading-5 text-text-muted">{readFirstItems[1]?.detail}</p>
+                  </div>
+                </div>
+                <ExecutiveSignalRail learningMemory={learningMemory} summary={summary} burnByModel={burnByModel} />
+              </div>
+
+              <TruthAuditStrip truth={truth} />
             </div>
-          </div>
+          </CollapsedPanel>
         </Motion.section>
       </Motion.div>
     </div>

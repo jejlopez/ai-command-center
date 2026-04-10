@@ -1,5 +1,5 @@
-import { useState, useMemo } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { useMemo, useState } from 'react';
+import { motion as Motion } from 'framer-motion';
 // Active parents pass live task data as props.
 
 const statusColors = {
@@ -277,6 +277,7 @@ function computeLayout(taskList) {
   }
 
   const edges = [];
+  const dependencyEdges = [];
   nodes.forEach(node => {
     if (node.parentId) {
       const parent = nodes.find(n => n.id === node.parentId);
@@ -290,9 +291,23 @@ function computeLayout(taskList) {
         });
       }
     }
+
+    (node.dependsOn || []).forEach((dependencyId) => {
+      if (dependencyId === node.parentId) return;
+      const dependency = nodes.find((candidate) => candidate.id === dependencyId);
+      if (!dependency) return;
+      const midX = (dependency.cx + node.cx) / 2;
+      dependencyEdges.push({
+        id: `d-${dependency.id}-${node.id}`,
+        d: `M ${dependency.cx} ${dependency.cy + dependency.r + 4} Q ${midX} ${Math.max(dependency.cy, node.cy) + 28} ${node.cx} ${node.cy - node.r - 4}`,
+        status: dependency.status,
+        labelX: midX,
+        labelY: Math.max(dependency.cy, node.cy) + 18,
+      });
+    });
   });
 
-  return { nodes, edges };
+  return { nodes, edges, dependencyEdges };
 }
 
 function formatDuration(ms) {
@@ -301,15 +316,46 @@ function formatDuration(ms) {
   return `${(ms / 1000).toFixed(1)}s`;
 }
 
-export function TaskDAG({ onNodeClick, tasks }) {
-  const taskList = tasks || [];
+export function TaskDAG({ onNodeClick, onDependencyConnect, tasks, editable = false, selectedNodeId = null }) {
   const [hoveredId, setHoveredId] = useState(null);
-  const { nodes, edges } = useMemo(() => computeLayout(taskList), [taskList]);
+  const [connectSourceId, setConnectSourceId] = useState(null);
+  const [dragPoint, setDragPoint] = useState(null);
+  const { nodes, edges, dependencyEdges } = useMemo(() => computeLayout(tasks || []), [tasks]);
+  const selectedNode = nodes.find((node) => node.id === selectedNodeId) || null;
+  const activeConnectSourceId = connectSourceId && (!selectedNodeId || connectSourceId === selectedNodeId)
+    ? connectSourceId
+    : null;
 
   return (
     <div className="w-full h-full flex justify-center items-center overflow-visible relative">
+      {editable && (
+        <div className="absolute left-3 top-3 z-10 rounded-full border border-aurora-blue/20 bg-black/40 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-aurora-blue">
+          {activeConnectSourceId ? 'Drag to another branch to create dependency' : 'Shift + drag from a branch to wire a dependency'}
+        </div>
+      )}
       <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 h-px bg-gradient-to-r from-transparent via-white/5 to-transparent pointer-events-none" />
-      <svg className="w-full h-full min-h-[300px]" viewBox="0 0 640 280" style={{ overflow: 'visible' }}>
+      <svg
+        className="w-full h-full min-h-[300px]"
+        viewBox="0 0 640 280"
+        style={{ overflow: 'visible' }}
+        onMouseMove={(event) => {
+          if (!activeConnectSourceId) return;
+          const svg = event.currentTarget;
+          const rect = svg.getBoundingClientRect();
+          const scaleX = 640 / rect.width;
+          const scaleY = 280 / rect.height;
+          setDragPoint({
+            x: (event.clientX - rect.left) * scaleX,
+            y: (event.clientY - rect.top) * scaleY,
+          });
+        }}
+        onMouseUp={() => {
+          if (activeConnectSourceId) {
+            setConnectSourceId(null);
+            setDragPoint(null);
+          }
+        }}
+      >
         <defs>
           <filter id="node-glow" x="-50%" y="-50%" width="200%" height="200%">
             <feGaussianBlur stdDeviation="6" result="blur" />
@@ -339,6 +385,47 @@ export function TaskDAG({ onNodeClick, tasks }) {
           );
         })}
 
+        {dependencyEdges.map((edge) => {
+          const color = edge.status === 'completed' ? '#00D9C8' : edge.status === 'running' ? '#60a5fa' : '#64748b';
+          return (
+            <g key={edge.id}>
+              <path
+                d={edge.d}
+                stroke={color}
+                strokeWidth="1.25"
+                strokeDasharray="2 6"
+                fill="none"
+                opacity="0.55"
+              />
+              <rect x={edge.labelX - 26} y={edge.labelY - 8} width="52" height="16" rx="8" fill="#0f1218" stroke={color} strokeOpacity="0.22" />
+              <text
+                x={edge.labelX}
+                y={edge.labelY + 3}
+                textAnchor="middle"
+                className="text-[8px] font-mono fill-text-muted"
+              >
+                DEPENDS
+              </text>
+            </g>
+          );
+        })}
+
+        {activeConnectSourceId && dragPoint && (() => {
+          const source = nodes.find((node) => node.id === activeConnectSourceId);
+          if (!source) return null;
+          const midX = (source.cx + dragPoint.x) / 2;
+          return (
+            <path
+              d={`M ${source.cx} ${source.cy} Q ${midX} ${Math.min(source.cy, dragPoint.y) - 20} ${dragPoint.x} ${dragPoint.y}`}
+              stroke="#60a5fa"
+              strokeWidth="2"
+              strokeDasharray="6 6"
+              fill="none"
+              opacity="0.8"
+            />
+          );
+        })()}
+
         {/* Nodes */}
         {nodes.map((node, i) => {
           const color = statusColors[node.status];
@@ -350,20 +437,33 @@ export function TaskDAG({ onNodeClick, tasks }) {
           const bobDur = 3 + (i % 3) * 0.5;
 
           return (
-            <motion.g
+            <Motion.g
               key={node.id}
               initial={{ opacity: 0, scale: 0 }}
               animate={{ opacity: 1, scale: 1 }}
               whileHover={{ scale: 1.12 }}
               onMouseEnter={() => setHoveredId(node.id)}
               onMouseLeave={() => setHoveredId(null)}
-              onClick={() => node.agentId && onNodeClick?.(node.agentId)}
+              onClick={() => onNodeClick?.(node)}
+              onMouseDown={(event) => {
+                if (!editable || !event.shiftKey) return;
+                event.stopPropagation();
+                setConnectSourceId(node.id);
+                setDragPoint({ x: node.cx, y: node.cy });
+              }}
+              onMouseUp={(event) => {
+                if (!editable || !activeConnectSourceId || activeConnectSourceId === node.id) return;
+                event.stopPropagation();
+                onDependencyConnect?.(activeConnectSourceId, node.id);
+                setConnectSourceId(null);
+                setDragPoint(null);
+              }}
               className="cursor-pointer"
               transition={{ delay: i * 0.12, type: 'spring', stiffness: 200, damping: 20 }}
               style={{ transformOrigin: `${node.cx}px ${node.cy}px` }}
             >
               {/* Floating bob via Framer Motion */}
-              <motion.g
+              <Motion.g
                 animate={isError
                   ? { x: [-1.5, 1.5, -1, 1, 0], y: 0 }
                   : { y: [0, -3, 0], x: 0 }
@@ -411,6 +511,19 @@ export function TaskDAG({ onNodeClick, tasks }) {
                   fill={color} stroke="#161616" strokeWidth="2"
                 />
 
+                {selectedNode?.id === node.id && (
+                  <circle
+                    cx={node.cx}
+                    cy={node.cy}
+                    r={node.r + 8}
+                    fill="none"
+                    stroke="#60a5fa"
+                    strokeWidth="1.8"
+                    strokeDasharray="5 5"
+                    opacity="0.8"
+                  />
+                )}
+
                 {/* Label pill */}
                 <rect
                   x={node.cx - 44} y={node.cy + node.r + 8}
@@ -424,8 +537,8 @@ export function TaskDAG({ onNodeClick, tasks }) {
                 >
                   {node.name}
                 </text>
-              </motion.g>
-            </motion.g>
+              </Motion.g>
+            </Motion.g>
           );
         })}
 

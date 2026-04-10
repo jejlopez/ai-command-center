@@ -1,4 +1,5 @@
 import { Clock3, GitBranch, PauseCircle } from 'lucide-react';
+import { CommandSectionHeader } from '../command/CommandSectionHeader';
 
 function formatNextRun(isoString) {
   if (!isoString) return 'No next run';
@@ -17,16 +18,15 @@ function badgeClasses(kind) {
   return 'text-text-primary';
 }
 
-export function SchedulesBottlenecksPanel({ summary, schedules, loading }) {
+export function SchedulesBottlenecksPanel({ summary, schedules, loading, referenceNow }) {
   const blockers = [
     { label: 'Awaiting approval', value: summary.pendingApprovals, tone: 'text-aurora-amber' },
     { label: 'Failed tasks', value: summary.failedTasks, tone: 'text-aurora-rose' },
     { label: 'Stalled agents', value: summary.stalledAgents, tone: 'text-aurora-blue' },
   ];
   const sortedSchedules = [...schedules].sort((a, b) => {
-    const now = Date.now();
-    const aLate = a.status === 'active' && a.nextRunAt && new Date(a.nextRunAt).getTime() < now;
-    const bLate = b.status === 'active' && b.nextRunAt && new Date(b.nextRunAt).getTime() < now;
+    const aLate = a.status === 'active' && a.nextRunAt && new Date(a.nextRunAt).getTime() < referenceNow;
+    const bLate = b.status === 'active' && b.nextRunAt && new Date(b.nextRunAt).getTime() < referenceNow;
     if (aLate !== bLate) return aLate ? -1 : 1;
     if (a.status !== b.status) {
       if (a.status === 'active') return -1;
@@ -37,18 +37,16 @@ export function SchedulesBottlenecksPanel({ summary, schedules, loading }) {
   const blockersTotal = blockers.reduce((sum, item) => sum + item.value, 0);
 
   return (
-    <div className="jarvis-console p-6">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <div className="text-[10px] uppercase tracking-[0.26em] text-text-disabled">Schedules & Bottlenecks</div>
-          <div className="mt-2 text-2xl font-semibold tracking-tight text-text-primary">Operational bottlenecks and scheduled work</div>
-        </div>
-        <div className="hidden rounded-full border border-white/10 bg-white/[0.03] px-3 py-1.5 text-[10px] font-mono uppercase tracking-[0.18em] text-text-muted md:block">
-          Jarvis Ops Grid
-        </div>
-      </div>
+    <div className="jarvis-console p-5">
+      <CommandSectionHeader
+        eyebrow="Immediate Action Zone"
+        title="Automation Radar"
+        description="Scheduled work visibility and the bottlenecks holding the machine back."
+        icon={GitBranch}
+        tone="violet"
+      />
 
-      <div className="mt-5 grid gap-4 lg:grid-cols-2">
+      <div className="grid gap-4 lg:grid-cols-2">
         <div className="jarvis-column p-4">
           <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.16em] text-text-disabled">
             <Clock3 className="h-3.5 w-3.5 text-aurora-blue" />
@@ -74,47 +72,48 @@ export function SchedulesBottlenecksPanel({ summary, schedules, loading }) {
               </div>
             )}
             {!loading && sortedSchedules.length > 0 && sortedSchedules.slice(0, 3).map((job) => {
-              const isLate = job.status === 'active' && job.nextRunAt && new Date(job.nextRunAt).getTime() < Date.now();
+              const isLate = job.status === 'active' && job.nextRunAt && new Date(job.nextRunAt).getTime() < referenceNow;
               return (
-              <div
-                key={job.id}
-                className={`jarvis-schedule-card px-5 py-4 ${isLate ? 'jarvis-schedule-card-late' : ''}`}
-              >
-                <div className="flex items-center justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="truncate text-base font-semibold text-text-primary">{job.name}</div>
-                    <div className="mt-1 text-xs uppercase tracking-[0.16em] text-text-disabled">{job.agentName} · {job.scheduleLabel}</div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {isLate && (
-                      <span className={`jarvis-badge ${badgeClasses('late')}`}>
-                        Late
+                <div
+                  key={job.id}
+                  className={`jarvis-schedule-card px-5 py-4 ${isLate ? 'jarvis-schedule-card-late' : ''}`}
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="truncate text-base font-semibold text-text-primary">{job.name}</div>
+                      <div className="mt-1 text-xs uppercase tracking-[0.16em] text-text-disabled">{job.agentName} · {job.scheduleLabel}</div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {isLate && (
+                        <span className={`jarvis-badge ${badgeClasses('late')}`}>
+                          Late
+                        </span>
+                      )}
+                      <span className={`jarvis-badge ${badgeClasses(job.status)}`}>
+                        {job.status}
                       </span>
-                    )}
-                    <span className={`jarvis-badge ${badgeClasses(job.status)}`}>
-                      {job.status}
-                    </span>
+                    </div>
+                  </div>
+                  <div className="mt-4 grid grid-cols-2 gap-4 text-xs">
+                    <div>
+                      <div className="uppercase tracking-[0.16em] text-text-disabled">Next run</div>
+                      <div className={`mt-2 font-mono text-[15px] ${isLate ? 'text-aurora-rose' : 'text-text-primary'}`}>{formatNextRun(job.nextRunAt)}</div>
+                    </div>
+                    <div>
+                      <div className="uppercase tracking-[0.16em] text-text-disabled">Last result</div>
+                      <div className={`mt-2 font-mono text-[15px] uppercase ${badgeClasses(job.lastRunStatus)}`}>{job.lastRunStatus}</div>
+                    </div>
                   </div>
                 </div>
-                <div className="mt-4 grid grid-cols-2 gap-4 text-xs">
-                  <div>
-                    <div className="uppercase tracking-[0.16em] text-text-disabled">Next run</div>
-                    <div className={`mt-2 font-mono text-[15px] ${isLate ? 'text-aurora-rose' : 'text-text-primary'}`}>{formatNextRun(job.nextRunAt)}</div>
-                  </div>
-                  <div>
-                    <div className="uppercase tracking-[0.16em] text-text-disabled">Last result</div>
-                    <div className={`mt-2 font-mono text-[15px] uppercase ${badgeClasses(job.lastRunStatus)}`}>{job.lastRunStatus}</div>
-                  </div>
-                </div>
-              </div>
-            )})}
+              );
+            })}
           </div>
         </div>
 
         <div className="jarvis-column p-4">
           <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.16em] text-text-disabled">
             <GitBranch className="h-3.5 w-3.5 text-aurora-violet" />
-            Current Bottlenecks
+            Bottleneck Map
           </div>
           {blockersTotal === 0 && (
             <div className="jarvis-callout mt-4 px-4 py-4 text-base font-medium leading-8 text-aurora-green">
