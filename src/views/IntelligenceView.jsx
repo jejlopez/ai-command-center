@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { motion as Motion } from 'framer-motion';
 import {
   BarChart3,
@@ -644,7 +644,26 @@ function ModelRegistryTab({ availableModels, agents, tasks }) {
   );
 }
 
-function RoutingDoctrineTab({ routingPolicies, tasks, agents }) {
+function RoutingDoctrineTab({ routingPolicies, tasks, agents, upsertPolicy, ensureDefaultPolicy }) {
+  const [selectedPolicyId, setSelectedPolicyId] = useState('');
+  const [draft, setDraft] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState('');
+  const [saveMessage, setSaveMessage] = useState('');
+
+  useEffect(() => {
+    if (!routingPolicies.length) {
+      setSelectedPolicyId('');
+      setDraft(null);
+      return;
+    }
+
+    const fallbackPolicy = routingPolicies.find((policy) => policy.isDefault) || routingPolicies[0];
+    const selected = routingPolicies.find((policy) => policy.id === selectedPolicyId) || fallbackPolicy;
+    setSelectedPolicyId(selected?.id || '');
+    setDraft(selected ? { ...selected } : null);
+  }, [routingPolicies, selectedPolicyId]);
+
   const workflowDistribution = useMemo(() => {
     const counts = new Map();
     tasks.forEach((task) => {
@@ -679,6 +698,98 @@ function RoutingDoctrineTab({ routingPolicies, tasks, agents }) {
   const premiumBranches = routedTasks.filter((task) => task.budgetClass === 'premium').length;
   const humanGates = routedTasks.filter((task) => task.approvalLevel === 'human_required').length;
   const delegatedBranches = agents.filter((agent) => agent.canSpawn).length;
+  const matchingTasks = useMemo(() => (
+    draft
+      ? routedTasks.filter((task) => {
+        const domainMatch = (draft.taskDomain || 'general') === 'general' || task.domain === draft.taskDomain;
+        const intentMatch = (draft.intentType || 'general') === 'general' || task.intentType === draft.intentType;
+        return domainMatch && intentMatch;
+      })
+      : []
+  ), [draft, routedTasks]);
+  const modelOptions = useMemo(() => {
+    const seen = new Map();
+    agents.forEach((agent) => {
+      if (!agent.model) return;
+      seen.set(agent.model, { model: agent.model, provider: normalizeModelProvider(agent.provider || 'Live agent') });
+    });
+    return Array.from(seen.values());
+  }, [agents]);
+
+  function updateFallback(index, field, value) {
+    setDraft((current) => {
+      if (!current) return current;
+      const nextFallback = Array.isArray(current.fallbackOrder) ? [...current.fallbackOrder] : [];
+      const existing = nextFallback[index] || { role: 'executor', provider: 'Anthropic', model: '' };
+      nextFallback[index] = { ...existing, [field]: value };
+      return { ...current, fallbackOrder: nextFallback };
+    });
+    setSaveError('');
+    setSaveMessage('');
+  }
+
+  function addFallback() {
+    setDraft((current) => {
+      if (!current) return current;
+      return {
+        ...current,
+        fallbackOrder: [
+          ...(Array.isArray(current.fallbackOrder) ? current.fallbackOrder : []),
+          { role: 'executor', provider: 'Anthropic', model: '' },
+        ],
+      };
+    });
+    setSaveError('');
+    setSaveMessage('');
+  }
+
+  function removeFallback(index) {
+    setDraft((current) => {
+      if (!current) return current;
+      const nextFallback = (Array.isArray(current.fallbackOrder) ? current.fallbackOrder : []).filter((_, itemIndex) => itemIndex !== index);
+      return { ...current, fallbackOrder: nextFallback };
+    });
+    setSaveError('');
+    setSaveMessage('');
+  }
+
+  function updateDraft(field, value) {
+    setDraft((current) => current ? { ...current, [field]: value } : current);
+    setSaveError('');
+    setSaveMessage('');
+  }
+
+  async function handleSavePolicy() {
+    if (!draft) return;
+    setSaving(true);
+    setSaveError('');
+    setSaveMessage('');
+
+    try {
+      await upsertPolicy(draft);
+      setSaveMessage('Routing policy updated.');
+    } catch (error) {
+      setSaveError(error.message || 'Could not update routing policy.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleCreateDefaultPolicy() {
+    setSaving(true);
+    setSaveError('');
+    setSaveMessage('');
+
+    try {
+      const policy = await ensureDefaultPolicy();
+      setSelectedPolicyId(policy.id);
+      setSaveMessage('Default routing policy created.');
+    } catch (error) {
+      setSaveError(error.message || 'Could not create default routing policy.');
+    } finally {
+      setSaving(false);
+    }
+  }
 
   return (
     <div className="space-y-5">
@@ -722,18 +833,36 @@ function RoutingDoctrineTab({ routingPolicies, tasks, agents }) {
           <CommandSectionHeader
             eyebrow="Policy Stack"
             title="Routing policies in command"
-            description="Default first, overrides second, all with visible posture."
+            description="Default first, overrides second, now editable instead of just observable."
             icon={Layers3}
             tone="blue"
           />
           <div className="mt-4 space-y-3">
             {routingPolicies.length === 0 && (
               <div className="rounded-[22px] border border-dashed border-white/10 bg-black/10 p-5 text-sm text-text-muted">
-                No routing policies are stored yet. The default policy will appear here after the migration is applied and the next mission is created.
+                No routing policies are stored yet. Create the first default policy and Commander will start using it for mission routing.
+                <div className="mt-4">
+                  <button
+                    type="button"
+                    onClick={handleCreateDefaultPolicy}
+                    disabled={saving}
+                    className="rounded-xl border border-aurora-teal/20 bg-aurora-teal/10 px-3 py-2 text-[11px] font-semibold text-aurora-teal transition-colors hover:bg-aurora-teal/14 disabled:opacity-50"
+                  >
+                    Create default policy
+                  </button>
+                </div>
               </div>
             )}
             {routingPolicies.map((policy) => (
-              <div key={policy.id} className="rounded-[22px] border border-white/8 bg-black/20 p-4">
+              <button
+                key={policy.id}
+                type="button"
+                onClick={() => setSelectedPolicyId(policy.id)}
+                className={cn(
+                  'w-full rounded-[22px] border bg-black/20 p-4 text-left transition-colors',
+                  selectedPolicyId === policy.id ? 'border-aurora-teal/30 shadow-glow-teal' : 'border-white/8 hover:border-white/12'
+                )}
+              >
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
                     <div className="flex items-center gap-2">
@@ -768,12 +897,299 @@ function RoutingDoctrineTab({ routingPolicies, tasks, agents }) {
                     <div className="mt-1 font-semibold text-text-primary">{policy.approvalRule}</div>
                   </div>
                 </div>
-              </div>
+              </button>
             ))}
           </div>
         </div>
 
         <div className="space-y-5">
+          <HudPanel
+            eyebrow="Policy Editor"
+            title="Tune Commander routing live"
+            description="Preferred provider, model, role, approval posture, and parallelization live here."
+            accent="teal"
+          >
+            {!draft && (
+              <div className="rounded-[22px] border border-white/8 bg-black/20 p-4 text-[12px] text-text-muted">
+                Select a routing policy to edit it here.
+              </div>
+            )}
+            {draft && (
+              <div className="space-y-4">
+                <div className="grid gap-3 md:grid-cols-2">
+                  <label className="rounded-[20px] border border-white/8 bg-black/20 p-3">
+                    <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Task domain</div>
+                    <select
+                      value={draft.taskDomain || 'general'}
+                      onChange={(event) => updateDraft('taskDomain', event.target.value)}
+                      className="mt-2 w-full bg-transparent text-sm font-semibold text-text-primary outline-none"
+                    >
+                      {['general', 'build', 'research', 'ops', 'crm', 'finance', 'personal'].map((domain) => (
+                        <option key={domain} value={domain} className="bg-[#0d1015]">{domain}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="rounded-[20px] border border-white/8 bg-black/20 p-3">
+                    <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Intent type</div>
+                    <select
+                      value={draft.intentType || 'general'}
+                      onChange={(event) => updateDraft('intentType', event.target.value)}
+                      className="mt-2 w-full bg-transparent text-sm font-semibold text-text-primary outline-none"
+                    >
+                      {['general', 'planning', 'research', 'execution', 'verification', 'reporting'].map((intent) => (
+                        <option key={intent} value={intent} className="bg-[#0d1015]">{intent}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="rounded-[20px] border border-white/8 bg-black/20 p-3">
+                    <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Policy name</div>
+                    <input
+                      value={draft.name || ''}
+                      onChange={(event) => updateDraft('name', event.target.value)}
+                      className="mt-2 w-full bg-transparent text-sm font-semibold text-text-primary outline-none"
+                    />
+                  </label>
+                  <label className="rounded-[20px] border border-white/8 bg-black/20 p-3">
+                    <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Preferred role</div>
+                    <select
+                      value={draft.preferredAgentRole || 'commander'}
+                      onChange={(event) => updateDraft('preferredAgentRole', event.target.value)}
+                      className="mt-2 w-full bg-transparent text-sm font-semibold text-text-primary outline-none"
+                    >
+                      {['commander', 'planner', 'researcher', 'builder', 'verifier', 'executor'].map((role) => (
+                        <option key={role} value={role} className="bg-[#0d1015]">{role}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="rounded-[20px] border border-white/8 bg-black/20 p-3">
+                    <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Preferred provider</div>
+                    <select
+                      value={draft.preferredProvider || 'Anthropic'}
+                      onChange={(event) => updateDraft('preferredProvider', event.target.value)}
+                      className="mt-2 w-full bg-transparent text-sm font-semibold text-text-primary outline-none"
+                    >
+                      {['Anthropic', 'OpenAI', 'Google', 'Ollama', 'Custom'].map((provider) => (
+                        <option key={provider} value={provider} className="bg-[#0d1015]">{provider}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="rounded-[20px] border border-white/8 bg-black/20 p-3">
+                    <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Preferred model</div>
+                    <select
+                      value={draft.preferredModel || ''}
+                      onChange={(event) => updateDraft('preferredModel', event.target.value)}
+                      className="mt-2 w-full bg-transparent text-sm font-semibold text-text-primary outline-none"
+                    >
+                      <option value="" className="bg-[#0d1015]">No hard override</option>
+                      {modelOptions.map((model) => (
+                        <option key={model.model} value={model.model} className="bg-[#0d1015]">{model.model}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="rounded-[20px] border border-white/8 bg-black/20 p-3">
+                    <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Approval rule</div>
+                    <select
+                      value={draft.approvalRule || 'risk_weighted'}
+                      onChange={(event) => updateDraft('approvalRule', event.target.value)}
+                      className="mt-2 w-full bg-transparent text-sm font-semibold text-text-primary outline-none"
+                    >
+                      {['risk_weighted', 'human_required', 'auto_low_risk'].map((rule) => (
+                        <option key={rule} value={rule} className="bg-[#0d1015]">{rule}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="rounded-[20px] border border-white/8 bg-black/20 p-3">
+                    <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Parallelization</div>
+                    <select
+                      value={draft.parallelizationPolicy || 'adaptive'}
+                      onChange={(event) => updateDraft('parallelizationPolicy', event.target.value)}
+                      className="mt-2 w-full bg-transparent text-sm font-semibold text-text-primary outline-none"
+                    >
+                      {['adaptive', 'parallel_first', 'sequential_first'].map((policy) => (
+                        <option key={policy} value={policy} className="bg-[#0d1015]">{policy}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="rounded-[20px] border border-white/8 bg-black/20 p-3">
+                    <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Context policy</div>
+                    <select
+                      value={draft.contextPolicy || 'minimal'}
+                      onChange={(event) => updateDraft('contextPolicy', event.target.value)}
+                      className="mt-2 w-full bg-transparent text-sm font-semibold text-text-primary outline-none"
+                    >
+                      {['minimal', 'balanced', 'max_context'].map((policy) => (
+                        <option key={policy} value={policy} className="bg-[#0d1015]">{policy}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="rounded-[20px] border border-white/8 bg-black/20 p-3">
+                    <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Budget class</div>
+                    <select
+                      value={draft.budgetClass || 'balanced'}
+                      onChange={(event) => updateDraft('budgetClass', event.target.value)}
+                      className="mt-2 w-full bg-transparent text-sm font-semibold text-text-primary outline-none"
+                    >
+                      {['lean', 'balanced', 'premium'].map((budget) => (
+                        <option key={budget} value={budget} className="bg-[#0d1015]">{budget}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="rounded-[20px] border border-white/8 bg-black/20 p-3">
+                    <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Risk level</div>
+                    <select
+                      value={draft.riskLevel || 'medium'}
+                      onChange={(event) => updateDraft('riskLevel', event.target.value)}
+                      className="mt-2 w-full bg-transparent text-sm font-semibold text-text-primary outline-none"
+                    >
+                      {['low', 'medium', 'high'].map((level) => (
+                        <option key={level} value={level} className="bg-[#0d1015]">{level}</option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+                <label className="rounded-[20px] border border-white/8 bg-black/20 p-3 block">
+                  <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Description</div>
+                  <textarea
+                    value={draft.description || ''}
+                    onChange={(event) => updateDraft('description', event.target.value)}
+                    className="mt-2 min-h-[88px] w-full bg-transparent text-[12px] leading-relaxed text-text-primary outline-none"
+                  />
+                </label>
+                <label className="flex items-center gap-3 rounded-[20px] border border-white/8 bg-black/20 p-3">
+                  <input
+                    type="checkbox"
+                    checked={draft.evidenceRequired ?? false}
+                    onChange={(event) => updateDraft('evidenceRequired', event.target.checked)}
+                    className="h-4 w-4 rounded border-white/20 bg-transparent"
+                  />
+                  <div>
+                    <div className="text-sm font-semibold text-text-primary">Require evidence before execution</div>
+                    <div className="mt-1 text-[11px] text-text-muted">Use for research-sensitive or high-stakes branches.</div>
+                  </div>
+                </label>
+                <div className="rounded-[20px] border border-white/8 bg-black/20 p-3">
+                  <div className="grid gap-3 md:grid-cols-4">
+                    {[
+                      { label: 'Policy reach', value: matchingTasks.length, hint: 'matching tasks' },
+                      { label: 'Fallback lanes', value: (draft.fallbackOrder || []).length, hint: 'backup routes' },
+                      { label: 'Evidence mode', value: draft.evidenceRequired ? 'On' : 'Off', hint: 'pre-execution proof' },
+                      { label: 'Parallel bias', value: draft.parallelizationPolicy || 'adaptive', hint: 'execution posture' },
+                    ].map((entry) => (
+                      <div key={entry.label} className="rounded-[16px] border border-white/8 bg-white/[0.02] px-3 py-3">
+                        <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">{entry.label}</div>
+                        <div className="mt-2 text-sm font-semibold text-text-primary">{entry.value}</div>
+                        <div className="mt-1 text-[10px] text-text-disabled">{entry.hint}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div className="rounded-[20px] border border-white/8 bg-black/20 p-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Fallback order</div>
+                      <div className="mt-1 text-[11px] text-text-muted">These are the backup lanes Commander will try when the preferred lane is unavailable or mismatched.</div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={addFallback}
+                      className="rounded-xl border border-aurora-teal/20 bg-aurora-teal/10 px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-aurora-teal transition-colors hover:bg-aurora-teal/14"
+                    >
+                      Add lane
+                    </button>
+                  </div>
+                  <div className="mt-4 space-y-3">
+                    {(draft.fallbackOrder || []).length === 0 && (
+                      <div className="rounded-[16px] border border-dashed border-white/10 bg-black/10 px-3 py-3 text-[11px] text-text-muted">
+                        No explicit fallback lanes yet. Commander will rely on the preferred lane and general heuristics.
+                      </div>
+                    )}
+                    {(draft.fallbackOrder || []).map((entry, index) => (
+                      <div key={`${entry.role || 'lane'}-${index}`} className="rounded-[18px] border border-white/8 bg-white/[0.02] p-3">
+                        <div className="grid gap-3 md:grid-cols-[0.9fr_0.9fr_1fr_auto]">
+                          <label>
+                            <div className="text-[10px] uppercase tracking-[0.14em] text-text-muted">Role</div>
+                            <select
+                              value={entry.role || 'executor'}
+                              onChange={(event) => updateFallback(index, 'role', event.target.value)}
+                              className="mt-2 w-full bg-transparent text-[12px] font-semibold text-text-primary outline-none"
+                            >
+                              {['commander', 'planner', 'researcher', 'builder', 'verifier', 'executor'].map((role) => (
+                                <option key={role} value={role} className="bg-[#0d1015]">{role}</option>
+                              ))}
+                            </select>
+                          </label>
+                          <label>
+                            <div className="text-[10px] uppercase tracking-[0.14em] text-text-muted">Provider</div>
+                            <select
+                              value={entry.provider || 'Anthropic'}
+                              onChange={(event) => updateFallback(index, 'provider', event.target.value)}
+                              className="mt-2 w-full bg-transparent text-[12px] font-semibold text-text-primary outline-none"
+                            >
+                              {['Anthropic', 'OpenAI', 'Google', 'Ollama', 'Custom'].map((provider) => (
+                                <option key={provider} value={provider} className="bg-[#0d1015]">{provider}</option>
+                              ))}
+                            </select>
+                          </label>
+                          <label>
+                            <div className="text-[10px] uppercase tracking-[0.14em] text-text-muted">Model</div>
+                            <select
+                              value={entry.model || ''}
+                              onChange={(event) => updateFallback(index, 'model', event.target.value)}
+                              className="mt-2 w-full bg-transparent text-[12px] font-semibold text-text-primary outline-none"
+                            >
+                              <option value="" className="bg-[#0d1015]">No hard override</option>
+                              {modelOptions.map((model) => (
+                                <option key={model.model} value={model.model} className="bg-[#0d1015]">{model.model}</option>
+                              ))}
+                            </select>
+                          </label>
+                          <div className="flex items-end">
+                            <button
+                              type="button"
+                              onClick={() => removeFallback(index)}
+                              className="rounded-xl border border-aurora-rose/20 bg-aurora-rose/10 px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-aurora-rose transition-colors hover:bg-aurora-rose/14"
+                            >
+                              Remove
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div className="rounded-[20px] border border-aurora-blue/15 bg-aurora-blue/[0.05] p-3">
+                  <div className="text-[10px] uppercase tracking-[0.16em] text-aurora-blue">Doctrine readback</div>
+                  <div className="mt-2 text-[12px] leading-relaxed text-text-body">
+                    Commander will prefer <span className="font-semibold text-text-primary">{draft.preferredAgentRole || 'commander'}</span> on the{' '}
+                    <span className="font-semibold text-text-primary">{draft.preferredProvider || 'adaptive'}</span> lane
+                    {draft.preferredModel ? <> using <span className="font-semibold text-text-primary">{draft.preferredModel}</span></> : ' without a hard model lock'}.
+                    {' '}This policy is targeting <span className="font-semibold text-text-primary">{draft.taskDomain || 'general'}</span> /{' '}
+                    <span className="font-semibold text-text-primary">{draft.intentType || 'general'}</span> work and currently matches{' '}
+                    <span className="font-semibold text-text-primary">{matchingTasks.length}</span> routed mission{matchingTasks.length === 1 ? '' : 's'}.
+                  </div>
+                </div>
+                {(saveError || saveMessage) && (
+                  <div className={cn(
+                    'rounded-[18px] border px-3 py-2 text-[11px]',
+                    saveError ? 'border-aurora-rose/20 bg-aurora-rose/10 text-aurora-rose' : 'border-aurora-teal/20 bg-aurora-teal/10 text-aurora-teal'
+                  )}>
+                    {saveError || saveMessage}
+                  </div>
+                )}
+                <div className="flex justify-end">
+                  <button
+                    type="button"
+                    onClick={handleSavePolicy}
+                    disabled={saving}
+                    className="rounded-xl border border-aurora-teal/20 bg-aurora-teal/10 px-4 py-2 text-[11px] font-semibold text-aurora-teal transition-colors hover:bg-aurora-teal/14 disabled:opacity-50"
+                  >
+                    {saving ? 'Saving...' : 'Save routing policy'}
+                  </button>
+                </div>
+              </div>
+            )}
+          </HudPanel>
+
           <HudPanel
             eyebrow="Workflow Status"
             title="Canonical mission posture"
@@ -1095,7 +1511,7 @@ export function IntelligenceView() {
   const { agents } = useAgents();
   const { models } = useModelBank();
   const { tasks } = useTasks();
-  const { policies: routingPolicies } = useRoutingPolicies();
+  const { policies: routingPolicies, upsertPolicy, ensureDefaultPolicy } = useRoutingPolicies();
   const { logs } = useActivityLog();
   const { namespaces: knowledgeNamespaces } = useKnowledgeNamespaces();
   const { directives: sharedDirectives } = useSharedDirectives();
@@ -1275,7 +1691,7 @@ export function IntelligenceView() {
 
             <div className="rounded-[28px] border border-white/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.015))] p-5">
               {activeTab === 'models' && <ModelRegistryTab availableModels={availableModels} agents={agents} tasks={tasks} />}
-              {activeTab === 'routing' && <RoutingDoctrineTab routingPolicies={routingPolicies} tasks={tasks} agents={agents} />}
+              {activeTab === 'routing' && <RoutingDoctrineTab routingPolicies={routingPolicies} tasks={tasks} agents={agents} upsertPolicy={upsertPolicy} ensureDefaultPolicy={ensureDefaultPolicy} />}
               {activeTab === 'knowledge' && <KnowledgeMapTab namespaces={knowledgeNamespaces} />}
               {activeTab === 'directives' && <DirectivesTab directives={sharedDirectives} agents={agents} tasks={tasks} recommendations={persistedRecommendations} />}
             </div>

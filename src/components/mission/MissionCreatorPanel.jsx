@@ -379,6 +379,18 @@ function buildFlightPlan(preview, missionSummary, form) {
   });
 }
 
+function buildBranchPreview(preview) {
+  const branches = Array.isArray(preview?.branches) ? preview.branches : [];
+  const labelByTitle = new Map(branches.map((branch) => [branch.title, branch.branchLabel || branch.title]));
+  return branches.map((branch, index) => ({
+    ...branch,
+    id: `${branch.title}-${index}`,
+    dependencies: Array.isArray(branch.dependsOn) ? branch.dependsOn.map((dependency) => labelByTitle.get(dependency) || dependency) : [],
+    roleLabel: (branch.agentRole || 'executor').toUpperCase(),
+    strategyLabel: branch.executionStrategy === 'parallel' ? 'Parallel' : 'Sequential',
+  }));
+}
+
 function SegmentedControl({ options, value, onChange }) {
   return (
     <div className="flex gap-2">
@@ -445,6 +457,7 @@ export function MissionCreatorPanel({
   const modeRationale = useMemo(() => describeWhyMode(form.mode), [form.mode]);
   const scheduleRationale = useMemo(() => describeSchedule(form), [form]);
   const flightPlan = useMemo(() => buildFlightPlan(preview, missionSummary, form), [preview, missionSummary, form]);
+  const branchPreview = useMemo(() => buildBranchPreview(preview), [preview]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -575,6 +588,7 @@ export function MissionCreatorPanel({
       agentModel: selectedAgent?.model || '',
       agentExecutionMode: inferAgentModeBadge(selectedAgent),
       planSteps: Array.isArray(preview?.steps) ? preview.steps : [],
+      planBranches: Array.isArray(preview?.branches) ? preview.branches : [],
     };
   }
 
@@ -1066,6 +1080,43 @@ export function MissionCreatorPanel({
                                 </div>
                               ))}
                             </div>
+                            {branchPreview.length > 0 && (
+                              <div className="rounded-[20px] border border-white/[0.08] bg-black/20 p-3">
+                                <div className="flex items-center justify-between gap-3">
+                                  <div>
+                                    <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Delegation Graph</div>
+                                    <div className="mt-1 text-[12px] text-text-body">Branch ownership, dependency order, and execution posture before launch.</div>
+                                  </div>
+                                  <div className="text-[11px] font-mono text-aurora-violet">{branchPreview.length} branches</div>
+                                </div>
+                                <div className="mt-3 space-y-2">
+                                  {branchPreview.map((branch, index) => (
+                                    <div key={branch.id} className="rounded-2xl border border-white/[0.08] bg-white/[0.03] px-3 py-3">
+                                      <div className="flex flex-wrap items-center gap-2">
+                                        <span className="flex h-5 w-5 items-center justify-center rounded-full bg-aurora-violet/10 text-[10px] font-bold text-aurora-violet">{index + 1}</span>
+                                        <span className="text-[12px] font-semibold text-text-primary">{branch.branchLabel || branch.title}</span>
+                                        <span className="rounded-full border border-white/[0.08] bg-black/20 px-2 py-0.5 text-[9px] font-mono uppercase text-text-muted">{branch.roleLabel}</span>
+                                        <span className="rounded-full border border-aurora-blue/20 bg-aurora-blue/10 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.14em] text-aurora-blue">{branch.strategyLabel}</span>
+                                      </div>
+                                      <div className="mt-2 text-[11px] leading-relaxed text-text-body">{branch.description || branch.title}</div>
+                                      <div className="mt-2 flex flex-wrap gap-2">
+                                        {branch.dependencies.length === 0 ? (
+                                          <span className="rounded-full border border-aurora-teal/20 bg-aurora-teal/10 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-aurora-teal">
+                                            Launch-ready branch
+                                          </span>
+                                        ) : (
+                                          branch.dependencies.map((dependency) => (
+                                            <span key={`${branch.id}-${dependency}`} className="rounded-full border border-white/[0.08] bg-black/20 px-2 py-1 text-[10px] font-semibold text-text-muted">
+                                              depends on {dependency}
+                                            </span>
+                                          ))
+                                        )}
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
                           </div>
                         )}
                       </div>

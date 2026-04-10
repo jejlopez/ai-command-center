@@ -277,6 +277,7 @@ function computeLayout(taskList) {
   }
 
   const edges = [];
+  const dependencyEdges = [];
   nodes.forEach(node => {
     if (node.parentId) {
       const parent = nodes.find(n => n.id === node.parentId);
@@ -290,9 +291,23 @@ function computeLayout(taskList) {
         });
       }
     }
+
+    (node.dependsOn || []).forEach((dependencyId) => {
+      if (dependencyId === node.parentId) return;
+      const dependency = nodes.find((candidate) => candidate.id === dependencyId);
+      if (!dependency) return;
+      const midX = (dependency.cx + node.cx) / 2;
+      dependencyEdges.push({
+        id: `d-${dependency.id}-${node.id}`,
+        d: `M ${dependency.cx} ${dependency.cy + dependency.r + 4} Q ${midX} ${Math.max(dependency.cy, node.cy) + 28} ${node.cx} ${node.cy - node.r - 4}`,
+        status: dependency.status,
+        labelX: midX,
+        labelY: Math.max(dependency.cy, node.cy) + 18,
+      });
+    });
   });
 
-  return { nodes, edges };
+  return { nodes, edges, dependencyEdges };
 }
 
 function formatDuration(ms) {
@@ -303,7 +318,7 @@ function formatDuration(ms) {
 
 export function TaskDAG({ onNodeClick, tasks }) {
   const [hoveredId, setHoveredId] = useState(null);
-  const { nodes, edges } = useMemo(() => computeLayout(tasks || []), [tasks]);
+  const { nodes, edges, dependencyEdges } = useMemo(() => computeLayout(tasks || []), [tasks]);
 
   return (
     <div className="w-full h-full flex justify-center items-center overflow-visible relative">
@@ -334,6 +349,31 @@ export function TaskDAG({ onNodeClick, tasks }) {
                 opacity={isActive ? 0.8 : 0.2}
                 style={isActive ? { animation: 'dash-flow 1.5s linear infinite' } : undefined}
               />
+            </g>
+          );
+        })}
+
+        {dependencyEdges.map((edge) => {
+          const color = edge.status === 'completed' ? '#00D9C8' : edge.status === 'running' ? '#60a5fa' : '#64748b';
+          return (
+            <g key={edge.id}>
+              <path
+                d={edge.d}
+                stroke={color}
+                strokeWidth="1.25"
+                strokeDasharray="2 6"
+                fill="none"
+                opacity="0.55"
+              />
+              <rect x={edge.labelX - 26} y={edge.labelY - 8} width="52" height="16" rx="8" fill="#0f1218" stroke={color} strokeOpacity="0.22" />
+              <text
+                x={edge.labelX}
+                y={edge.labelY + 3}
+                textAnchor="middle"
+                className="text-[8px] font-mono fill-text-muted"
+              >
+                DEPENDS
+              </text>
             </g>
           );
         })}

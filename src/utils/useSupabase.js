@@ -9,7 +9,7 @@ import {
   normalizeModelProvider,
 } from './commanderPolicy';
 import { getTaskGraphShape } from './missionLifecycle';
-import { mapRoutingPolicyFromDb } from './routingPolicy';
+import { buildDefaultRoutingPolicy, mapRoutingPolicyFromDb } from './routingPolicy';
 
 function createRealtimeChannelName(prefix, userId) {
   const uniqueSuffix = typeof crypto !== 'undefined' && crypto.randomUUID
@@ -597,7 +597,57 @@ export function useRoutingPolicies() {
     return undefined;
   }, [user, fetchPolicies]);
 
-  return { policies, loading, refetch: fetchPolicies };
+  const upsertPolicy = useCallback(async (policy) => {
+    if (!user) throw new Error('Not authenticated');
+
+    const row = {
+      user_id: user.id,
+      name: policy.name?.trim() || 'Adaptive Commander Default',
+      description: policy.description?.trim() || '',
+      is_default: policy.isDefault ?? false,
+      task_domain: policy.taskDomain || 'general',
+      intent_type: policy.intentType || 'general',
+      risk_level: policy.riskLevel || 'medium',
+      budget_class: policy.budgetClass || 'balanced',
+      latency_class: policy.latencyClass || 'balanced',
+      preferred_provider: normalizeModelProvider(policy.preferredProvider),
+      preferred_model: policy.preferredModel || null,
+      preferred_agent_role: policy.preferredAgentRole || 'commander',
+      fallback_order: policy.fallbackOrder || [],
+      approval_rule: policy.approvalRule || 'risk_weighted',
+      context_policy: policy.contextPolicy || 'minimal',
+      parallelization_policy: policy.parallelizationPolicy || 'adaptive',
+      evidence_required: policy.evidenceRequired ?? false,
+      active: policy.active ?? true,
+    };
+
+    const query = supabase.from('routing_policies');
+    const { data, error } = policy.id
+      ? await query.update(row).eq('id', policy.id).eq('user_id', user.id).select('*').single()
+      : await query.insert(row).select('*').single();
+
+    if (error) throw error;
+    await fetchPolicies();
+    return mapRoutingPolicyFromDb(data);
+  }, [fetchPolicies, user]);
+
+  const ensureDefaultPolicy = useCallback(async () => {
+    if (!user) throw new Error('Not authenticated');
+    const existing = policies.find((policy) => policy.isDefault);
+    if (existing) return existing;
+
+    const { data, error } = await supabase
+      .from('routing_policies')
+      .insert(buildDefaultRoutingPolicy(user.id))
+      .select('*')
+      .single();
+
+    if (error) throw error;
+    await fetchPolicies();
+    return mapRoutingPolicyFromDb(data);
+  }, [fetchPolicies, policies, user]);
+
+  return { policies, loading, refetch: fetchPolicies, upsertPolicy, ensureDefaultPolicy };
 }
 
 export function useKnowledgeNamespaces() {
@@ -1143,6 +1193,11 @@ function mapTaskFromDb(row) {
     contextPackIds: Array.isArray(row.context_pack_ids) ? row.context_pack_ids : [],
     requiredCapabilities: Array.isArray(row.required_capabilities) ? row.required_capabilities : [],
     approvalLevel: row.approval_level || 'risk_weighted',
+    agentRole: row.agent_role || 'executor',
+    executionStrategy: row.execution_strategy || 'sequential',
+    branchLabel: row.branch_label || '',
+    providerOverride: row.provider_override || null,
+    modelOverride: row.model_override || null,
     durationMs: row.duration_ms || 0,
     costUsd:    parseFloat(row.cost_usd) || 0,
   };

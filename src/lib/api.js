@@ -61,6 +61,7 @@ function mapAgentRow(row) {
     id:               row.id,
     name:             row.name,
     model:            row.model,
+    roleDescription:  row.role_description || '',
     status:           row.status,
     role:             row.role,
     parentId:         row.parent_id,
@@ -87,6 +88,7 @@ function mapAgentRow(row) {
     lastRestart:      row.last_restart,
     tokenHistory24h:  row.token_history_24h || [],
     latencyHistory24h: row.latency_history_24h || [],
+    isEphemeral:      row.is_ephemeral ?? false,
   };
 }
 
@@ -236,6 +238,11 @@ function mapTaskRow(row) {
     contextPackIds: Array.isArray(row.context_pack_ids) ? row.context_pack_ids : [],
     requiredCapabilities: Array.isArray(row.required_capabilities) ? row.required_capabilities : [],
     approvalLevel: row.approval_level || 'risk_weighted',
+    agentRole: row.agent_role || 'executor',
+    executionStrategy: row.execution_strategy || 'sequential',
+    branchLabel: row.branch_label || '',
+    providerOverride: row.provider_override || null,
+    modelOverride: row.model_override || null,
     lastRunAt:  row.last_run_at,
     nextRunAt:  row.next_run_at,
     estimatedCostCents: row.estimated_cost_cents,
@@ -390,18 +397,64 @@ function estimateMissionPlan(payload) {
 
   return {
     steps,
+    branches: steps.map((step, index) => ({
+      title: step.title,
+      description: step.description,
+      agentRole: index === 0 ? 'planner' : index === steps.length - 1 ? 'verifier' : 'executor',
+      executionStrategy: index === 0 ? 'sequential' : 'parallel',
+      branchLabel: index === 0 ? 'Command' : `Branch ${index}`,
+      dependsOn: index === 0 ? [] : [steps[0].title],
+    })),
     estimatedDuration: duration,
     estimatedCostRange: costRange,
     estimatedCostCents: centsBase * complexity,
   };
 }
 
-function buildMissionSubtasks({
+async function ensureBranchSpecialistAgent({
+  user,
+  branchRole,
+  modelOverride,
+  providerOverride,
+  commander,
+  selectedAgent,
+  objective,
+}) {
+  const chosenModel = modelOverride || selectedAgent?.model || commander?.model || getCommanderLane().model;
+  const chosenProvider = providerOverride || normalizeModelProvider(selectedAgent?.provider || getCommanderLane().provider);
+
+  await ensureModelBankEntry(user, chosenModel, chosenProvider);
+
+  const row = {
+    id: crypto.randomUUID(),
+    user_id: user.id,
+    name: `${branchRole}-${objective.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 24)}`,
+    model: chosenModel,
+    status: 'idle',
+    role: branchRole,
+    role_description: `Ephemeral ${branchRole} specialist for mission branch execution.`,
+    parent_id: commander?.isSyntheticCommander ? null : commander?.id || null,
+    can_spawn: false,
+    spawn_pattern: 'sequential',
+    is_ephemeral: true,
+    system_prompt: `You are a temporary ${branchRole} specialist. Objective: ${objective}`,
+    response_length: selectedAgent?.responseLength || commander?.responseLength || 'medium',
+    temperature: selectedAgent?.temperature ?? commander?.temperature ?? 0.4,
+    color: '#6b7280',
+  };
+
+  const { data, error } = await supabase.from('agents').insert([row]).select('*').single();
+  if (error) throw error;
+  return mapAgentRow(data);
+}
+
+async function buildMissionSubtasks({
   missionId,
   userId,
+  user,
   title,
   payload,
-  steps,
+  branches,
   assignedAgentId,
   agentName,
   commanderId,
@@ -411,46 +464,58 @@ function buildMissionSubtasks({
   runAt,
   scheduleType,
 }) {
-  if (!Array.isArray(steps) || steps.length <= 1) return [];
+  if (!Array.isArray(branches) || branches.length <= 1) return [];
 
-  return steps.map((step, index) => {
+  const branchIdByTitle = new Map();
+  const rows = [];
+
+  for (const [index, branch] of branches.entries()) {
     const stepId = crypto.randomUUID();
     const first = index === 0;
-    const previousStep = index > 0 ? steps[index - 1] : null;
-    const previousId = previousStep?._generatedId || null;
-    step._generatedId = stepId;
+    branchIdByTitle.set(branch.title, stepId);
+    const dependencies = Array.isArray(branch.dependsOn)
+      ? branch.dependsOn.map((dependencyTitle) => branchIdByTitle.get(dependencyTitle)).filter(Boolean)
+      : [];
+    const assignment = await resolveBranchAssignment({
+      branch,
+      user,
+      agents: payload.agents || [],
+      routingPolicy: payload.routingPolicy || null,
+      selectedAgent: payload.selectedAgent || null,
+      commander: payload.commander || null,
+    });
 
-    return {
+    rows.push({
       id: stepId,
       user_id: userId,
-      title: `${title} · ${step.title}`,
-      name: step.title,
-      description: step.description || step.title,
+      title: `${title} · ${branch.title}`,
+      name: branch.title,
+      description: branch.description || branch.title,
       status: first ? 'queued' : 'pending',
-      lane: first ? 'active' : 'blocked',
+      lane: first || branch.executionStrategy === 'parallel' ? 'active' : 'blocked',
       priority: Math.max(1, (payload.priorityScore ?? 5) - (first ? 0 : 1)),
       schedule_type: scheduleType,
       run_at: runAt,
       recurrence_rule: buildRecurrenceRule(payload.repeat),
-      agent_id: assignedAgentId,
-      agent_name: agentName,
+      agent_id: assignment.assignedAgentId || assignedAgentId,
+      agent_name: assignment.agentName || agentName,
       mode: payload.mode,
       output_type: payload.outputType,
       output_spec: payload.outputSpec || null,
       target_type: payload.targetType,
       target_identifier: payload.targetIdentifier || null,
       created_by_commander_id: commanderId,
-      estimated_cost_cents: Math.max(1, Math.round((estimatedCostCents || 0) / steps.length)),
+      estimated_cost_cents: Math.max(1, Math.round((estimatedCostCents || 0) / branches.length)),
       actual_cost_cents: 0,
       progress_percent: first ? 5 : 0,
       duration_ms: 0,
       cost_usd: 0,
       node_type: 'subtask',
-      workflow_status: first ? WORKFLOW_STATUS.READY : WORKFLOW_STATUS.PLANNED,
+      workflow_status: first || branch.executionStrategy === 'parallel' ? WORKFLOW_STATUS.READY : WORKFLOW_STATUS.PLANNED,
       root_mission_id: missionId,
       parent_id: missionId,
       routing_policy_id: routingPolicyId || null,
-      routing_reason: `${routingDecision.routingReason} | step ${index + 1}/${steps.length}`,
+      routing_reason: `${routingDecision.routingReason} | ${assignment.agentRole || branch.agentRole || 'executor'} branch ${index + 1}/${branches.length}`,
       domain: routingDecision.domain,
       intent_type: routingDecision.intentType,
       budget_class: routingDecision.budgetClass,
@@ -458,9 +523,70 @@ function buildMissionSubtasks({
       context_pack_ids: [],
       required_capabilities: routingDecision.requiredCapabilities,
       approval_level: routingDecision.approvalLevel,
-      depends_on: previousId ? [previousId] : [],
-    };
-  });
+      depends_on: dependencies,
+      agent_role: assignment.agentRole || branch.agentRole || 'executor',
+      execution_strategy: branch.executionStrategy || 'sequential',
+      branch_label: branch.branchLabel || branch.title,
+      provider_override: assignment.providerOverride || null,
+      model_override: assignment.modelOverride || null,
+    });
+  }
+
+  return rows;
+}
+
+async function resolveBranchAssignment({
+  branch,
+  user,
+  agents,
+  routingPolicy,
+  selectedAgent,
+  commander,
+}) {
+  const liveAgents = agents.filter((agent) => !agent.isSyntheticCommander);
+  const branchRole = branch.agentRole || routingPolicy?.preferredAgentRole || selectedAgent?.role || 'executor';
+  const fallbackOrder = Array.isArray(routingPolicy?.fallbackOrder) ? routingPolicy.fallbackOrder : [];
+  const roleFallback = fallbackOrder.find((entry) => entry.role === branchRole) || null;
+  const modelOverride = branch.modelOverride || roleFallback?.model || routingPolicy?.preferredModel || null;
+  const providerOverride = branch.providerOverride || roleFallback?.provider || routingPolicy?.preferredProvider || null;
+
+  const exactRoleMatches = liveAgents.filter((agent) => agent.role === branchRole);
+  const roleCandidates = exactRoleMatches.length
+    ? exactRoleMatches
+    : branchRole === 'executor'
+      ? liveAgents.filter((agent) => agent.id === selectedAgent?.id || agent.role === 'researcher' || agent.role === 'commander')
+      : liveAgents;
+
+  const modelMatch = modelOverride
+    ? roleCandidates.find((agent) => agent.model === modelOverride)
+    : null;
+
+  let assignedAgent = modelMatch || roleCandidates[0] || null;
+
+  if (!assignedAgent && !['executor', 'commander'].includes(branchRole)) {
+    assignedAgent = await ensureBranchSpecialistAgent({
+      user,
+      branchRole,
+      modelOverride,
+      providerOverride,
+      commander,
+      selectedAgent,
+      objective: branch.title || branch.description || `${branchRole} branch`,
+    }).catch((error) => {
+      console.error('[api] ensureBranchSpecialistAgent:', error.message);
+      return null;
+    });
+  }
+
+  assignedAgent = assignedAgent || selectedAgent || commander || null;
+
+  return {
+    agentRole: branchRole,
+    assignedAgentId: assignedAgent?.isSyntheticCommander ? null : assignedAgent?.id || null,
+    agentName: assignedAgent?.name || selectedAgent?.name || commander?.name || 'Unknown',
+    providerOverride,
+    modelOverride,
+  };
 }
 
 export async function previewMissionPlan(payload) {
@@ -492,6 +618,7 @@ export async function previewMissionPlan(payload) {
     const data = await res.json();
     return {
       steps: Array.isArray(data.steps) ? data.steps : estimateMissionPlan(payload).steps,
+      branches: Array.isArray(data.branches) ? data.branches : estimateMissionPlan(payload).branches,
       estimatedDuration: data.estimatedDuration || estimateMissionPlan(payload).estimatedDuration,
       estimatedCostRange: data.estimatedCostRange || estimateMissionPlan(payload).estimatedCostRange,
       estimatedCostCents: data.estimatedCostCents ?? estimateMissionPlan(payload).estimatedCostCents,
@@ -573,6 +700,30 @@ async function ensureDefaultRoutingPolicyRow(user) {
   return data;
 }
 
+async function selectRoutingPolicyRow(user, routingDecision) {
+  if (!user?.id) return null;
+
+  const { data, error } = await supabase
+    .from('routing_policies')
+    .select('*')
+    .eq('user_id', user.id)
+    .eq('active', true)
+    .order('is_default', { ascending: false })
+    .order('updated_at', { ascending: false });
+
+  if (error) throw error;
+
+  const policies = (data || []).map(mapRoutingPolicyFromDb);
+  if (!policies.length) return ensureDefaultRoutingPolicyRow(user);
+
+  return (
+    policies.find((policy) => policy.taskDomain === routingDecision.domain && policy.intentType === routingDecision.intentType)
+    || policies.find((policy) => policy.taskDomain === routingDecision.domain && policy.intentType === 'general')
+    || policies.find((policy) => policy.isDefault)
+    || policies[0]
+  );
+}
+
 export async function createMission(payload, agents = []) {
   if (!isSupabaseConfigured) {
     return {
@@ -622,19 +773,20 @@ export async function createMission(payload, agents = []) {
   const assignedAgentId = selectedAgent?.isSyntheticCommander ? null : selectedAgent?.id || null;
   const commanderId = commander?.isSyntheticCommander ? null : commander?.id || null;
   const estimated = estimateMissionPlan(payload);
-  const planSteps = Array.isArray(payload.planSteps) && payload.planSteps.length ? payload.planSteps : estimated.steps;
+  const plannedBranches = Array.isArray(payload.planBranches) && payload.planBranches.length ? payload.planBranches : estimated.branches;
   const priorityScore = payload.priorityScore ?? 5;
   const scheduleType = payload.repeat ? 'recurring' : 'once';
   const runAt = payload.when === 'now' ? new Date().toISOString() : payload.runAt || null;
   const recurrenceRule = buildRecurrenceRule(payload.repeat);
   const lane = inferLane(priorityScore, false, 'queued');
   const missionId = crypto.randomUUID();
-  const routingPolicy = await ensureDefaultRoutingPolicyRow(user).catch((error) => {
-    console.error('[api] ensureDefaultRoutingPolicyRow:', error.message);
+  const preliminaryRoutingDecision = deriveRoutingDecision(payload, selectedAgent, null);
+  const routingPolicy = await selectRoutingPolicyRow(user, preliminaryRoutingDecision).catch((error) => {
+    console.error('[api] selectRoutingPolicyRow:', error.message);
     return null;
   });
   const routingDecision = deriveRoutingDecision(payload, selectedAgent, routingPolicy);
-  const hasDelegatedSteps = planSteps.length > 1;
+  const hasDelegatedSteps = plannedBranches.length > 1;
   const workflowStatus = hasDelegatedSteps
     ? (payload.when === 'now' ? WORKFLOW_STATUS.RUNNING : WORKFLOW_STATUS.PLANNED)
     : (payload.when === 'now' ? WORKFLOW_STATUS.READY : WORKFLOW_STATUS.PLANNED);
@@ -677,14 +829,20 @@ export async function createMission(payload, agents = []) {
     required_capabilities: routingDecision.requiredCapabilities,
     approval_level: routingDecision.approvalLevel,
     depends_on: [],
+    agent_role: 'commander',
+    execution_strategy: hasDelegatedSteps ? 'graph_root' : 'sequential',
+    branch_label: 'Root Mission',
+    provider_override: null,
+    model_override: null,
   };
 
-  const subtaskRows = buildMissionSubtasks({
+  const subtaskRows = await buildMissionSubtasks({
     missionId,
     userId: user.id,
+    user,
     title,
-    payload: { ...payload, priorityScore },
-    steps: planSteps.map((step) => ({ ...step })),
+    payload: { ...payload, priorityScore, agents, routingPolicy, selectedAgent, commander },
+    branches: plannedBranches.map((branch) => ({ ...branch })),
     assignedAgentId,
     agentName: payload.agentName || selectedAgent?.name || 'Unknown',
     commanderId,
@@ -771,13 +929,14 @@ export async function createMission(payload, agents = []) {
     }
   }
 
-  if (payload.when === 'now' && assignedAgentId && subtaskRows.length > 0) {
+  if (payload.when === 'now' && subtaskRows.length > 0) {
     try {
-      await dispatchMissionNow({
-        taskId: subtaskRows[0].id,
-        agentId: assignedAgentId,
-        taskDescription: subtaskRows[0].description || subtaskRows[0].title || subtaskRows[0].name || payload.intent,
-      });
+      const readySubtasks = subtaskRows.filter((subtask) => subtask.workflow_status === WORKFLOW_STATUS.READY && subtask.agent_id);
+      await Promise.all(readySubtasks.map((subtask) => dispatchMissionNow({
+        taskId: subtask.id,
+        agentId: subtask.agent_id,
+        taskDescription: subtask.description || subtask.title || subtask.name || payload.intent,
+      })));
     } catch (dispatchError) {
       console.error('[api] createMission subtask dispatch:', dispatchError.message);
       throw dispatchError;
@@ -975,6 +1134,44 @@ export async function stopTask(taskId) {
     console.error('[api] stopTask:', error.message);
     throw error;
   }
+  return { success: true, taskId };
+}
+
+export async function updateMissionBranchRouting(taskId, updates = {}, agents = []) {
+  if (!isSupabaseConfigured) return { success: true, taskId };
+
+  const patch = {
+    updated_at: new Date().toISOString(),
+  };
+
+  if (Object.prototype.hasOwnProperty.call(updates, 'agentId')) {
+    const nextAgent = agents.find((agent) => agent.id === updates.agentId) || null;
+    patch.agent_id = updates.agentId || null;
+    patch.agent_name = nextAgent?.name || 'Unassigned';
+  }
+
+  if (Object.prototype.hasOwnProperty.call(updates, 'providerOverride')) {
+    patch.provider_override = updates.providerOverride || null;
+  }
+
+  if (Object.prototype.hasOwnProperty.call(updates, 'modelOverride')) {
+    patch.model_override = updates.modelOverride || null;
+  }
+
+  if (Object.keys(patch).length === 1) {
+    return { success: true, taskId };
+  }
+
+  const { error } = await supabase
+    .from('tasks')
+    .update(patch)
+    .eq('id', taskId);
+
+  if (error) {
+    console.error('[api] updateMissionBranchRouting:', error.message);
+    throw error;
+  }
+
   return { success: true, taskId };
 }
 

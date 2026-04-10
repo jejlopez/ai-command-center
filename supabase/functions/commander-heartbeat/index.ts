@@ -56,6 +56,7 @@ type AgentRow = {
   total_cost?: number | string | null;
   task_count?: number | null;
   latency_ms?: number | null;
+  is_ephemeral?: boolean | null;
 };
 
 type TaskRow = {
@@ -155,6 +156,83 @@ async function updateMissionGraphProgress(db: ReturnType<typeof createClient>, t
   await db.from('tasks').update(rootUpdate).eq('id', task.parent_id).eq('user_id', task.user_id);
 }
 
+async function cleanupEphemeralSpecialists(
+  db: ReturnType<typeof createClient>,
+  userId: string,
+  rootMissionId: string | null | undefined,
+) {
+  if (!rootMissionId) return;
+
+  const { data: missionAgents, error: missionAgentsError } = await db
+    .from('tasks')
+    .select('agent_id')
+    .eq('user_id', userId)
+    .eq('root_mission_id', rootMissionId)
+    .not('agent_id', 'is', null);
+
+  if (missionAgentsError || !missionAgents?.length) return;
+
+  const candidateIds = [...new Set(missionAgents.map((row) => row.agent_id).filter(Boolean))];
+  if (!candidateIds.length) return;
+
+  const { data: ephemeralAgents, error: agentError } = await db
+    .from('agents')
+    .select('id,name,role,model,is_ephemeral')
+    .eq('user_id', userId)
+    .in('id', candidateIds)
+    .eq('is_ephemeral', true);
+
+  if (agentError || !ephemeralAgents?.length) return;
+
+  const ephemeralRows = ephemeralAgents as Array<{ id: string; name?: string | null; role?: string | null; model?: string | null }>;
+  const ephemeralIds = ephemeralRows.map((agent) => agent.id);
+  if (!ephemeralIds.length) return;
+
+  const { data: activeAssignments, error: activeError } = await db
+    .from('tasks')
+    .select('agent_id,status,workflow_status')
+    .eq('user_id', userId)
+    .in('agent_id', ephemeralIds);
+
+  if (activeError) return;
+
+  const activeStatuses = new Set(['queued', 'running', 'pending', 'needs_approval']);
+  const activeWorkflow = new Set(['intake', 'planned', 'ready', 'running', 'waiting_on_human']);
+  const agentsInUse = new Set(
+    (activeAssignments || [])
+      .filter((row) => (
+        activeStatuses.has(String(row.status || '').toLowerCase())
+        || activeWorkflow.has(String(row.workflow_status || '').toLowerCase())
+      ))
+      .map((row) => row.agent_id)
+      .filter(Boolean),
+  );
+
+  const staleEphemeralIds = ephemeralIds.filter((agentId) => !agentsInUse.has(agentId));
+  if (!staleEphemeralIds.length) return;
+
+  const staleAgents = ephemeralRows.filter((agent) => staleEphemeralIds.includes(agent.id));
+  if (staleAgents.length) {
+    await db.from('activity_log').insert(
+      staleAgents.map((agent) => ({
+        user_id: userId,
+        type: 'SYS',
+        message: `[specialist-retired] ${agent.name || agent.id} (${agent.role || 'specialist'}) retired after mission ${rootMissionId} on ${agent.model || 'adaptive lane'}.`,
+        agent_id: agent.id,
+        tokens: 0,
+        duration_ms: 0,
+      })),
+    );
+  }
+
+  await db
+    .from('agents')
+    .delete()
+    .eq('user_id', userId)
+    .eq('is_ephemeral', true)
+    .in('id', staleEphemeralIds);
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { status: 204, headers: CORS_HEADERS });
@@ -180,9 +258,9 @@ Deno.serve(async (req: Request) => {
 
   const [{ data: commanders, error: commanderError }, { data: queuedTasks, error: taskError }, { data: reviews, error: reviewsError }] = await Promise.all([
     db
-      .from('agents')
-      .select('id,user_id,name,model,status,system_prompt,temperature,response_length,last_heartbeat,total_tokens,total_cost,task_count,latency_ms,role')
-      .eq('role', 'commander'),
+        .from('agents')
+        .select('id,user_id,name,model,status,system_prompt,temperature,response_length,last_heartbeat,total_tokens,total_cost,task_count,latency_ms,role,is_ephemeral')
+        .eq('role', 'commander'),
     db
       .from('tasks')
       .select('id,user_id,name,title,description,status,agent_id,created_by_commander_id,priority,progress_percent,run_at,started_at,created_at,parent_id,root_mission_id,node_type,workflow_status,depends_on')
@@ -253,7 +331,7 @@ Deno.serve(async (req: Request) => {
     if (!agent) {
       const { data: agentRow, error: agentError } = await db
         .from('agents')
-        .select('id,user_id,name,model,status,system_prompt,temperature,response_length,last_heartbeat,total_tokens,total_cost,task_count,latency_ms,role')
+        .select('id,user_id,name,model,status,system_prompt,temperature,response_length,last_heartbeat,total_tokens,total_cost,task_count,latency_ms,role,is_ephemeral')
         .eq('id', effectiveAgentId)
         .single();
 
@@ -389,6 +467,7 @@ Deno.serve(async (req: Request) => {
       ]);
 
       await updateMissionGraphProgress(db, { ...task, status: 'completed', workflow_status: 'completed' });
+      await cleanupEphemeralSpecialists(db, task.user_id, task.root_mission_id);
 
       dispatched += 1;
     } catch (error) {
@@ -416,6 +495,7 @@ Deno.serve(async (req: Request) => {
       ]);
 
       await updateMissionGraphProgress(db, { ...task, status: 'failed', workflow_status: 'failed' });
+      await cleanupEphemeralSpecialists(db, task.user_id, task.root_mission_id);
 
       errors.push({ taskId: task.id, message });
     } finally {

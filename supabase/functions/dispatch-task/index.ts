@@ -53,6 +53,14 @@ type TaskGraphRow = {
   result_text?: string | null;
 };
 
+type AgentCleanupRow = {
+  id: string;
+  name?: string | null;
+  role?: string | null;
+  model?: string | null;
+  is_ephemeral?: boolean | null;
+};
+
 function isTaskComplete(task: TaskGraphRow): boolean {
   return ['completed', 'done'].includes(String(task.status || '').toLowerCase())
     || String(task.workflow_status || '').toLowerCase() === 'completed';
@@ -123,6 +131,83 @@ async function updateMissionGraphProgress(db: ReturnType<typeof createClient>, t
       };
 
   await db.from('tasks').update(rootUpdate).eq('id', task.parent_id).eq('user_id', task.user_id);
+}
+
+async function cleanupEphemeralSpecialists(
+  db: ReturnType<typeof createClient>,
+  userId: string,
+  rootMissionId: string | null | undefined,
+) {
+  if (!rootMissionId) return;
+
+  const { data: missionAgents, error: missionAgentsError } = await db
+    .from('tasks')
+    .select('agent_id')
+    .eq('user_id', userId)
+    .eq('root_mission_id', rootMissionId)
+    .not('agent_id', 'is', null);
+
+  if (missionAgentsError || !missionAgents?.length) return;
+
+  const candidateIds = [...new Set(missionAgents.map((row) => row.agent_id).filter(Boolean))];
+  if (!candidateIds.length) return;
+
+  const { data: ephemeralAgents, error: agentError } = await db
+    .from('agents')
+    .select('id,name,role,model,is_ephemeral')
+    .eq('user_id', userId)
+    .in('id', candidateIds)
+    .eq('is_ephemeral', true);
+
+  if (agentError || !ephemeralAgents?.length) return;
+
+  const ephemeralRows = ephemeralAgents as AgentCleanupRow[];
+  const ephemeralIds = ephemeralRows.map((agent) => agent.id);
+  if (!ephemeralIds.length) return;
+
+  const { data: activeAssignments, error: activeError } = await db
+    .from('tasks')
+    .select('agent_id,status,workflow_status')
+    .eq('user_id', userId)
+    .in('agent_id', ephemeralIds);
+
+  if (activeError) return;
+
+  const activeStatuses = new Set(['queued', 'running', 'pending', 'needs_approval']);
+  const activeWorkflow = new Set(['intake', 'planned', 'ready', 'running', 'waiting_on_human']);
+  const agentsInUse = new Set(
+    (activeAssignments || [])
+      .filter((row) => (
+        activeStatuses.has(String(row.status || '').toLowerCase())
+        || activeWorkflow.has(String(row.workflow_status || '').toLowerCase())
+      ))
+      .map((row) => row.agent_id)
+      .filter(Boolean),
+  );
+
+  const staleEphemeralIds = ephemeralIds.filter((agentId) => !agentsInUse.has(agentId));
+  if (!staleEphemeralIds.length) return;
+
+  const staleAgents = ephemeralRows.filter((agent) => staleEphemeralIds.includes(agent.id));
+  if (staleAgents.length) {
+    await db.from('activity_log').insert(
+      staleAgents.map((agent) => ({
+        user_id: userId,
+        type: 'SYS',
+        message: `[specialist-retired] ${agent.name || agent.id} (${agent.role || 'specialist'}) retired after mission ${rootMissionId} on ${agent.model || 'adaptive lane'}.`,
+        agent_id: agent.id,
+        tokens: 0,
+        duration_ms: 0,
+      })),
+    );
+  }
+
+  await db
+    .from('agents')
+    .delete()
+    .eq('user_id', userId)
+    .eq('is_ephemeral', true)
+    .in('id', staleEphemeralIds);
 }
 
 // ── max_tokens by response_length ────────────────────────────────────────────
@@ -327,6 +412,7 @@ Deno.serve(async (req: Request) => {
 
     if (taskRow) {
       await updateMissionGraphProgress(db, { ...taskRow, status: 'completed', workflow_status: 'completed', result_text: responseText });
+      await cleanupEphemeralSpecialists(db, user.id, taskRow.root_mission_id);
     }
 
     return corsResponse({
@@ -356,6 +442,7 @@ Deno.serve(async (req: Request) => {
 
     if (taskRow) {
       await updateMissionGraphProgress(db, { ...taskRow, status: 'failed', workflow_status: 'failed' });
+      await cleanupEphemeralSpecialists(db, user.id, taskRow.root_mission_id);
     }
 
     await db.from('activity_log').insert({

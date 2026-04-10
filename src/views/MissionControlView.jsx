@@ -25,7 +25,7 @@ import {
   fetchTaskNotes, createTaskNote,
   acknowledgeItem, reopenReview, snoozeReview,
   fetchSchedules, toggleSchedule, dispatchFromSchedule,
-  previewMissionPlan, createMission,
+  previewMissionPlan, createMission, updateMissionBranchRouting,
 } from '../lib/api';
 import { useSystemState } from '../context/SystemStateContext';
 import { MissionCreatorPanel } from '../components/mission/MissionCreatorPanel';
@@ -89,6 +89,14 @@ function formatProgress(task) {
   return `${Math.max(0, Math.min(100, task.progressPercent))}%`;
 }
 
+function getDependencySummary(task, tasks) {
+  const dependencies = (task.dependsOn || [])
+    .map((dependencyId) => tasks.find((candidate) => candidate.id === dependencyId))
+    .filter(Boolean);
+  const unlocks = tasks.filter((candidate) => (candidate.dependsOn || []).includes(task.id));
+  return { dependencies, unlocks };
+}
+
 const stColor = {
   queued:              { bg: 'bg-aurora-blue/10', tx: 'text-aurora-blue', lb: 'Queued' },
   running:             { bg: 'bg-aurora-amber/10', tx: 'text-aurora-amber', lb: 'Running' },
@@ -143,6 +151,7 @@ function ItemRow({ item, agents, selected, onClick }) {
   const workflow = getWorkflowMeta(item.workflowStatus);
   const isRun = item.status === 'running';
   const agent = agents.find(a => a.id === (item.agentId || item.agent_id));
+  const isEphemeral = !!agent?.isEphemeral;
   const urgC = item.urgency ? urgColors[item.urgency] : null;
   const progress = formatProgress(item);
   const relativeTime = formatTaskMoment(item);
@@ -170,6 +179,9 @@ function ItemRow({ item, agents, selected, onClick }) {
         <span className={cn("rounded-full border px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.14em]", workflowTone[workflow.tone])}>
           {workflow.label}
         </span>
+        {isEphemeral && <span className="px-2 py-0.5 rounded-full text-[9px] font-mono font-semibold bg-aurora-violet/10 text-aurora-violet border border-aurora-violet/20 uppercase">Spawned Specialist</span>}
+        {item.agentRole && <span className="px-2 py-0.5 rounded-full text-[9px] font-mono font-semibold bg-white/[0.04] text-text-muted border border-border uppercase">{item.agentRole}</span>}
+        {item.branchLabel && <span className="px-2 py-0.5 rounded-full text-[9px] font-mono font-semibold bg-white/[0.04] text-text-muted border border-border">{item.branchLabel}</span>}
         {item.mode && <span className="px-2 py-0.5 rounded-full text-[9px] font-mono font-semibold bg-surface-raised text-text-muted border border-border uppercase">{item.mode}</span>}
         {item.domain && <span className="px-2 py-0.5 rounded-full text-[9px] font-mono font-semibold bg-white/[0.04] text-text-muted border border-border uppercase">{item.domain}</span>}
         {item.durationMs > 0 && <span className="text-[10px] font-mono text-text-disabled flex items-center gap-1"><Timer className="w-3 h-3" />{item.durationMs < 1000 ? `${item.durationMs}ms` : `${(item.durationMs/1000).toFixed(1)}s`}</span>}
@@ -237,7 +249,7 @@ function ApprovalCard({ item, agents, onClick, onApprove, onReject }) {
   );
 }
 
-function MissionGraphPanel({ tasks, selectedId, onSelect }) {
+function MissionGraphPanel({ tasks, agents, logs, selectedId, onSelect, onRetry, onStop, onApprove, onCancel, onUpdateBranchRouting }) {
   const graphTaskSet = useMemo(() => {
     if (!tasks.length) return [];
     const selectedTask = tasks.find((task) => task.id === selectedId) || tasks[0];
@@ -252,12 +264,43 @@ function MissionGraphPanel({ tasks, selectedId, onSelect }) {
     }))
   ), [graphTaskSet]);
 
+  const spawnedSpecialists = useMemo(() => {
+    const graphAgentIds = [...new Set(graphTaskSet.map((task) => task.agentId).filter(Boolean))];
+    return agents.filter((agent) => graphAgentIds.includes(agent.id) && agent.isEphemeral);
+  }, [agents, graphTaskSet]);
+  const selectedTask = graphTaskSet.find((task) => task.id === selectedId) || graphTaskSet[0] || null;
+  const [routingDraft, setRoutingDraft] = useState({ agentId: '', providerOverride: '', modelOverride: '' });
+  const [routingSaving, setRoutingSaving] = useState(false);
+  const [routingMessage, setRoutingMessage] = useState('');
+  const selectedRootMissionId = selectedTask?.rootMissionId || selectedTask?.id || null;
+  const selectedDependencySummary = selectedTask ? getDependencySummary(selectedTask, graphTaskSet) : { dependencies: [], unlocks: [] };
+  const retirementEvents = (
+    logs
+      .filter((entry) => {
+        const message = String(entry.message || '');
+        return message.includes('[specialist-retired]')
+          && (!selectedRootMissionId || message.includes(selectedRootMissionId));
+      })
+      .slice(-4)
+      .reverse()
+  );
+
   const branchSummary = useMemo(() => {
     const running = graphTaskSet.filter((task) => task.workflowStatus === 'running').length;
     const waiting = graphTaskSet.filter((task) => task.workflowStatus === 'waiting_on_human').length;
     const blocked = graphTaskSet.filter((task) => ['blocked', 'failed', 'cancelled'].includes(task.workflowStatus)).length;
     return { running, waiting, blocked };
   }, [graphTaskSet]);
+
+  useEffect(() => {
+    if (!selectedTask) return;
+    setRoutingDraft({
+      agentId: selectedTask.agentId || '',
+      providerOverride: selectedTask.providerOverride || '',
+      modelOverride: selectedTask.modelOverride || '',
+    });
+    setRoutingMessage('');
+  }, [selectedTask]);
 
   if (!graphTaskSet.length) {
     return (
@@ -296,9 +339,199 @@ function MissionGraphPanel({ tasks, selectedId, onSelect }) {
       <div className="mt-4 h-[320px] rounded-[22px] border border-white/8 bg-[radial-gradient(circle_at_top,rgba(45,212,191,0.06),transparent_40%),rgba(255,255,255,0.02)] p-3">
         <TaskDAG tasks={dagTasks} onNodeClick={(task) => onSelect(task.id)} />
       </div>
+      {selectedTask && (
+        <div className="mt-4 grid gap-3 xl:grid-cols-[0.9fr_1.1fr]">
+          <div className="rounded-[20px] border border-white/8 bg-black/20 p-4">
+            <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Branch Dependencies</div>
+            <div className="mt-2 text-sm font-semibold text-text-primary">{selectedTask.name || selectedTask.title}</div>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {selectedDependencySummary.dependencies.length === 0 && (
+                <span className="rounded-full border border-aurora-teal/20 bg-aurora-teal/10 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-aurora-teal">
+                  Ready at launch
+                </span>
+              )}
+              {selectedDependencySummary.dependencies.map((dependency) => (
+                <span key={dependency.id} className="rounded-full border border-white/8 bg-white/[0.03] px-2 py-1 text-[10px] font-semibold text-text-body">
+                  depends on {dependency.branchLabel || dependency.name || dependency.title}
+                </span>
+              ))}
+            </div>
+            <div className="mt-4 text-[10px] uppercase tracking-[0.18em] text-text-muted">Unlocks next</div>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {selectedDependencySummary.unlocks.length === 0 && (
+                <span className="rounded-full border border-white/8 bg-white/[0.03] px-2 py-1 text-[10px] font-semibold text-text-muted">
+                  Terminal branch
+                </span>
+              )}
+              {selectedDependencySummary.unlocks.map((branch) => (
+                <span key={branch.id} className="rounded-full border border-aurora-blue/20 bg-aurora-blue/10 px-2 py-1 text-[10px] font-semibold text-aurora-blue">
+                  {branch.branchLabel || branch.name || branch.title}
+                </span>
+              ))}
+            </div>
+          </div>
+          <div className="rounded-[20px] border border-white/8 bg-black/20 p-4">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Branch Controls</div>
+                <div className="mt-1 text-[12px] text-text-body">Intervene on the selected branch without losing the whole mission graph.</div>
+              </div>
+              <span className="rounded-full border border-white/8 bg-white/[0.03] px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-text-muted">
+                {selectedTask.agentRole || 'executor'}
+              </span>
+            </div>
+            <div className="mt-4 flex flex-wrap gap-2">
+              {selectedTask.workflowStatus === 'waiting_on_human' || selectedTask.status === 'needs_approval' ? (
+                <>
+                  <button onClick={() => onApprove(selectedTask.id)} className="rounded-xl border border-aurora-teal/20 bg-aurora-teal/10 px-3 py-2 text-[11px] font-semibold text-aurora-teal transition-colors hover:bg-aurora-teal/14">
+                    Approve branch
+                  </button>
+                  <button onClick={() => onCancel(selectedTask.id)} className="rounded-xl border border-aurora-rose/20 bg-aurora-rose/10 px-3 py-2 text-[11px] font-semibold text-aurora-rose transition-colors hover:bg-aurora-rose/14">
+                    Cancel branch
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button onClick={() => onRetry(selectedTask.id)} className="rounded-xl border border-aurora-amber/20 bg-aurora-amber/10 px-3 py-2 text-[11px] font-semibold text-aurora-amber transition-colors hover:bg-aurora-amber/14">
+                    Rerun branch
+                  </button>
+                  {(selectedTask.workflowStatus === 'running' || selectedTask.status === 'running') && (
+                    <button onClick={() => onStop(selectedTask.id)} className="rounded-xl border border-aurora-rose/20 bg-aurora-rose/10 px-3 py-2 text-[11px] font-semibold text-aurora-rose transition-colors hover:bg-aurora-rose/14">
+                      Stop branch
+                    </button>
+                  )}
+                </>
+              )}
+            </div>
+              <div className="mt-4 grid gap-2 md:grid-cols-2">
+                <div className="rounded-[16px] border border-white/8 bg-white/[0.02] px-3 py-3">
+                  <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Execution strategy</div>
+                  <div className="mt-2 text-[12px] font-semibold text-text-primary">{selectedTask.executionStrategy || 'sequential'}</div>
+                </div>
+              <div className="rounded-[16px] border border-white/8 bg-white/[0.02] px-3 py-3">
+                <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Assigned lane</div>
+                  <div className="mt-2 text-[12px] font-semibold text-text-primary">{selectedTask.providerOverride || 'adaptive'} / {selectedTask.modelOverride || 'default model'}</div>
+                </div>
+              </div>
+            <div className="mt-4 rounded-[16px] border border-white/8 bg-white/[0.02] p-3">
+              <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Reassign branch lane</div>
+              <div className="mt-3 grid gap-3 md:grid-cols-3">
+                <label>
+                  <div className="text-[10px] uppercase tracking-[0.14em] text-text-muted">Agent</div>
+                  <select
+                    value={routingDraft.agentId}
+                    onChange={(event) => setRoutingDraft((current) => ({ ...current, agentId: event.target.value }))}
+                    className="mt-2 w-full rounded-xl border border-white/8 bg-black/20 px-3 py-2 text-[12px] text-text-primary outline-none"
+                  >
+                    <option value="">Unassigned</option>
+                    {agents.map((agent) => (
+                      <option key={agent.id} value={agent.id}>{agent.name} · {agent.role}</option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  <div className="text-[10px] uppercase tracking-[0.14em] text-text-muted">Provider override</div>
+                  <select
+                    value={routingDraft.providerOverride}
+                    onChange={(event) => setRoutingDraft((current) => ({ ...current, providerOverride: event.target.value }))}
+                    className="mt-2 w-full rounded-xl border border-white/8 bg-black/20 px-3 py-2 text-[12px] text-text-primary outline-none"
+                  >
+                    <option value="">Policy default</option>
+                    {['Anthropic', 'OpenAI', 'Google', 'Ollama', 'Custom'].map((provider) => (
+                      <option key={provider} value={provider}>{provider}</option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  <div className="text-[10px] uppercase tracking-[0.14em] text-text-muted">Model override</div>
+                  <input
+                    value={routingDraft.modelOverride}
+                    onChange={(event) => setRoutingDraft((current) => ({ ...current, modelOverride: event.target.value }))}
+                    placeholder="Leave blank for lane default"
+                    className="mt-2 w-full rounded-xl border border-white/8 bg-black/20 px-3 py-2 text-[12px] text-text-primary outline-none placeholder:text-text-disabled"
+                  />
+                </label>
+              </div>
+              <div className="mt-3 flex items-center justify-between gap-3">
+                <div className="text-[11px] text-text-muted">Use this to redirect one branch without rewriting the full mission policy.</div>
+                <button
+                  type="button"
+                  disabled={routingSaving}
+                  onClick={async () => {
+                    if (!selectedTask) return;
+                    setRoutingSaving(true);
+                    setRoutingMessage('');
+                    try {
+                      await onUpdateBranchRouting(selectedTask.id, routingDraft);
+                      setRoutingMessage('Branch lane updated.');
+                    } catch (error) {
+                      setRoutingMessage(error.message || 'Could not update branch lane.');
+                    } finally {
+                      setRoutingSaving(false);
+                    }
+                  }}
+                  className="rounded-xl border border-aurora-teal/20 bg-aurora-teal/10 px-3 py-2 text-[11px] font-semibold text-aurora-teal transition-colors hover:bg-aurora-teal/14 disabled:opacity-50"
+                >
+                  {routingSaving ? 'Saving...' : 'Save branch lane'}
+                </button>
+              </div>
+              {routingMessage && (
+                <div className="mt-3 rounded-xl border border-white/8 bg-black/20 px-3 py-2 text-[11px] text-text-body">
+                  {routingMessage}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+      {spawnedSpecialists.length > 0 && (
+        <div className="mt-4 rounded-[20px] border border-aurora-violet/15 bg-[linear-gradient(180deg,rgba(167,139,250,0.08),rgba(255,255,255,0.02))] p-4">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <div className="text-[10px] uppercase tracking-[0.18em] text-aurora-violet">Spawned Specialists</div>
+              <p className="mt-1 text-[12px] leading-relaxed text-text-muted">
+                These temporary branch agents were materialized from routing doctrine to cover missing live lanes.
+              </p>
+            </div>
+            <div className="rounded-full border border-aurora-violet/20 bg-aurora-violet/10 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-aurora-violet">
+              {spawnedSpecialists.length} active
+            </div>
+          </div>
+          <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+            {spawnedSpecialists.map((agent) => (
+              <div key={agent.id} className="rounded-[18px] border border-white/8 bg-black/20 px-3 py-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="text-[12px] font-semibold text-text-primary truncate">{agent.name}</div>
+                    <div className="mt-1 text-[10px] font-mono uppercase text-aurora-violet">{agent.role || 'specialist'}</div>
+                  </div>
+                  <span className="rounded-full border border-aurora-violet/20 bg-aurora-violet/10 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.14em] text-aurora-violet">
+                    Ephemeral
+                  </span>
+                </div>
+                <div className="mt-2 text-[10px] font-mono text-text-disabled">{agent.model || 'Adaptive lane'}</div>
+                {agent.roleDescription && <div className="mt-2 text-[11px] leading-relaxed text-text-muted">{agent.roleDescription}</div>}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      {retirementEvents.length > 0 && (
+        <div className="mt-4 rounded-[20px] border border-white/8 bg-black/20 p-4">
+          <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Specialist Retirement Audit</div>
+          <div className="mt-3 space-y-2">
+            {retirementEvents.map((event) => (
+              <div key={event.id} className="rounded-[16px] border border-white/8 bg-white/[0.02] px-3 py-3 text-[11px] leading-relaxed text-text-body">
+                {String(event.text).replace('[specialist-retired] ', '')}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
       <div className="mt-4 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
         {graphTaskSet.map((task) => {
           const workflow = getWorkflowMeta(task.workflowStatus);
+          const taskAgent = agents.find((agent) => agent.id === task.agentId);
           return (
             <button
               key={task.id}
@@ -310,7 +543,10 @@ function MissionGraphPanel({ tasks, selectedId, onSelect }) {
               )}
             >
               <div className="flex items-center justify-between gap-3">
-                <div className="min-w-0 text-[12px] font-semibold text-text-primary truncate">{task.name || task.title}</div>
+                <div className="min-w-0">
+                  <div className="truncate text-[12px] font-semibold text-text-primary">{task.name || task.title}</div>
+                  {taskAgent?.isEphemeral && <div className="mt-1 text-[10px] font-mono uppercase text-aurora-violet">Spawned specialist lane</div>}
+                </div>
                 <span className={cn('rounded-full border px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.14em]', workflowTone[workflow.tone])}>
                   {workflow.label}
                 </span>
@@ -362,6 +598,7 @@ function Drawer({ item, agents, tasks, logs, onClose, onApprove, onReject, onRet
   const agent = agents.find(a => a.id === (item.agentId || item.agent_id));
   const cfg = stColor[item.status] || stColor.pending;
   const workflow = getWorkflowMeta(item.workflowStatus);
+  const isEphemeralAgent = !!agent?.isEphemeral;
   const isMissionApproval = item.status === 'needs_approval';
   const isReviewApproval = item.urgency != null || (item.outputType != null && !item.mode);
   const isApproval = isMissionApproval || isReviewApproval;
@@ -388,6 +625,7 @@ function Drawer({ item, agents, tasks, logs, onClose, onApprove, onReject, onRet
             <div className="flex items-center gap-3 mt-1">
               <span className={cn("text-xs font-mono font-bold", cfg.tx)}>{cfg.lb}</span>
               <span className={cn("rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em]", workflowTone[workflow.tone])}>{workflow.label}</span>
+              {isEphemeralAgent && <span className="rounded-full border border-aurora-violet/20 bg-aurora-violet/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-aurora-violet">Spawned Specialist</span>}
               {item.durationMs > 0 && <span className="text-xs text-text-disabled font-mono flex items-center gap-1"><Clock className="w-3 h-3" />{item.durationMs < 1000 ? `${item.durationMs}ms` : `${(item.durationMs/1000).toFixed(1)}s`}</span>}
               {item.mode && <span className="text-xs text-text-disabled font-mono uppercase">{item.mode}</span>}
               {item.actualCostCents != null && <span className="text-xs text-text-disabled font-mono">${(item.actualCostCents / 100).toFixed(2)}</span>}
@@ -466,6 +704,11 @@ function Drawer({ item, agents, tasks, logs, onClose, onApprove, onReject, onRet
             {[
               { label: 'Domain', value: item.domain || 'general' },
               { label: 'Intent', value: item.intentType || 'general' },
+              { label: 'Agent role', value: item.agentRole || 'executor' },
+              { label: 'Lane type', value: isEphemeralAgent ? 'Ephemeral specialist' : 'Persistent fleet agent' },
+              { label: 'Branch label', value: item.branchLabel || 'Root Mission' },
+              { label: 'Provider override', value: item.providerOverride || 'Policy default' },
+              { label: 'Model override', value: item.modelOverride || 'Lane default' },
               { label: 'Budget class', value: item.budgetClass || 'balanced' },
               { label: 'Risk level', value: item.riskLevel || 'medium' },
               { label: 'Approval level', value: item.approvalLevel || 'risk_weighted' },
@@ -829,6 +1072,10 @@ export function MissionControlView() {
     await createMission({ ...payload, priorityScore }, agents);
     await reload();
   }
+  async function handleUpdateBranchRouting(taskId, updates) {
+    await updateMissionBranchRouting(taskId, updates, agents);
+    await reload();
+  }
   function handleCopy(item) { navigator.clipboard?.writeText(`${item.name || item.title}\nStatus: ${item.status}\nAgent: ${item.agentName || ''}\nCost: ${item.actualCostCents != null ? `$${(item.actualCostCents / 100).toFixed(2)}` : `$${item.costUsd?.toFixed(3) || '0.000'}`}`); }
 
   const selectedItem = sel ? [...tasks, ...approvalItems, ...completedItems].find(i => i.id === sel) : null;
@@ -987,7 +1234,18 @@ export function MissionControlView() {
 
           {tab === 'ops' && (
             <div className="space-y-4">
-              <MissionGraphPanel tasks={graphTasks} selectedId={sel} onSelect={setSel} />
+              <MissionGraphPanel
+                tasks={graphTasks}
+                agents={agents}
+                logs={logs}
+                selectedId={sel}
+                onSelect={setSel}
+                onRetry={handleRetry}
+                onStop={handleStop}
+                onApprove={handleApprove}
+                onCancel={(id) => handleReject(id, 'Cancelled from branch controls')}
+                onUpdateBranchRouting={handleUpdateBranchRouting}
+              />
               <AnimatePresence mode="popLayout">
                 {operationalTasks.map(t => (
                   <Motion.div
