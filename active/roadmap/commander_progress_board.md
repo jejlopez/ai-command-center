@@ -78,6 +78,9 @@ This is the live build tracker for the Jarvis / Stark / Musk Commander program.
 - Specialist lifecycle visibility consistency across fleet surfaces
 - Trend-aware doctrine scoring deeper into recommendation rank
 - Recurring tuning outcomes feeding recommendation rank more directly
+- Preflight-to-runtime alignment checks
+- Doctrine-rank delta readback in Intelligence and Reports
+- Persistent-lane promotion guidance from lifecycle pressure
 
 ## Epic Experience Layer
 
@@ -195,8 +198,8 @@ Default posture:
 
 Build next:
 
-1. keep the preflight layer aligned with actual launch behavior as routing evolves
-2. turn mission-pattern and rescue memory into stronger recommendation rank shifts
-3. surface doctrine-rank deltas more explicitly in Reports and Intelligence
-4. start closing the confidence-to-runtime loop for launch estimates
-5. use lifecycle and recommendation pressure to tune persistent-lane promotion guidance
+1. turn mission-pattern and rescue memory into even stronger recommendation rank shifts
+2. close the confidence-to-runtime loop for launch estimates
+3. use lifecycle pressure to tune persistent-lane promotion guidance automatically
+4. push doctrine delta visibility into more operator surfaces
+5. start turning promotion guidance into one-click persistent-lane actions

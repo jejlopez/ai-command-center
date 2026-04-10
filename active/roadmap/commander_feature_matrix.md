@@ -136,10 +136,10 @@ Legend:
 
 ## Immediate Next Four
 
-1. Preflight-to-runtime alignment checks
-2. Recommendation-rank shifts from pattern and rescue memory
-3. Doctrine-rank delta readback in Intelligence and Reports
-4. Persistent-lane promotion guidance from lifecycle pressure
+1. Recommendation-rank shifts from pattern and rescue memory
+2. Confidence-to-runtime loop closure
+3. Persistent-lane promotion actions from lifecycle pressure
+4. Doctrine-delta visibility in more operator surfaces
 
 ## Epic Experience Layer Additions
 
@@ -173,12 +173,12 @@ These are not separate feature IDs yet. They should be implemented as depth adde
 
 ## Updated Immediate Next Order
 
-1. Keep preflight readback aligned with actual routing behavior
-2. Turn autonomy and rescue signals into recommendation pressure
-3. Promote mission-pattern winners into stronger recommendation rank shifts
-4. Show doctrine-rank deltas and “why now” pressure more explicitly
-5. Use lifecycle pressure to guide persistent-lane promotions
-6. Close the confidence rail with actual post-launch outcomes
+1. Turn autonomy and rescue signals into recommendation pressure
+2. Promote mission-pattern winners into stronger recommendation rank shifts
+3. Close the confidence rail with actual post-launch outcomes
+4. Use lifecycle pressure to guide persistent-lane promotions automatically
+5. Push doctrine-delta visibility into more operator surfaces
+6. Add one-click actions from promotion guidance and rank pressure
 
 ## Autodrive Program Rule
 

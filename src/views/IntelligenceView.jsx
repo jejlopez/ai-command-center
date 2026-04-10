@@ -40,7 +40,7 @@ import { TruthAuditStrip } from '../components/command/TruthAuditStrip';
 import { useCommandCenterTruth } from '../utils/useCommandCenterTruth';
 import { normalizeModelProvider } from '../utils/commanderPolicy';
 import { getWorkflowMeta } from '../utils/missionLifecycle';
-import { buildPolicyDemotionSummary, getFleetPostureSummary, getObservedModelBenchmarks, getSpecialistLifecycleSummary, rankCommanderRecommendations, scoreTaskOutcome } from '../utils/commanderAnalytics';
+import { buildPolicyDemotionSummary, getDoctrineDeltaSummary, getFleetPostureSummary, getObservedModelBenchmarks, getPersistentPromotionGuidance, getSpecialistLifecycleSummary, rankCommanderRecommendations, scoreTaskOutcome } from '../utils/commanderAnalytics';
 
 const tabs = [
   { id: 'models', label: 'Model Command Matrix', icon: Cpu },
@@ -1703,18 +1703,19 @@ function RoutingDoctrineTab({ routingPolicies, tasks, agents, logs, intervention
         </HudPanel>
       </div>
 
-      <SpecialistFleetTab agents={agents} lifecycleEvents={lifecycleEvents} skills={skills} />
+      <SpecialistFleetTab agents={agents} lifecycleEvents={lifecycleEvents} skills={skills} tasks={tasks} />
     </div>
   );
 }
 
-function SpecialistFleetTab({ agents, lifecycleEvents, skills }) {
+function SpecialistFleetTab({ agents, lifecycleEvents, skills, tasks }) {
   const commander = agents.find((agent) => agent.role === 'commander' && !agent.isSyntheticCommander) || agents.find((agent) => agent.role === 'commander') || null;
   const modelOptions = [...new Set(agents.map((agent) => agent.model).filter(Boolean))];
   const persistentSpecialists = agents.filter((agent) => !agent.isEphemeral && !['commander', 'executor'].includes(agent.role || ''));
   const spawnedSpecialists = agents.filter((agent) => agent.isEphemeral);
   const fleetHistory = getSpecialistLifecycleSummary(lifecycleEvents, agents);
   const fleetPosture = getFleetPostureSummary(lifecycleEvents, agents);
+  const promotionGuidance = getPersistentPromotionGuidance({ lifecycleEvents, agents, tasks });
   const recentLifecycleEvents = fleetHistory.events.slice(0, 6);
   const promotionHistory = fleetHistory.promotions.slice(0, 6);
   const [objective, setObjective] = useState('');
@@ -1825,6 +1826,7 @@ function SpecialistFleetTab({ agents, lifecycleEvents, skills }) {
             <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Fleet posture</div>
             <div className="mt-1 text-sm font-semibold text-text-primary">{fleetPosture.label}</div>
             <p className="mt-2 max-w-2xl text-[12px] leading-relaxed text-text-body">{fleetPosture.detail}</p>
+            <p className="mt-2 max-w-2xl text-[11px] leading-relaxed text-aurora-blue">{promotionGuidance.recommendation}</p>
           </div>
           <div className="flex flex-wrap gap-2">
             <span className="rounded-full border border-aurora-blue/20 bg-aurora-blue/10 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-aurora-blue">
@@ -2315,6 +2317,24 @@ export function IntelligenceView() {
     };
   }, [agents, availableModels, logs.length, persistedRecommendations.length, sharedDirectives.length, tasks]);
 
+  const economics = useMemo(() => {
+    const durationHours = tasks.reduce((sum, task) => sum + Number(task.durationMs || 0), 0) / (1000 * 60 * 60);
+    const humanCost = durationHours * humanHourlyRate;
+    const agentCost = tasks.reduce((sum, task) => sum + Number(task.costUsd || 0), 0);
+    const savings = humanCost - agentCost;
+    const multiplier = agentCost > 0 ? humanCost / agentCost : humanCost > 0 ? humanCost : 0;
+
+    return {
+      durationHours,
+      humanCost,
+      agentCost,
+      savings,
+      multiplier,
+    };
+  }, [humanHourlyRate, tasks]);
+
+  const learningMemory = useLearningMemory({ agents, tasks, logs, approvals: [], costData: { total: economics.agentCost, models: [] }, humanHourlyRate });
+  const doctrineDeltas = useMemo(() => getDoctrineDeltaSummary(learningMemory.doctrine).slice(0, 3), [learningMemory.doctrine]);
   const derivedRecommendations = useMemo(() => {
     const runningTasks = tasks.filter((task) => task.status === 'running').length;
     const failedTasks = tasks.filter((task) => ['failed', 'error', 'blocked'].includes(task.status)).length;
@@ -2347,26 +2367,9 @@ export function IntelligenceView() {
       logs,
       lifecycleEvents,
       agents,
+      learningMemory,
     }).slice(0, 5);
-  }, [agents, interventions, lifecycleEvents, logs, persistedRecommendations, tasks]);
-
-  const economics = useMemo(() => {
-    const durationHours = tasks.reduce((sum, task) => sum + Number(task.durationMs || 0), 0) / (1000 * 60 * 60);
-    const humanCost = durationHours * humanHourlyRate;
-    const agentCost = tasks.reduce((sum, task) => sum + Number(task.costUsd || 0), 0);
-    const savings = humanCost - agentCost;
-    const multiplier = agentCost > 0 ? humanCost / agentCost : humanCost > 0 ? humanCost : 0;
-
-    return {
-      durationHours,
-      humanCost,
-      agentCost,
-      savings,
-      multiplier,
-    };
-  }, [humanHourlyRate, tasks]);
-
-  const learningMemory = useLearningMemory({ agents, tasks, logs, approvals: [], costData: { total: economics.agentCost, models: [] }, humanHourlyRate });
+  }, [agents, interventions, learningMemory, lifecycleEvents, logs, persistedRecommendations, tasks]);
   const readFirstItems = useMemo(() => {
     const bestReasoner = availableModels.slice().sort((a, b) => b.reliability - a.reliability)[0];
     const fastest = availableModels.slice().sort((a, b) => b.speed - a.speed)[0];
@@ -2459,6 +2462,37 @@ export function IntelligenceView() {
               {activeTab === 'routing' && <RoutingDoctrineTab routingPolicies={routingPolicies} tasks={tasks} agents={agents} logs={logs} interventions={interventions} lifecycleEvents={lifecycleEvents} skills={skills} upsertPolicy={upsertPolicy} ensureDefaultPolicy={ensureDefaultPolicy} />}
               {activeTab === 'knowledge' && <KnowledgeMapTab namespaces={knowledgeNamespaces} />}
               {activeTab === 'directives' && <DirectivesTab directives={sharedDirectives} agents={agents} tasks={tasks} recommendations={derivedRecommendations} />}
+            </div>
+
+            <div className="rounded-[24px] border border-white/8 bg-[#111827]/90 p-4">
+              <CommandSectionHeader
+                eyebrow="Doctrine Delta"
+                title="What is rising or losing trust"
+                description="Confidence movement from persisted doctrine history so you can see which beliefs are strengthening or slipping."
+                icon={TrendingUp}
+                tone="blue"
+              />
+              <div className="mt-4 grid gap-3 xl:grid-cols-3">
+                {doctrineDeltas.map((entry) => (
+                  <div key={entry.id} className="rounded-[20px] border border-white/8 bg-black/20 p-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="text-[12px] font-semibold text-text-primary">{entry.title}</div>
+                      <span className={cn(
+                        'rounded-full border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em]',
+                        entry.trend === 'up'
+                          ? 'border-aurora-teal/20 bg-aurora-teal/10 text-aurora-teal'
+                          : entry.trend === 'down'
+                            ? 'border-aurora-rose/20 bg-aurora-rose/10 text-aurora-rose'
+                            : 'border-white/8 bg-white/[0.03] text-text-muted'
+                      )}>
+                        {entry.trend === 'up' ? `+${entry.delta}` : entry.delta}
+                      </span>
+                    </div>
+                    <div className="mt-2 text-[10px] uppercase tracking-[0.16em] text-text-muted">{entry.owner}</div>
+                    <div className="mt-3 text-[11px] leading-relaxed text-text-body">{entry.changeSummary}</div>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
         </Motion.section>

@@ -2,6 +2,14 @@ function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
 }
 
+function parseCostRangeToMidpoint(value) {
+  const text = String(value || '');
+  const matches = [...text.matchAll(/(\d+(?:\.\d+)?)/g)].map((match) => Number(match[1]));
+  if (matches.length === 0) return 0;
+  if (matches.length === 1) return matches[0];
+  return (matches[0] + matches[1]) / 2;
+}
+
 export function inferAgentProvider(agent = {}) {
   const explicit = String(agent.provider || agent.providerOverride || '').trim();
   if (explicit) return explicit;
@@ -590,6 +598,22 @@ function getRecommendationKeywordBoost(recommendation, signals) {
     }
   }
 
+  if (/(pattern|shape|default|repeatable|mission pattern)/.test(text) || String(recommendation.id || '').includes('pattern')) {
+    const patternPressure = signals.patternStrength >= 75 ? 18 : signals.patternStrength >= 60 ? 10 : 0;
+    if (patternPressure > 0) {
+      score += patternPressure;
+      reasons.push(`A repeated mission shape is separating cleanly enough that Commander should lean into it more aggressively.`);
+    }
+  }
+
+  if (/(rescue|intervention|override|reroute)/.test(text) || String(recommendation.id || '').includes('rescue')) {
+    const rescuePressure = (signals.rescuePressure * 5) + Math.round(signals.rescueRate / 4);
+    if (rescuePressure > 0) {
+      score += rescuePressure;
+      reasons.push(`${signals.rescueRate}% of recent mission roots still needed rescue pressure, which should push weak lanes down faster.`);
+    }
+  }
+
   return {
     score,
     reasons,
@@ -603,9 +627,18 @@ export function rankCommanderRecommendations({
   logs = [],
   lifecycleEvents = [],
   agents = [],
+  learningMemory = null,
 } = {}) {
   const normalizedInterventions = normalizeInterventionEvents(interventions, logs);
   const fleetPosture = getFleetPostureSummary(lifecycleEvents, agents);
+  const rescueTouchedRoots = new Set(
+    normalizedInterventions
+      .filter((entry) => ['stop', 'cancel', 'retry', 'reroute', 'dependency'].includes(entry.eventType))
+      .map((entry) => entry.rootMissionId || entry.taskId)
+      .filter(Boolean)
+  );
+  const totalMissionRoots = Math.max(new Set(tasks.map((task) => task.rootMissionId || task.id).filter(Boolean)).size, 1);
+  const patternStrength = Number(learningMemory?.doctrineById?.['doctrine-mission-patterns']?.confidence || learningMemory?.doctrineById?.['mission-pattern-memory']?.confidence || 0);
   const policyDemotionPressure = recommendations.reduce((sum, recommendation) => {
     if (!recommendation?.taskDomain && !recommendation?.intentType) return sum;
     return sum + buildPolicyDemotionSummary(recommendation, tasks, interventions, logs).score;
@@ -621,6 +654,8 @@ export function rankCommanderRecommendations({
       const eventType = String(entry.eventType || '').toLowerCase();
       return scheduleType === 'recurring' && eventType !== 'guardrail';
     }).length,
+    rescueRate: Math.round((rescueTouchedRoots.size / totalMissionRoots) * 100),
+    patternStrength,
     policyDemotionPressure,
     fleetPosture,
   };
@@ -651,6 +686,138 @@ export function rankCommanderRecommendations({
       if (right.rankingScore !== left.rankingScore) return right.rankingScore - left.rankingScore;
       return String(left.title || '').localeCompare(String(right.title || ''));
     });
+}
+
+export function getDoctrineDeltaSummary(doctrineItems = []) {
+  return doctrineItems
+    .map((item) => {
+      const history = Array.isArray(item.history) ? item.history : [];
+      const latest = history[0] || null;
+      const previous = history[1] || null;
+      const delta = latest && previous
+        ? Number(latest.confidence || item.confidence || 0) - Number(previous.confidence || 0)
+        : 0;
+      const trend = !previous
+        ? 'forming'
+        : delta >= 4
+          ? 'up'
+          : delta <= -4
+            ? 'down'
+            : 'flat';
+      return {
+        id: item.id,
+        title: item.title,
+        owner: item.owner,
+        confidence: item.confidence,
+        delta,
+        trend,
+        changeSummary: item.changeSummary || 'Doctrine is holding steady.',
+        detail: item.detail,
+      };
+    })
+    .sort((left, right) => {
+      if (Math.abs(right.delta) !== Math.abs(left.delta)) return Math.abs(right.delta) - Math.abs(left.delta);
+      return Number(right.confidence || 0) - Number(left.confidence || 0);
+    });
+}
+
+export function getPersistentPromotionGuidance({ lifecycleEvents = [], agents = [], tasks = [] } = {}) {
+  const fleetPosture = getFleetPostureSummary(lifecycleEvents, agents);
+  const persistentRoles = new Set(
+    agents
+      .filter((agent) => !agent.isEphemeral && !['commander', 'executor'].includes(agent.role || ''))
+      .map((agent) => agent.role || 'specialist')
+  );
+  const roleDemand = tasks.reduce((acc, task) => {
+    const role = task.agentRole || task.assignedRole || task.role;
+    if (!role || ['commander', 'executor'].includes(role)) return acc;
+    acc[role] = (acc[role] || 0) + 1;
+    return acc;
+  }, {});
+  const rankedRoleDemand = Object.entries(roleDemand)
+    .map(([role, count]) => ({ role, count, covered: persistentRoles.has(role) }))
+    .sort((left, right) => {
+      if (left.covered !== right.covered) return left.covered ? 1 : -1;
+      return right.count - left.count;
+    });
+  const topGap = rankedRoleDemand.find((entry) => !entry.covered) || rankedRoleDemand[0] || null;
+  const recommendation = topGap
+    ? topGap.covered
+      ? `Persistent ${topGap.role} coverage exists already, so promotion pressure is low unless that lane starts choking.`
+      : `Promote or create a persistent ${topGap.role} lane next. It is showing up in ${topGap.count} branch assignments without durable coverage.`
+    : 'Mission traffic is still too diffuse to call the next persistent specialist confidently.';
+
+  return {
+    posture: fleetPosture.posture,
+    topGap,
+    rankedRoleDemand,
+    recommendation,
+  };
+}
+
+export function getPreflightAlignmentSummary({
+  tasks = [],
+  routingDecision = {},
+  missionSummary = {},
+  estimatedCost = '',
+  expectedBranches = 1,
+} = {}) {
+  const matchingTasks = tasks.filter((task) => {
+    const domainMatch = !routingDecision.domain || task.domain === routingDecision.domain;
+    const intentMatch = !routingDecision.intentType || task.intentType === routingDecision.intentType;
+    return domainMatch && intentMatch;
+  });
+
+  if (matchingTasks.length === 0) {
+    return {
+      posture: 'forming',
+      label: 'No runtime baseline yet',
+      detail: 'Commander is still estimating this launch because there is not enough matching runtime history to compare against.',
+      branchDelta: null,
+      costDelta: null,
+      sampleCount: 0,
+    };
+  }
+
+  const missionsByRoot = matchingTasks.reduce((acc, task) => {
+    const key = task.rootMissionId || task.id;
+    if (!acc[key]) acc[key] = [];
+    acc[key].push(task);
+    return acc;
+  }, {});
+  const missionGroups = Object.values(missionsByRoot);
+  const avgBranches = missionGroups.length
+    ? missionGroups.reduce((sum, group) => sum + group.length, 0) / missionGroups.length
+    : 1;
+  const avgCost = matchingTasks.reduce((sum, task) => sum + Number(task.costUsd || 0), 0) / matchingTasks.length;
+  const estimatedCostMid = parseCostRangeToMidpoint(estimatedCost);
+  const branchDelta = Number((expectedBranches - avgBranches).toFixed(1));
+  const costDelta = Number((estimatedCostMid - avgCost).toFixed(2));
+  const posture = Math.abs(branchDelta) <= 0.75 && Math.abs(costDelta) <= 0.75
+    ? 'aligned'
+    : Math.abs(branchDelta) <= 1.5 && Math.abs(costDelta) <= 1.25
+      ? 'close'
+      : 'drifting';
+  const label = posture === 'aligned'
+    ? 'Preflight matches runtime'
+    : posture === 'close'
+      ? 'Preflight is directionally right'
+      : 'Preflight is drifting from runtime';
+  const detail = posture === 'aligned'
+    ? `Matching missions are landing close to this plan, so Commander can trust the current briefing with relatively little caution.`
+    : posture === 'close'
+      ? `Matching missions are close enough that the briefing is useful, but the estimate should still be treated as soft guidance.`
+      : `Recent matching missions are landing far enough from this estimate that Commander should flag the preflight as a planning guess, not a strong promise.`;
+
+  return {
+    posture,
+    label,
+    detail,
+    branchDelta,
+    costDelta,
+    sampleCount: matchingTasks.length,
+    confidence: missionSummary.confidence || 0,
+  };
 }
 
 export function getAutomationCandidates(tasks = [], humanHourlyRate = 150) {

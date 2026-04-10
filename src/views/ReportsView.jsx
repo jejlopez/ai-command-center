@@ -31,9 +31,10 @@ import { AnimatedNumber } from '../components/command/AnimatedNumber';
 import { CommandSectionHeader } from '../components/command/CommandSectionHeader';
 import { useLearningMemory } from '../utils/useLearningMemory';
 import { DoctrineCards } from '../components/command/DoctrineCards';
+import { cn } from '../utils/cn';
 import { TruthAuditStrip } from '../components/command/TruthAuditStrip';
 import { useCommandCenterTruth } from '../utils/useCommandCenterTruth';
-import { buildPolicyDemotionSummary, buildProviderEscalationExplanation, getAutomationCandidates, getAutomationRoiSummary, getAutonomyMetrics, getObservedModelBenchmarks, getPrimaryBottleneck, parseAutomationGuardrailEvents, parseDoctrineFeedbackLogs, parseOutcomeScoreLogs, rankCommanderRecommendations, scoreTaskOutcome } from '../utils/commanderAnalytics';
+import { buildPolicyDemotionSummary, buildProviderEscalationExplanation, getAutomationCandidates, getAutomationRoiSummary, getAutonomyMetrics, getDoctrineDeltaSummary, getObservedModelBenchmarks, getPrimaryBottleneck, parseAutomationGuardrailEvents, parseDoctrineFeedbackLogs, parseOutcomeScoreLogs, rankCommanderRecommendations, scoreTaskOutcome } from '../utils/commanderAnalytics';
 import { createMission, updateRecurringMissionFlow } from '../lib/api';
 
 const PERIOD_OPTIONS = ['30d', '90d', 'QTD'];
@@ -495,6 +496,7 @@ export function ReportsView() {
   }, [logs]);
 
   const learningMemory = useLearningMemory({ tasks, approvals: reviews, logs, costData });
+  const doctrineDeltas = useMemo(() => getDoctrineDeltaSummary(learningMemory.doctrine).slice(0, 3), [learningMemory.doctrine]);
   const qualitySummary = useMemo(() => {
     const scored = tasks.map((task) => ({ task, outcome: scoreTaskOutcome(task) }));
     const average = scored.length
@@ -542,8 +544,9 @@ export function ReportsView() {
       logs,
       lifecycleEvents,
       agents,
+      learningMemory,
     }).slice(0, 4)
-  ), [agents, interventions, lifecycleEvents, logs, persistedRecommendations, tasks]);
+  ), [agents, interventions, learningMemory, lifecycleEvents, logs, persistedRecommendations, tasks]);
 
   const managedRecurringFlows = useMemo(() => {
     const recurringRoots = tasks.filter((task) => task.scheduleType === 'recurring' && (task.rootMissionId || task.id) === task.id);
@@ -1396,6 +1399,30 @@ export function ReportsView() {
                       {persistedDoctrineFeedback.map((entry) => (
                         <div key={entry.id} className="rounded-[14px] border border-white/8 bg-black/20 px-3 py-2.5 text-[11px] text-text-body">
                           {entry.cleanMessage}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="rounded-[18px] border border-white/8 bg-[#111827] p-3">
+                    <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Doctrine rank delta</div>
+                    <div className="mt-3 space-y-2">
+                      {doctrineDeltas.length === 0 && <div className="text-[11px] text-text-muted">Commander needs more persisted doctrine snapshots before a real delta rail appears.</div>}
+                      {doctrineDeltas.map((entry) => (
+                        <div key={entry.id} className="rounded-[14px] border border-white/8 bg-black/20 px-3 py-2.5">
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="text-[11px] font-semibold text-text-primary">{entry.title}</div>
+                            <div className={cn(
+                              'rounded-full border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em]',
+                              entry.trend === 'up'
+                                ? 'border-aurora-teal/20 bg-aurora-teal/10 text-aurora-teal'
+                                : entry.trend === 'down'
+                                  ? 'border-aurora-rose/20 bg-aurora-rose/10 text-aurora-rose'
+                                  : 'border-white/8 bg-white/[0.03] text-text-muted'
+                            )}>
+                              {entry.trend === 'up' ? `+${entry.delta}` : entry.delta}
+                            </div>
+                          </div>
+                          <div className="mt-2 text-[11px] leading-5 text-text-body">{entry.changeSummary}</div>
                         </div>
                       ))}
                     </div>

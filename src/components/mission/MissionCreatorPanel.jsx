@@ -13,8 +13,9 @@ import {
   X,
 } from 'lucide-react';
 import { cn } from '../../utils/cn';
-import { useConnectedSystems } from '../../utils/useSupabase';
+import { useConnectedSystems, useTasks } from '../../utils/useSupabase';
 import { deriveRoutingDecision } from '../../utils/routingPolicy';
+import { getPreflightAlignmentSummary } from '../../utils/commanderAnalytics';
 
 const SESSION_KEY = 'mission-creator-session-v1';
 const SAVED_PRESETS_KEY = 'mission-creator-presets-v1';
@@ -531,6 +532,7 @@ export function MissionCreatorPanel({
   onPreview,
 }) {
   const { connectedSystems } = useConnectedSystems();
+  const { tasks } = useTasks();
   const [form, setForm] = useState(() => initialFormState(agents));
   const [agentTouched, setAgentTouched] = useState(false);
   const [outputTouched, setOutputTouched] = useState(false);
@@ -584,6 +586,13 @@ export function MissionCreatorPanel({
     systemsReadback,
     routingDecision,
   }), [form, preview, missionSummary, systemsReadback, routingDecision]);
+  const preflightAlignment = useMemo(() => getPreflightAlignmentSummary({
+    tasks,
+    routingDecision,
+    missionSummary,
+    estimatedCost: preflight.estimatedCost,
+    expectedBranches: preflight.expectedBranches,
+  }), [tasks, routingDecision, missionSummary, preflight.estimatedCost, preflight.expectedBranches]);
   const selectedAgentIsPersistent = !!(selectedAgent && !selectedAgent.isEphemeral && !selectedAgent.isSyntheticCommander);
 
   useEffect(() => {
@@ -968,6 +977,35 @@ export function MissionCreatorPanel({
                   </div>
 
                   <div className="mt-3 rounded-2xl border border-white/[0.08] bg-black/20 px-3 py-3">
+                    <div className="mb-3 flex items-center justify-between gap-3">
+                      <div>
+                        <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Preflight alignment</div>
+                        <div className="mt-1 text-[12px] font-semibold text-text-primary">{preflightAlignment.label}</div>
+                      </div>
+                      <div className={cn(
+                        'rounded-full border px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.16em]',
+                        preflightAlignment.posture === 'aligned'
+                          ? 'border-aurora-teal/20 bg-aurora-teal/10 text-aurora-teal'
+                          : preflightAlignment.posture === 'close'
+                            ? 'border-aurora-amber/20 bg-aurora-amber/10 text-aurora-amber'
+                            : 'border-aurora-rose/20 bg-aurora-rose/10 text-aurora-rose'
+                      )}>
+                        {preflightAlignment.sampleCount > 0 ? `${preflightAlignment.sampleCount} matching runs` : 'forming'}
+                      </div>
+                    </div>
+                    <div className="mb-3 text-[11px] leading-relaxed text-text-body">{preflightAlignment.detail}</div>
+                    {preflightAlignment.sampleCount > 0 && (
+                      <div className="mb-3 grid grid-cols-2 gap-3">
+                        <div className="rounded-2xl border border-white/[0.08] bg-white/[0.03] px-3 py-2">
+                          <div className="text-[9px] uppercase tracking-[0.18em] text-text-muted">Branch delta</div>
+                          <div className="mt-1 text-[12px] font-semibold text-text-primary">{preflightAlignment.branchDelta > 0 ? '+' : ''}{preflightAlignment.branchDelta}</div>
+                        </div>
+                        <div className="rounded-2xl border border-white/[0.08] bg-white/[0.03] px-3 py-2">
+                          <div className="text-[9px] uppercase tracking-[0.18em] text-text-muted">Cost delta</div>
+                          <div className="mt-1 text-[12px] font-semibold text-text-primary">{preflightAlignment.costDelta > 0 ? '+' : ''}${Math.abs(preflightAlignment.costDelta).toFixed(2)}</div>
+                        </div>
+                      </div>
+                    )}
                     <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Top risks before launch</div>
                     <div className="mt-2 space-y-2">
                       {preflight.topRisks.length === 0 && (
