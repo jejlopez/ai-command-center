@@ -625,6 +625,7 @@ function MissionGraphPanel({ tasks, agents, logs, outcomes, interventions, lifec
               <div className="mt-1 text-sm font-semibold text-text-primary">{recurringTrustSummary.actionLabel}</div>
               <p className="mt-2 text-[12px] leading-relaxed text-text-body">{recurringTrustSummary.detail}</p>
               <p className="mt-2 text-[11px] leading-relaxed text-aurora-amber">{recurringTrustSummary.recoveryLabel}</p>
+              <p className="mt-2 text-[11px] leading-relaxed text-aurora-teal">{recurringTrustSummary.recoveryUpgradeLabel}</p>
               <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/[0.08]">
                 <div
                   className="h-full rounded-full bg-gradient-to-r from-aurora-amber via-aurora-violet to-aurora-teal"

@@ -106,6 +106,8 @@ This is the live build tracker for the Jarvis / Stark / Musk Commander program.
 - Default persistent-lane actions are now available inside Mission Control for durable mission-family role gaps
 - Trust-recovery now shows explicit progress back toward autonomy across bridge, Reports, and Mission Control
 - Runtime-selected provider and model defaults now persist onto the mission root, not just delegated branches
+- Recovered recurring flows can now earn lighter mission and approval posture automatically from clean runtime history
+- Manual reroutes now inherit selected lane provider/model defaults instead of dropping back to blank overrides
 
 ## Epic Experience Layer
 

@@ -520,6 +520,32 @@ function enforceRecurringMissionGuardrails(payload = {}) {
       };
       guardrails.push('Kept recurring cadence conservative while runtime trust is still forming.');
     }
+  } else if (trustTuning.earnedAutonomy) {
+    if (nextPayload.missionMode !== trustTuning.recommendedMissionMode) {
+      nextPayload.missionMode = trustTuning.recommendedMissionMode;
+      guardrails.push('Recurring flow earned a lighter mission posture from clean runtime history.');
+    }
+    if (nextPayload.repeat.approvalPosture !== trustTuning.recommendedApprovalPosture) {
+      nextPayload.repeat = {
+        ...nextPayload.repeat,
+        approvalPosture: trustTuning.recommendedApprovalPosture,
+      };
+      guardrails.push('Recurring approval posture relaxed because runtime trust has recovered.');
+    }
+    if (nextPayload.repeat.frequency !== trustTuning.recommendedFrequency) {
+      nextPayload.repeat = {
+        ...nextPayload.repeat,
+        frequency: trustTuning.recommendedFrequency,
+      };
+      guardrails.push('Recurring cadence increased because runtime trust has recovered.');
+    }
+    if (nextPayload.repeat.paused) {
+      nextPayload.repeat = {
+        ...nextPayload.repeat,
+        paused: false,
+      };
+      guardrails.push('Recurring flow automatically unpaused after earning trust back.');
+    }
   }
 
   return { payload: nextPayload, guardrails };
@@ -1913,11 +1939,19 @@ export async function updateMissionBranchRouting(taskId, updates = {}, agents = 
   const patch = {
     updated_at: new Date().toISOString(),
   };
+  const requestedAgent = Object.prototype.hasOwnProperty.call(updates, 'agentId')
+    ? agents.find((agent) => agent.id === updates.agentId) || null
+    : null;
 
   if (Object.prototype.hasOwnProperty.call(updates, 'agentId')) {
-    const nextAgent = agents.find((agent) => agent.id === updates.agentId) || null;
     patch.agent_id = updates.agentId || null;
-    patch.agent_name = nextAgent?.name || 'Unassigned';
+    patch.agent_name = requestedAgent?.name || 'Unassigned';
+    if (!Object.prototype.hasOwnProperty.call(updates, 'providerOverride') && requestedAgent) {
+      patch.provider_override = inferAgentProvider(requestedAgent) || null;
+    }
+    if (!Object.prototype.hasOwnProperty.call(updates, 'modelOverride') && requestedAgent?.model) {
+      patch.model_override = requestedAgent.model || null;
+    }
   }
 
   if (Object.prototype.hasOwnProperty.call(updates, 'providerOverride')) {
@@ -1942,7 +1976,7 @@ export async function updateMissionBranchRouting(taskId, updates = {}, agents = 
     throw error;
   }
 
-  const nextAgent = agents.find((agent) => agent.id === (patch.agent_id || currentTask.agent_id)) || null;
+  const nextAgent = requestedAgent || agents.find((agent) => agent.id === (patch.agent_id || currentTask.agent_id)) || null;
   const message = `[branch-routing] ${currentTask.title || currentTask.name || taskId} (${taskId}) on root ${currentTask.root_mission_id || taskId} -> agent ${nextAgent?.name || patch.agent_name || currentTask.agent_name || 'Unassigned'}, provider ${patch.provider_override ?? currentTask.provider_override ?? 'default'}, model ${patch.model_override ?? currentTask.model_override ?? 'default'}.`;
   await logBranchEvent({
     userId: user.id,
@@ -1966,6 +2000,8 @@ export async function updateMissionBranchRouting(taskId, updates = {}, agents = 
     metadata: {
       previousAgentId: currentTask.agent_id || null,
       nextAgentId: patch.agent_id || currentTask.agent_id || null,
+      inheritedProvider: patch.provider_override ?? currentTask.provider_override ?? inferAgentProvider(nextAgent) ?? null,
+      inheritedModel: patch.model_override ?? currentTask.model_override ?? nextAgent?.model ?? null,
     },
   });
 

@@ -184,6 +184,7 @@ These are not separate feature IDs yet. They should be implemented as depth adde
 9. Turn fleet-shaping actions into stronger default operator workflows across mission families and domain packs
 10. Keep widening trust-recovery and fleet-shaping actions across bridge, recurring, and live intervention surfaces
 11. Show recurring recovery as progress back toward autonomy, not just restriction state
+12. Let recovered recurring flows earn autonomy upgrades explicitly from clean runtime history
 
 ## Autodrive Program Rule
 
