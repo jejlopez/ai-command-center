@@ -129,17 +129,17 @@ Legend:
 ## Current Read
 
 - `Shipped`: 15
-- `In Progress`: 52
+- `In Progress`: 55
 - `Next`: 0
 - `Queued`: 16
 - `Later / Future`: 48
 
 ## Immediate Next Four
 
-1. Wider doctrine-delta trust rails inside recurring-management and live intervention surfaces
-2. Stronger multi-role durable-fleet shaping across additional mission types
-3. Mission-pattern winners influencing approval defaults more directly
-4. Runtime confidence closure steering more lane and provider defaults
+1. Runtime confidence closure steering more lane and provider defaults
+2. Recurring trust memory tightening autonomy posture even more aggressively
+3. Durable-fleet shaping expanding into more domains and mission families
+4. Mission-pattern winners influencing approval defaults even more directly
 
 ## Epic Experience Layer Additions
 
@@ -173,12 +173,12 @@ These are not separate feature IDs yet. They should be implemented as depth adde
 
 ## Updated Immediate Next Order
 
-1. Let runtime confidence closure steer more lane and provider defaults
-2. Tighten recurring autonomy posture when runtime trust memory drifts
-3. Convert promotion guidance into broader durable-fleet shaping across more mission types
+1. Push runtime confidence closure deeper into provider and lane defaults
+2. Tighten recurring autonomy posture even more aggressively when trust memory drifts
+3. Expand durable-fleet shaping into more domains and mission families
 4. Push mission-pattern winners into provider, lane, and approval defaults more aggressively
 5. Keep widening trust and doctrine readback where operators make decisions
-6. Expand multi-role durable-fleet shaping into more domains
+6. Turn durable-fleet shaping guidance into stronger automatic coverage defaults
 
 ## Autodrive Program Rule
 

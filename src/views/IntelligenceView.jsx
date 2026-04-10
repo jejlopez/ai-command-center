@@ -1837,6 +1837,18 @@ function SpecialistFleetTab({ agents, lifecycleEvents, skills, tasks }) {
                 Durable pressure is now high enough that Commander can justify auto-creating coverage for: {promotionGuidance.autoCreateRoles.join(', ')}.
               </p>
             )}
+            {promotionGuidance.domainTargets?.length > 0 && (
+              <div className="mt-3 flex flex-wrap gap-2">
+                {promotionGuidance.domainTargets.map((entry) => (
+                  <span
+                    key={`${entry.domain}-${entry.intentType}-${entry.role}`}
+                    className="rounded-full border border-aurora-blue/20 bg-aurora-blue/10 px-2 py-1 text-[10px] font-semibold text-aurora-blue"
+                  >
+                    {entry.domain}/{entry.intentType}: {entry.role} x{entry.count}
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <span className="rounded-full border border-aurora-blue/20 bg-aurora-blue/10 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-aurora-blue">

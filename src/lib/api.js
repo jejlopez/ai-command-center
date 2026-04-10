@@ -496,9 +496,23 @@ function enforceRecurringMissionGuardrails(payload = {}) {
       };
       guardrails.push('Raised recurring approval posture because runtime trust is still fragile.');
     }
+    if (nextPayload.repeat.frequency !== trustTuning.recommendedFrequency) {
+      nextPayload.repeat = {
+        ...nextPayload.repeat,
+        frequency: trustTuning.recommendedFrequency,
+      };
+      guardrails.push('Reduced recurring cadence because runtime trust is still fragile.');
+    }
   } else if (trustTuning.posture === 'watch' && nextPayload.missionMode === 'do_now') {
     nextPayload.missionMode = trustTuning.recommendedMissionMode;
     guardrails.push('Shifted recurring mission into plan-first while runtime trust is still forming.');
+    if (nextPayload.repeat.frequency !== trustTuning.recommendedFrequency) {
+      nextPayload.repeat = {
+        ...nextPayload.repeat,
+        frequency: trustTuning.recommendedFrequency,
+      };
+      guardrails.push('Kept recurring cadence conservative while runtime trust is still forming.');
+    }
   }
 
   return { payload: nextPayload, guardrails };
@@ -1208,7 +1222,9 @@ async function selectOutcomeWinningLane(user, routingDecision) {
       confidence: entry.runs >= 8 ? 'high' : entry.runs >= 4 ? 'medium' : 'low',
       rank: (entry.runs ? entry.totalScore / entry.runs : 0)
         + Math.min(24, entry.runs * 3)
-        - ((entry.runs ? entry.totalCost / entry.runs : 0) * 5.5),
+        - ((entry.runs ? entry.totalCost / entry.runs : 0) * 5.5)
+        + (entry.approvalLevel === 'auto_low_risk' ? 6 : entry.approvalLevel === 'risk_weighted' ? 2 : -6)
+        + (entry.executionStrategy === 'parallel' ? 3 : 0),
     }))
     .sort((left, right) => {
       if (right.rank !== left.rank) return right.rank - left.rank;
@@ -1243,6 +1259,25 @@ function applyPatternApprovalBias({ routingDecision, observedWinningLane }) {
     ...routingDecision,
     approvalLevel: patternBias.recommendedApprovalLevel || routingDecision.approvalLevel,
     approvalBiasDetail: patternBias.detail,
+  };
+}
+
+function applyRuntimeConfidenceBias({ routingDecision, observedWinningLane }) {
+  if (!observedWinningLane) return routingDecision;
+
+  const shouldPromoteWinningLane = observedWinningLane.confidence === 'high'
+    || (observedWinningLane.confidence === 'medium' && Number(observedWinningLane.avgScore || 0) >= 78);
+
+  if (!shouldPromoteWinningLane) {
+    return routingDecision;
+  }
+
+  return {
+    ...routingDecision,
+    selectedProvider: observedWinningLane.provider || routingDecision.selectedProvider,
+    selectedModel: observedWinningLane.model || routingDecision.selectedModel,
+    selectedAgentRole: observedWinningLane.agentRole || routingDecision.selectedAgentRole,
+    routingReason: `${routingDecision.routingReason} | runtime winner ${observedWinningLane.provider || 'Adaptive'} ${observedWinningLane.model || 'lane'} @ ${Math.round(observedWinningLane.avgScore || 0)} score`,
   };
 }
 
@@ -1314,6 +1349,7 @@ export async function createMission(payload, agents = []) {
   let routingDecision = deriveRoutingDecision(effectivePayload, selectedAgent, routingPolicy);
   const observedWinningLane = await selectOutcomeWinningLane(user, routingDecision);
   routingDecision = applyPatternApprovalBias({ routingDecision, observedWinningLane });
+  routingDecision = applyRuntimeConfidenceBias({ routingDecision, observedWinningLane });
   const persistentLaneSignals = await fetchPersistentLaneSignals(user.id);
   const hasDelegatedSteps = plannedBranches.length > 1;
   const executionPosture = getMissionExecutionPosture(effectivePayload);
