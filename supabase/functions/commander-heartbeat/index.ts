@@ -84,6 +84,9 @@ type TaskRow = {
   risk_level?: string | null;
   approval_level?: string | null;
   execution_strategy?: string | null;
+  schedule_type?: string | null;
+  recurrence_rule?: { frequency?: string | null; time?: string | null; endDate?: string | null } | null;
+  requires_approval?: boolean | null;
   context_pack_ids?: unknown;
   required_capabilities?: unknown;
   model_override?: string | null;
@@ -124,6 +127,41 @@ function buildDoctrineFeedback(task: { budget_class?: string | null; risk_level?
     return 'Low-risk work cleared at a relatively high cost. Bias similar branches toward a local or cheaper lane first.';
   }
   return `This route is holding up well. Preserve the current lane${task.model_override ? ` around ${task.model_override}` : ''} as a preferred doctrine candidate.`;
+}
+
+async function recordTaskIntervention(
+  db: ReturnType<typeof createClient>,
+  task: TaskRow,
+  {
+    eventType,
+    eventSource = 'runtime',
+    tone = 'blue',
+    message,
+    metadata = {},
+  }: {
+    eventType: string;
+    eventSource?: string;
+    tone?: string;
+    message: string;
+    metadata?: Record<string, unknown>;
+  },
+) {
+  await db.from('task_interventions').insert({
+    user_id: task.user_id,
+    task_id: task.id,
+    root_mission_id: task.root_mission_id || task.id,
+    agent_id: task.agent_id || null,
+    event_type: eventType,
+    event_source: eventSource,
+    tone,
+    message,
+    domain: task.domain || 'general',
+    intent_type: task.intent_type || 'general',
+    provider: task.provider_override || null,
+    model: task.model_override || null,
+    schedule_type: task.schedule_type || 'once',
+    metadata,
+  });
 }
 
 async function updateMissionGraphProgress(db: ReturnType<typeof createClient>, task: TaskRow) {
@@ -295,7 +333,7 @@ Deno.serve(async (req: Request) => {
         .eq('role', 'commander'),
     db
       .from('tasks')
-      .select('id,user_id,name,title,description,status,agent_id,created_by_commander_id,priority,progress_percent,run_at,started_at,created_at,parent_id,root_mission_id,node_type,workflow_status,depends_on,domain,intent_type,budget_class,risk_level,approval_level,execution_strategy,context_pack_ids,required_capabilities,model_override,provider_override')
+      .select('id,user_id,name,title,description,status,agent_id,created_by_commander_id,priority,progress_percent,run_at,started_at,created_at,parent_id,root_mission_id,node_type,workflow_status,depends_on,domain,intent_type,budget_class,risk_level,approval_level,execution_strategy,schedule_type,recurrence_rule,requires_approval,context_pack_ids,required_capabilities,model_override,provider_override')
       .eq('status', 'queued')
       .order('priority', { ascending: false })
       .order('created_at', { ascending: true }),
@@ -347,6 +385,39 @@ Deno.serve(async (req: Request) => {
 
   for (const task of taskRows) {
     scanned += 1;
+
+    if (
+      String(task.schedule_type || '') === 'recurring'
+      && (task.requires_approval || String(task.approval_level || '') === 'human_required')
+    ) {
+      const message = `[automation-guardrail] ${(task.title || task.name || task.id)} on root ${task.root_mission_id || task.id} was held at runtime because recurring work still requires approval.`;
+      await db.from('tasks').update({
+        status: 'needs_approval',
+        workflow_status: 'waiting_on_human',
+        lane: 'approvals',
+        updated_at: new Date().toISOString(),
+      }).eq('id', task.id).eq('user_id', task.user_id);
+
+      await db.from('activity_log').insert({
+        user_id: task.user_id,
+        type: 'SYS',
+        message,
+        agent_id: task.agent_id || null,
+        tokens: 0,
+        duration_ms: 0,
+      });
+      await recordTaskIntervention(db, task, {
+        eventType: 'guardrail',
+        eventSource: 'runtime',
+        tone: 'amber',
+        message,
+        metadata: {
+          approvalLevel: task.approval_level || 'risk_weighted',
+          requiresApproval: Boolean(task.requires_approval),
+        },
+      });
+      continue;
+    }
 
     const dueAtMs = task.run_at ? new Date(task.run_at).getTime() : nowMs;
     if (Number.isNaN(dueAtMs) || dueAtMs > nowMs) continue;

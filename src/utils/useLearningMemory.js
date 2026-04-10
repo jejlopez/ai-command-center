@@ -44,6 +44,226 @@ function buildHistorySummary(history = []) {
   return 'Confidence is holding steady against the previous snapshot.';
 }
 
+async function fetchRecentOutcomeRows(userId) {
+  const { data, error } = await supabase
+    .from('task_outcomes')
+    .select('*')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false })
+    .limit(60);
+
+  if (error) {
+    if (isMissingTableError(error)) return { available: false, rows: [] };
+    throw error;
+  }
+
+  return { available: true, rows: data || [] };
+}
+
+async function fetchRecentInterventionRows(userId) {
+  const { data, error } = await supabase
+    .from('task_interventions')
+    .select('*')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false })
+    .limit(120);
+
+  if (error) {
+    if (isMissingTableError(error)) return { available: false, rows: [] };
+    throw error;
+  }
+
+  return {
+    available: true,
+    rows: (data || []).map((row) => ({
+      id: row.id,
+      taskId: row.task_id || null,
+      rootMissionId: row.root_mission_id || null,
+      agentId: row.agent_id || null,
+      eventType: row.event_type || 'override',
+      eventSource: row.event_source || 'runtime',
+      tone: row.tone || 'blue',
+      message: row.message || '',
+      domain: row.domain || 'general',
+      intentType: row.intent_type || 'general',
+      provider: row.provider || null,
+      model: row.model || null,
+      scheduleType: row.schedule_type || 'once',
+      metadata: row.metadata || {},
+      createdAt: row.created_at,
+    })),
+  };
+}
+
+async function syncOutcomeDoctrineArtifacts(userId) {
+  const outcomeResponse = await fetchRecentOutcomeRows(userId);
+  if (!outcomeResponse.available) return { available: false };
+  const interventionResponse = await fetchRecentInterventionRows(userId);
+  if (!interventionResponse.available) return { available: false };
+
+  const outcomes = outcomeResponse.rows;
+  const interventions = interventionResponse.rows;
+  if (!outcomes.length) return { available: true };
+
+  const averageScore = Math.round(outcomes.reduce((sum, row) => sum + Number(row.score || 0), 0) / outcomes.length);
+  const lowTrustCount = outcomes.filter((row) => String(row.trust || '') === 'low').length;
+  const providerCounts = outcomes.reduce((acc, row) => {
+    const key = row.provider || 'Adaptive';
+    acc[key] = (acc[key] || 0) + 1;
+    return acc;
+  }, {});
+  const leadingProvider = Object.entries(providerCounts).sort((left, right) => right[1] - left[1])[0]?.[0] || 'Adaptive';
+  const doctrineFeedbackRows = outcomes
+    .map((row) => String(row.doctrine_feedback || '').trim())
+    .filter(Boolean);
+  const doctrineFeedbackCounts = doctrineFeedbackRows.reduce((acc, feedback) => {
+    acc[feedback] = (acc[feedback] || 0) + 1;
+    return acc;
+  }, {});
+  const dominantFeedback = Object.entries(doctrineFeedbackCounts)
+    .sort((left, right) => right[1] - left[1])[0] || null;
+  const interventionCounts = interventions.reduce((acc, row) => {
+    const key = row.eventType || 'other';
+    acc[key] = (acc[key] || 0) + 1;
+    return acc;
+  }, {});
+  const interventionLoad = Object.values(interventionCounts).reduce((sum, count) => sum + Number(count || 0), 0);
+  const reroutePressure = Number(interventionCounts.reroute || 0) + Number(interventionCounts.dependency || 0);
+
+  const doctrine = [
+    buildDoctrineItem({
+      id: 'outcome-memory',
+      owner: 'Outcome Memory',
+      tone: averageScore >= 70 ? 'teal' : 'rose',
+      title: averageScore >= 70 ? 'Structured outcome memory is reinforcing the stack' : 'Outcome memory is signaling quality drift',
+      detail: averageScore >= 70
+        ? `Average outcome score is ${averageScore}, with ${lowTrustCount} low-trust branches still worth watching.`
+        : `Average outcome score is ${averageScore}, which means doctrine should focus on weak branches before scaling further.`,
+      confidence: averageScore,
+      evidence: [
+        `${outcomes.length} structured task outcomes are now stored in first-class memory.`,
+        `${lowTrustCount} of those are marked low trust.`,
+        `Current average score is ${averageScore}.`,
+      ],
+      metrics: {
+        averageScore,
+        totalOutcomes: outcomes.length,
+        lowTrustCount,
+      },
+    }),
+    buildDoctrineItem({
+      id: 'provider-pressure',
+      owner: 'Routing Memory',
+      tone: 'blue',
+      title: `${leadingProvider} is currently the dominant provider lane`,
+      detail: `Structured outcomes show the heaviest successful traffic landing on ${leadingProvider}. That should shape escalation explanations and routing defaults.`,
+      confidence: Math.min(92, 55 + outcomes.length),
+      evidence: [
+        `${leadingProvider} appears most often in structured outcome memory.`,
+        'This signal now comes from first-class outcome records instead of log parsing.',
+      ],
+      metrics: {
+        leadingProvider,
+        providerCounts,
+      },
+    }),
+    buildDoctrineItem({
+      id: 'doctrine-feedback-memory',
+      owner: 'Doctrine Memory',
+      tone: dominantFeedback ? (averageScore >= 70 ? 'teal' : 'amber') : 'blue',
+      title: dominantFeedback ? 'Outcome feedback is converging into repeatable doctrine' : 'Commander is still waiting for stronger doctrine feedback patterns',
+      detail: dominantFeedback
+        ? `The most repeated doctrine signal is "${dominantFeedback[0]}" and it has surfaced ${dominantFeedback[1]} times in structured outcome memory.`
+        : 'Structured outcomes are landing, but the qualitative doctrine layer is still too thin to harden a stronger recommendation.',
+      confidence: dominantFeedback ? Math.min(94, 58 + (dominantFeedback[1] * 6)) : 48,
+      evidence: [
+        doctrineFeedbackRows.length
+          ? `${doctrineFeedbackRows.length} structured doctrine-feedback messages are now persisted with task outcomes.`
+          : 'No structured doctrine-feedback messages have been written yet.',
+        dominantFeedback
+          ? `The current top doctrine message has repeated ${dominantFeedback[1]} times.`
+          : 'Commander needs a few more completed runs before the feedback pattern becomes stable.',
+      ],
+      metrics: {
+        doctrineFeedbackCount: doctrineFeedbackRows.length,
+        dominantFeedback: dominantFeedback?.[0] || null,
+        dominantFeedbackCount: dominantFeedback?.[1] || 0,
+      },
+    }),
+    buildDoctrineItem({
+      id: 'intervention-memory',
+      owner: 'Intervention Memory',
+      tone: interventionLoad <= 4 ? 'teal' : interventionLoad <= 10 ? 'amber' : 'rose',
+      title: interventionLoad <= 4 ? 'Branches are holding without much human intervention' : 'Human interventions are shaping route quality',
+      detail: interventionLoad <= 4
+        ? `Only ${interventionLoad} intervention events were recorded recently, so current routing is holding steady without much manual rescue.`
+        : `${interventionLoad} intervention events were recorded recently, including ${reroutePressure} reroutes or dependency changes. Commander should treat those overrides as route-quality signals, not noise.`,
+      confidence: interventionLoad <= 4 ? 72 : Math.min(94, 58 + interventionLoad),
+      evidence: [
+        `${interventionLoad} intervention events are persisted in first-class intervention memory.`,
+        `${reroutePressure} of those were branch reroutes or dependency edits.`,
+        'This is now part of doctrine persistence so override-heavy routes get penalized earlier.',
+      ],
+      metrics: {
+        interventionLoad,
+        reroutePressure,
+        interventionCounts,
+      },
+    }),
+  ];
+
+  await syncLearningMemoryRows(userId, doctrine);
+
+  await supabase
+    .from('system_recommendations')
+    .upsert([
+      {
+        id: 'outcome-memory-quality',
+        user_id: userId,
+        rec_type: 'doctrine',
+        title: averageScore >= 70 ? 'Lean harder into the current outcome-winning routes' : 'Stabilize low-scoring routes before scaling',
+        description: averageScore >= 70
+          ? `Average structured outcome score is ${averageScore}, so current routing is healthy enough to keep compounding.`
+          : `Average structured outcome score is ${averageScore}, so Commander should prioritize route quality and verification before adding more load.`,
+        impact: averageScore >= 70 ? 'high' : 'critical',
+        savings_label: averageScore >= 70 ? `${averageScore} quality` : `${lowTrustCount} low-trust`,
+      },
+      {
+        id: 'provider-escalation-pressure',
+        user_id: userId,
+        rec_type: 'routing',
+        title: `Explain why ${leadingProvider} is winning`,
+        description: `Outcome memory shows ${leadingProvider} is the dominant successful provider lane. Surface that readback wherever Commander escalates or stays cheap.`,
+        impact: 'medium',
+        savings_label: `${outcomes.length} outcomes`,
+      },
+      {
+        id: 'doctrine-feedback-memory',
+        user_id: userId,
+        rec_type: 'doctrine',
+        title: dominantFeedback ? 'Harden the most repeated doctrine feedback into defaults' : 'Collect more qualitative outcome feedback before changing defaults',
+        description: dominantFeedback
+          ? `The most repeated doctrine signal is "${dominantFeedback[0]}". Use that as the next default route, approval, or verification adjustment.`
+          : 'Commander has structured outcomes now, but still needs more repeated doctrine-feedback messages before it should rewrite policy confidently.',
+        impact: dominantFeedback ? 'high' : 'medium',
+        savings_label: dominantFeedback ? `${dominantFeedback[1]} repeats` : `${doctrineFeedbackRows.length} signals`,
+      },
+      {
+        id: 'intervention-memory-pressure',
+        user_id: userId,
+        rec_type: 'optimization',
+        title: interventionLoad > 4 ? 'Intervention-heavy routes need to be penalized in routing doctrine' : 'Intervention pressure is light enough to keep scaling',
+        description: interventionLoad > 4
+          ? `${interventionLoad} recent intervention events are telling Commander which routes still need manual rescue. Use those reroutes, retries, and cancels to demote fragile lanes.`
+          : `Only ${interventionLoad} recent intervention events were recorded, so current routing posture is stable enough to keep expanding carefully.`,
+        impact: interventionLoad > 10 ? 'critical' : interventionLoad > 4 ? 'high' : 'medium',
+        savings_label: `${interventionLoad} interventions`,
+      },
+    ], { onConflict: 'id' });
+
+  return { available: true };
+}
+
 export function deriveLearningMemory({ tasks = [], approvals = [], logs = [], costData = null, humanHourlyRate = 42 }) {
   const completed = tasks.filter((task) => ['completed', 'done'].includes(task.status));
   const failed = tasks.filter((task) => ['failed', 'error', 'blocked', 'cancelled'].includes(task.status));
@@ -395,6 +615,32 @@ function mergeDoctrineWithPersistence(derived, currentRows, historyRows, persist
     return acc;
   }, {});
 
+  (currentRows || []).forEach((row) => {
+    if (doctrineById[row.doctrineKey]) return;
+    const history = historyByKey[row.doctrineKey] || [];
+    const extra = {
+      id: row.doctrineKey,
+      owner: row.owner,
+      tone: row.tone,
+      title: row.title,
+      detail: row.detail,
+      confidence: row.confidence,
+      evidence: row.evidence || [],
+      metrics: row.metrics || {},
+      snapshotHash: row.snapshotHash,
+      persistedId: row.id,
+      firstSeenAt: row.firstSeenAt || null,
+      lastSeenAt: row.lastSeenAt || null,
+      history,
+      latestSnapshotAt: history[0]?.observedAt || row.updatedAt || null,
+      changeSummary: buildHistorySummary(history),
+      whyItBelievesThis: row.evidence || [],
+      persistenceEnabled,
+    };
+    doctrine.push(extra);
+    doctrineById[extra.id] = extra;
+  });
+
   return {
     doctrine,
     doctrineById,
@@ -438,12 +684,13 @@ export function useLearningMemory(input) {
 
       try {
         const syncResult = await syncLearningMemoryRows(user.id, derived.doctrine);
+        const outcomeSync = await syncOutcomeDoctrineArtifacts(user.id);
         const persisted = await fetchPersistedLearningMemory(user.id);
 
         if (!cancelled) {
           setPersistedCurrent(persisted.current);
           setPersistedHistory(persisted.history);
-          setPersistenceEnabled(Boolean(syncResult.available && persisted.available));
+          setPersistenceEnabled(Boolean(syncResult.available && outcomeSync.available && persisted.available));
         }
       } catch (error) {
         console.error('[learning-memory]', error.message || error);

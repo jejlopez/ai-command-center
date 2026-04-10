@@ -1056,6 +1056,59 @@ export function useTaskOutcomes() {
   return { outcomes, loading, refetch: fetchOutcomes };
 }
 
+export function useTaskInterventions() {
+  const { user } = useAuth();
+  const [interventions, setInterventions] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetchInterventions = useCallback(async () => {
+    if (!user) {
+      setInterventions([]);
+      setLoading(false);
+      return;
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from('task_interventions')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      setInterventions((data || []).map(mapTaskInterventionFromDb));
+    } catch (error) {
+      console.error('[useTaskInterventions] Fetch error:', error);
+      setInterventions([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) return;
+
+    fetchInterventions();
+    const channel = supabase
+      .channel(createRealtimeChannelName('task-interventions-user', user.id))
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'task_interventions',
+        filter: `user_id=eq.${user.id}`,
+      }, () => {
+        fetchInterventions();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user, fetchInterventions]);
+
+  return { interventions, loading, refetch: fetchInterventions };
+}
+
 /**
  * Insert a new agent into Supabase.
  */
@@ -1517,6 +1570,28 @@ function mapSystemRecommendationFromDb(row) {
     description: row.description || '',
     impact: row.impact || 'medium',
     savings: row.savings_label || '',
+    updatedAt: row.updated_at,
+  };
+}
+
+function mapTaskInterventionFromDb(row) {
+  return {
+    id: row.id,
+    userId: row.user_id,
+    taskId: row.task_id || null,
+    rootMissionId: row.root_mission_id || null,
+    agentId: row.agent_id || null,
+    eventType: row.event_type || 'override',
+    eventSource: row.event_source || 'runtime',
+    tone: row.tone || 'blue',
+    message: row.message || '',
+    domain: row.domain || 'general',
+    intentType: row.intent_type || 'general',
+    provider: normalizeModelProvider(row.provider),
+    model: row.model || '',
+    scheduleType: row.schedule_type || 'once',
+    metadata: row.metadata || {},
+    createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
 }

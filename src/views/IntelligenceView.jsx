@@ -29,7 +29,7 @@ import {
   YAxis,
 } from 'recharts';
 import { container, item } from '../utils/variants';
-import { cleanupTempAgents, createPersistentSpecialist, createTempAgent, promoteAgentToPersistent, useActivityLog, useAgents, useKnowledgeNamespaces, useModelBank, useRoutingPolicies, useSharedDirectives, useSkillBank, useSystemRecommendations, useTasks } from '../utils/useSupabase';
+import { cleanupTempAgents, createPersistentSpecialist, createTempAgent, promoteAgentToPersistent, useActivityLog, useAgents, useKnowledgeNamespaces, useModelBank, useRoutingPolicies, useSharedDirectives, useSkillBank, useSystemRecommendations, useTaskInterventions, useTasks } from '../utils/useSupabase';
 import { AnimatedNumber } from '../components/command/AnimatedNumber';
 import { CommandSectionHeader } from '../components/command/CommandSectionHeader';
 import { useCommanderPreferences } from '../utils/useCommanderPreferences';
@@ -40,7 +40,7 @@ import { TruthAuditStrip } from '../components/command/TruthAuditStrip';
 import { useCommandCenterTruth } from '../utils/useCommandCenterTruth';
 import { normalizeModelProvider } from '../utils/commanderPolicy';
 import { getWorkflowMeta } from '../utils/missionLifecycle';
-import { getObservedModelBenchmarks, getPersistentFleetHistory, scoreTaskOutcome } from '../utils/commanderAnalytics';
+import { buildPolicyDemotionSummary, getObservedModelBenchmarks, getPersistentFleetHistory, scoreTaskOutcome } from '../utils/commanderAnalytics';
 
 const tabs = [
   { id: 'models', label: 'Model Command Matrix', icon: Cpu },
@@ -541,10 +541,10 @@ function IntelligenceHeader({ activeTab, setActiveTab, systemSummary, availableM
   );
 }
 
-function ModelRegistryTab({ availableModels, agents, tasks }) {
+function ModelRegistryTab({ availableModels, agents, tasks, logs, interventions }) {
   const [detailView, setDetailView] = useState('constellation');
   const radarSelection = availableModels.slice(0, 4);
-  const observedBenchmarks = useMemo(() => getObservedModelBenchmarks(tasks, agents).slice(0, 6), [tasks, agents]);
+  const observedBenchmarks = useMemo(() => getObservedModelBenchmarks(tasks, agents, logs, interventions).slice(0, 6), [tasks, agents, logs, interventions]);
 
   const groupedComparisonData = useMemo(() => (
     capabilityMetrics.map((metric) => {
@@ -873,7 +873,7 @@ function ModelRegistryTab({ availableModels, agents, tasks }) {
   );
 }
 
-function RoutingDoctrineTab({ routingPolicies, tasks, agents, logs, skills, upsertPolicy, ensureDefaultPolicy }) {
+function RoutingDoctrineTab({ routingPolicies, tasks, agents, logs, interventions, skills, upsertPolicy, ensureDefaultPolicy }) {
   const [selectedPolicyId, setSelectedPolicyId] = useState('');
   const [draft, setDraft] = useState(null);
   const [saving, setSaving] = useState(false);
@@ -1005,6 +1005,7 @@ function RoutingDoctrineTab({ routingPolicies, tasks, agents, logs, skills, upse
     });
     return Array.from(seen.values());
   }, [agents]);
+  const demotionSummary = useMemo(() => buildPolicyDemotionSummary(draft, tasks, interventions, logs), [draft, tasks, interventions, logs]);
 
   function updateFallback(index, field, value) {
     setDraft((current) => {
@@ -1456,6 +1457,26 @@ function RoutingDoctrineTab({ routingPolicies, tasks, agents, logs, skills, upse
                     {' '}This policy is targeting <span className="font-semibold text-text-primary">{draft.taskDomain || 'general'}</span> /{' '}
                     <span className="font-semibold text-text-primary">{draft.intentType || 'general'}</span> work and currently matches{' '}
                     <span className="font-semibold text-text-primary">{matchingTasks.length}</span> routed mission{matchingTasks.length === 1 ? '' : 's'}.
+                  </div>
+                </div>
+                <div className="rounded-[20px] border border-white/8 bg-black/20 p-3">
+                  <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Why this lane is being demoted</div>
+                  <div className="mt-2 space-y-2">
+                    <div className="rounded-[14px] border border-white/8 bg-white/[0.03] px-3 py-2 text-[11px] text-text-body">
+                      {demotionSummary.interventionCount > 0
+                        ? `${demotionSummary.interventionCount} intervention signals are currently shaping this policy's rank across ${demotionSummary.matchingRuns} matching run${demotionSummary.matchingRuns === 1 ? '' : 's'}.`
+                        : 'This policy has not accumulated enough intervention pressure to be demoted yet.'}
+                    </div>
+                    {demotionSummary.reasons.map((reason) => (
+                      <div key={reason} className="rounded-[14px] border border-aurora-amber/20 bg-aurora-amber/10 px-3 py-2 text-[11px] text-text-body">
+                        {reason}
+                      </div>
+                    ))}
+                    {demotionSummary.interventionCount > 0 && demotionSummary.reasons.length === 0 && (
+                      <div className="rounded-[14px] border border-dashed border-white/10 bg-black/10 px-3 py-2 text-[11px] text-text-muted">
+                        Intervention pressure exists, but Commander still needs a little more run density before the demotion reasons become specific.
+                      </div>
+                    )}
                   </div>
                 </div>
                 {(saveError || saveMessage) && (
@@ -2142,8 +2163,8 @@ function DirectivesTab({ directives, agents, tasks, recommendations }) {
         <div className="rounded-[28px] border border-white/8 bg-[linear-gradient(180deg,rgba(167,139,250,0.06),rgba(255,255,255,0.02))] p-5">
           <CommandSectionHeader
             eyebrow="Optimization Orders"
-            title="Directive upgrades to consider"
-            description="Improvements with the highest leverage on quality and throughput."
+            title="Persisted recommendation pressure"
+            description="Durable recommendations and live upgrades with the highest leverage on quality and throughput."
             icon={Sparkles}
             tone="violet"
           />
@@ -2172,6 +2193,7 @@ export function IntelligenceView() {
   const { tasks } = useTasks();
   const { policies: routingPolicies, upsertPolicy, ensureDefaultPolicy } = useRoutingPolicies();
   const { logs } = useActivityLog();
+  const { interventions } = useTaskInterventions();
   const { namespaces: knowledgeNamespaces } = useKnowledgeNamespaces();
   const { directives: sharedDirectives } = useSharedDirectives();
   const { recommendations: persistedRecommendations } = useSystemRecommendations();
@@ -2313,7 +2335,7 @@ export function IntelligenceView() {
           />
         </Motion.section>
 
-        <Motion.section variants={item} className="grid grid-cols-1 gap-5 xl:grid-cols-[1.65fr_0.35fr]">
+        <Motion.section variants={item} className="space-y-5">
           <div className="space-y-5">
             <div className="rounded-[20px] border border-white/8 bg-[#111827]/90 p-2">
               <div className="flex flex-wrap gap-2 rounded-[20px] bg-black/20 p-2">
@@ -2335,54 +2357,58 @@ export function IntelligenceView() {
             </div>
 
             <div className="rounded-[24px] border border-white/8 bg-[#111827]/90 p-4">
-              {activeTab === 'models' && <ModelRegistryTab availableModels={availableModels} agents={agents} tasks={tasks} />}
-              {activeTab === 'routing' && <RoutingDoctrineTab routingPolicies={routingPolicies} tasks={tasks} agents={agents} logs={logs} skills={skills} upsertPolicy={upsertPolicy} ensureDefaultPolicy={ensureDefaultPolicy} />}
+              {activeTab === 'models' && <ModelRegistryTab availableModels={availableModels} agents={agents} tasks={tasks} logs={logs} interventions={interventions} />}
+              {activeTab === 'routing' && <RoutingDoctrineTab routingPolicies={routingPolicies} tasks={tasks} agents={agents} logs={logs} interventions={interventions} skills={skills} upsertPolicy={upsertPolicy} ensureDefaultPolicy={ensureDefaultPolicy} />}
               {activeTab === 'knowledge' && <KnowledgeMapTab namespaces={knowledgeNamespaces} />}
-              {activeTab === 'directives' && <DirectivesTab directives={sharedDirectives} agents={agents} tasks={tasks} recommendations={persistedRecommendations} />}
-            </div>
-          </div>
-
-          <div className="space-y-3">
-            <div className="rounded-[24px] border border-white/8 bg-[#111827]/90 p-4">
-              <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Use first</div>
-              <div className="mt-2 text-[15px] font-semibold text-text-primary">{readFirstItems[0]?.title}</div>
-              <p className="mt-2 text-[11px] leading-5 text-text-muted">{readFirstItems[0]?.detail}</p>
-            </div>
-            <div className="rounded-[24px] border border-white/8 bg-[#111827]/90 p-4">
-              <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Economics snapshot</div>
-              <div className="mt-2 text-[15px] font-semibold text-text-primary">Human vs agent</div>
-              <div className="mt-3 grid gap-2">
-                <div className="rounded-[16px] border border-white/8 bg-[#0d1420] px-3 py-2.5">
-                  <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Human equivalent</div>
-                  <div className="mt-1 text-lg font-semibold text-text-primary"><AnimatedNumber value={economics.humanCost} prefix="$" decimals={2} /></div>
-                </div>
-                <div className="rounded-[16px] border border-white/8 bg-[#0d1420] px-3 py-2.5">
-                  <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Agent spend</div>
-                  <div className="mt-1 text-lg font-semibold text-text-primary"><AnimatedNumber value={economics.agentCost} prefix="$" decimals={2} /></div>
-                </div>
-                <div className="rounded-[16px] border border-white/8 bg-[#0d1420] px-3 py-2.5">
-                  <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Efficiency</div>
-                  <div className="mt-1 text-lg font-semibold text-text-primary"><AnimatedNumber value={economics.multiplier} decimals={1} suffix="x" /></div>
-                </div>
-              </div>
+              {activeTab === 'directives' && <DirectivesTab directives={sharedDirectives} agents={agents} tasks={tasks} recommendations={derivedRecommendations} />}
             </div>
           </div>
         </Motion.section>
 
-        <Motion.section variants={item} className="grid grid-cols-1 gap-5 xl:grid-cols-[1.05fr_0.95fr]">
+        <Motion.section variants={item}>
           <SystemsOperatorTable models={availableModels} />
+        </Motion.section>
+
+        <Motion.section variants={item}>
           <CollapsedPanel
             eyebrow="Details"
             title="Audit and system insights"
-            summary="Open only when you need doctrine, recommendations, and validation."
+            summary="Open only when you need doctrine, recommendations, economics, and validation."
           >
-            <div className="space-y-4">
-              <StrategyRail
-                derivedRecommendations={derivedRecommendations}
-                learningMemory={learningMemory}
-                humanHourlyRate={humanHourlyRate}
-                economics={economics}
-              />
+            <div className="space-y-5">
+              <div className="grid grid-cols-1 gap-5 xl:grid-cols-[0.55fr_1.45fr]">
+                <div className="space-y-3">
+                  <div className="rounded-[24px] border border-white/8 bg-[#111827]/90 p-4">
+                    <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Use first</div>
+                    <div className="mt-2 text-[15px] font-semibold text-text-primary">{readFirstItems[0]?.title}</div>
+                    <p className="mt-2 text-[11px] leading-5 text-text-muted">{readFirstItems[0]?.detail}</p>
+                  </div>
+                  <div className="rounded-[24px] border border-white/8 bg-[#111827]/90 p-4">
+                    <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Economics snapshot</div>
+                    <div className="mt-2 text-[15px] font-semibold text-text-primary">Human vs agent</div>
+                    <div className="mt-3 grid gap-2">
+                      <div className="rounded-[16px] border border-white/8 bg-[#0d1420] px-3 py-2.5">
+                        <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Human equivalent</div>
+                        <div className="mt-1 text-lg font-semibold text-text-primary"><AnimatedNumber value={economics.humanCost} prefix="$" decimals={2} /></div>
+                      </div>
+                      <div className="rounded-[16px] border border-white/8 bg-[#0d1420] px-3 py-2.5">
+                        <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Agent spend</div>
+                        <div className="mt-1 text-lg font-semibold text-text-primary"><AnimatedNumber value={economics.agentCost} prefix="$" decimals={2} /></div>
+                      </div>
+                      <div className="rounded-[16px] border border-white/8 bg-[#0d1420] px-3 py-2.5">
+                        <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Efficiency</div>
+                        <div className="mt-1 text-lg font-semibold text-text-primary"><AnimatedNumber value={economics.multiplier} decimals={1} suffix="x" /></div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <StrategyRail
+                  derivedRecommendations={derivedRecommendations}
+                  learningMemory={learningMemory}
+                  humanHourlyRate={humanHourlyRate}
+                  economics={economics}
+                />
+              </div>
               <TruthAuditStrip truth={truth} />
             </div>
           </CollapsedPanel>

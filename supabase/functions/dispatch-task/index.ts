@@ -57,6 +57,9 @@ type TaskGraphRow = {
   risk_level?: string | null;
   approval_level?: string | null;
   execution_strategy?: string | null;
+  schedule_type?: string | null;
+  recurrence_rule?: { frequency?: string | null; time?: string | null; endDate?: string | null } | null;
+  requires_approval?: boolean | null;
   context_pack_ids?: unknown;
   required_capabilities?: unknown;
   model_override?: string | null;
@@ -101,6 +104,41 @@ function buildDoctrineFeedback(task: { budget_class?: string | null; risk_level?
     return 'Low-risk work cleared at a relatively high cost. Bias similar branches toward a local or cheaper lane first.';
   }
   return `This route is holding up well. Preserve the current lane${task.model_override ? ` around ${task.model_override}` : ''} as a preferred doctrine candidate.`;
+}
+
+async function recordTaskIntervention(
+  db: ReturnType<typeof createClient>,
+  task: TaskGraphRow,
+  {
+    eventType,
+    eventSource = 'runtime',
+    tone = 'blue',
+    message,
+    metadata = {},
+  }: {
+    eventType: string;
+    eventSource?: string;
+    tone?: string;
+    message: string;
+    metadata?: Record<string, unknown>;
+  },
+) {
+  await db.from('task_interventions').insert({
+    user_id: task.user_id,
+    task_id: task.id,
+    root_mission_id: task.root_mission_id || task.id,
+    agent_id: null,
+    event_type: eventType,
+    event_source: eventSource,
+    tone,
+    message,
+    domain: task.domain || 'general',
+    intent_type: task.intent_type || 'general',
+    provider: task.provider_override || null,
+    model: task.model_override || null,
+    schedule_type: task.schedule_type || 'once',
+    metadata,
+  });
 }
 
 async function updateMissionGraphProgress(db: ReturnType<typeof createClient>, task: TaskGraphRow) {
@@ -300,10 +338,50 @@ Deno.serve(async (req: Request) => {
   if (task_id) {
     const { data } = await db
       .from('tasks')
-      .select('id,user_id,title,name,description,status,parent_id,root_mission_id,node_type,workflow_status,depends_on,result_text,domain,intent_type,budget_class,risk_level,approval_level,execution_strategy,context_pack_ids,required_capabilities,model_override,provider_override')
+      .select('id,user_id,title,name,description,status,parent_id,root_mission_id,node_type,workflow_status,depends_on,result_text,domain,intent_type,budget_class,risk_level,approval_level,execution_strategy,schedule_type,recurrence_rule,requires_approval,context_pack_ids,required_capabilities,model_override,provider_override')
       .eq('id', task_id)
       .single();
     taskRow = (data as TaskGraphRow) || null;
+  }
+
+  if (
+    taskRow
+    && String(taskRow.schedule_type || '') === 'recurring'
+    && (
+      taskRow.requires_approval
+      || String(taskRow.approval_level || '') === 'human_required'
+      || String(taskRow.status || '').toLowerCase() === 'needs_approval'
+      || String(taskRow.workflow_status || '').toLowerCase() === 'waiting_on_human'
+    )
+  ) {
+    const message = `[automation-guardrail] ${(taskRow.title || taskRow.name || taskRow.id)} on root ${taskRow.root_mission_id || taskRow.id} was blocked at runtime because recurring work still requires approval.`;
+    await db.from('tasks').update({
+      status: 'needs_approval',
+      workflow_status: 'waiting_on_human',
+      lane: 'approvals',
+      updated_at: new Date().toISOString(),
+    }).eq('id', taskRow.id).eq('user_id', taskRow.user_id);
+
+    await db.from('activity_log').insert({
+      user_id: taskRow.user_id,
+      type: 'SYS',
+      message,
+      agent_id: agent_id,
+      tokens: 0,
+      duration_ms: 0,
+    });
+    await recordTaskIntervention(db, taskRow, {
+      eventType: 'guardrail',
+      eventSource: 'runtime',
+      tone: 'amber',
+      message,
+      metadata: {
+        approvalLevel: taskRow.approval_level || 'risk_weighted',
+        requiresApproval: Boolean(taskRow.requires_approval),
+      },
+    });
+
+    return corsResponse({ success: false, stagedForApproval: true, task_id: taskRow.id }, 200);
   }
 
   // ── Fetch agent ──────────────────────────────────────────────────────────

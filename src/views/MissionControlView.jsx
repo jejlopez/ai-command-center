@@ -36,7 +36,7 @@ import { useLearningMemory } from '../utils/useLearningMemory';
 import { DoctrineCards } from '../components/command/DoctrineCards';
 import { TruthAuditStrip } from '../components/command/TruthAuditStrip';
 import { useCommandCenterTruth } from '../utils/useCommandCenterTruth';
-import { useConnectedSystems, useTaskOutcomes } from '../utils/useSupabase';
+import { useConnectedSystems, useTaskInterventions, useTaskOutcomes } from '../utils/useSupabase';
 import { ReactorCoreBoard } from '../components/command/ReactorCoreBoard';
 import { CommandTimelineRail } from '../components/command/CommandTimelineRail';
 import { TacticalInterventionConsole } from '../components/command/TacticalInterventionConsole';
@@ -113,6 +113,101 @@ function wouldCreateDependencyCycle(tasks, sourceId, targetId) {
   }
 
   return false;
+}
+
+function toRailTimestamp(value) {
+  const date = new Date(value || 0);
+  return Number.isNaN(date.getTime()) ? 0 : date.getTime();
+}
+
+function normalizeTimelineMessage(message = '', rootMissionId = null) {
+  return String(message || '')
+    .replace('[automation-guardrail] ', '')
+    .replace('[branch-routing] ', '')
+    .replace('[branch-dependency] ', '')
+    .replace('[intervention-approve] ', '')
+    .replace('[intervention-retry] ', '')
+    .replace('[intervention-stop] ', '')
+    .replace('[intervention-cancel] ', '')
+    .replace('[specialist-spawned] ', '')
+    .replace('[specialist-retired] ', '')
+    .replace('[specialist-persistent] ', '')
+    .replace('[outcome-score] ', '')
+    .replace('[doctrine-feedback] ', '')
+    .replace(rootMissionId ? `root ${rootMissionId} ` : '', '');
+}
+
+function buildInterventionRailEntries({ branchHistory = [], outcomeHistory = [], doctrineFeedback = [], rootMissionId = null }) {
+  const branchEntries = branchHistory.map((entry) => {
+    const message = String(entry.message || '');
+    let tone = 'blue';
+    let label = 'Intervention';
+    if (message.includes('[specialist-retired]')) {
+      tone = 'violet';
+      label = 'Retirement';
+    } else if (message.includes('[automation-guardrail]')) {
+      tone = 'amber';
+      label = 'Guardrail';
+    } else if (message.includes('[intervention-stop]') || message.includes('[intervention-cancel]')) {
+      tone = 'rose';
+      label = 'Intervention';
+    } else if (message.includes('[intervention-approve]') || message.includes('[intervention-retry]')) {
+      tone = 'amber';
+      label = 'Intervention';
+    } else if (message.includes('[specialist-spawned]') || message.includes('[specialist-persistent]')) {
+      tone = 'violet';
+      label = 'Specialist';
+    } else if (message.includes('[branch-dependency]')) {
+      tone = 'amber';
+      label = 'Dependency';
+    } else if (message.includes('[branch-routing]')) {
+      tone = 'teal';
+      label = 'Routing';
+    }
+
+    return {
+      id: `branch-${entry.id}`,
+      timestamp: entry.timestamp,
+      sortValue: toRailTimestamp(entry.timestamp),
+      tone,
+      label,
+      title: label === 'Guardrail'
+        ? 'Automation guardrail applied'
+        : label === 'Routing'
+          ? 'Branch lane changed'
+          : label === 'Dependency'
+            ? 'Branch dependency changed'
+            : 'Specialist lifecycle event',
+      detail: normalizeTimelineMessage(message, rootMissionId),
+      meta: entry.type || 'SYS',
+    };
+  });
+
+  const outcomeEntries = outcomeHistory.map((entry) => ({
+    id: `outcome-${entry.id}`,
+    timestamp: entry.timestamp,
+    sortValue: toRailTimestamp(entry.timestamp),
+    tone: entry.trust === 'high' ? 'teal' : entry.trust === 'low' ? 'rose' : 'amber',
+    label: 'Outcome',
+    title: `Outcome score ${entry.score ?? '—'} · ${entry.trust || 'unknown'} trust`,
+    detail: entry.cleanMessage,
+    meta: 'SCORE',
+  }));
+
+  const doctrineEntries = doctrineFeedback.map((entry) => ({
+    id: `doctrine-${entry.id}`,
+    timestamp: entry.timestamp,
+    sortValue: toRailTimestamp(entry.timestamp),
+    tone: 'blue',
+    label: 'Doctrine',
+    title: 'Doctrine feedback persisted',
+    detail: normalizeTimelineMessage(entry.cleanMessage, rootMissionId),
+    meta: 'LEARN',
+  }));
+
+  return [...branchEntries, ...outcomeEntries, ...doctrineEntries]
+    .sort((left, right) => right.sortValue - left.sortValue)
+    .slice(0, 14);
 }
 
 const stColor = {
@@ -267,7 +362,7 @@ function ApprovalCard({ item, agents, onClick, onApprove, onReject }) {
   );
 }
 
-function MissionGraphPanel({ tasks, agents, logs, outcomes, selectedId, onSelect, onRetry, onStop, onApprove, onCancel, onUpdateBranchRouting, onUpdateBranchDependencies }) {
+function MissionGraphPanel({ tasks, agents, logs, outcomes, interventions, selectedId, onSelect, onRetry, onStop, onApprove, onCancel, onUpdateBranchRouting, onUpdateBranchDependencies }) {
   const graphTaskSet = useMemo(() => {
     if (!tasks.length) return [];
     const selectedTask = tasks.find((task) => task.id === selectedId) || tasks[0];
@@ -315,20 +410,28 @@ function MissionGraphPanel({ tasks, agents, logs, outcomes, selectedId, onSelect
     timestamp: entry.createdAt,
   }));
   const doctrineFeedback = parseDoctrineFeedbackLogs(logs).filter((entry) => !selectedRootMissionId || entry.cleanMessage.includes(selectedRootMissionId)).slice(0, 6);
-  const branchHistory = (
-    logs
-      .filter((entry) => {
-        const message = String(entry.message || '');
-        if (!selectedRootMissionId) return false;
-        return (
-          message.includes(selectedRootMissionId)
-          && (message.includes('[branch-routing]') || message.includes('[branch-dependency]') || message.includes('[specialist-spawned]') || message.includes('[specialist-retired]') || message.includes('[specialist-persistent]') || message.includes('[outcome-score]') || message.includes('[doctrine-feedback]'))
-        );
-      })
-      .slice(-8)
-      .reverse()
-  );
+  const branchHistory = useMemo(() => (
+    selectedRootMissionId
+      ? interventions
+        .filter((entry) => entry.rootMissionId === selectedRootMissionId || entry.taskId === selectedRootMissionId)
+        .slice(0, 8)
+        .map((entry) => ({
+          id: entry.id,
+          message: entry.message,
+          timestamp: entry.createdAt,
+          type: entry.eventType,
+        }))
+      : []
+  ), [interventions, selectedRootMissionId]);
   const persistentSpecialists = agents.filter((agent) => !agent.isEphemeral && !['commander', 'executor'].includes(agent.role || ''));
+  const interventionRail = useMemo(() => (
+    buildInterventionRailEntries({
+      branchHistory,
+      outcomeHistory,
+      doctrineFeedback,
+      rootMissionId: selectedRootMissionId,
+    })
+  ), [branchHistory, doctrineFeedback, outcomeHistory, selectedRootMissionId]);
 
   const branchSummary = useMemo(() => {
     const running = graphTaskSet.filter((task) => task.workflowStatus === 'running').length;
@@ -693,66 +796,35 @@ function MissionGraphPanel({ tasks, agents, logs, outcomes, selectedId, onSelect
             )}
           </div>
         </div>
-          <div className="rounded-[20px] border border-white/8 bg-black/20 p-4">
-            <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Branch History</div>
-            <div className="mt-1 text-[12px] text-text-body">Routing overrides, dependency edits, and specialist lifecycle events for this mission root.</div>
+        <div className="rounded-[20px] border border-white/8 bg-black/20 p-4">
+          <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Intervention Rail</div>
+          <div className="mt-1 text-[12px] text-text-body">One unified timeline for overrides, outcomes, doctrine changes, and specialist lifecycle on this mission root.</div>
           <div className="mt-3 space-y-2">
-            {branchHistory.length === 0 && (
+            {interventionRail.length === 0 && (
               <div className="rounded-[16px] border border-white/8 bg-white/[0.02] px-3 py-3 text-[11px] text-text-muted">
-                No branch override history yet for this mission root.
+                No intervention history yet for this mission root.
               </div>
             )}
-            {branchHistory.map((entry) => (
+            {interventionRail.map((entry) => (
               <div key={entry.id} className="rounded-[16px] border border-white/8 bg-white/[0.02] px-3 py-3">
                 <div className="flex items-center justify-between gap-3">
-                  <div className="text-[10px] font-mono uppercase text-text-muted">{entry.type}</div>
-                  <div className="text-[10px] font-mono text-text-disabled">{entry.timestamp ? new Date(entry.timestamp).toLocaleTimeString() : 'Live'}</div>
-                </div>
-                <div className="mt-2 text-[11px] leading-relaxed text-text-body">
-                  {String(entry.message || '')
-                    .replace('[branch-routing] ', '')
-                    .replace('[branch-dependency] ', '')
-                    .replace('[specialist-spawned] ', '')
-                    .replace('[specialist-retired] ', '')
-                    .replace('[specialist-persistent] ', '')
-                    .replace('[outcome-score] ', '')
-                    .replace('[doctrine-feedback] ', '')}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-      <div className="mt-4 grid gap-3 xl:grid-cols-2">
-        <div className="rounded-[20px] border border-white/8 bg-black/20 p-4">
-          <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Outcome Timeline</div>
-          <div className="mt-1 text-[12px] text-text-body">Persisted mission outcome scores for this root, so quality and trust survive beyond the current run.</div>
-          <div className="mt-3 space-y-2">
-            {outcomeHistory.length === 0 && <div className="rounded-[16px] border border-white/8 bg-white/[0.02] px-3 py-3 text-[11px] text-text-muted">No persisted outcome scores yet for this mission root.</div>}
-            {outcomeHistory.map((entry) => (
-              <div key={entry.id} className="rounded-[16px] border border-white/8 bg-white/[0.02] px-3 py-3">
-                <div className="flex items-center justify-between gap-3">
-                  <div className="text-[10px] font-mono uppercase text-aurora-teal">{entry.trust} trust</div>
-                  <div className="text-[10px] font-mono text-text-disabled">{entry.timestamp ? new Date(entry.timestamp).toLocaleTimeString() : 'Live'}</div>
-                </div>
-                <div className="mt-2 text-[12px] font-semibold text-text-primary">Score {entry.score ?? '—'}</div>
-                <div className="mt-1 text-[11px] leading-relaxed text-text-body">{entry.cleanMessage}</div>
-              </div>
-            ))}
-          </div>
-        </div>
-        <div className="rounded-[20px] border border-white/8 bg-black/20 p-4">
-          <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Doctrine Feedback</div>
-          <div className="mt-1 text-[12px] text-text-body">Persisted route guidance created from mission outcomes, overrides, and failures.</div>
-          <div className="mt-3 space-y-2">
-            {doctrineFeedback.length === 0 && <div className="rounded-[16px] border border-white/8 bg-white/[0.02] px-3 py-3 text-[11px] text-text-muted">No doctrine feedback has been written yet for this mission root.</div>}
-            {doctrineFeedback.map((entry) => (
-              <div key={entry.id} className="rounded-[16px] border border-white/8 bg-white/[0.02] px-3 py-3">
-                <div className="flex items-center justify-between gap-3">
-                  <div className="text-[10px] font-mono uppercase text-aurora-blue">Feedback</div>
+                  <div className="flex items-center gap-2">
+                    <span className={cn(
+                      'rounded-full border px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.14em]',
+                      entry.tone === 'teal' && 'border-aurora-teal/20 bg-aurora-teal/10 text-aurora-teal',
+                      entry.tone === 'amber' && 'border-aurora-amber/20 bg-aurora-amber/10 text-aurora-amber',
+                      entry.tone === 'rose' && 'border-aurora-rose/20 bg-aurora-rose/10 text-aurora-rose',
+                      entry.tone === 'violet' && 'border-aurora-violet/20 bg-aurora-violet/10 text-aurora-violet',
+                      entry.tone === 'blue' && 'border-aurora-blue/20 bg-aurora-blue/10 text-aurora-blue'
+                    )}>
+                      {entry.label}
+                    </span>
+                    <div className="text-[10px] font-mono uppercase text-text-muted">{entry.meta}</div>
+                  </div>
                   <div className="text-[10px] font-mono text-text-disabled">{entry.timestamp ? new Date(entry.timestamp).toLocaleString() : 'Live'}</div>
                 </div>
-                <div className="mt-2 text-[11px] leading-relaxed text-text-body">{entry.cleanMessage.replace(`root ${selectedRootMissionId} `, '')}</div>
+                <div className="mt-2 text-[12px] font-semibold text-text-primary">{entry.title}</div>
+                <div className="mt-1 text-[11px] leading-relaxed text-text-body">{entry.detail}</div>
               </div>
             ))}
           </div>
@@ -1353,6 +1425,7 @@ export function MissionControlView() {
   const truth = useCommandCenterTruth();
   const { connectedSystems } = useConnectedSystems();
   const { outcomes } = useTaskOutcomes();
+  const { interventions } = useTaskInterventions();
 
   return (
     <div className="flex flex-col h-full overflow-hidden relative">
@@ -1507,6 +1580,7 @@ export function MissionControlView() {
                 agents={agents}
                 logs={logs}
                 outcomes={outcomes}
+                interventions={interventions}
                 selectedId={sel}
                 onSelect={setSel}
                 onRetry={handleRetry}

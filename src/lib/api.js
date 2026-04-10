@@ -380,6 +380,48 @@ function getMissionExecutionPosture(payload) {
   };
 }
 
+function enforceRecurringMissionGuardrails(payload = {}) {
+  if (!payload.repeat) return { payload, guardrails: [] };
+
+  const nextPayload = {
+    ...payload,
+    repeat: {
+      frequency: payload.repeat.frequency || 'weekly',
+      time: payload.repeat.time || '09:00',
+      endDate: payload.repeat.endDate || null,
+    },
+  };
+  const guardrails = [];
+  const candidate = payload.automationCandidate || {};
+  const domain = String(payload.targetType || candidate.domain || '').toLowerCase();
+  const lowRoi = Number(candidate.roi || 0) > 0 && Number(candidate.roi || 0) < 1.5;
+  const lightHistory = Number(candidate.runs || 0) > 0 && Number(candidate.runs || 0) < 3;
+  const financeSensitive = ['finance', 'money', 'billing', 'banking'].includes(domain);
+  const externalDraft = ['email_drafts', 'crm_notes'].includes(String(payload.outputType || '').toLowerCase());
+
+  if (lowRoi || lightHistory || financeSensitive || externalDraft) {
+    if (nextPayload.missionMode !== 'watch_and_approve') {
+      nextPayload.missionMode = 'watch_and_approve';
+      guardrails.push('Raised recurring mission to watch-and-approve.');
+    }
+  }
+
+  if (nextPayload.repeat.frequency === 'daily' && lightHistory) {
+    nextPayload.repeat = { ...nextPayload.repeat, frequency: 'weekly' };
+    guardrails.push('Reduced cadence from daily to weekly until repetition history is stronger.');
+  }
+
+  if (financeSensitive) {
+    guardrails.push('Finance-adjacent recurring work stays human-gated by default.');
+  }
+
+  if (lowRoi) {
+    guardrails.push('Low ROI automation remains gated until the economics improve.');
+  }
+
+  return { payload: nextPayload, guardrails };
+}
+
 function estimateMissionPlan(payload) {
   const lower = payload.intent.toLowerCase();
   const steps = [];
@@ -751,6 +793,46 @@ async function logBranchEvent({ userId, agentId = null, type = 'SYS', message })
   }
 }
 
+async function persistTaskIntervention({
+  userId,
+  taskId = null,
+  rootMissionId = null,
+  agentId = null,
+  eventType = 'override',
+  eventSource = 'runtime',
+  tone = 'blue',
+  message = '',
+  domain = 'general',
+  intentType = 'general',
+  provider = null,
+  model = null,
+  scheduleType = 'once',
+  metadata = {},
+}) {
+  if (!userId || !message) return;
+
+  const { error } = await supabase.from('task_interventions').insert({
+    user_id: userId,
+    task_id: taskId,
+    root_mission_id: rootMissionId,
+    agent_id: agentId,
+    event_type: eventType,
+    event_source: eventSource,
+    tone,
+    message,
+    domain,
+    intent_type: intentType,
+    provider,
+    model,
+    schedule_type: scheduleType,
+    metadata,
+  });
+
+  if (error) {
+    console.error('[api] persistTaskIntervention:', error.message);
+  }
+}
+
 async function ensureDefaultRoutingPolicyRow(user) {
   if (!user?.id) return null;
 
@@ -849,31 +931,35 @@ async function selectOutcomeWinningLane(user, routingDecision) {
 }
 
 export async function createMission(payload, agents = []) {
+  const guardedMission = enforceRecurringMissionGuardrails(payload);
+  const effectivePayload = guardedMission.payload;
+
   if (!isSupabaseConfigured) {
     return {
       success: true,
       mission: {
         id: crypto.randomUUID(),
-        title: deriveMissionTitle(payload.intent),
-        name: deriveMissionTitle(payload.intent),
-        description: payload.intent,
-        agentId: payload.agentId,
-        agentName: payload.agentName || '',
+        title: deriveMissionTitle(effectivePayload.intent),
+        name: deriveMissionTitle(effectivePayload.intent),
+        description: effectivePayload.intent,
+        agentId: effectivePayload.agentId,
+        agentName: effectivePayload.agentName || '',
         status: 'queued',
-        lane: inferLane(payload.priorityScore || 5, false, 'queued'),
-        mode: payload.mode,
+        lane: inferLane(effectivePayload.priorityScore || 5, false, 'queued'),
+        mode: effectivePayload.mode,
         progressPercent: 0,
         createdAt: new Date().toISOString(),
       },
+      guardrails: guardedMission.guardrails,
     };
   }
 
   const user = (await supabase.auth.getUser()).data?.user;
   if (!user) throw new Error('Not authenticated');
 
-  const title = deriveMissionTitle(payload.intent);
-  const requestedSyntheticCommander = !payload.agentId || payload.agentId === SYNTHETIC_COMMANDER_ID;
-  let selectedAgent = agents.find(agent => agent.id === payload.agentId) || null;
+  const title = deriveMissionTitle(effectivePayload.intent);
+  const requestedSyntheticCommander = !effectivePayload.agentId || effectivePayload.agentId === SYNTHETIC_COMMANDER_ID;
+  let selectedAgent = agents.find(agent => agent.id === effectivePayload.agentId) || null;
   let commander = agents.find(agent => agent.role === 'commander' && !agent.isSyntheticCommander) || null;
 
   if (requestedSyntheticCommander) {
@@ -896,23 +982,23 @@ export async function createMission(payload, agents = []) {
 
   const assignedAgentId = selectedAgent?.isSyntheticCommander ? null : selectedAgent?.id || null;
   const commanderId = commander?.isSyntheticCommander ? null : commander?.id || null;
-  const estimated = estimateMissionPlan(payload);
-  const plannedBranches = Array.isArray(payload.planBranches) && payload.planBranches.length ? payload.planBranches : estimated.branches;
-  const priorityScore = payload.priorityScore ?? 5;
-  const scheduleType = payload.repeat ? 'recurring' : 'once';
-  const runAt = payload.when === 'now' ? new Date().toISOString() : payload.runAt || null;
-  const recurrenceRule = buildRecurrenceRule(payload.repeat);
+  const estimated = estimateMissionPlan(effectivePayload);
+  const plannedBranches = Array.isArray(effectivePayload.planBranches) && effectivePayload.planBranches.length ? effectivePayload.planBranches : estimated.branches;
+  const priorityScore = effectivePayload.priorityScore ?? 5;
+  const scheduleType = effectivePayload.repeat ? 'recurring' : 'once';
+  const runAt = effectivePayload.when === 'now' ? new Date().toISOString() : effectivePayload.runAt || null;
+  const recurrenceRule = buildRecurrenceRule(effectivePayload.repeat);
   const lane = inferLane(priorityScore, false, 'queued');
   const missionId = crypto.randomUUID();
-  const preliminaryRoutingDecision = deriveRoutingDecision(payload, selectedAgent, null);
+  const preliminaryRoutingDecision = deriveRoutingDecision(effectivePayload, selectedAgent, null);
   const routingPolicy = await selectRoutingPolicyRow(user, preliminaryRoutingDecision).catch((error) => {
     console.error('[api] selectRoutingPolicyRow:', error.message);
     return null;
   });
-  const routingDecision = deriveRoutingDecision(payload, selectedAgent, routingPolicy);
+  const routingDecision = deriveRoutingDecision(effectivePayload, selectedAgent, routingPolicy);
   const observedWinningLane = await selectOutcomeWinningLane(user, routingDecision);
   const hasDelegatedSteps = plannedBranches.length > 1;
-  const executionPosture = getMissionExecutionPosture(payload);
+  const executionPosture = getMissionExecutionPosture(effectivePayload);
   const workflowStatus = hasDelegatedSteps
     ? (executionPosture.shouldAutoDispatch ? WORKFLOW_STATUS.RUNNING : WORKFLOW_STATUS.PLANNED)
     : executionPosture.shouldWatchAndApprove
@@ -926,7 +1012,7 @@ export async function createMission(payload, agents = []) {
     user_id: user.id,
     title,
     name: title,
-    description: payload.intent,
+    description: effectivePayload.intent,
     status: hasDelegatedSteps
       ? (executionPosture.shouldAutoDispatch ? 'running' : 'pending')
       : executionPosture.shouldWatchAndApprove
@@ -946,12 +1032,12 @@ export async function createMission(payload, agents = []) {
     run_at: runAt,
     recurrence_rule: recurrenceRule,
     agent_id: assignedAgentId,
-    agent_name: payload.agentName || selectedAgent?.name || 'Unknown',
-    mode: payload.mode,
-    output_type: payload.outputType,
-    output_spec: payload.outputSpec || null,
-    target_type: payload.targetType,
-    target_identifier: payload.targetIdentifier || null,
+    agent_name: effectivePayload.agentName || selectedAgent?.name || 'Unknown',
+    mode: effectivePayload.mode,
+    output_type: effectivePayload.outputType,
+    output_spec: effectivePayload.outputSpec || null,
+    target_type: effectivePayload.targetType,
+    target_identifier: effectivePayload.targetIdentifier || null,
     created_by_commander_id: commanderId,
     estimated_cost_cents: estimated.estimatedCostCents,
     actual_cost_cents: 0,
@@ -984,10 +1070,10 @@ export async function createMission(payload, agents = []) {
     userId: user.id,
     user,
     title,
-    payload: { ...payload, priorityScore, agents, routingPolicy, selectedAgent, commander },
+    payload: { ...effectivePayload, priorityScore, agents, routingPolicy, selectedAgent, commander },
     branches: plannedBranches.map((branch) => ({ ...branch })),
     assignedAgentId,
-    agentName: payload.agentName || selectedAgent?.name || 'Unknown',
+    agentName: effectivePayload.agentName || selectedAgent?.name || 'Unknown',
     commanderId,
     estimatedCostCents: estimated.estimatedCostCents,
     routingPolicyId: routingPolicy?.id || null,
@@ -1012,10 +1098,10 @@ export async function createMission(payload, agents = []) {
       name: title,
       status: 'pending',
       agent_id: assignedAgentId,
-      agent_name: payload.agentName || selectedAgent?.name || 'Unknown',
+      agent_name: effectivePayload.agentName || selectedAgent?.name || 'Unknown',
       duration_ms: 0,
       cost_usd: 0,
-      prompt_text: payload.intent,
+      prompt_text: effectivePayload.intent,
     };
 
     const { error: legacyError } = await supabase.from('tasks').insert(legacyRow);
@@ -1029,8 +1115,8 @@ export async function createMission(payload, agents = []) {
       mission: mapTaskRow({
         ...legacyRow,
         title,
-        description: payload.intent,
-        mode: payload.mode,
+        description: effectivePayload.intent,
+        mode: effectivePayload.mode,
         lane,
         priority: priorityScore,
         workflow_status: workflowStatus,
@@ -1065,7 +1151,7 @@ export async function createMission(payload, agents = []) {
       await dispatchMissionNow({
         taskId: missionId,
         agentId: assignedAgentId,
-        taskDescription: payload.intent,
+        taskDescription: effectivePayload.intent,
       });
     } catch (dispatchError) {
       console.error('[api] createMission dispatch:', dispatchError.message);
@@ -1079,7 +1165,7 @@ export async function createMission(payload, agents = []) {
       await Promise.all(readySubtasks.map((subtask) => dispatchMissionNow({
         taskId: subtask.id,
         agentId: subtask.agent_id,
-        taskDescription: subtask.description || subtask.title || subtask.name || payload.intent,
+        taskDescription: subtask.description || subtask.title || subtask.name || effectivePayload.intent,
       })));
     } catch (dispatchError) {
       console.error('[api] createMission subtask dispatch:', dispatchError.message);
@@ -1088,12 +1174,12 @@ export async function createMission(payload, agents = []) {
   }
 
   const activityMessage = scheduleType === 'recurring'
-    ? `Mission queued: ${title} • recurring ${payload.repeat.frequency} at ${payload.repeat.time}`
+    ? `Mission queued: ${title} • recurring ${effectivePayload.repeat.frequency} at ${effectivePayload.repeat.time}`
     : executionPosture.shouldWatchAndApprove
       ? `Mission staged for approval: ${title}`
       : executionPosture.shouldPlanOnly
         ? `Mission planned: ${title}`
-        : payload.when === 'now' && assignedAgentId
+        : effectivePayload.when === 'now' && assignedAgentId
       ? `Mission dispatched: ${title}`
       : `Mission queued: ${title}`;
 
@@ -1110,10 +1196,39 @@ export async function createMission(payload, agents = []) {
     console.error('[api] createMission activity_log:', activityError.message);
   }
 
+  if (guardedMission.guardrails.length) {
+    const guardrailMessage = `[automation-guardrail] ${title} on root ${missionId} -> ${guardedMission.guardrails.join(' ')}`;
+    await logBranchEvent({
+      userId: user.id,
+      agentId: assignedAgentId,
+      message: guardrailMessage,
+    });
+    await persistTaskIntervention({
+      userId: user.id,
+      taskId: missionId,
+      rootMissionId: missionId,
+      agentId: assignedAgentId,
+      eventType: 'guardrail',
+      eventSource: 'mission_create',
+      tone: 'amber',
+      message: guardrailMessage,
+      domain: routingDecision.domain,
+      intentType: routingDecision.intentType,
+      scheduleType,
+      metadata: {
+        missionMode: executionPosture.missionMode,
+        guardrails: guardedMission.guardrails,
+        budgetClass: routingDecision.budgetClass,
+        riskLevel: routingDecision.riskLevel,
+      },
+    });
+  }
+
   return {
     success: true,
     mission: mapTaskRow({ ...row, created_at: new Date().toISOString(), updated_at: new Date().toISOString() }),
     subtasks: subtaskRows.map((subtask) => mapTaskRow({ ...subtask, created_at: new Date().toISOString(), updated_at: new Date().toISOString() })),
+    guardrails: guardedMission.guardrails,
   };
 }
 
@@ -1243,6 +1358,14 @@ export async function fetchActivityLog(agentId = null) {
 export async function retryTask(taskId) {
   if (!isSupabaseConfigured) return { success: true };
 
+  const user = (await supabase.auth.getUser()).data?.user;
+  if (!user) throw new Error('Not authenticated');
+  const { data: task } = await supabase
+    .from('tasks')
+    .select('id,title,name,agent_id,root_mission_id,domain,intent_type,provider_override,model_override,schedule_type')
+    .eq('id', taskId)
+    .maybeSingle();
+
   const { error } = await supabase
     .from('tasks')
     .update({
@@ -1262,11 +1385,40 @@ export async function retryTask(taskId) {
     console.error('[api] retryTask:', error.message);
     throw error;
   }
+  const message = `[intervention-retry] ${(task?.title || task?.name || taskId)} (${taskId}) on root ${task?.root_mission_id || taskId} was manually rerun.`;
+  await logBranchEvent({
+    userId: user.id,
+    agentId: task?.agent_id || null,
+    message,
+  });
+  await persistTaskIntervention({
+    userId: user.id,
+    taskId,
+    rootMissionId: task?.root_mission_id || taskId,
+    agentId: task?.agent_id || null,
+    eventType: 'retry',
+    eventSource: 'manual',
+    tone: 'amber',
+    message,
+    domain: task?.domain || 'general',
+    intentType: task?.intent_type || 'general',
+    provider: task?.provider_override || null,
+    model: task?.model_override || null,
+    scheduleType: task?.schedule_type || 'once',
+  });
   return { success: true, taskId };
 }
 
 export async function stopTask(taskId) {
   if (!isSupabaseConfigured) return { success: true };
+
+  const user = (await supabase.auth.getUser()).data?.user;
+  if (!user) throw new Error('Not authenticated');
+  const { data: task } = await supabase
+    .from('tasks')
+    .select('id,title,name,agent_id,root_mission_id,domain,intent_type,provider_override,model_override,schedule_type')
+    .eq('id', taskId)
+    .maybeSingle();
 
   const { error } = await supabase
     .from('tasks')
@@ -1282,6 +1434,28 @@ export async function stopTask(taskId) {
     console.error('[api] stopTask:', error.message);
     throw error;
   }
+  const message = `[intervention-stop] ${(task?.title || task?.name || taskId)} (${taskId}) on root ${task?.root_mission_id || taskId} was manually stopped.`;
+  await logBranchEvent({
+    userId: user.id,
+    agentId: task?.agent_id || null,
+    type: 'ERR',
+    message,
+  });
+  await persistTaskIntervention({
+    userId: user.id,
+    taskId,
+    rootMissionId: task?.root_mission_id || taskId,
+    agentId: task?.agent_id || null,
+    eventType: 'stop',
+    eventSource: 'manual',
+    tone: 'rose',
+    message,
+    domain: task?.domain || 'general',
+    intentType: task?.intent_type || 'general',
+    provider: task?.provider_override || null,
+    model: task?.model_override || null,
+    scheduleType: task?.schedule_type || 'once',
+  });
   return { success: true, taskId };
 }
 
@@ -1293,7 +1467,7 @@ export async function updateMissionBranchRouting(taskId, updates = {}, agents = 
 
   const { data: currentTask, error: taskError } = await supabase
     .from('tasks')
-    .select('id,title,name,agent_id,agent_name,root_mission_id,provider_override,model_override')
+    .select('id,title,name,agent_id,agent_name,root_mission_id,provider_override,model_override,domain,intent_type,schedule_type')
     .eq('id', taskId)
     .single();
 
@@ -1335,10 +1509,30 @@ export async function updateMissionBranchRouting(taskId, updates = {}, agents = 
   }
 
   const nextAgent = agents.find((agent) => agent.id === (patch.agent_id || currentTask.agent_id)) || null;
+  const message = `[branch-routing] ${currentTask.title || currentTask.name || taskId} (${taskId}) on root ${currentTask.root_mission_id || taskId} -> agent ${nextAgent?.name || patch.agent_name || currentTask.agent_name || 'Unassigned'}, provider ${patch.provider_override ?? currentTask.provider_override ?? 'default'}, model ${patch.model_override ?? currentTask.model_override ?? 'default'}.`;
   await logBranchEvent({
     userId: user.id,
     agentId: patch.agent_id || currentTask.agent_id || null,
-    message: `[branch-routing] ${currentTask.title || currentTask.name || taskId} (${taskId}) on root ${currentTask.root_mission_id || taskId} -> agent ${nextAgent?.name || patch.agent_name || currentTask.agent_name || 'Unassigned'}, provider ${patch.provider_override ?? currentTask.provider_override ?? 'default'}, model ${patch.model_override ?? currentTask.model_override ?? 'default'}.`,
+    message,
+  });
+  await persistTaskIntervention({
+    userId: user.id,
+    taskId,
+    rootMissionId: currentTask.root_mission_id || taskId,
+    agentId: patch.agent_id || currentTask.agent_id || null,
+    eventType: 'reroute',
+    eventSource: 'manual',
+    tone: 'teal',
+    message,
+    domain: currentTask.domain || 'general',
+    intentType: currentTask.intent_type || 'general',
+    provider: patch.provider_override ?? currentTask.provider_override ?? null,
+    model: patch.model_override ?? currentTask.model_override ?? null,
+    scheduleType: currentTask.schedule_type || 'once',
+    metadata: {
+      previousAgentId: currentTask.agent_id || null,
+      nextAgentId: patch.agent_id || currentTask.agent_id || null,
+    },
   });
 
   return { success: true, taskId };
@@ -1352,7 +1546,7 @@ export async function updateMissionBranchDependencies(taskId, dependsOn = []) {
 
   const { data: currentTask, error: taskError } = await supabase
     .from('tasks')
-    .select('id,title,name,agent_id,root_mission_id')
+    .select('id,title,name,agent_id,root_mission_id,domain,intent_type,provider_override,model_override,schedule_type')
     .eq('id', taskId)
     .single();
 
@@ -1378,10 +1572,29 @@ export async function updateMissionBranchDependencies(taskId, dependsOn = []) {
     throw error;
   }
 
+  const message = `[branch-dependency] ${currentTask.title || currentTask.name || taskId} (${taskId}) on root ${currentTask.root_mission_id || taskId} now depends on ${normalizedDependencies.length ? normalizedDependencies.join(', ') : 'no branches'}.`;
   await logBranchEvent({
     userId: user.id,
     agentId: currentTask.agent_id || null,
-    message: `[branch-dependency] ${currentTask.title || currentTask.name || taskId} (${taskId}) on root ${currentTask.root_mission_id || taskId} now depends on ${normalizedDependencies.length ? normalizedDependencies.join(', ') : 'no branches'}.`,
+    message,
+  });
+  await persistTaskIntervention({
+    userId: user.id,
+    taskId,
+    rootMissionId: currentTask.root_mission_id || taskId,
+    agentId: currentTask.agent_id || null,
+    eventType: 'dependency',
+    eventSource: 'manual',
+    tone: 'amber',
+    message,
+    domain: currentTask.domain || 'general',
+    intentType: currentTask.intent_type || 'general',
+    provider: currentTask.provider_override || null,
+    model: currentTask.model_override || null,
+    scheduleType: currentTask.schedule_type || 'once',
+    metadata: {
+      dependsOn: normalizedDependencies,
+    },
   });
 
   return { success: true, taskId };
@@ -1395,7 +1608,7 @@ export async function approveMissionTask(taskId) {
 
   const { data: task, error: fetchError } = await supabase
     .from('tasks')
-    .select('id, agent_id, title, priority')
+    .select('id, agent_id, title, priority, root_mission_id, domain, intent_type, provider_override, model_override, schedule_type')
     .eq('id', taskId)
     .single();
 
@@ -1422,6 +1635,28 @@ export async function approveMissionTask(taskId) {
     tokens: 0,
     duration_ms: 0,
   });
+  const message = `[intervention-approve] ${task.title || task.id} (${taskId}) on root ${task.root_mission_id || taskId} was approved to continue.`;
+  await logBranchEvent({
+    userId: user.id,
+    agentId: task.agent_id,
+    type: 'OK',
+    message,
+  });
+  await persistTaskIntervention({
+    userId: user.id,
+    taskId,
+    rootMissionId: task.root_mission_id || taskId,
+    agentId: task.agent_id,
+    eventType: 'approve',
+    eventSource: 'manual',
+    tone: 'amber',
+    message,
+    domain: task.domain || 'general',
+    intentType: task.intent_type || 'general',
+    provider: task.provider_override || null,
+    model: task.model_override || null,
+    scheduleType: task.schedule_type || 'once',
+  });
 
   return { success: true, taskId };
 }
@@ -1434,7 +1669,7 @@ export async function cancelMissionTask(taskId) {
 
   const { data: task, error: fetchError } = await supabase
     .from('tasks')
-    .select('id, agent_id, title')
+    .select('id, agent_id, title, root_mission_id, domain, intent_type, provider_override, model_override, schedule_type')
     .eq('id', taskId)
     .single();
 
@@ -1461,6 +1696,28 @@ export async function cancelMissionTask(taskId) {
     agent_id: task.agent_id,
     tokens: 0,
     duration_ms: 0,
+  });
+  const message = `[intervention-cancel] ${task.title || task.id} (${taskId}) on root ${task.root_mission_id || taskId} was cancelled by a human gate.`;
+  await logBranchEvent({
+    userId: user.id,
+    agentId: task.agent_id,
+    type: 'ERR',
+    message,
+  });
+  await persistTaskIntervention({
+    userId: user.id,
+    taskId,
+    rootMissionId: task.root_mission_id || taskId,
+    agentId: task.agent_id,
+    eventType: 'cancel',
+    eventSource: 'manual',
+    tone: 'rose',
+    message,
+    domain: task.domain || 'general',
+    intentType: task.intent_type || 'general',
+    provider: task.provider_override || null,
+    model: task.model_override || null,
+    scheduleType: task.schedule_type || 'once',
   });
 
   return { success: true, taskId };

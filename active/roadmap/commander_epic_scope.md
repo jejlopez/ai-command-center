@@ -18,6 +18,49 @@ The system should feel:
 - `Reports` is the ROI, performance, and trend surface.
 - `Settings` is the command rack for policy, security, integrations, and preferences.
 
+## Epic Experience Layer
+
+The Commander program should not stop at orchestration correctness. It should also feel like a real Jarvis command relationship.
+
+Priority experience additions:
+
+- `Mission preflight card`
+  - show context loaded, branch count, expected cost, approval posture, confidence, and top risk before launch
+- `Commander memory brief`
+  - compact learned readback before execution:
+    - what this task is
+    - what usually works
+    - what usually fails
+    - what context was loaded
+- `Confidence + uncertainty rail`
+  - explain how certain Commander is, why uncertainty exists, and whether human review is recommended
+- `Interrupt and redirect`
+  - allow mid-flight corrections:
+    - stop and reroute
+    - switch provider/model
+    - reduce spend
+    - slow down for verification
+- `Single bottleneck rail`
+  - always expose the one strongest current constraint
+- `Autonomy ratio`
+  - measure how much work completed without:
+    - rescue
+    - reroute
+    - approval
+    - retry
+- `Benchmark-per-dollar board`
+  - rank lanes by quality, completion, intervention pressure, and economics
+- `Recurring automation tuning loop`
+  - recurring flows should recommend safer cadence, tighter approvals, or cheaper lanes based on history
+- `One-screen bridge mode`
+  - compress Overview + Mission Control + Intelligence into a real cockpit
+- `Interruptible conversational Commander`
+  - the default interaction should become:
+    - tell Commander the mission
+    - see the brief
+    - redirect or approve
+    - watch execution
+
 ## Phase Plan
 
 ### Phase 0: Cleanup and Canonicalization
@@ -77,6 +120,8 @@ The system should feel:
 - Promote wins into doctrine.
 - Demote expensive, weak, or failure-prone routes.
 - Surface regression and connector-health recommendations automatically.
+- Add intervention-weighted doctrine scoring so retries, cancels, reroutes, and guardrails reduce lane confidence directly.
+- Add mission pattern memory, context-effectiveness scoring, skill-effectiveness scoring, rescue-cost memory, escalation-quality memory, and automation maturity scoring.
 
 ### Phase 5: Founder Domain Packs
 
@@ -101,6 +146,14 @@ The system should feel:
   - what should be automated next
 - Strong explainability on why the system chose each lane.
 - Voice and richer interaction later if still justified.
+- Add:
+  - commander briefing cadence
+  - what should I do now
+  - what can I automate now
+  - why Commander chose this
+  - why Commander paused this
+  - why this lane is losing
+  - fleet posture visibility for persistent vs ephemeral specialists
 
 ## Current Program State
 
@@ -132,13 +185,19 @@ Autodrive for this roadmap means:
   - destructive changes
   - dependency changes
   - schema changes with unclear impact
+  - auth, security, or secrets changes
+  - money, finance, or external-message authority
   - major UX direction forks
-  - risky product decisions involving money, external messaging, or permissions
+  - other risky product decisions involving money, external messaging, or permissions
 - otherwise continue phase-by-phase with:
   - roadmap update
   - focused implementation
   - targeted verification
   - next-slice recommendation
+
+Recommended user wording:
+
+- `Autodrive is on. Keep shipping the next clean slice from the Commander/Jarvis roadmap without waiting for me between phases. Only pause for destructive actions, risky schema/security changes, money/external-send authority, or major UX forks.`
 
 ## Top 20 Must-Have Release Checklist
 
@@ -175,6 +234,8 @@ Autodrive for this roadmap means:
 - Commander uses the cheapest good-enough lane by default.
 - Premium models are used deliberately, not habitually.
 - Delegation improves speed and quality instead of creating noise.
+- The operator can interrupt, redirect, and understand the system without reading internal implementation details.
+- The system should feel elegant and cinematic without sacrificing bottleneck visibility or cost discipline.
 - The operator can always see:
   - what is happening
   - why it is happening

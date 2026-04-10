@@ -26,14 +26,14 @@ import {
   YAxis,
 } from 'recharts';
 import { container, item } from '../utils/variants';
-import { useActivityLog, useAgents, useCostData, usePendingReviews, useTaskOutcomes, useTasks } from '../utils/useSupabase';
+import { useActivityLog, useAgents, useCostData, usePendingReviews, useSystemRecommendations, useTaskInterventions, useTaskOutcomes, useTasks } from '../utils/useSupabase';
 import { AnimatedNumber } from '../components/command/AnimatedNumber';
 import { CommandSectionHeader } from '../components/command/CommandSectionHeader';
 import { useLearningMemory } from '../utils/useLearningMemory';
 import { DoctrineCards } from '../components/command/DoctrineCards';
 import { TruthAuditStrip } from '../components/command/TruthAuditStrip';
 import { useCommandCenterTruth } from '../utils/useCommandCenterTruth';
-import { getAutomationCandidates, getAutomationRoiSummary, getObservedModelBenchmarks, parseDoctrineFeedbackLogs, parseOutcomeScoreLogs, scoreTaskOutcome } from '../utils/commanderAnalytics';
+import { buildPolicyDemotionSummary, buildProviderEscalationExplanation, getAutomationCandidates, getAutomationRoiSummary, getObservedModelBenchmarks, parseAutomationGuardrailEvents, parseDoctrineFeedbackLogs, parseOutcomeScoreLogs, scoreTaskOutcome } from '../utils/commanderAnalytics';
 import { createMission } from '../lib/api';
 
 const PERIOD_OPTIONS = ['30d', '90d', 'QTD'];
@@ -405,12 +405,16 @@ export function ReportsView() {
   const [period, setPeriod] = useState('30d');
   const [pressureFocus, setPressureFocus] = useState('activity');
   const [automationMessage, setAutomationMessage] = useState('');
+  const [automationDraft, setAutomationDraft] = useState(null);
+  const [automationLaunching, setAutomationLaunching] = useState(false);
   const { data: costData } = useCostData();
   const { agents } = useAgents();
   const { tasks } = useTasks();
   const { outcomes } = useTaskOutcomes();
+  const { interventions } = useTaskInterventions();
   const { reviews } = usePendingReviews();
   const { logs } = useActivityLog();
+  const { recommendations: persistedRecommendations } = useSystemRecommendations();
   const truth = useCommandCenterTruth();
   const humanHourlyRate = 150;
 
@@ -499,35 +503,91 @@ export function ReportsView() {
     return { average, top };
   }, [tasks]);
   const roiSummary = useMemo(() => getAutomationRoiSummary(tasks, humanHourlyRate), [tasks]);
-  const benchmarkBoard = useMemo(() => getObservedModelBenchmarks(outcomes.length ? outcomes : tasks, agents).slice(0, 5), [outcomes, tasks, agents]);
+  const benchmarkBoard = useMemo(() => getObservedModelBenchmarks(outcomes.length ? outcomes : tasks, agents, logs, interventions).slice(0, 5), [outcomes, tasks, agents, logs, interventions]);
+  const providerEscalation = useMemo(() => buildProviderEscalationExplanation(benchmarkBoard), [benchmarkBoard]);
   const automationCandidates = useMemo(() => getAutomationCandidates(tasks, humanHourlyRate).slice(0, 4), [tasks]);
+  const automationGuardrailEvents = useMemo(() => parseAutomationGuardrailEvents(interventions, logs).slice(0, 4), [interventions, logs]);
   const persistedOutcomeScores = useMemo(() => (
     outcomes.length
       ? outcomes.slice(0, 5).map((entry) => ({ id: entry.id, trust: entry.trust, score: entry.score, cleanMessage: `${entry.outcomeStatus} · ${entry.domain} / ${entry.intentType} · ${entry.model || 'adaptive lane'}`, createdAt: entry.createdAt }))
       : parseOutcomeScoreLogs(logs).slice(0, 5)
   ), [outcomes, logs]);
   const persistedDoctrineFeedback = useMemo(() => parseDoctrineFeedbackLogs(logs).slice(0, 4), [logs]);
+  const automationTuningHistory = useMemo(() => {
+    if (!automationDraft?.candidate) return { entries: [], summary: null };
+    const candidate = automationDraft.candidate;
+    const candidateTasks = tasks.filter((task) => task.domain === candidate.domain && task.intentType === candidate.intentType);
+    const rootIds = new Set(candidateTasks.map((task) => task.rootMissionId || task.id).filter(Boolean));
+    const entries = interventions.filter((entry) => (
+      ((entry.domain === candidate.domain && entry.intentType === candidate.intentType) || rootIds.has(entry.rootMissionId || entry.taskId))
+      && (entry.scheduleType === 'recurring' || entry.eventType === 'guardrail')
+    ));
 
-  async function handleLaunchRecurring(candidate) {
+    return {
+      entries: entries.slice(0, 6),
+      summary: buildPolicyDemotionSummary({
+        taskDomain: candidate.domain,
+        intentType: candidate.intentType,
+      }, tasks, interventions, logs),
+    };
+  }, [automationDraft, interventions, logs, tasks]);
+
+  function openAutomationDraft(candidate) {
+    setAutomationMessage('');
+    setAutomationDraft({
+      candidate,
+      frequency: candidate.runs >= 4 ? 'daily' : 'weekly',
+      time: '09:00',
+      outputType: candidate.intentType === 'report' ? 'summary' : 'action_plan',
+      missionMode: candidate.roi >= 3 ? 'plan_first' : 'watch_and_approve',
+    });
+  }
+
+  function getAutomationGuardrails(candidate, draft) {
+    if (!candidate || !draft) return [];
+    return [
+      candidate.roi < 1.5 ? 'ROI is still modest, so keep this in watch-and-approve until the workflow proves itself.' : null,
+      candidate.runs < 3 ? 'This flow is only lightly repeated so far. Start with a slower cadence before scaling it.' : null,
+      ['finance', 'money', 'billing'].includes(String(candidate.domain || '').toLowerCase()) ? 'Financial or money-adjacent work should stay human-gated by default.' : null,
+      draft.frequency === 'daily' && candidate.runs < 4 ? 'Daily cadence is aggressive for a flow with limited history. Weekly may be safer first.' : null,
+    ].filter(Boolean);
+  }
+
+  async function handleLaunchRecurring() {
+    if (!automationDraft?.candidate) return;
+    const candidate = automationDraft.candidate;
     const commander = agents.find((agent) => agent.role === 'commander' && !agent.isSyntheticCommander) || agents.find((agent) => agent.role === 'commander') || agents[0] || null;
-    const cadence = candidate.runs >= 4 ? { frequency: 'daily', time: '09:00' } : { frequency: 'weekly', time: '09:00' };
+    const cadence = { frequency: automationDraft.frequency, time: automationDraft.time };
     try {
-      await createMission({
+      setAutomationLaunching(true);
+      const result = await createMission({
         intent: candidate.title,
         agentId: commander?.id || null,
         agentName: commander?.name || 'Commander',
-        missionMode: 'plan_first',
+        missionMode: automationDraft.missionMode,
         mode: 'normal',
         when: 'repeat',
         repeat: cadence,
         targetType: candidate.domain,
-        outputType: candidate.intentType === 'report' ? 'summary' : 'action_plan',
+        outputType: automationDraft.outputType,
         priority: 'normal',
         priorityScore: 5,
+        automationCandidate: {
+          runs: candidate.runs,
+          roi: candidate.roi,
+          domain: candidate.domain,
+        },
       }, agents);
-      setAutomationMessage(`Recurring flow launched for ${candidate.title}.`);
+      setAutomationMessage(
+        result?.guardrails?.length
+          ? `Recurring flow launched for ${candidate.title}. Guardrails applied: ${result.guardrails.join(' ')}`
+          : `Recurring flow launched for ${candidate.title}.`
+      );
+      setAutomationDraft(null);
     } catch (error) {
       setAutomationMessage(error.message || 'Could not launch recurring flow.');
+    } finally {
+      setAutomationLaunching(false);
     }
   }
   const peakActivity = useMemo(
@@ -619,17 +679,147 @@ export function ReportsView() {
                   <div className="mt-3 flex justify-end">
                     <button
                       type="button"
-                      onClick={() => handleLaunchRecurring(entry)}
+                      onClick={() => openAutomationDraft(entry)}
                       className="rounded-xl border border-aurora-blue/20 bg-aurora-blue/10 px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-aurora-blue transition-colors hover:bg-aurora-blue/14"
                     >
-                      Launch recurring flow
+                      Configure recurring flow
                     </button>
                   </div>
                 </div>
               ))}
+              {automationDraft && (
+                <div className="rounded-[18px] border border-aurora-blue/20 bg-[linear-gradient(180deg,rgba(96,165,250,0.08),rgba(255,255,255,0.02))] p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="text-[10px] uppercase tracking-[0.16em] text-aurora-blue">Recurring Flow Editor</div>
+                      <div className="mt-1 text-[13px] font-semibold text-text-primary">{automationDraft.candidate.title}</div>
+                      <div className="mt-1 text-[11px] text-text-muted">{automationDraft.candidate.domain} / {automationDraft.candidate.intentType}</div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setAutomationDraft(null)}
+                      className="rounded-xl border border-white/8 bg-black/20 px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-text-muted"
+                    >
+                      Close
+                    </button>
+                  </div>
+                  <div className="mt-4 grid gap-3 md:grid-cols-2">
+                    <label>
+                      <div className="text-[10px] uppercase tracking-[0.14em] text-text-muted">Cadence</div>
+                      <select
+                        value={automationDraft.frequency}
+                        onChange={(event) => setAutomationDraft((current) => ({ ...current, frequency: event.target.value }))}
+                        className="mt-2 w-full rounded-xl border border-white/8 bg-black/20 px-3 py-2 text-[12px] text-text-primary outline-none"
+                      >
+                        <option value="daily">Daily</option>
+                        <option value="weekly">Weekly</option>
+                      </select>
+                    </label>
+                    <label>
+                      <div className="text-[10px] uppercase tracking-[0.14em] text-text-muted">Time</div>
+                      <input
+                        type="time"
+                        value={automationDraft.time}
+                        onChange={(event) => setAutomationDraft((current) => ({ ...current, time: event.target.value }))}
+                        className="mt-2 w-full rounded-xl border border-white/8 bg-black/20 px-3 py-2 text-[12px] text-text-primary outline-none"
+                      />
+                    </label>
+                    <label>
+                      <div className="text-[10px] uppercase tracking-[0.14em] text-text-muted">Mission mode</div>
+                      <select
+                        value={automationDraft.missionMode}
+                        onChange={(event) => setAutomationDraft((current) => ({ ...current, missionMode: event.target.value }))}
+                        className="mt-2 w-full rounded-xl border border-white/8 bg-black/20 px-3 py-2 text-[12px] text-text-primary outline-none"
+                      >
+                        <option value="do_now">Do now</option>
+                        <option value="plan_first">Plan first</option>
+                        <option value="watch_and_approve">Watch and approve</option>
+                      </select>
+                    </label>
+                    <label>
+                      <div className="text-[10px] uppercase tracking-[0.14em] text-text-muted">Output</div>
+                      <select
+                        value={automationDraft.outputType}
+                        onChange={(event) => setAutomationDraft((current) => ({ ...current, outputType: event.target.value }))}
+                        className="mt-2 w-full rounded-xl border border-white/8 bg-black/20 px-3 py-2 text-[12px] text-text-primary outline-none"
+                      >
+                        <option value="summary">Summary</option>
+                        <option value="action_plan">Action plan</option>
+                        <option value="report">Report</option>
+                        <option value="email_drafts">Email drafts</option>
+                      </select>
+                    </label>
+                  </div>
+                  <div className="mt-4 rounded-[16px] border border-white/8 bg-black/20 p-3">
+                    <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Automation guardrails</div>
+                    <div className="mt-2 space-y-2">
+                      {getAutomationGuardrails(automationDraft.candidate, automationDraft).map((guardrail) => (
+                        <div key={guardrail} className="rounded-[12px] border border-aurora-amber/20 bg-aurora-amber/10 px-3 py-2 text-[11px] text-text-body">
+                          {guardrail}
+                        </div>
+                      ))}
+                      {getAutomationGuardrails(automationDraft.candidate, automationDraft).length === 0 && (
+                        <div className="rounded-[12px] border border-aurora-teal/20 bg-aurora-teal/10 px-3 py-2 text-[11px] text-text-body">
+                          This flow has enough repetition and ROI signal to automate with the selected mission posture.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <div className="mt-4 rounded-[16px] border border-white/8 bg-black/20 p-3">
+                    <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Guardrail and intervention history</div>
+                    <div className="mt-2 space-y-2">
+                      {automationTuningHistory.summary && (
+                        <div className="rounded-[12px] border border-aurora-blue/20 bg-aurora-blue/10 px-3 py-2 text-[11px] text-text-body">
+                          {automationTuningHistory.summary.interventionCount > 0
+                            ? `${automationTuningHistory.summary.interventionCount} historical intervention signals match this flow.`
+                            : 'No recurring intervention pressure has been recorded for this flow yet.'}
+                        </div>
+                      )}
+                      {(automationTuningHistory.summary?.reasons || []).map((reason) => (
+                        <div key={reason} className="rounded-[12px] border border-white/8 bg-white/[0.03] px-3 py-2 text-[11px] text-text-body">
+                          {reason}
+                        </div>
+                      ))}
+                      {automationTuningHistory.entries.map((entry) => (
+                        <div key={entry.id} className="rounded-[12px] border border-white/8 bg-white/[0.03] px-3 py-2 text-[11px] text-text-body">
+                          <div className="font-semibold text-text-primary">{entry.eventType}</div>
+                          <div className="mt-1 text-text-muted">{entry.message}</div>
+                        </div>
+                      ))}
+                      {automationTuningHistory.entries.length === 0 && !(automationTuningHistory.summary?.reasons || []).length && (
+                        <div className="rounded-[12px] border border-dashed border-white/10 bg-black/10 px-3 py-2 text-[11px] text-text-muted">
+                          Commander will start writing recurring-flow history here once this automation sees guardrails, approvals, or human interventions over time.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <div className="mt-4 flex justify-end">
+                    <button
+                      type="button"
+                      onClick={handleLaunchRecurring}
+                      disabled={automationLaunching}
+                      className="rounded-xl border border-aurora-blue/20 bg-aurora-blue/10 px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-aurora-blue transition-colors hover:bg-aurora-blue/14 disabled:opacity-50"
+                    >
+                      {automationLaunching ? 'Launching...' : 'Launch recurring flow'}
+                    </button>
+                  </div>
+                </div>
+              )}
               {automationMessage && (
                 <div className="rounded-[14px] border border-white/8 bg-black/20 px-3 py-2 text-[11px] text-text-body">
                   {automationMessage}
+                </div>
+              )}
+              {automationGuardrailEvents.length > 0 && (
+                <div className="rounded-[16px] border border-aurora-amber/20 bg-aurora-amber/10 p-3">
+                  <div className="text-[10px] uppercase tracking-[0.16em] text-aurora-amber">Recent automation guardrails</div>
+                  <div className="mt-2 space-y-2">
+                    {automationGuardrailEvents.map((entry) => (
+                      <div key={entry.id} className="rounded-[12px] border border-white/8 bg-black/20 px-3 py-2 text-[11px] text-text-body">
+                        {entry.cleanMessage}
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
             </div>
@@ -928,6 +1118,11 @@ export function ReportsView() {
                 detail="Ranks lanes by quality, success, speed, and cost."
                 accent="amber"
               >
+                <div className="mb-3 rounded-[18px] border border-aurora-amber/20 bg-aurora-amber/10 px-3 py-3">
+                  <div className="text-[10px] uppercase tracking-[0.16em] text-aurora-amber">Provider escalation explanation</div>
+                  <div className="mt-1 text-[13px] font-semibold text-text-primary">{providerEscalation.title}</div>
+                  <div className="mt-1 text-[11px] leading-5 text-text-body">{providerEscalation.detail}</div>
+                </div>
                 <div className="grid gap-3 md:grid-cols-5">
                   {benchmarkBoard.length === 0 && <div className="text-[12px] text-text-muted">No benchmark data yet. Commander needs more routed mission history.</div>}
                   {benchmarkBoard.map((entry) => (
@@ -939,7 +1134,31 @@ export function ReportsView() {
                         <div>quality {entry.avgQuality}</div>
                         <div>success {entry.successRate}%</div>
                         <div>avg cost ${entry.avgCost.toFixed(2)}</div>
+                        <div>interventions {entry.avgInterventions}</div>
                       </div>
+                    </div>
+                  ))}
+                </div>
+              </HudFrame>
+
+              <HudFrame
+                eyebrow="Persisted Recommendations"
+                title="What the system is explicitly telling you to change"
+                detail="These are durable recommendation rows, not just local UI heuristics."
+                accent="blue"
+              >
+                <div className="grid gap-3 md:grid-cols-2">
+                  {persistedRecommendations.length === 0 && <div className="text-[12px] text-text-muted">No persisted recommendations yet. Commander will fill this rail as doctrine and outcome memory harden.</div>}
+                  {persistedRecommendations.slice(0, 4).map((entry) => (
+                    <div key={entry.id} className="rounded-[18px] border border-white/8 bg-[#111827] p-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="text-[12px] font-semibold text-text-primary">{entry.title}</div>
+                        <div className="rounded-full border border-aurora-blue/20 bg-aurora-blue/10 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-aurora-blue">
+                          {entry.type}
+                        </div>
+                      </div>
+                      <div className="mt-2 text-[11px] leading-5 text-text-body">{entry.description}</div>
+                      {entry.savings && <div className="mt-2 text-[10px] uppercase tracking-[0.16em] text-aurora-teal">{entry.savings}</div>}
                     </div>
                   ))}
                 </div>

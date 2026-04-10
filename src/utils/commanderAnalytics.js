@@ -47,8 +47,62 @@ export function scoreTaskOutcome(task = {}) {
   };
 }
 
-export function getObservedModelBenchmarks(tasks = [], agents = []) {
+export function parseInterventionLogs(logs = []) {
+  return logs
+    .filter((entry) => {
+      const message = String(entry.message || '');
+      return (
+        message.includes('[intervention-approve]')
+        || message.includes('[intervention-retry]')
+        || message.includes('[intervention-stop]')
+        || message.includes('[intervention-cancel]')
+        || message.includes('[branch-routing]')
+        || message.includes('[branch-dependency]')
+      );
+    })
+    .map((entry) => {
+      const message = String(entry.message || '');
+      let eventType = 'override';
+      if (message.includes('[intervention-approve]')) eventType = 'approve';
+      if (message.includes('[intervention-retry]')) eventType = 'retry';
+      if (message.includes('[intervention-stop]')) eventType = 'stop';
+      if (message.includes('[intervention-cancel]')) eventType = 'cancel';
+      if (message.includes('[branch-routing]')) eventType = 'reroute';
+      if (message.includes('[branch-dependency]')) eventType = 'dependency';
+
+      return {
+        ...entry,
+        eventType,
+        cleanMessage: message
+          .replace('[intervention-approve] ', '')
+          .replace('[intervention-retry] ', '')
+          .replace('[intervention-stop] ', '')
+          .replace('[intervention-cancel] ', '')
+          .replace('[branch-routing] ', '')
+          .replace('[branch-dependency] ', ''),
+      };
+    })
+    .sort((left, right) => new Date(right.timestamp || 0).getTime() - new Date(left.timestamp || 0).getTime());
+}
+
+export function normalizeInterventionEvents(interventions = [], logs = []) {
+  if (Array.isArray(interventions) && interventions.length > 0) {
+    return interventions
+      .map((entry) => ({
+        ...entry,
+        eventType: entry.eventType || 'override',
+        cleanMessage: String(entry.message || ''),
+        timestamp: entry.createdAt || entry.timestamp,
+      }))
+      .sort((left, right) => new Date(right.timestamp || 0).getTime() - new Date(left.timestamp || 0).getTime());
+  }
+
+  return parseInterventionLogs(logs);
+}
+
+export function getObservedModelBenchmarks(tasks = [], agents = [], logs = [], interventions = []) {
   const grouped = new Map();
+  const interventionLogs = normalizeInterventionEvents(interventions, logs);
 
   tasks
     .filter((task) => task.routingReason)
@@ -58,6 +112,14 @@ export function getObservedModelBenchmarks(tasks = [], agents = []) {
       const provider = inferAgentProvider(agent || task);
       const key = `${provider}::${model}`;
       const quality = scoreTaskOutcome(task);
+      const interventionCount = interventionLogs.filter((entry) => {
+        const message = String(entry.message || '');
+        return (
+          (task.id && message.includes(task.id))
+          || (task.taskId && message.includes(task.taskId))
+          || (task.rootMissionId && message.includes(task.rootMissionId))
+        );
+      }).length;
       const current = grouped.get(key) || {
         key,
         model,
@@ -67,6 +129,7 @@ export function getObservedModelBenchmarks(tasks = [], agents = []) {
         totalCost: 0,
         totalDurationMs: 0,
         totalQuality: 0,
+        totalInterventions: 0,
       };
 
       current.runs += 1;
@@ -74,6 +137,7 @@ export function getObservedModelBenchmarks(tasks = [], agents = []) {
       current.totalCost += Number(task.costUsd || 0);
       current.totalDurationMs += Number(task.durationMs || 0);
       current.totalQuality += quality.score;
+      current.totalInterventions += interventionCount;
       grouped.set(key, current);
     });
 
@@ -83,9 +147,11 @@ export function getObservedModelBenchmarks(tasks = [], agents = []) {
       const successRate = entry.runs ? (entry.completedRuns / entry.runs) * 100 : 0;
       const avgCost = entry.runs ? entry.totalCost / entry.runs : 0;
       const avgDurationMs = entry.runs ? entry.totalDurationMs / entry.runs : 0;
+      const avgInterventions = entry.runs ? entry.totalInterventions / entry.runs : 0;
       const speedScore = avgDurationMs > 0 ? clamp(Math.round(100 - Math.min(80, avgDurationMs / 15000)), 20, 100) : 60;
       const costScore = avgCost > 0 ? clamp(Math.round(100 - Math.min(75, avgCost * 16)), 20, 100) : 95;
-      const benchmarkScore = Math.round((avgQuality * 0.45) + (successRate * 0.3) + (speedScore * 0.15) + (costScore * 0.1));
+      const interventionPenalty = Math.min(18, Math.round(avgInterventions * 6));
+      const benchmarkScore = Math.round(((avgQuality * 0.45) + (successRate * 0.3) + (speedScore * 0.15) + (costScore * 0.1)) - interventionPenalty);
 
       return {
         ...entry,
@@ -93,6 +159,8 @@ export function getObservedModelBenchmarks(tasks = [], agents = []) {
         successRate: Math.round(successRate),
         avgCost,
         avgDurationMs,
+        avgInterventions: Number(avgInterventions.toFixed(1)),
+        interventionPenalty,
         speedScore,
         costScore,
         benchmarkScore,
@@ -102,6 +170,126 @@ export function getObservedModelBenchmarks(tasks = [], agents = []) {
       if (right.benchmarkScore !== left.benchmarkScore) return right.benchmarkScore - left.benchmarkScore;
       return right.runs - left.runs;
     });
+}
+
+export function parseAutomationGuardrailLogs(logs = []) {
+  return logs
+    .filter((entry) => String(entry.message || '').includes('[automation-guardrail]'))
+    .map((entry) => ({
+      ...entry,
+      cleanMessage: String(entry.message || '').replace('[automation-guardrail] ', ''),
+    }))
+    .sort((left, right) => new Date(right.timestamp || 0).getTime() - new Date(left.timestamp || 0).getTime());
+}
+
+export function parseAutomationGuardrailEvents(interventions = [], logs = []) {
+  const normalized = normalizeInterventionEvents(interventions, logs);
+  return normalized
+    .filter((entry) => entry.eventType === 'guardrail')
+    .map((entry) => ({
+      ...entry,
+      cleanMessage: String(entry.cleanMessage || entry.message || ''),
+    }))
+    .sort((left, right) => new Date(right.timestamp || 0).getTime() - new Date(left.timestamp || 0).getTime());
+}
+
+export function buildPolicyDemotionSummary(policy, tasks = [], interventions = [], logs = []) {
+  if (!policy) {
+    return {
+      score: 0,
+      reasons: [],
+      matchingRuns: 0,
+      interventionCount: 0,
+    };
+  }
+
+  const normalized = normalizeInterventionEvents(interventions, logs);
+  const matchingTasks = tasks.filter((task) => {
+    const domainMatch = (policy.taskDomain || 'general') === 'general' || task.domain === policy.taskDomain;
+    const intentMatch = (policy.intentType || 'general') === 'general' || task.intentType === policy.intentType;
+    return domainMatch && intentMatch;
+  });
+  const rootMissionIds = new Set(matchingTasks.map((task) => task.rootMissionId || task.id).filter(Boolean));
+  const matchingInterventions = normalized.filter((entry) => {
+    const domainMatch = (policy.taskDomain || 'general') === 'general' || entry.domain === policy.taskDomain;
+    const intentMatch = (policy.intentType || 'general') === 'general' || entry.intentType === policy.intentType;
+    const missionMatch = !rootMissionIds.size || rootMissionIds.has(entry.rootMissionId || entry.taskId);
+    return domainMatch && intentMatch && missionMatch;
+  });
+
+  const counts = matchingInterventions.reduce((acc, entry) => {
+    const key = entry.eventType || 'override';
+    acc[key] = (acc[key] || 0) + 1;
+    return acc;
+  }, {});
+
+  const score = Number(counts.stop || 0) * 3
+    + Number(counts.cancel || 0) * 3
+    + Number(counts.reroute || 0) * 2
+    + Number(counts.dependency || 0) * 1
+    + Number(counts.retry || 0) * 1
+    + Number(counts.guardrail || 0) * 2;
+
+  const reasons = [
+    counts.reroute ? `${counts.reroute} reroute${counts.reroute === 1 ? '' : 's'} pushed work off the preferred lane.` : null,
+    counts.stop || counts.cancel ? `${Number(counts.stop || 0) + Number(counts.cancel || 0)} hard stop/cancel intervention${Number(counts.stop || 0) + Number(counts.cancel || 0) === 1 ? '' : 's'} needed human rescue.` : null,
+    counts.retry ? `${counts.retry} retry intervention${counts.retry === 1 ? '' : 's'} signaled brittle execution under this doctrine.` : null,
+    counts.guardrail ? `${counts.guardrail} recurring guardrail hold${counts.guardrail === 1 ? '' : 's'} slowed this lane before execution.` : null,
+    matchingInterventions.length > 0 && matchingTasks.length > 0 ? `${(matchingInterventions.length / Math.max(matchingTasks.length, 1)).toFixed(1)} interventions per matching mission on average.` : null,
+  ].filter(Boolean);
+
+  return {
+    score,
+    reasons,
+    matchingRuns: matchingTasks.length,
+    interventionCount: matchingInterventions.length,
+    counts,
+  };
+}
+
+export function buildProviderEscalationExplanation(benchmarks = []) {
+  if (!benchmarks.length) {
+    return {
+      title: 'Commander still needs outcome history before it can justify escalation cleanly.',
+      detail: 'Once benchmark data accumulates, this rail will explain when to stay cheap, when to escalate, and which provider is currently earning that trust.',
+      cheapestStrongLane: null,
+      premiumLeader: null,
+    };
+  }
+
+  const premiumLeader = benchmarks[0] || null;
+  const cheapestStrongLane = benchmarks
+    .filter((entry) => entry.avgQuality >= 70 && entry.successRate >= 65)
+    .slice()
+    .sort((left, right) => {
+      if (left.avgCost !== right.avgCost) return left.avgCost - right.avgCost;
+      return right.benchmarkScore - left.benchmarkScore;
+    })[0] || premiumLeader;
+
+  if (!premiumLeader) {
+    return {
+      title: 'No dominant provider lane yet',
+      detail: 'Traffic is still too dispersed to explain a confident escalation posture.',
+      cheapestStrongLane: null,
+      premiumLeader: null,
+    };
+  }
+
+  if (premiumLeader.key === cheapestStrongLane?.key) {
+    return {
+      title: `${premiumLeader.provider} is winning without needing a second lane`,
+      detail: `${premiumLeader.model} is currently the strongest all-around lane on quality, success, and economics. Commander does not need to escalate away from it often right now.`,
+      cheapestStrongLane,
+      premiumLeader,
+    };
+  }
+
+  return {
+    title: `Stay on ${cheapestStrongLane.provider} until ambiguity forces ${premiumLeader.provider}`,
+    detail: `${cheapestStrongLane.model} is the cheapest lane still clearing quality at ${cheapestStrongLane.avgQuality}. Escalate to ${premiumLeader.model} only when the task is ambiguous, high-risk, or needs final judgment because it is the current benchmark leader at ${premiumLeader.benchmarkScore}.`,
+    cheapestStrongLane,
+    premiumLeader,
+  };
 }
 
 export function parseOutcomeScoreLogs(logs = []) {

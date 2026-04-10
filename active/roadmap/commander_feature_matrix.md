@@ -141,6 +141,55 @@ Legend:
 3. Benchmark-aware provider escalation explanations
 4. Recurring flow editing and automation guardrails
 
+## Epic Experience Layer Additions
+
+These are now explicit tracked roadmap targets even when they are implemented as cross-cutting UI + intelligence work:
+
+- Mission preflight card
+- Commander memory brief
+- Confidence + uncertainty rail
+- Interrupt and redirect controls
+- Single bottleneck rail
+- Autonomy ratio
+- Benchmark-per-dollar board
+- Recurring automation tuning loop
+- One-screen bridge mode
+- Interruptible conversational Commander
+
+## Intelligence / Learning Upgrades To Fold Into Existing Features
+
+These are not separate feature IDs yet. They should be implemented as depth added to the existing routing, memory, and automation rows above:
+
+- policy trend memory
+- intervention-weighted doctrine scoring
+- mission pattern memory
+- context effectiveness scoring
+- skill effectiveness scoring
+- rescue-cost memory
+- escalation-quality memory
+- failure-cluster detection
+- automation maturity scoring
+
+## Updated Immediate Next Order
+
+1. Commit the current intervention-memory slice cleanly
+2. Add first-class specialist lifecycle memory
+3. Deepen routing policy trend and demotion history
+4. Turn recurring flows into tunable automation products
+5. Add mission preflight + confidence readback
+6. Add bottleneck rail + autonomy ratio visibility
+
+## Autodrive Program Rule
+
+- Autodrive is enabled by default for this program.
+- Keep shipping the next clean slice without waiting for approval each phase.
+- Pause only for:
+  - destructive actions
+  - risky schema or security changes
+  - money / finance authority
+  - external sending or user-facing side effects
+  - major UX forks
+
 ## Future Summary
 
 The following are intentionally delayed until the execution core is trustworthy:

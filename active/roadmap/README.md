@@ -31,3 +31,27 @@ When the user wants the Commander roadmap pushed forward continuously:
 - prefer the highest-leverage `Next` item that does not require a product-risk decision
 - keep changes focused, reversible, and phase-aligned
 - update the progress board after each meaningful slice so roadmap state stays truthful
+- add the Stark/Musk experience layer to planning, not just backend throughput
+- default to continuing without re-asking for permission unless blocked by:
+  - destructive actions
+  - risky schema/security changes
+  - money or finance authority
+  - external sending / user-facing side effects
+  - major UX forks with non-obvious tradeoffs
+
+## Experience Layer
+
+The roadmap now explicitly includes an `Epic Experience Layer`:
+
+- mission preflight
+- commander memory brief
+- confidence and uncertainty readback
+- interrupt and redirect controls
+- bottleneck rail
+- autonomy ratio
+- benchmark-per-dollar views
+- recurring automation tuning loops
+- one-screen bridge mode
+- interruptible conversational Commander
+
+These are not decorative extras. They are part of making the system feel like Jarvis instead of a generic admin console.

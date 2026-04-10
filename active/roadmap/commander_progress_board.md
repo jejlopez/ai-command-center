@@ -7,7 +7,7 @@ This is the live build tracker for the Jarvis / Stark / Musk Commander program.
 - Jarvis vision size: `100` scoped features
 - Shipped foundation: `15`
 - Active buildout: `30`
-- Immediate next targets: `0`
+- Immediate next targets: `10`
 - Deferred / later items: `64`
 
 ## Shipped
@@ -65,48 +65,102 @@ This is the live build tracker for the Jarvis / Stark / Musk Commander program.
 - Mission Control outcome and doctrine timelines
 - First-class task outcome memory
 - Launch recurring flows from automation recommendations
+- First-class intervention memory
+- Lane demotion reasons in Intelligence
+- Recurring guardrail and intervention history in Reports
+- Structured intervention history in Mission Control
+
+## Epic Experience Layer
+
+These are now explicit roadmap targets, not implied polish:
+
+- Mission preflight card
+- Commander memory brief
+- Confidence + uncertainty rail
+- Interrupt and redirect controls
+- Single bottleneck rail
+- Autonomy ratio
+- Benchmark-per-dollar board
+- Recurring automation tuning loop
+- One-screen bridge mode
+- Interruptible conversational Commander
 
 ## Next Program Targets
 
-### 1. Doctrine Feedback Persistence Into Recommendations And Learning Memory
+### 1. Clean Up And Commit The Current Intervention-Memory Slice
 
 Goal:
-- let durable outcome signals directly shape visible recommendations and doctrine
+- lock the current structural intervention-memory slice into source control before expanding the program further
 
 Definition of done:
-- outcome memory writes feed system recommendations or learning memory automatically
-- doctrine updates stop depending on manual interpretation
+- commit current local changes as one coherent slice
+- update roadmap artifacts so the tracked state matches the product state
 
 Likely surfaces:
-- [`/Users/Jjarvis/ai-command-center/src/utils/useLearningMemory.js`](/Users/Jjarvis/ai-command-center/src/utils/useLearningMemory.js)
+- [`/Users/Jjarvis/ai-command-center/src/lib/api.js`](/Users/Jjarvis/ai-command-center/src/lib/api.js)
 - [`/Users/Jjarvis/ai-command-center/src/views/IntelligenceView.jsx`](/Users/Jjarvis/ai-command-center/src/views/IntelligenceView.jsx)
+- [`/Users/Jjarvis/ai-command-center/src/views/ReportsView.jsx`](/Users/Jjarvis/ai-command-center/src/views/ReportsView.jsx)
 
-### 2. Unified Intervention Timeline Rail In Mission Control
-
-Goal:
-- compress overrides, approvals, outcomes, and doctrine guidance into one pressure-ready rail
-
-Definition of done:
-- one timeline answers what changed, why, and what to do next
-- operator review becomes fast under pressure
-
-### 3. Benchmark-Aware Provider Escalation Explanations
+### 2. First-Class Specialist Lifecycle Memory
 
 Goal:
-- make provider/model escalation understandable when Commander leaves the default lane
+- stop depending on mixed log parsing for specialist fleet history
 
 Definition of done:
-- Mission Control and Intelligence explain benchmark-driven lane choices clearly
-- operators can see why a route escalated or stayed cheap
+- specialist lifecycle events are persisted structurally
+- Intelligence and Mission Control use the same normalized fleet history source
 
-### 4. Recurring Flow Editing And Automation Guardrails
+Likely surfaces:
+- [`/Users/Jjarvis/ai-command-center/src/utils/useSupabase.js`](/Users/Jjarvis/ai-command-center/src/utils/useSupabase.js)
+- [`/Users/Jjarvis/ai-command-center/src/views/IntelligenceView.jsx`](/Users/Jjarvis/ai-command-center/src/views/IntelligenceView.jsx)
+- [`/Users/Jjarvis/ai-command-center/src/views/MissionControlView.jsx`](/Users/Jjarvis/ai-command-center/src/views/MissionControlView.jsx)
+
+### 3. Routing Policy Trend And Demotion History
 
 Goal:
-- turn first-launch recurring flows into safer, tunable automations
+- make it obvious why a lane is improving, flat, or being demoted
 
 Definition of done:
-- launched recurring flows can be reviewed and tuned easily
-- approval and cadence guardrails stay visible after launch
+- Intelligence shows trend direction and pressure sources over time
+- intervention pressure directly shapes visible routing confidence
+
+Likely surfaces:
+- [`/Users/Jjarvis/ai-command-center/src/views/IntelligenceView.jsx`](/Users/Jjarvis/ai-command-center/src/views/IntelligenceView.jsx)
+- [`/Users/Jjarvis/ai-command-center/src/utils/commanderAnalytics.js`](/Users/Jjarvis/ai-command-center/src/utils/commanderAnalytics.js)
+- [`/Users/Jjarvis/ai-command-center/src/utils/useLearningMemory.js`](/Users/Jjarvis/ai-command-center/src/utils/useLearningMemory.js)
+
+### 4. Recurring Flow Management And Tuning
+
+Goal:
+- turn recurring launches into manageable automation products
+
+Definition of done:
+- cadence, mission mode, and approval posture can be tuned over time
+- latest outcomes, guardrails, and interventions stay visible after launch
+
+### 5. Mission Preflight Card
+
+- show context loaded, expected branches, cost, approval posture, confidence, and top risks before launch
+
+### 6. Confidence + Uncertainty Rail
+
+- make certainty and unknowns visible before and during execution
+
+### 7. Single Bottleneck Rail
+
+- always expose the one strongest current constraint across cost, approvals, intervention pressure, or connector drag
+
+### 8. Autonomy Ratio + Rescue-Rate Visibility
+
+- measure how much work completed cleanly vs with rescue
+
+### 9. Mission Pattern Memory
+
+- learn repeatable mission shapes, not just individual outcomes
+
+### 10. One-Screen Bridge Mode
+
+- compress Overview, Mission Control, and Intelligence into the true Jarvis cockpit
 
 ## Later
 
@@ -131,14 +185,22 @@ When autodrive is enabled:
 - keep going unless blocked by:
   - destructive changes
   - risky schema changes
+  - auth / security / secrets changes
   - permission / money / external-message authority questions
   - major UX forks
+
+Default posture:
+
+- continue without re-asking for approval between clean slices
+- only pause when one of the blockers above is hit
+- always leave the roadmap pack more accurate than it was before the slice
 
 ## Current Recommendation
 
 Build next:
 
-1. doctrine feedback persistence into recommendations and learning memory
-2. unified intervention timeline rail in Mission Control
-3. benchmark-aware provider escalation explanations
-4. recurring flow editing and automation guardrails
+1. commit the current intervention-memory slice
+2. add first-class specialist lifecycle memory
+3. deepen routing policy trend and demotion history
+4. turn recurring flows into tunable automation products
+5. add mission preflight and confidence rails
