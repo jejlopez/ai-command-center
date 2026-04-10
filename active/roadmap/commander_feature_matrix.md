@@ -129,15 +129,15 @@ Legend:
 ## Current Read
 
 - `Shipped`: 15
-- `In Progress`: 58
+- `In Progress`: 61
 - `Next`: 0
 - `Queued`: 16
 - `Later / Future`: 48
 
 ## Immediate Next Four
 
-1. Runtime confidence closure steering even deeper into provider/model defaults
-2. Recurring trust memory tightening autonomy posture from live history
+1. Runtime winner logic generalizing across nearby mission families when exact history is thin
+2. Recurring trust recovery becoming explicit from paused/watch posture
 3. Automatic durable coverage expanding across more mission families and domain packs
 4. Mission-pattern winners influencing approval defaults even more directly
 
@@ -173,8 +173,8 @@ These are not separate feature IDs yet. They should be implemented as depth adde
 
 ## Updated Immediate Next Order
 
-1. Push runtime confidence closure deeper into provider, model, and lane defaults
-2. Tighten recurring autonomy posture even more aggressively when live trust memory drifts
+1. Generalize runtime winner logic across nearby mission families when exact history is thin
+2. Deepen recurring trust recovery so flows can earn their way back from paused/watch posture
 3. Expand automatic durable coverage defaults across more mission families and domain packs
 4. Push mission-pattern winners into provider, lane, and approval defaults more aggressively
 5. Keep widening trust and doctrine readback where operators make decisions

@@ -943,6 +943,7 @@ async function resolveBranchAssignment({
         && promotionGuidance.autoCreateRoles.includes(branchRole))
       || domainScopedGap
       || domainPackGap
+      || ((promotionGuidance.domainPackTargets || []).filter((entry) => entry.role === branchRole).length >= 2)
     );
 
     assignedAgent = await (durableGap ? createPersistentBranchSpecialist : ensureBranchSpecialistAgent)({
@@ -1202,20 +1203,40 @@ async function selectRoutingPolicyRow(user, routingDecision) {
 async function selectOutcomeWinningLane(user, routingDecision) {
   if (!user?.id) return null;
 
-  const { data, error } = await supabase
-    .from('task_outcomes')
-    .select('provider,model,score,cost_usd,agent_role,execution_strategy,approval_level')
-    .eq('user_id', user.id)
-    .eq('domain', routingDecision.domain)
-    .eq('intent_type', routingDecision.intentType)
-    .eq('outcome_status', 'completed')
-    .order('created_at', { ascending: false })
-    .limit(24);
+  const selectColumns = 'provider,model,score,cost_usd,agent_role,execution_strategy,approval_level,domain,intent_type';
+  const queryOutcomeRows = async (scope = 'exact') => {
+    let query = supabase
+      .from('task_outcomes')
+      .select(selectColumns)
+      .eq('user_id', user.id)
+      .eq('outcome_status', 'completed')
+      .order('created_at', { ascending: false })
+      .limit(32);
 
-  if (error) {
-    console.error('[api] selectOutcomeWinningLane:', error.message);
-    return null;
-  }
+    if (scope === 'exact') {
+      query = query.eq('domain', routingDecision.domain).eq('intent_type', routingDecision.intentType);
+    } else if (scope === 'domain-pack') {
+      query = query.eq('domain', routingDecision.domain);
+    } else if (scope === 'intent-pack') {
+      query = query.eq('intent_type', routingDecision.intentType);
+    }
+
+    const { data, error } = await query;
+    if (error) {
+      console.error('[api] selectOutcomeWinningLane:', error.message);
+      return [];
+    }
+    return data || [];
+  };
+
+  const exactRows = await queryOutcomeRows('exact');
+  const data = exactRows.length >= 3
+    ? exactRows
+    : [
+        ...exactRows,
+        ...(await queryOutcomeRows('domain-pack')).filter((row) => !(row.domain === routingDecision.domain && row.intent_type === routingDecision.intentType)),
+        ...(await queryOutcomeRows('intent-pack')).filter((row) => !(row.domain === routingDecision.domain && row.intent_type === routingDecision.intentType)),
+      ].slice(0, 32);
 
   const grouped = new Map();
   (data || []).forEach((row) => {
@@ -1226,10 +1247,12 @@ async function selectOutcomeWinningLane(user, routingDecision) {
       agentRole: row.agent_role || 'executor',
       executionStrategy: row.execution_strategy || 'sequential',
       approvalLevel: row.approval_level || 'risk_weighted',
+      exactRuns: 0,
       runs: 0,
       totalScore: 0,
       totalCost: 0,
     };
+    if (row.domain === routingDecision.domain && row.intent_type === routingDecision.intentType) current.exactRuns += 1;
     current.runs += 1;
     current.totalScore += Number(row.score || 0);
     current.totalCost += Number(row.cost_usd || 0);
@@ -1241,7 +1264,7 @@ async function selectOutcomeWinningLane(user, routingDecision) {
       ...entry,
       avgScore: entry.runs ? entry.totalScore / entry.runs : 0,
       avgCost: entry.runs ? entry.totalCost / entry.runs : 0,
-      confidence: entry.runs >= 8 ? 'high' : entry.runs >= 4 ? 'medium' : 'low',
+      confidence: entry.exactRuns >= 6 || entry.runs >= 10 ? 'high' : entry.exactRuns >= 3 || entry.runs >= 5 ? 'medium' : 'low',
       rank: (entry.runs ? entry.totalScore / entry.runs : 0)
         + Math.min(24, entry.runs * 3)
         - ((entry.runs ? entry.totalCost / entry.runs : 0) * 5.5)

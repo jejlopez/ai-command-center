@@ -609,13 +609,14 @@ export function ReportsView() {
     setAutomationDraft({
       mode: 'create',
       candidate,
-      frequency: candidate.runs >= 4 ? 'daily' : 'weekly',
+      frequency: trustTuning.recommendedFrequency || (candidate.runs >= 4 ? 'daily' : 'weekly'),
       time: '09:00',
       outputType: candidate.intentType === 'report' ? 'summary' : 'action_plan',
       missionMode: trustTuning.recommendedMissionMode || (candidate.roi >= 3 ? 'plan_first' : 'watch_and_approve'),
       approvalPosture: ['finance', 'money', 'billing'].includes(String(candidate.domain || '').toLowerCase())
         ? 'human_required'
         : trustTuning.recommendedApprovalPosture || 'risk_weighted',
+      paused: trustTuning.recommendedPaused ?? false,
     });
   }
 
@@ -645,7 +646,7 @@ export function ReportsView() {
       outputType: 'summary',
       missionMode: flow.missionMode || trustTuning.recommendedMissionMode,
       approvalPosture: flow.approvalPosture || trustTuning.recommendedApprovalPosture,
-      paused: flow.paused,
+      paused: flow.paused || trustTuning.recommendedPaused,
     });
   }
 
@@ -659,6 +660,7 @@ export function ReportsView() {
       draft.frequency === 'daily' && candidate.runs < 4 ? 'Daily cadence is aggressive for a flow with limited history. Weekly may be safer first.' : null,
       trustTuning.posture === 'tighten' ? `Runtime trust memory says to use ${trustTuning.recommendedMissionMode.replaceAll('_', ' ')} with ${trustTuning.recommendedApprovalPosture.replaceAll('_', ' ')} approval.` : null,
       trustTuning.posture === 'watch' && draft.missionMode === 'do_now' ? 'Runtime trust is still forming here, so do-now is probably too aggressive for this recurring flow.' : null,
+      trustTuning.recommendedPaused ? 'Live trust memory says this recurring flow should stay paused until recovery signals improve.' : null,
     ].filter(Boolean);
   }
 

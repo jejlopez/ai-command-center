@@ -1042,6 +1042,7 @@ export function getRecurringAutonomyTuningSummary(candidate = null) {
       recommendedApprovalPosture: 'risk_weighted',
       recommendedFrequency: 'weekly',
       recommendedPaused: false,
+      recoveryLabel: 'No trust recovery signal yet',
       actionLabel: 'Keep this in supervised automation',
       detail: 'Commander still needs enough runtime memory before it should loosen recurring autonomy safely.',
       reasons: [],
@@ -1062,6 +1063,7 @@ export function getRecurringAutonomyTuningSummary(candidate = null) {
   let recommendedApprovalPosture = 'auto_low_risk';
   let recommendedFrequency = 'daily';
   let recommendedPaused = false;
+  let recoveryLabel = 'Trust posture is still forming.';
   let actionLabel = 'This recurring flow can carry more autonomy';
 
   if (lowTrust || rescuePressure >= 2 || guardrailPressure >= 2 || avgOutcome < 58) {
@@ -1070,15 +1072,20 @@ export function getRecurringAutonomyTuningSummary(candidate = null) {
     recommendedApprovalPosture = rescuePressure >= 3 || guardrailPressure >= 3 ? 'human_required' : 'risk_weighted';
     recommendedFrequency = 'weekly';
     recommendedPaused = rescuePressure >= 4 || guardrailPressure >= 4 || avgOutcome < 40;
+    recoveryLabel = recommendedPaused
+      ? 'Flow needs a clean recovery window before it should unpause.'
+      : 'Flow needs cleaner runtime history before it can loosen posture again.';
     actionLabel = recommendedPaused ? 'Pause this recurring flow until it is stable again' : 'Tighten autonomy posture before this scales';
   } else if (watchTrust || tuningPressure >= 2 || avgOutcome < 72) {
     posture = 'watch';
     recommendedMissionMode = 'plan_first';
     recommendedApprovalPosture = 'risk_weighted';
     recommendedFrequency = Number(candidate.runs || 0) >= 5 && avgOutcome >= 66 ? 'daily' : 'weekly';
+    recoveryLabel = 'One or two clean runs should be enough to graduate this back toward fuller autonomy.';
     actionLabel = 'Keep this in managed review posture';
   } else {
     recommendedFrequency = Number(candidate.runs || 0) >= 4 ? 'daily' : 'weekly';
+    recoveryLabel = 'Runtime history is clean enough that this flow can safely earn autonomy back.';
   }
 
   const reasons = [
@@ -1100,6 +1107,7 @@ export function getRecurringAutonomyTuningSummary(candidate = null) {
     recommendedApprovalPosture,
     recommendedFrequency,
     recommendedPaused,
+    recoveryLabel,
     actionLabel,
     detail,
     reasons,
