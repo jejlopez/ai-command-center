@@ -34,7 +34,7 @@ import { DoctrineCards } from '../components/command/DoctrineCards';
 import { cn } from '../utils/cn';
 import { TruthAuditStrip } from '../components/command/TruthAuditStrip';
 import { useCommandCenterTruth } from '../utils/useCommandCenterTruth';
-import { buildPolicyDemotionSummary, buildProviderEscalationExplanation, getAutomationCandidates, getAutomationRoiSummary, getAutonomyMetrics, getDoctrineDeltaSummary, getObservedModelBenchmarks, getPostLaunchConfidenceSummary, getPrimaryBottleneck, getRecurringAutonomyTuningSummary, parseAutomationGuardrailEvents, parseDoctrineFeedbackLogs, parseOutcomeScoreLogs, rankCommanderRecommendations, scoreTaskOutcome } from '../utils/commanderAnalytics';
+import { buildPolicyDemotionSummary, buildProviderEscalationExplanation, getAutomationCandidates, getAutomationRoiSummary, getAutonomyMetrics, getDoctrineDeltaSummary, getObservedModelBenchmarks, getPatternApprovalBiasSummary, getPostLaunchConfidenceSummary, getPrimaryBottleneck, getRecurringAutonomyTuningSummary, getRecurringTrustRailSummary, parseAutomationGuardrailEvents, parseDoctrineFeedbackLogs, parseOutcomeScoreLogs, rankCommanderRecommendations, scoreTaskOutcome } from '../utils/commanderAnalytics';
 import { createMission, updateRecurringMissionFlow } from '../lib/api';
 
 const PERIOD_OPTIONS = ['30d', '90d', 'QTD'];
@@ -541,6 +541,15 @@ export function ReportsView() {
       }, tasks, interventions, logs),
     };
   }, [automationDraft, interventions, logs, tasks]);
+  const recurringTrustRail = useMemo(() => (
+    automationDraft?.candidate
+      ? getRecurringTrustRailSummary({
+          candidate: automationDraft.candidate,
+          doctrine: learningMemory.doctrine,
+          learningMemory,
+        })
+      : { doctrineDeltas: [], patternSummary: null, trustSummary: null }
+  ), [automationDraft, learningMemory]);
   const rankedRecommendations = useMemo(() => (
     rankCommanderRecommendations({
       recommendations: persistedRecommendations,
@@ -817,6 +826,10 @@ export function ReportsView() {
                     const candidateKey = `${flow.domain || 'general'}::${flow.intentType || 'general'}::${flow.title}`;
                     const trustSignals = automationCandidateLookup.get(candidateKey) || null;
                     const trustTuning = getRecurringAutonomyTuningSummary(trustSignals);
+                    const approvalBias = getPatternApprovalBiasSummary({
+                      winningPattern: learningMemory?.doctrineById?.['doctrine-mission-patterns']?.metrics?.winningPattern,
+                      routingDecision: { approvalLevel: flow.approvalPosture, domain: flow.domain, intentType: flow.intentType },
+                    });
                     return (
                       <>
                   <div className="flex flex-wrap items-start justify-between gap-3">
@@ -830,6 +843,7 @@ export function ReportsView() {
                       <TelemetryTag label="Approval" value={flow.approvalPosture.replaceAll('_', ' ')} tone={flow.approvalPosture === 'human_required' ? 'amber' : 'violet'} />
                       {trustSignals && <TelemetryTag label="Trust" value={trustSignals.trustLabel} tone={trustSignals.trustLabel === 'Stable' ? 'teal' : trustSignals.trustLabel === 'Watch' ? 'amber' : 'violet'} />}
                       {trustSignals && <TelemetryTag label="Posture" value={trustTuning.posture} tone={trustTuning.posture === 'stable' ? 'teal' : trustTuning.posture === 'watch' ? 'amber' : 'violet'} />}
+                      {approvalBias.available && <TelemetryTag label="Pattern approval" value={approvalBias.recommendedApprovalLevel.replaceAll('_', ' ')} tone={approvalBias.tone} />}
                       {flow.paused && <TelemetryTag label="State" value="Paused" tone="amber" />}
                     </div>
                   </div>
@@ -1047,6 +1061,39 @@ export function ReportsView() {
                       {automationTuningHistory.entries.length === 0 && !(automationTuningHistory.summary?.reasons || []).length && (
                         <div className="rounded-[12px] border border-dashed border-white/10 bg-black/10 px-3 py-2 text-[11px] text-text-muted">
                           Commander will start writing recurring-flow history here once this automation sees guardrails, approvals, or human interventions over time.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <div className="mt-4 rounded-[16px] border border-white/8 bg-black/20 p-3">
+                    <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Trust movement</div>
+                    <div className="mt-2 space-y-2">
+                      {(recurringTrustRail.doctrineDeltas || []).map((entry) => (
+                        <div key={entry.id} className="rounded-[12px] border border-white/8 bg-white/[0.03] px-3 py-2 text-[11px] text-text-body">
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="font-semibold text-text-primary">{entry.owner}</div>
+                            <div className={cn(
+                              'rounded-full border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em]',
+                              entry.trend === 'up'
+                                ? 'border-aurora-teal/20 bg-aurora-teal/10 text-aurora-teal'
+                                : entry.trend === 'down'
+                                  ? 'border-aurora-rose/20 bg-aurora-rose/10 text-aurora-rose'
+                                  : 'border-white/10 bg-white/[0.03] text-text-muted'
+                            )}>
+                              {entry.delta > 0 ? '+' : ''}{entry.delta} pts
+                            </div>
+                          </div>
+                          <div className="mt-1 text-text-muted">{entry.changeSummary}</div>
+                        </div>
+                      ))}
+                      {recurringTrustRail.patternSummary?.available && (
+                        <div className="rounded-[12px] border border-aurora-blue/20 bg-aurora-blue/10 px-3 py-2 text-[11px] text-text-body">
+                          {recurringTrustRail.patternSummary.detail}
+                        </div>
+                      )}
+                      {recurringTrustRail.trustSummary && (
+                        <div className="rounded-[12px] border border-aurora-violet/20 bg-aurora-violet/10 px-3 py-2 text-[11px] text-text-body">
+                          {recurringTrustRail.trustSummary.actionLabel}. {recurringTrustRail.trustSummary.detail}
                         </div>
                       )}
                     </div>

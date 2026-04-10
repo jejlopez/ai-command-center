@@ -928,6 +928,54 @@ export function getMissionPatternDefaultSummary(learningMemory = null) {
   };
 }
 
+export function getPatternApprovalBiasSummary({ winningPattern = null, routingDecision = null, observedWinningLane = null } = {}) {
+  if (!winningPattern) {
+    return {
+      available: false,
+      label: 'Approval defaults still forming',
+      detail: 'Commander does not have a strong enough repeated mission shape yet to bias approval defaults beyond basic risk rules.',
+      recommendedApprovalLevel: routingDecision?.approvalLevel || 'risk_weighted',
+      tone: 'slate',
+    };
+  }
+
+  const patternApproval = winningPattern.approvalLevel || routingDecision?.approvalLevel || 'risk_weighted';
+  const confidence = Number(winningPattern.confidence || 0);
+  const canLeanOnPattern = confidence >= 72 || Number(winningPattern.runs || 0) >= 4;
+  const laneApproval = observedWinningLane?.approvalLevel || null;
+  const recommendedApprovalLevel = laneApproval === 'human_required' || patternApproval === 'human_required'
+    ? 'human_required'
+    : canLeanOnPattern
+      ? patternApproval
+      : routingDecision?.approvalLevel || patternApproval;
+  const tone = recommendedApprovalLevel === 'human_required'
+    ? 'amber'
+    : recommendedApprovalLevel === 'auto_low_risk'
+      ? 'teal'
+      : 'blue';
+
+  return {
+    available: true,
+    label: `${winningPattern.domain} / ${winningPattern.intentType} approval default`,
+    detail: `${winningPattern.executionStrategy} with ${patternApproval} approval is the strongest repeating shape across ${winningPattern.runs} runs, so Commander should bias this mission family toward ${recommendedApprovalLevel}.`,
+    recommendedApprovalLevel,
+    tone,
+    confidence,
+  };
+}
+
+export function getRecurringTrustRailSummary({ candidate = null, doctrine = [], learningMemory = null } = {}) {
+  const doctrineDeltas = getDoctrineDeltaSummary(doctrine).slice(0, 2);
+  const patternSummary = getMissionPatternDefaultSummary(learningMemory);
+  const trustSummary = getRecurringAutonomyTuningSummary(candidate);
+
+  return {
+    doctrineDeltas,
+    patternSummary,
+    trustSummary,
+  };
+}
+
 export function getRecurringAutonomyTuningSummary(candidate = null) {
   if (!candidate) {
     return {

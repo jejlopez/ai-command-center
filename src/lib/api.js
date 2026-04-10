@@ -26,7 +26,7 @@ import {
   deriveRoutingDecision,
   mapRoutingPolicyFromDb,
 } from '../utils/routingPolicy';
-import { getPersistentPromotionGuidance, getRecurringAutonomyTuningSummary, inferAgentProvider } from '../utils/commanderAnalytics';
+import { getPatternApprovalBiasSummary, getPersistentPromotionGuidance, getRecurringAutonomyTuningSummary, inferAgentProvider } from '../utils/commanderAnalytics';
 
 // True when real Supabase env vars are set (not the placeholder)
 const isSupabaseConfigured = import.meta.env.VITE_SUPABASE_URL
@@ -1216,6 +1216,36 @@ async function selectOutcomeWinningLane(user, routingDecision) {
     })[0] || null;
 }
 
+function applyPatternApprovalBias({ routingDecision, observedWinningLane }) {
+  const patternBias = getPatternApprovalBiasSummary({
+    winningPattern: observedWinningLane
+      ? {
+          domain: routingDecision.domain,
+          intentType: routingDecision.intentType,
+          executionStrategy: observedWinningLane.executionStrategy,
+          approvalLevel: observedWinningLane.approvalLevel,
+          runs: observedWinningLane.runs,
+          confidence: observedWinningLane.confidence === 'high' ? 84 : observedWinningLane.confidence === 'medium' ? 68 : 52,
+        }
+      : null,
+    routingDecision,
+    observedWinningLane,
+  });
+
+  if (!patternBias.available || routingDecision.riskLevel === 'high') {
+    return {
+      ...routingDecision,
+      approvalBiasDetail: patternBias.detail,
+    };
+  }
+
+  return {
+    ...routingDecision,
+    approvalLevel: patternBias.recommendedApprovalLevel || routingDecision.approvalLevel,
+    approvalBiasDetail: patternBias.detail,
+  };
+}
+
 export async function createMission(payload, agents = []) {
   const guardedMission = enforceRecurringMissionGuardrails(payload);
   const effectivePayload = guardedMission.payload;
@@ -1281,8 +1311,9 @@ export async function createMission(payload, agents = []) {
     console.error('[api] selectRoutingPolicyRow:', error.message);
     return null;
   });
-  const routingDecision = deriveRoutingDecision(effectivePayload, selectedAgent, routingPolicy);
+  let routingDecision = deriveRoutingDecision(effectivePayload, selectedAgent, routingPolicy);
   const observedWinningLane = await selectOutcomeWinningLane(user, routingDecision);
+  routingDecision = applyPatternApprovalBias({ routingDecision, observedWinningLane });
   const persistentLaneSignals = await fetchPersistentLaneSignals(user.id);
   const hasDelegatedSteps = plannedBranches.length > 1;
   const executionPosture = getMissionExecutionPosture(effectivePayload);
@@ -1335,7 +1366,7 @@ export async function createMission(payload, agents = []) {
     workflow_status: workflowStatus,
     root_mission_id: missionId,
     routing_policy_id: routingPolicy?.id || null,
-    routing_reason: `${routingDecision.routingReason} | skills ${(routingDecision.recommendedSkillNames || []).join(', ') || 'none'} | mission mode ${executionPosture.missionMode.replaceAll('_', ' ')}`,
+    routing_reason: `${routingDecision.routingReason} | skills ${(routingDecision.recommendedSkillNames || []).join(', ') || 'none'} | mission mode ${executionPosture.missionMode.replaceAll('_', ' ')}${routingDecision.approvalBiasDetail ? ` | ${routingDecision.approvalBiasDetail}` : ''}`,
     domain: routingDecision.domain,
     intent_type: routingDecision.intentType,
     budget_class: routingDecision.budgetClass,

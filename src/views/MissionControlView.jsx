@@ -43,7 +43,7 @@ import { TacticalInterventionConsole } from '../components/command/TacticalInter
 import { buildTimelineEntries } from '../utils/buildCommandTimeline';
 import { TaskDAG } from '../components/TaskDAG';
 import { getWorkflowMeta } from '../utils/missionLifecycle';
-import { getDoctrineDeltaSummary, getFleetPostureSummary, getMissionPatternDefaultSummary, getOutcomeMemorySummary, getPostLaunchConfidenceSummary, parseDoctrineFeedbackLogs } from '../utils/commanderAnalytics';
+import { getDoctrineDeltaSummary, getFleetPostureSummary, getMissionPatternDefaultSummary, getOutcomeMemorySummary, getPatternApprovalBiasSummary, getPostLaunchConfidenceSummary, parseDoctrineFeedbackLogs } from '../utils/commanderAnalytics';
 
 // ═══════════════════════════════════════════════════════════════
 // UI ATOMS
@@ -1292,6 +1292,10 @@ function IntelSidebar({ tasks, approvals, completed, agents, schedules, logs, le
   const timelineEntries = buildTimelineEntries({ tasks, reviews: approvals, logs, connectedSystems });
   const doctrineDeltas = getDoctrineDeltaSummary(learningMemory?.doctrine || []).slice(0, 2);
   const patternSummary = getMissionPatternDefaultSummary(learningMemory);
+  const patternApprovalBias = getPatternApprovalBiasSummary({
+    winningPattern: learningMemory?.doctrineById?.['doctrine-mission-patterns']?.metrics?.winningPattern,
+    routingDecision: { approvalLevel: 'risk_weighted' },
+  });
 
   // Derive recommendations from real data
   const recs = [];
@@ -1399,6 +1403,11 @@ function IntelSidebar({ tasks, approvals, completed, agents, schedules, logs, le
         <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Pattern default pressure</div>
         <div className="mt-2 text-[12px] font-semibold text-text-primary">{patternSummary.label}</div>
         <p className="mt-2 text-[11px] leading-relaxed text-text-body">{patternSummary.detail}</p>
+        {patternApprovalBias.available && (
+          <div className="mt-3 rounded-xl border border-aurora-blue/20 bg-aurora-blue/10 px-3 py-2 text-[11px] text-text-body">
+            Approval default pressure: {patternApprovalBias.detail}
+          </div>
+        )}
       </div>
     </div>
 

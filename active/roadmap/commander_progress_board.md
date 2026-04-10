@@ -212,7 +212,7 @@ Default posture:
 
 Build next:
 
-1. widen doctrine-delta trust rails deeper into runtime and recurring management surfaces
+1. let runtime confidence closure steer more lane and provider defaults
 2. let recurring trust memory steer autonomy posture changes even more aggressively
 3. turn durable-fleet shaping defaults into broader multi-role coverage rules
 4. push mission-pattern winners deeper into provider, lane, and approval defaults
