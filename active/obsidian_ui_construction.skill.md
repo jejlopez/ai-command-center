@@ -3,8 +3,10 @@
 **Objective**: Construct high-fidelity, professional "Obsidian Core" UI components that prioritize spatial depth, hardware-tactile interactions, and zero-theatrical utility.
 
 ## 1. Core Principles (The Nexus Standard)
+- **Rule 0: Theme-Agnostic Architecture**: Zero hardcoded hex values in `tailwind.config.js` or components. All colors must map to semantic CSS variables (`var(--color-...)`) to ensure perfect synchronization across Obsidian and Spectral modes.
 - **Zero-Lore Policy**: All terminology must be functional and professional. Purge all sci-fi "theatre" (e.g., no "Omega Clearance").
-- **High-Contrast baseline**: Primary headers and interactive elements MUST be High-Intensity White (`white/100`).
+- **Theme-Relative Contrast**: The high-contrast baseline is relative: High-Intensity White for Dark mode, High-Intensity Void (`#050510`) for Light (Spectral) mode.
+- **Spectral Legibility Rule**: Small metadata and label text in light themes MUST use solid, high-contrast colors. Alpha-transparency (e.g., `text-white/40`) is prohibited on light foundations as it washes out legibility.
 - **Materiality over Flatness**: Use layered glass, refraction, and 3D tilt to establish premium spatial depth.
 
 ## 2. Liquid Glass Material Stack
@@ -34,7 +36,8 @@ When building digital identities or system sentinels:
 
 ## 6. Pre-Submission Checklist
 - [ ] Is every label a functional description?
-- [ ] Is the primary text readable on a mid-level brightness display?
+- [ ] Are color tokens semantic (variable-based) rather than hardcoded?
+- [ ] Is small metadata using a solid color in Spectral mode?
 - [ ] Does the element "tilt" or "flex" on hover?
 - [ ] Does the button support both Tap and Slide?
 

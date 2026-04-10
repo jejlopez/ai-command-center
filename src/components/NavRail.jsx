@@ -17,8 +17,7 @@ export function NavRail({ activeId, onNavigate }) {
 
   return (
     <nav className="flex items-center justify-center min-w-0 w-full max-w-full">
-      <div className="relative flex items-center gap-1 min-w-0 w-full overflow-x-auto no-scrollbar rounded-[1.35rem] bg-panel-soft/55 p-1.5 shadow-inner">
-        <div className="pointer-events-none absolute inset-0 rounded-[1.35rem] bg-[linear-gradient(180deg,color-mix(in_srgb,var(--color-hairline-soft)_72%,transparent),transparent_34%)]" />
+      <div className="relative flex items-center gap-1 min-w-0 w-full overflow-x-auto no-scrollbar px-1">
         {items.map((item) => {
           const showBadge = item.id === 'missions' && pendingCount > 0;
           const isActive = activeId === item.id;
@@ -36,16 +35,16 @@ export function NavRail({ activeId, onNavigate }) {
               {isActive && (
                 <Motion.div
                   layoutId="nav-indicator"
-                  className="absolute inset-0 rounded-[1rem] bg-panel-soft/80"
+                  className="absolute inset-0 rounded-[1rem] bg-panel-soft/65"
                   initial={false}
                   transition={{ type: 'spring', stiffness: 300, damping: 30 }}
                 />
               )}
               {isActive && (
                 <>
-                  <span className="pointer-events-none absolute inset-0 rounded-[1rem] opacity-60 [background:radial-gradient(circle_at_50%_0%,color-mix(in_srgb,var(--color-hairline-soft)_90%,transparent),transparent_52%)]" />
-                  <span className="pointer-events-none absolute inset-x-[1px] inset-y-[1px] rounded-[calc(1rem-1px)] [box-shadow:inset_0_1px_0_color-mix(in_srgb,var(--color-hairline-soft)_60%,transparent),inset_0_-8px_16px_rgba(0,0,0,0.08)]" />
-                  <span className="pointer-events-none absolute inset-x-3 bottom-[4px] h-px rounded-full bg-[color-mix(in_srgb,var(--color-aurora-teal)_72%,transparent)]" />
+                  <span className="pointer-events-none absolute inset-0 rounded-[1rem] opacity-45 [background:radial-gradient(circle_at_50%_0%,color-mix(in_srgb,var(--color-hairline-soft)_85%,transparent),transparent_56%)]" />
+                  <span className="pointer-events-none absolute inset-x-[1px] inset-y-[1px] rounded-[calc(1rem-1px)] [box-shadow:inset_0_1px_0_color-mix(in_srgb,var(--color-hairline-soft)_45%,transparent),inset_0_-8px_14px_rgba(0,0,0,0.05)]" />
+                  <span className="pointer-events-none absolute inset-x-3 bottom-[5px] h-px rounded-full bg-[color-mix(in_srgb,var(--color-aurora-teal)_62%,transparent)]" />
                 </>
               )}
 

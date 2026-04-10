@@ -2,32 +2,37 @@
 
 This document captures the "God-Tier" professional design standards established during the V10-V18 elevation of the User Profile Panel. It serves as the primary reference for maintaining the "Liquid Glass" aesthetic across the Command Center.
 
-## 1. Design Philosophy: "Obsidian Void"
-- **Immersion**: Prioritize spatial depth over flat background patterns.
-- **Tactility**: UI elements should behave like physical hardware (weighted motion, material friction).
-- **Legibility**: High-contrast typography (Bold White) against deep obsidian glass.
-- **Zero-Lore**: Professional, direct terminology only (purged of sci-fi "theater").
+## 1. Design Philosophy: Dual-State Immersion
+- **Obsidian Void (Dark)**: Deep space, high-intensity white highlights, layered obsidian glass.
+- **Spectral Pearl (Light)**: "White Vision" aesthetic, lavender/cream foundations, high-intensity void (`#050510`) ink-on-paper contrast.
+- **Tactility**: UI elements behavior like physical hardware (weighted motion, material friction).
+- **Legibility**: Zero-alpha policy for small metadata in Spectral mode; solid high-contrast colors only.
 
-## 2. The Liquid Glass Material Stack
-To reproduce the Obsidian Core glass effect, use the following layers:
+## 2. Material Stacks
+### A. Obsidian Void (Dark)
 - **Base Layer**: Background color `#0A0A0A`.
 - **Frosted Substrate**: 
   - `backdrop-blur-[28px]` up to `[40px]`.
   - `bg-white/[0.04]` (Low opacity white tint).
-- **Secondary Shell**:
-  - `border border-white/10`.
-  - `shadow-[-40px_0_100px_rgba(0,0,0,0.8)]` (For depth side-panels).
-- **Etched Typography**:
-  - `mix-blend-mode: overlay` for secondary labels (`text-white/40`).
-  - High-tracking `tracking-[0.45em]` for technical headers.
+- **Secondary Shell**: `border border-white/10`.
+- **Etched Typography**: `mix-blend-mode: overlay` for secondary labels (`text-white/40`).
+
+### B. Spectral Pearl (Light)
+- **Base Layer**: Background color `#E6E6EE` (Marble Gray/Cream).
+- **Frosted Substrate**:
+  - `backdrop-blur-[28px]` up to `[40px]`.
+  - `bg-white/25` (Ghostly Glass).
+- **Secondary Shell**: `border border-black/[0.08]`.
+- **Command Typography**: Solid high-contrast colors only (`#050510`). NO alpha-transparency for small labels.
 
 ## 3. The Robot Sentinel (2D Pixel Blueprint)
 The "Living Agent" entity used for digital identity.
 - **Sprite Resolution**: 10x8 (Industrial Silhouette).
-- **Animation Logic**:
-  - **Patrol**: `absolute` positioning, `left: ["5%", "88%", "5%"]`.
-  - **Mouth/Visor**: Alternate frame blinking (250ms).
-  - **Physics**: 180-degree `rotateY` flip at boundary conditions.
+- **Animation Logic (Sentinel 2.0 Overdrive)**:
+  - **Patrol Range**: x-axis `["5%", "88%", "5%"]`, y-axis `±30px` float.
+  - **Tactile Tilt**: Mouse-track with `rotateX` and `rotateY` (max ±8deg).
+  - **Scanning Beam**: Periodic teal (`aurora-teal`) scanning beam sweep across the entity visor.
+  - **Responsiveness**: 180-degree `rotateY` flip at boundary conditions.
 - **Sprite Map**:
   ```javascript
   [0,0,1,1,1,1,0,0], // Head Top

@@ -21,6 +21,10 @@
   /* Typography */
   --color-text: #e8e8ed;
   --color-text-dim: rgba(232, 232, 237, 0.4);
+  --color-text-primary: #e8e8ed;
+  --color-text-body: #a1a1aa;
+  --color-text-muted: #71717a;
+  --color-text-disabled: #3f3f46;
   --color-metal: #d6c7a1;
   
   /* Accents */
@@ -52,18 +56,22 @@
   --color-hairline-strong: rgba(0, 0, 0, 0.15);
   --color-hairline-soft: rgba(0, 0, 0, 0.05);
 
-  /* Typography (High-Density Professional) */
-  --color-text: #222233;
-  --color-text-dim: rgba(34, 34, 51, 0.5);
-  --color-metal: #71717A;
+  /* Typography (High-Density Professional - Solid States) */
+  --color-text: #050510;
+  --color-text-dim: #2A2A3F;
+  --color-text-primary: #050510;
+  --color-text-body: #1F2937;
+  --color-text-muted: #374151;
+  --color-text-disabled: #9CA3AF;
+  --color-metal: #1F1F2A;
 
   /* Jewel Accents (Technical Contrast) */
   --color-aurora-teal: #0D9488;
-  --color-aurora-violet: #7C3AED;
-  --color-aurora-rose: #E11D48;
+  --color-aurora-teal-soft: rgba(13, 148, 136, 0.05);
+  --color-aurora-violet: #6D28D9;
+  --color-aurora-violet-soft: rgba(109, 40, 217, 0.03);
   --color-aurora-amber: #D97706;
-  --color-aurora-blue: #2563EB;
-  --color-aurora-green: #059669;
+  --color-aurora-rose: #E11D48;
 
   /* Depth */
   --shadow-main: 0 4px 12px rgba(0, 0, 0, 0.08);
@@ -107,8 +115,8 @@ body {
 
 .aurora-light body {
   background-image: 
-    radial-gradient(ellipse 70% 50% at var(--ax1) var(--ay1), rgba(124,58,237,0.03) 0%, transparent 60%),
-    radial-gradient(ellipse 60% 40% at var(--ax2) var(--ay2), rgba(13,148,136,0.02) 0%, transparent 60%);
+    radial-gradient(ellipse 70% 50% at var(--ax1) var(--ay1), rgba(124,58,237,0.05) 0%, transparent 60%),
+    radial-gradient(ellipse 50% 60% at 50% 90%, rgba(167,139,250,0.04) 0%, transparent 50%);
   color-scheme: light;
 }
 

@@ -10,10 +10,10 @@ export default {
         canvas:  'var(--color-canvas)',
         surface: { DEFAULT: '#111111', raised: '#161616', input: '#1c1c1c' },
         text: {
-          primary:  '#e8e8ed',
-          body:     '#a1a1aa',
-          muted:    '#71717a',
-          disabled: '#3f3f46',
+          primary:  'var(--color-text-primary)',
+          body:     'var(--color-text-body)',
+          muted:    'var(--color-text-muted)',
+          disabled: 'var(--color-text-disabled)',
         },
         border: {
           subtle:  'rgba(255,255,255,0.05)',

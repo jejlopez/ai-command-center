@@ -21,7 +21,6 @@ import { WorkspaceProvider } from './context/WorkspaceContext';
 import { PreferenceProvider } from './context/PreferenceContext';
 import { useAgents, usePendingReviews, useTasks } from './utils/useSupabase';
 import { useDerivedAlerts } from './utils/useDerivedAlerts';
-import { useCommandCenterTruth } from './utils/useCommandCenterTruth';
 import { runCommanderHeartbeat } from './lib/api';
 import { Bell, Settings, UserCircle2, Loader2, Search } from 'lucide-react';
 import { cn } from './utils/cn';
@@ -46,7 +45,6 @@ function TacticalTopbarButton({ active, onClick, children, tone = 'teal', pulse 
         toneMap[tone] || toneMap.teal
       )}
     >
-      <span className="pointer-events-none absolute inset-0 opacity-[0.035] [background-image:repeating-linear-gradient(180deg,var(--color-text-dim)_0px,var(--color-text-dim)_1px,transparent_1px,transparent_14px)]" />
       <span
         className={cn(
           'pointer-events-none absolute inset-[6px] rounded-[0.95rem] transition-all duration-200',
@@ -100,7 +98,6 @@ function Dashboard() {
   const { tasks, loading: loadingTasks } = useTasks();
   const { reviews } = usePendingReviews();
   const { unreadCount, criticalCount } = useDerivedAlerts();
-  const truth = useCommandCenterTruth();
   const heartbeatInFlight = useRef(false);
 
   useEffect(() => {
@@ -182,7 +179,6 @@ function Dashboard() {
         {/* Topbar */}
         <header className="px-8 py-4 shrink-0 z-10 w-full relative">
           <div className="ui-cyan-edge relative flex items-center gap-4 rounded-[28px] px-4 py-3 shadow-xl backdrop-blur-sm before:pointer-events-none before:absolute before:inset-x-10 before:top-0 before:h-px before:bg-gradient-to-r before:from-transparent before:via-hairline-strong before:to-transparent">
-            <div className="pointer-events-none absolute inset-0 rounded-[28px] opacity-[0.06] [background-image:repeating-linear-gradient(180deg,var(--color-text-dim)_0px,var(--color-text-dim)_1px,transparent_1px,transparent_12px)]" />
             <div className="pointer-events-none absolute inset-0 rounded-[28px] bg-[radial-gradient(circle_at_12%_0%,var(--color-aurora-teal-soft),transparent_24%),radial-gradient(circle_at_88%_0%,var(--color-aurora-violet-soft),transparent_22%)]" />
             <div className="shrink-0 min-w-0">
               <ProjectSwitcher compact />
@@ -193,10 +189,6 @@ function Dashboard() {
             </div>
 
             <div className="flex items-center justify-end gap-1.5 shrink-0">
-              <CommandReadinessChip
-                truth={truth}
-                onClick={() => setActiveRoute('overview')}
-              />
               <button
                 onClick={() => setCmdOpen(true)}
                 className="flex items-center justify-center w-10 h-10 rounded-2xl border border-hairline bg-panel-soft hover:bg-panel transition-colors text-text-dim shadow-sm"
