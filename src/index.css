@@ -248,6 +248,25 @@ body::after {
   background: rgba(255,255,255,0.05);
 }
 
+.ui-input {
+  border-radius: 0.95rem;
+  border: 1px solid rgba(255,255,255,0.08);
+  background: rgba(255,255,255,0.03);
+  color: #f3f4f7;
+  transition: background-color 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
+}
+
+.ui-input:hover {
+  border-color: rgba(255,255,255,0.12);
+}
+
+.ui-input:focus,
+.ui-input:focus-visible {
+  outline: none;
+  border-color: rgba(0, 217, 200, 0.28);
+  box-shadow: 0 0 0 2px rgba(0, 217, 200, 0.14);
+}
+
 .deck-rule {
   height: 1px;
   background: linear-gradient(90deg, transparent, rgba(255,255,255,0.12), transparent);

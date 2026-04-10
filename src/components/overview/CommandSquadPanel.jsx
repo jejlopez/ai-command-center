@@ -1,5 +1,6 @@
 import { Bot, Plus, Settings2, Sparkles } from 'lucide-react';
 import { CommandSectionHeader } from '../command/CommandSectionHeader';
+import { cn } from '../../utils/cn';
 
 function getRiskState(agent, flaggedIds) {
   if (!agent.model) return { label: 'Needs config', tone: 'warning', accent: 'text-aurora-amber' };
