@@ -129,16 +129,16 @@ Legend:
 ## Current Read
 
 - `Shipped`: 15
-- `In Progress`: 55
+- `In Progress`: 58
 - `Next`: 0
 - `Queued`: 16
 - `Later / Future`: 48
 
 ## Immediate Next Four
 
-1. Runtime confidence closure steering more lane and provider defaults
-2. Recurring trust memory tightening autonomy posture even more aggressively
-3. Durable-fleet shaping expanding into more domains and mission families
+1. Runtime confidence closure steering even deeper into provider/model defaults
+2. Recurring trust memory tightening autonomy posture from live history
+3. Automatic durable coverage expanding across more mission families and domain packs
 4. Mission-pattern winners influencing approval defaults even more directly
 
 ## Epic Experience Layer Additions
@@ -173,9 +173,9 @@ These are not separate feature IDs yet. They should be implemented as depth adde
 
 ## Updated Immediate Next Order
 
-1. Push runtime confidence closure deeper into provider and lane defaults
-2. Tighten recurring autonomy posture even more aggressively when trust memory drifts
-3. Expand durable-fleet shaping into more domains and mission families
+1. Push runtime confidence closure deeper into provider, model, and lane defaults
+2. Tighten recurring autonomy posture even more aggressively when live trust memory drifts
+3. Expand automatic durable coverage defaults across more mission families and domain packs
 4. Push mission-pattern winners into provider, lane, and approval defaults more aggressively
 5. Keep widening trust and doctrine readback where operators make decisions
 6. Turn durable-fleet shaping guidance into stronger automatic coverage defaults

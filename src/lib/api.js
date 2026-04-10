@@ -503,6 +503,13 @@ function enforceRecurringMissionGuardrails(payload = {}) {
       };
       guardrails.push('Reduced recurring cadence because runtime trust is still fragile.');
     }
+    if (trustTuning.recommendedPaused && !nextPayload.repeat.paused) {
+      nextPayload.repeat = {
+        ...nextPayload.repeat,
+        paused: true,
+      };
+      guardrails.push('Paused recurring flow because live trust memory is too brittle for continued autonomous runs.');
+    }
   } else if (trustTuning.posture === 'watch' && nextPayload.missionMode === 'do_now') {
     nextPayload.missionMode = trustTuning.recommendedMissionMode;
     guardrails.push('Shifted recurring mission into plan-first while runtime trust is still forming.');
@@ -857,6 +864,7 @@ async function resolveBranchAssignment({
     || (observedWinningLane?.confidence === 'high' && observedWinningLane?.agentRole && !['commander', 'executor'].includes(observedWinningLane.agentRole)
       ? observedWinningLane.agentRole
       : null)
+    || routingDecision?.selectedAgentRole
     || routingPolicy?.preferredAgentRole
     || selectedAgent?.role
     || 'executor';
@@ -871,11 +879,13 @@ async function resolveBranchAssignment({
   );
   const modelOverride = branch.modelOverride
     || (shouldLeanOnWinningLane ? observedWinningLane?.model : null)
+    || routingDecision?.selectedModel
     || roleFallback?.model
     || routingPolicy?.preferredModel
     || null;
   const providerOverride = branch.providerOverride
     || (shouldLeanOnWinningLane ? observedWinningLane?.provider : null)
+    || routingDecision?.selectedProvider
     || roleFallback?.provider
     || routingPolicy?.preferredProvider
     || null;
@@ -924,10 +934,15 @@ async function resolveBranchAssignment({
       && entry.domain === routingDecision.domain
       && entry.intentType === routingDecision.intentType
     ));
+    const domainPackGap = (promotionGuidance.domainPackTargets || []).find((entry) => (
+      entry.role === branchRole
+      && entry.domain === routingDecision.domain
+    ));
     const durableGap = Boolean(
       (Array.isArray(promotionGuidance.autoCreateRoles)
         && promotionGuidance.autoCreateRoles.includes(branchRole))
       || domainScopedGap
+      || domainPackGap
     );
 
     assignedAgent = await (durableGap ? createPersistentBranchSpecialist : ensureBranchSpecialistAgent)({

@@ -212,7 +212,7 @@ Default posture:
 
 Build next:
 
-1. push runtime confidence closure deeper into provider and lane defaults
-2. let recurring trust memory steer autonomy posture changes even more aggressively
-3. expand durable-fleet shaping into more domains and mission families
+1. push runtime confidence closure deeper into provider, model, and lane defaults
+2. let recurring trust memory steer autonomy posture changes even more aggressively from live history
+3. expand automatic durable coverage defaults into more mission families and domain packs
 4. push mission-pattern winners deeper into provider, lane, and approval defaults

@@ -896,6 +896,33 @@ export function getPersistentPromotionGuidance({ lifecycleEvents = [], agents = 
       return right.count - left.count;
     })
     .slice(0, 4);
+  const domainPackDemand = tasks.reduce((acc, task) => {
+    const role = task.agentRole || task.assignedRole || task.role;
+    if (!role || ['commander', 'executor'].includes(role)) return acc;
+    const domain = task.domain || 'general';
+    const key = `${domain}::${role}`;
+    if (!acc[key]) {
+      acc[key] = {
+        domain,
+        role,
+        count: 0,
+      };
+    }
+    acc[key].count += 1;
+    return acc;
+  }, {});
+  const domainPackTargets = Object.values(domainPackDemand)
+    .map((entry) => ({
+      ...entry,
+      covered: persistentRoles.has(entry.role),
+      spawnedCount: Number(spawnedByRole[entry.role] || 0),
+    }))
+    .filter((entry) => !entry.covered)
+    .sort((left, right) => {
+      if ((right.spawnedCount || 0) !== (left.spawnedCount || 0)) return (right.spawnedCount || 0) - (left.spawnedCount || 0);
+      return right.count - left.count;
+    })
+    .slice(0, 4);
   const pressureScore = topGap
     ? (topGap.count * 8) + ((topGap.spawnedCount || 0) * 10)
       + (fleetPosture.posture === 'thin' ? 18 : 0)
@@ -927,6 +954,7 @@ export function getPersistentPromotionGuidance({ lifecycleEvents = [], agents = 
     shouldAutoCreate,
     autoCreateRoles,
     domainTargets,
+    domainPackTargets,
   };
 }
 
@@ -1013,6 +1041,7 @@ export function getRecurringAutonomyTuningSummary(candidate = null) {
       recommendedMissionMode: 'watch_and_approve',
       recommendedApprovalPosture: 'risk_weighted',
       recommendedFrequency: 'weekly',
+      recommendedPaused: false,
       actionLabel: 'Keep this in supervised automation',
       detail: 'Commander still needs enough runtime memory before it should loosen recurring autonomy safely.',
       reasons: [],
@@ -1032,6 +1061,7 @@ export function getRecurringAutonomyTuningSummary(candidate = null) {
   let recommendedMissionMode = 'do_now';
   let recommendedApprovalPosture = 'auto_low_risk';
   let recommendedFrequency = 'daily';
+  let recommendedPaused = false;
   let actionLabel = 'This recurring flow can carry more autonomy';
 
   if (lowTrust || rescuePressure >= 2 || guardrailPressure >= 2 || avgOutcome < 58) {
@@ -1039,7 +1069,8 @@ export function getRecurringAutonomyTuningSummary(candidate = null) {
     recommendedMissionMode = 'watch_and_approve';
     recommendedApprovalPosture = rescuePressure >= 3 || guardrailPressure >= 3 ? 'human_required' : 'risk_weighted';
     recommendedFrequency = 'weekly';
-    actionLabel = 'Tighten autonomy posture before this scales';
+    recommendedPaused = rescuePressure >= 4 || guardrailPressure >= 4 || avgOutcome < 40;
+    actionLabel = recommendedPaused ? 'Pause this recurring flow until it is stable again' : 'Tighten autonomy posture before this scales';
   } else if (watchTrust || tuningPressure >= 2 || avgOutcome < 72) {
     posture = 'watch';
     recommendedMissionMode = 'plan_first';
@@ -1068,6 +1099,7 @@ export function getRecurringAutonomyTuningSummary(candidate = null) {
     recommendedMissionMode,
     recommendedApprovalPosture,
     recommendedFrequency,
+    recommendedPaused,
     actionLabel,
     detail,
     reasons,

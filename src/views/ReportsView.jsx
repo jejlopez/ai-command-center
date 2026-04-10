@@ -844,6 +844,7 @@ export function ReportsView() {
                       {trustSignals && <TelemetryTag label="Trust" value={trustSignals.trustLabel} tone={trustSignals.trustLabel === 'Stable' ? 'teal' : trustSignals.trustLabel === 'Watch' ? 'amber' : 'violet'} />}
                       {trustSignals && <TelemetryTag label="Posture" value={trustTuning.posture} tone={trustTuning.posture === 'stable' ? 'teal' : trustTuning.posture === 'watch' ? 'amber' : 'violet'} />}
                       {trustSignals && <TelemetryTag label="Cadence" value={trustTuning.recommendedFrequency} tone={trustTuning.recommendedFrequency === 'daily' ? 'teal' : 'amber'} />}
+                      {trustSignals && trustTuning.recommendedPaused && <TelemetryTag label="State" value="pause" tone="amber" />}
                       {approvalBias.available && <TelemetryTag label="Pattern approval" value={approvalBias.recommendedApprovalLevel.replaceAll('_', ' ')} tone={approvalBias.tone} />}
                       {flow.paused && <TelemetryTag label="State" value="Paused" tone="amber" />}
                     </div>
@@ -1094,7 +1095,7 @@ export function ReportsView() {
                       )}
                       {recurringTrustRail.trustSummary && (
                         <div className="rounded-[12px] border border-aurora-violet/20 bg-aurora-violet/10 px-3 py-2 text-[11px] text-text-body">
-                          {recurringTrustRail.trustSummary.actionLabel}. {recurringTrustRail.trustSummary.detail} Recommended cadence: {recurringTrustRail.trustSummary.recommendedFrequency}.
+                          {recurringTrustRail.trustSummary.actionLabel}. {recurringTrustRail.trustSummary.detail} Recommended cadence: {recurringTrustRail.trustSummary.recommendedFrequency}.{recurringTrustRail.trustSummary.recommendedPaused ? ' Commander should keep this flow paused until trust recovers.' : ''}
                         </div>
                       )}
                     </div>
