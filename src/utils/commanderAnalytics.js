@@ -409,6 +409,56 @@ export function getOutcomeMemorySummary(outcomes = []) {
   };
 }
 
+export function getPostLaunchConfidenceSummary({ outcomes = [], interventions = [] } = {}) {
+  const outcomeSummary = getOutcomeMemorySummary(outcomes);
+  const normalizedInterventions = Array.isArray(interventions)
+    ? interventions
+    : [];
+  const rescueEvents = normalizedInterventions.filter((entry) => ['stop', 'cancel', 'retry'].includes(entry.eventType)).length;
+  const rerouteEvents = normalizedInterventions.filter((entry) => ['reroute', 'dependency'].includes(entry.eventType)).length;
+  const approvalEvents = normalizedInterventions.filter((entry) => entry.eventType === 'approve').length;
+  const guardrailEvents = normalizedInterventions.filter((entry) => entry.eventType === 'guardrail').length;
+  const pressureScore = (rescueEvents * 14) + (rerouteEvents * 8) + (approvalEvents * 5) + (guardrailEvents * 6);
+  const runtimeConfidence = clamp(
+    Math.round((outcomeSummary.averageScore || 58) - pressureScore + (outcomeSummary.highTrust * 3) - (outcomeSummary.lowTrust * 5)),
+    0,
+    100,
+  );
+  const posture = outcomeSummary.total === 0
+    ? 'forming'
+    : runtimeConfidence >= 74
+      ? 'grounded'
+      : runtimeConfidence >= 58
+        ? 'cautious'
+        : 'drifting';
+  const label = posture === 'grounded'
+    ? 'Confidence is grounded in runtime reality'
+    : posture === 'cautious'
+      ? 'Confidence is usable, but runtime rescue is visible'
+      : posture === 'drifting'
+        ? 'Runtime reality is eroding launch confidence'
+        : 'Commander needs more completed runs before confidence can close honestly';
+  const detail = posture === 'grounded'
+    ? `${outcomeSummary.highTrust} high-trust outcome${outcomeSummary.highTrust === 1 ? '' : 's'} and low rescue pressure are keeping the launch readback honest.`
+    : posture === 'cautious'
+      ? `${rescueEvents + rerouteEvents} rescue/reroute event${rescueEvents + rerouteEvents === 1 ? '' : 's'} are landing after launch, so confidence should stay measured.`
+      : posture === 'drifting'
+        ? `Human rescue, reroutes, or guardrails are landing often enough that Commander should tighten the next preflight before scaling.`
+        : 'Completed mission density is still too light to compare preflight confidence with runtime truth reliably.';
+
+  return {
+    runtimeConfidence,
+    posture,
+    label,
+    detail,
+    rescueEvents,
+    rerouteEvents,
+    approvalEvents,
+    guardrailEvents,
+    outcomeSummary,
+  };
+}
+
 export function parseDoctrineFeedbackLogs(logs = []) {
   return logs
     .filter((entry) => String(entry.message || '').includes('[doctrine-feedback]'))
@@ -620,6 +670,47 @@ function getRecommendationKeywordBoost(recommendation, signals) {
   };
 }
 
+function getRecommendationClass(recommendation, signals, keywordBoost) {
+  const id = String(recommendation.id || '').toLowerCase();
+  const text = `${recommendation.title || ''} ${recommendation.description || ''}`.toLowerCase();
+
+  if (/(pattern|shape|repeatable)/.test(text) || id.includes('pattern')) {
+    return {
+      label: 'Pattern winner',
+      tone: 'teal',
+    };
+  }
+  if (/(rescue|intervention|override|reroute)/.test(text) || id.includes('rescue') || signals.rescuePressure > signals.failedTasks) {
+    return {
+      label: 'Rescue pressure',
+      tone: 'rose',
+    };
+  }
+  if (/(specialist|fleet|promotion|persistent|spawn)/.test(text)) {
+    return {
+      label: 'Fleet pressure',
+      tone: 'violet',
+    };
+  }
+  if (/(automation|recurring|cadence|approval posture|guardrail)/.test(text)) {
+    return {
+      label: 'Automation tuning',
+      tone: 'amber',
+    };
+  }
+  if (/(routing|lane|provider|model|doctrine|escalat)/.test(text) || keywordBoost.score >= 18) {
+    return {
+      label: 'Routing pressure',
+      tone: 'blue',
+    };
+  }
+
+  return {
+    label: 'Operational pressure',
+    tone: 'slate',
+  };
+}
+
 export function rankCommanderRecommendations({
   recommendations = [],
   tasks = [],
@@ -676,6 +767,7 @@ export function rankCommanderRecommendations({
       if (id.includes('rescue') || id.includes('intervention')) score += Math.round((signals.rescueRate + (signals.rescuePressure * 6)) / 3);
       const whyNow = keywordBoost.reasons[0]
         || (signals.failedTasks > 0 ? `${signals.failedTasks} failed branches are still active and keeping pressure on execution quality.` : 'This recommendation is persistent because Commander keeps seeing the same leverage point.');
+      const recommendationClass = getRecommendationClass(recommendation, signals, keywordBoost);
 
       return {
         ...recommendation,
@@ -683,6 +775,7 @@ export function rankCommanderRecommendations({
         whyNow,
         signalCount: keywordBoost.reasons.length,
         rankingReasons: keywordBoost.reasons,
+        recommendationClass,
       };
     })
     .sort((left, right) => {

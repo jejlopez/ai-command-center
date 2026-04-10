@@ -34,7 +34,7 @@ import { DoctrineCards } from '../components/command/DoctrineCards';
 import { cn } from '../utils/cn';
 import { TruthAuditStrip } from '../components/command/TruthAuditStrip';
 import { useCommandCenterTruth } from '../utils/useCommandCenterTruth';
-import { buildPolicyDemotionSummary, buildProviderEscalationExplanation, getAutomationCandidates, getAutomationRoiSummary, getAutonomyMetrics, getDoctrineDeltaSummary, getObservedModelBenchmarks, getPrimaryBottleneck, parseAutomationGuardrailEvents, parseDoctrineFeedbackLogs, parseOutcomeScoreLogs, rankCommanderRecommendations, scoreTaskOutcome } from '../utils/commanderAnalytics';
+import { buildPolicyDemotionSummary, buildProviderEscalationExplanation, getAutomationCandidates, getAutomationRoiSummary, getAutonomyMetrics, getDoctrineDeltaSummary, getObservedModelBenchmarks, getPostLaunchConfidenceSummary, getPrimaryBottleneck, parseAutomationGuardrailEvents, parseDoctrineFeedbackLogs, parseOutcomeScoreLogs, rankCommanderRecommendations, scoreTaskOutcome } from '../utils/commanderAnalytics';
 import { createMission, updateRecurringMissionFlow } from '../lib/api';
 
 const PERIOD_OPTIONS = ['30d', '90d', 'QTD'];
@@ -508,6 +508,7 @@ export function ReportsView() {
   const roiSummary = useMemo(() => getAutomationRoiSummary(tasks, humanHourlyRate), [tasks]);
   const benchmarkBoard = useMemo(() => getObservedModelBenchmarks(outcomes.length ? outcomes : tasks, agents, logs, interventions).slice(0, 5), [outcomes, tasks, agents, logs, interventions]);
   const providerEscalation = useMemo(() => buildProviderEscalationExplanation(benchmarkBoard), [benchmarkBoard]);
+  const postLaunchConfidence = useMemo(() => getPostLaunchConfidenceSummary({ outcomes, interventions }), [outcomes, interventions]);
   const automationCandidates = useMemo(() => getAutomationCandidates(tasks, humanHourlyRate).slice(0, 4), [tasks]);
   const autonomyMetrics = useMemo(() => getAutonomyMetrics(tasks, interventions, logs), [tasks, interventions, logs]);
   const primaryBottleneck = useMemo(() => getPrimaryBottleneck({ tasks, reviews, schedules: [], agents, interventions, logs, costData }), [tasks, reviews, agents, interventions, logs, costData]);
@@ -1347,6 +1348,41 @@ export function ReportsView() {
               </HudFrame>
 
               <HudFrame
+                eyebrow="Confidence Closure"
+                title={postLaunchConfidence.label}
+                detail={postLaunchConfidence.detail}
+                accent={postLaunchConfidence.posture === 'grounded' ? 'teal' : postLaunchConfidence.posture === 'cautious' ? 'amber' : 'violet'}
+              >
+                <div className="grid gap-3 md:grid-cols-5">
+                  {[
+                    { label: 'Runtime confidence', value: `${postLaunchConfidence.runtimeConfidence}%`, tone: postLaunchConfidence.posture === 'grounded' ? 'teal' : postLaunchConfidence.posture === 'cautious' ? 'amber' : 'violet' },
+                    { label: 'Avg outcome', value: postLaunchConfidence.outcomeSummary.averageScore || '—', tone: 'blue' },
+                    { label: 'Rescues', value: postLaunchConfidence.rescueEvents, tone: 'rose' },
+                    { label: 'Reroutes', value: postLaunchConfidence.rerouteEvents, tone: 'blue' },
+                    { label: 'Guardrails', value: postLaunchConfidence.guardrailEvents, tone: 'amber' },
+                  ].map((entry) => (
+                    <div key={entry.label} className="rounded-[18px] border border-white/8 bg-[#111827] p-3">
+                      <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">{entry.label}</div>
+                      <div className={cn(
+                        'mt-3 text-xl font-semibold',
+                        entry.tone === 'teal'
+                          ? 'text-aurora-teal'
+                          : entry.tone === 'amber'
+                            ? 'text-aurora-amber'
+                            : entry.tone === 'rose'
+                              ? 'text-aurora-rose'
+                              : entry.tone === 'violet'
+                                ? 'text-aurora-violet'
+                                : 'text-aurora-blue'
+                      )}>
+                        {entry.value}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </HudFrame>
+
+              <HudFrame
                 eyebrow="Persisted Recommendations"
                 title="What the system is explicitly telling you to change"
                 detail="These are durable recommendation rows, not just local UI heuristics."
@@ -1358,8 +1394,28 @@ export function ReportsView() {
                     <div key={entry.id} className="rounded-[18px] border border-white/8 bg-[#111827] p-3">
                       <div className="flex items-center justify-between gap-3">
                         <div className="text-[12px] font-semibold text-text-primary">{entry.title}</div>
-                        <div className="rounded-full border border-aurora-blue/20 bg-aurora-blue/10 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-aurora-blue">
-                          {entry.type}
+                        <div className="flex flex-wrap justify-end gap-2">
+                          {entry.recommendationClass && (
+                            <div className={cn(
+                              'rounded-full border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.16em]',
+                              entry.recommendationClass.tone === 'teal'
+                                ? 'border-aurora-teal/20 bg-aurora-teal/10 text-aurora-teal'
+                                : entry.recommendationClass.tone === 'amber'
+                                  ? 'border-aurora-amber/20 bg-aurora-amber/10 text-aurora-amber'
+                                  : entry.recommendationClass.tone === 'rose'
+                                    ? 'border-aurora-rose/20 bg-aurora-rose/10 text-aurora-rose'
+                                    : entry.recommendationClass.tone === 'violet'
+                                      ? 'border-aurora-violet/20 bg-aurora-violet/10 text-aurora-violet'
+                                      : entry.recommendationClass.tone === 'blue'
+                                        ? 'border-aurora-blue/20 bg-aurora-blue/10 text-aurora-blue'
+                                        : 'border-white/10 bg-white/[0.03] text-text-muted'
+                            )}>
+                              {entry.recommendationClass.label}
+                            </div>
+                          )}
+                          <div className="rounded-full border border-aurora-blue/20 bg-aurora-blue/10 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-aurora-blue">
+                            {entry.type}
+                          </div>
                         </div>
                       </div>
                       <div className="mt-2 text-[11px] leading-5 text-text-body">{entry.description}</div>

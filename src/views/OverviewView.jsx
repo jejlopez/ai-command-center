@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { motion as Motion } from 'framer-motion';
 import { BrainCircuit, Loader2, Rocket, ShieldCheck, Sparkles } from 'lucide-react';
 import { container, item } from '../utils/variants';
+import { cn } from '../utils/cn';
 import { useActivityLog, useCostData, useModelBank, usePendingReviews, useSchedules, useTaskInterventions } from '../utils/useSupabase';
 import { CreateAgentModal } from '../components/CreateAgentModal';
 import { CommanderHero } from '../components/overview/CommanderHero';
@@ -33,7 +34,7 @@ function formatWaitLabel(ms) {
   return rem ? `${hours}h ${rem}m` : `${hours}h`;
 }
 
-function ExecutiveBriefingPanel({ briefing, onNavigate, onOpenDetail, onAddOperator }) {
+function ExecutiveBriefingPanel({ briefing, deltaItems = [], onNavigate, onOpenDetail, onAddOperator }) {
   const handlePrimary = () => {
     if (briefing.primary.type === 'detail' && briefing.primary.target) {
       onOpenDetail?.(briefing.primary.target);
@@ -71,6 +72,31 @@ function ExecutiveBriefingPanel({ briefing, onNavigate, onOpenDetail, onAddOpera
           </div>
         ))}
       </div>
+      {deltaItems.length > 0 && (
+        <div className="mt-4 rounded-[22px] border border-white/8 bg-black/20 p-4">
+          <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Doctrine Trust Movement</div>
+          <div className="mt-3 grid gap-3 md:grid-cols-2">
+            {deltaItems.map((entry) => (
+              <div key={entry.id} className="rounded-[18px] border border-white/8 bg-white/[0.03] p-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="text-[12px] font-semibold text-text-primary">{entry.owner}</div>
+                  <span className={cn(
+                    'rounded-full border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em]',
+                    entry.trend === 'up'
+                      ? 'border-aurora-teal/20 bg-aurora-teal/10 text-aurora-teal'
+                      : entry.trend === 'down'
+                        ? 'border-aurora-rose/20 bg-aurora-rose/10 text-aurora-rose'
+                        : 'border-white/10 bg-white/[0.03] text-text-muted'
+                  )}>
+                    {entry.delta > 0 ? '+' : ''}{entry.delta} pts
+                  </span>
+                </div>
+                <p className="mt-2 text-[11px] leading-5 text-text-muted">{entry.changeSummary}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -572,6 +598,7 @@ export function OverviewView({ agents, tasks, loading, addOptimistic, onOpenDeta
         <Motion.div variants={item}>
           <ExecutiveBriefingPanel
             briefing={executiveBriefing}
+            deltaItems={doctrineDeltas}
             onNavigate={onNavigate}
             onOpenDetail={onOpenDetail}
             onAddOperator={() => setCreateModalOpen(true)}

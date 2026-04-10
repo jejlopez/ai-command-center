@@ -36,14 +36,14 @@ import { useLearningMemory } from '../utils/useLearningMemory';
 import { DoctrineCards } from '../components/command/DoctrineCards';
 import { TruthAuditStrip } from '../components/command/TruthAuditStrip';
 import { useCommandCenterTruth } from '../utils/useCommandCenterTruth';
-import { useConnectedSystems, useSpecialistLifecycle, useTaskInterventions, useTaskOutcomes } from '../utils/useSupabase';
+import { promoteAgentToPersistent, useConnectedSystems, useSpecialistLifecycle, useTaskInterventions, useTaskOutcomes } from '../utils/useSupabase';
 import { ReactorCoreBoard } from '../components/command/ReactorCoreBoard';
 import { CommandTimelineRail } from '../components/command/CommandTimelineRail';
 import { TacticalInterventionConsole } from '../components/command/TacticalInterventionConsole';
 import { buildTimelineEntries } from '../utils/buildCommandTimeline';
 import { TaskDAG } from '../components/TaskDAG';
 import { getWorkflowMeta } from '../utils/missionLifecycle';
-import { getFleetPostureSummary, getOutcomeMemorySummary, parseDoctrineFeedbackLogs } from '../utils/commanderAnalytics';
+import { getDoctrineDeltaSummary, getFleetPostureSummary, getOutcomeMemorySummary, getPostLaunchConfidenceSummary, parseDoctrineFeedbackLogs } from '../utils/commanderAnalytics';
 
 // ═══════════════════════════════════════════════════════════════
 // UI ATOMS
@@ -381,7 +381,7 @@ function ApprovalCard({ item, agents, onClick, onApprove, onReject }) {
   );
 }
 
-function MissionGraphPanel({ tasks, agents, logs, outcomes, interventions, lifecycleEvents, selectedId, onSelect, onRetry, onStop, onApprove, onCancel, onUpdateBranchRouting, onUpdateBranchDependencies }) {
+function MissionGraphPanel({ tasks, agents, logs, outcomes, interventions, lifecycleEvents, learningMemory, selectedId, onSelect, onRetry, onStop, onApprove, onCancel, onUpdateBranchRouting, onUpdateBranchDependencies }) {
   const graphTaskSet = useMemo(() => {
     if (!tasks.length) return [];
     const selectedTask = tasks.find((task) => task.id === selectedId) || tasks[0];
@@ -407,9 +407,14 @@ function MissionGraphPanel({ tasks, agents, logs, outcomes, interventions, lifec
   const [dependencyDraft, setDependencyDraft] = useState([]);
   const [dependencySaving, setDependencySaving] = useState(false);
   const [dependencyMessage, setDependencyMessage] = useState('');
+  const [promotionSavingId, setPromotionSavingId] = useState(null);
+  const [promotionMessage, setPromotionMessage] = useState('');
   const selectedRootMissionId = selectedTask?.rootMissionId || selectedTask?.id || null;
   const rootOutcomes = outcomes.filter((entry) => !selectedRootMissionId || entry.rootMissionId === selectedRootMissionId);
   const outcomeMemory = getOutcomeMemorySummary(rootOutcomes);
+  const rootInterventions = interventions.filter((entry) => !selectedRootMissionId || (entry.rootMissionId || entry.taskId) === selectedRootMissionId);
+  const runtimeConfidence = getPostLaunchConfidenceSummary({ outcomes: rootOutcomes, interventions: rootInterventions });
+  const doctrineDeltas = getDoctrineDeltaSummary(learningMemory?.doctrine || []).slice(0, 2);
   const selectedDependencySummary = selectedTask ? getDependencySummary(selectedTask, graphTaskSet) : { dependencies: [], unlocks: [] };
   const retirementEvents = lifecycleEvents
     .filter((entry) => entry.eventType === 'retired' && (!selectedRootMissionId || entry.rootMissionId === selectedRootMissionId))
@@ -428,8 +433,7 @@ function MissionGraphPanel({ tasks, agents, logs, outcomes, interventions, lifec
   const doctrineFeedback = parseDoctrineFeedbackLogs(logs).filter((entry) => !selectedRootMissionId || entry.cleanMessage.includes(selectedRootMissionId)).slice(0, 6);
   const branchHistory = useMemo(() => (
     selectedRootMissionId
-      ? interventions
-        .filter((entry) => entry.rootMissionId === selectedRootMissionId || entry.taskId === selectedRootMissionId)
+      ? rootInterventions
         .slice(0, 8)
         .map((entry) => ({
           id: entry.id,
@@ -438,7 +442,7 @@ function MissionGraphPanel({ tasks, agents, logs, outcomes, interventions, lifec
           type: entry.eventType,
         }))
       : []
-  ), [interventions, selectedRootMissionId]);
+  ), [rootInterventions, selectedRootMissionId]);
   const persistentSpecialists = agents.filter((agent) => !agent.isEphemeral && !['commander', 'executor'].includes(agent.role || ''));
   const interventionRail = useMemo(() => (
     buildInterventionRailEntries({
@@ -468,6 +472,20 @@ function MissionGraphPanel({ tasks, agents, logs, outcomes, interventions, lifec
     setDependencyDraft(selectedTask.dependsOn || []);
     setDependencyMessage('');
   }, [selectedTask]);
+
+  const handlePromoteSpecialist = async (agent) => {
+    if (!agent?.id) return;
+    setPromotionSavingId(agent.id);
+    setPromotionMessage('');
+    try {
+      await promoteAgentToPersistent(agent.id);
+      setPromotionMessage(`${agent.name} is now a persistent ${agent.role || 'specialist'} lane.`);
+    } catch (error) {
+      setPromotionMessage(error.message || 'Could not promote specialist.');
+    } finally {
+      setPromotionSavingId(null);
+    }
+  };
 
   if (!graphTaskSet.length) {
     return (
@@ -539,6 +557,69 @@ function MissionGraphPanel({ tasks, agents, logs, outcomes, interventions, lifec
             <span className="rounded-full border border-aurora-teal/20 bg-aurora-teal/10 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-aurora-teal">
               promotions {fleetPosture.promotionCount}
             </span>
+          </div>
+        </div>
+      </div>
+      <div className="mt-4 grid gap-3 xl:grid-cols-[0.95fr_1.05fr]">
+        <div className="rounded-[20px] border border-white/8 bg-[linear-gradient(180deg,rgba(45,212,191,0.08),rgba(255,255,255,0.02))] p-4">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Post-launch confidence</div>
+              <div className="mt-1 text-sm font-semibold text-text-primary">{runtimeConfidence.label}</div>
+              <p className="mt-2 text-[12px] leading-relaxed text-text-body">{runtimeConfidence.detail}</p>
+            </div>
+            <span className={cn(
+              'rounded-full border px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.16em]',
+              runtimeConfidence.posture === 'grounded'
+                ? 'border-aurora-teal/20 bg-aurora-teal/10 text-aurora-teal'
+                : runtimeConfidence.posture === 'cautious'
+                  ? 'border-aurora-amber/20 bg-aurora-amber/10 text-aurora-amber'
+                  : 'border-aurora-rose/20 bg-aurora-rose/10 text-aurora-rose'
+            )}>
+              {runtimeConfidence.runtimeConfidence}% runtime confidence
+            </span>
+          </div>
+          <div className="mt-3 grid gap-2 md:grid-cols-4">
+            {[
+              { label: 'Avg outcome', value: outcomeMemory.averageScore || '—', tone: 'text-text-primary' },
+              { label: 'Rescues', value: runtimeConfidence.rescueEvents, tone: 'text-aurora-rose' },
+              { label: 'Reroutes', value: runtimeConfidence.rerouteEvents, tone: 'text-aurora-blue' },
+              { label: 'Guardrails', value: runtimeConfidence.guardrailEvents, tone: 'text-aurora-amber' },
+            ].map((metric) => (
+              <div key={metric.label} className="rounded-[16px] border border-white/8 bg-black/20 px-3 py-3">
+                <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">{metric.label}</div>
+                <div className={cn('mt-2 text-lg font-semibold', metric.tone)}>{metric.value}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="rounded-[20px] border border-white/8 bg-[linear-gradient(180deg,rgba(167,139,250,0.08),rgba(255,255,255,0.02))] p-4">
+          <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Doctrine delta</div>
+          <div className="mt-1 text-sm font-semibold text-text-primary">How mission trust is moving right now</div>
+          <div className="mt-3 space-y-2">
+            {doctrineDeltas.length === 0 && (
+              <div className="rounded-[16px] border border-white/8 bg-black/20 px-3 py-3 text-[11px] text-text-muted">
+                Commander has not accumulated enough doctrine history yet to show meaningful confidence movement.
+              </div>
+            )}
+            {doctrineDeltas.map((entry) => (
+              <div key={entry.id} className="rounded-[16px] border border-white/8 bg-black/20 px-3 py-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="text-[12px] font-semibold text-text-primary">{entry.owner}</div>
+                  <span className={cn(
+                    'rounded-full border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em]',
+                    entry.trend === 'up'
+                      ? 'border-aurora-teal/20 bg-aurora-teal/10 text-aurora-teal'
+                      : entry.trend === 'down'
+                        ? 'border-aurora-rose/20 bg-aurora-rose/10 text-aurora-rose'
+                        : 'border-white/10 bg-white/[0.03] text-text-muted'
+                  )}>
+                    {entry.delta > 0 ? '+' : ''}{entry.delta} pts
+                  </span>
+                </div>
+                <div className="mt-1 text-[11px] leading-5 text-text-body">{entry.changeSummary}</div>
+              </div>
+            ))}
           </div>
         </div>
       </div>
@@ -774,9 +855,25 @@ function MissionGraphPanel({ tasks, agents, logs, outcomes, interventions, lifec
                 </div>
                 <div className="mt-2 text-[10px] font-mono text-text-disabled">{agent.model || 'Adaptive lane'}</div>
                 {agent.roleDescription && <div className="mt-2 text-[11px] leading-relaxed text-text-muted">{agent.roleDescription}</div>}
+                <div className="mt-3 flex items-center justify-between gap-2">
+                  <div className="text-[10px] text-text-muted">Promote if this role keeps recurring.</div>
+                  <button
+                    type="button"
+                    disabled={promotionSavingId === agent.id}
+                    onClick={() => handlePromoteSpecialist(agent)}
+                    className="rounded-xl border border-aurora-teal/20 bg-aurora-teal/10 px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-aurora-teal transition-colors hover:bg-aurora-teal/14 disabled:opacity-50"
+                  >
+                    {promotionSavingId === agent.id ? 'Promoting...' : 'Promote lane'}
+                  </button>
+                </div>
               </div>
             ))}
           </div>
+          {promotionMessage && (
+            <div className="mt-3 rounded-[16px] border border-white/8 bg-black/20 px-3 py-2 text-[11px] text-text-body">
+              {promotionMessage}
+            </div>
+          )}
         </div>
       )}
       {retirementEvents.length > 0 && (
@@ -1620,6 +1717,7 @@ export function MissionControlView() {
                 outcomes={outcomes}
                 interventions={interventions}
                 lifecycleEvents={lifecycleEvents}
+                learningMemory={learningMemory}
                 selectedId={sel}
                 onSelect={setSel}
                 onRetry={handleRetry}

@@ -129,17 +129,17 @@ Legend:
 ## Current Read
 
 - `Shipped`: 15
-- `In Progress`: 36
+- `In Progress`: 40
 - `Next`: 0
 - `Queued`: 16
 - `Later / Future`: 48
 
 ## Immediate Next Four
 
-1. Post-launch confidence closure rails
-2. More recommendation classes weighted by pattern and rescue winners
-3. Promotion actions in more operator surfaces
-4. Doctrine-delta visibility in Mission Control and executive briefs
+1. Persistent-lane creation defaults when no spawned match exists
+2. Broader post-launch confidence closure in runtime recommendation logic
+3. Wider doctrine-delta trust rails across operator surfaces
+4. Deeper recurring automation trust tuning from runtime memory
 
 ## Epic Experience Layer Additions
 
@@ -173,12 +173,12 @@ These are not separate feature IDs yet. They should be implemented as depth adde
 
 ## Updated Immediate Next Order
 
-1. Close the confidence rail with actual post-launch outcomes
-2. Turn autonomy and rescue signals into more recommendation classes
-3. Promote mission-pattern winners into stronger recommendation rank shifts
-4. Push doctrine-delta visibility into Mission Control and executive brief surfaces
-5. Add one-click promotion actions from more operator surfaces
-6. Use lifecycle pressure to create better persistent-lane defaults when no spawned match exists
+1. Use lifecycle pressure to create better persistent-lane defaults when no spawned match exists
+2. Fold post-launch confidence closure deeper into runtime recommendation logic
+3. Keep widening doctrine-delta visibility as a cross-surface trust rail
+4. Deepen recurring automation trust tuning from runtime memory
+5. Push mission-pattern winners harder into provider and lane defaults
+6. Convert promotion guidance into more automatic durable-fleet shaping
 
 ## Autodrive Program Rule
 
