@@ -43,7 +43,7 @@ import { TacticalInterventionConsole } from '../components/command/TacticalInter
 import { buildTimelineEntries } from '../utils/buildCommandTimeline';
 import { TaskDAG } from '../components/TaskDAG';
 import { getWorkflowMeta } from '../utils/missionLifecycle';
-import { getDoctrineDeltaSummary, getFleetPostureSummary, getMissionPatternDefaultSummary, getOutcomeMemorySummary, getPatternApprovalBiasSummary, getPersistentPromotionGuidance, getPostLaunchConfidenceSummary, getRecurringAutonomyTuningSummary, parseDoctrineFeedbackLogs } from '../utils/commanderAnalytics';
+import { getAutomationCandidates, getDoctrineDeltaSummary, getFleetPostureSummary, getMissionPatternDefaultSummary, getOutcomeMemorySummary, getPatternApprovalBiasSummary, getPersistentPromotionGuidance, getPostLaunchConfidenceSummary, getRecurringAutonomyTuningSummary, parseDoctrineFeedbackLogs } from '../utils/commanderAnalytics';
 
 // ═══════════════════════════════════════════════════════════════
 // UI ATOMS
@@ -1397,7 +1397,7 @@ function Drawer({ item, agents, tasks, logs, onClose, onApprove, onReject, onRet
 // INTELLIGENCE SIDEBAR
 // ═══════════════════════════════════════════════════════════════
 
-function IntelSidebar({ tasks, approvals, completed, agents, schedules, logs, learningMemory, connectedSystems, truth, onOpenApprovals, onOpenSystems, onOpenCreator, onOpenOps }) {
+function IntelSidebar({ tasks, approvals, completed, agents, schedules, logs, learningMemory, connectedSystems, truth, interventions, outcomes, onOpenApprovals, onOpenSystems, onOpenCreator, onOpenOps }) {
   const totalCost = tasks.reduce((sum, task) => sum + Number(task.costUsd || 0), 0);
   const failedCount = tasks.filter(t => t.status === 'failed' || t.status === 'error').length;
   const runningCount = tasks.filter(t => t.status === 'running').length;
@@ -1409,9 +1409,17 @@ function IntelSidebar({ tasks, approvals, completed, agents, schedules, logs, le
     winningPattern: learningMemory?.doctrineById?.['doctrine-mission-patterns']?.metrics?.winningPattern,
     routingDecision: { approvalLevel: 'risk_weighted' },
   });
+  const recurringRecoveryReadyCount = useMemo(() => (
+    getAutomationCandidates(tasks, 150, interventions, outcomes)
+      .map((entry) => getRecurringAutonomyTuningSummary(entry))
+      .filter((entry) => entry.earnedAutonomy).length
+  ), [interventions, outcomes, tasks]);
 
   // Derive recommendations from real data
   const recs = [];
+  if (recurringRecoveryReadyCount > 0) {
+    recs.push({ type: 'autonomy', text: `${recurringRecoveryReadyCount} recurring flow${recurringRecoveryReadyCount === 1 ? '' : 's'} have earned a lighter posture back. Review recurring systems and let Commander scale the clean ones.`, imp: 'low' });
+  }
   if (failedCount > 0) {
     const failedAgents = [...new Set(tasks.filter(t => t.status === 'failed' || t.status === 'error').map(t => t.agentName || 'Unknown'))];
     recs.push({ type: 'anomaly', text: `${failedCount} failed task${failedCount > 1 ? 's' : ''} from ${failedAgents.join(', ')}. Check agent health and retry or reassign.`, imp: 'high' });
@@ -1450,6 +1458,7 @@ function IntelSidebar({ tasks, approvals, completed, agents, schedules, logs, le
           { label: 'Approvals', value: approvals.length, tone: 'text-aurora-amber' },
           { label: 'Completed', value: completed.length, tone: 'text-aurora-teal' },
           { label: 'Failed', value: failedCount, tone: 'text-aurora-rose' },
+          { label: 'Autonomy ready', value: recurringRecoveryReadyCount, tone: 'text-aurora-teal' },
         ].map((item) => (
           <div key={item.label} className="rounded-2xl border border-white/[0.06] bg-black/20 px-3 py-2.5">
             <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">{item.label}</div>
@@ -1768,6 +1777,8 @@ export function MissionControlView() {
                       ? 'Human gates are the only real drag right now.'
                       : running > 0
                         ? 'Tony is moving cleanly with no immediate choke point.'
+                        : getAutomationCandidates(tasks, 150, interventions, outcomes).some((entry) => getRecurringAutonomyTuningSummary(entry).earnedAutonomy)
+                          ? 'One or more recurring systems have earned autonomy back. Good time to scale the clean automations.'
                         : 'The deck is calm. Good time to launch the next mission.'}
                   </p>
                 </div>
@@ -2010,6 +2021,8 @@ export function MissionControlView() {
             learningMemory={learningMemory}
             connectedSystems={connectedSystems}
             truth={truth}
+            interventions={interventions}
+            outcomes={outcomes}
             onOpenApprovals={() => setTab('app')}
             onOpenSystems={() => setSettingsOpen(true)}
             onOpenCreator={() => setCreatorOpen(true)}

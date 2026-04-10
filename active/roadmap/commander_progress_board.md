@@ -112,6 +112,7 @@ This is the live build tracker for the Jarvis / Stark / Musk Commander program.
 - Recurring management now calls out when flows are actually ready to reclaim autonomy, not just improving
 - Schedule-driven launches now inherit provider/model lane defaults instead of starting blank
 - Executive briefing now explicitly recognizes when a recurring flow has earned autonomy back
+- Mission Control summary surfaces now expose recurring autonomy-ready signals at the console level
 
 ## Epic Experience Layer
 
