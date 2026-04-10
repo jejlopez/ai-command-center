@@ -4,14 +4,17 @@ import {
   AlarmClock,
   Calendar,
   ChevronDown,
+  CircleAlert,
   Loader2,
   Play,
+  ShieldCheck,
   Save,
   Sparkles,
   X,
 } from 'lucide-react';
 import { cn } from '../../utils/cn';
 import { useConnectedSystems } from '../../utils/useSupabase';
+import { deriveRoutingDecision } from '../../utils/routingPolicy';
 
 const SESSION_KEY = 'mission-creator-session-v1';
 const SAVED_PRESETS_KEY = 'mission-creator-presets-v1';
@@ -430,6 +433,73 @@ function buildBranchPreview(preview) {
   }));
 }
 
+function formatApprovalLabel(value) {
+  return String(value || 'risk_weighted').replaceAll('_', ' ');
+}
+
+function estimateBranchCount(intent = '') {
+  const lower = String(intent || '').toLowerCase();
+  let branches = 1;
+  if (/(research|analyze|investigate|find)/.test(lower)) branches += 1;
+  if (/(draft|email|report|summary|notes)/.test(lower)) branches += 1;
+  if (/(verify|review|check|qa|validate)/.test(lower)) branches += 1;
+  return Math.min(4, branches);
+}
+
+function estimateCostRange({ mode = 'balanced', riskLevel = 'medium', branchCount = 1, confidence = 50 }) {
+  const base = mode === 'fast' ? 1.4 : mode === 'efficient' ? 0.55 : 0.9;
+  const riskMultiplier = riskLevel === 'high' ? 1.35 : riskLevel === 'medium' ? 1 : 0.8;
+  const uncertaintyMultiplier = confidence < 55 ? 1.2 : confidence > 80 ? 0.9 : 1;
+  const estimated = base * riskMultiplier * uncertaintyMultiplier * Math.max(1, branchCount * 0.75);
+  if (estimated < 0.9) return '$0.25 - $0.90';
+  if (estimated < 1.8) return '$0.90 - $1.80';
+  if (estimated < 3.5) return '$1.80 - $3.50';
+  return '$3.50+';
+}
+
+function buildPreflightReadback({
+  form,
+  preview,
+  missionSummary,
+  systemsReadback,
+  routingDecision,
+}) {
+  const expectedBranches = Array.isArray(preview?.branches) && preview.branches.length
+    ? preview.branches.length
+    : estimateBranchCount(form.intent);
+  const expectedDuration = preview?.estimatedDuration || (form.missionMode === 'plan_first' ? '2-6 min planning window' : expectedBranches > 2 ? '8-18 min' : '4-12 min');
+  const estimatedCost = preview?.estimatedCostRange || estimateCostRange({
+    mode: form.mode,
+    riskLevel: routingDecision.riskLevel,
+    branchCount: expectedBranches,
+    confidence: missionSummary.confidence,
+  });
+  const disconnectedSystems = systemsReadback.filter((system) => !system.connected);
+  const topRisks = [
+    missionSummary.confidence < 55 ? 'Intent is still broad, so Commander may need to improvise before it can route cleanly.' : null,
+    routingDecision.riskLevel === 'high' ? 'This mission touches higher-risk operations and should stay human-aware.' : null,
+    form.when === 'repeat' && form.missionMode === 'do_now' ? 'Recurring missions launched in do-now mode can scale mistakes faster than planned review modes.' : null,
+    disconnectedSystems.length > 0 ? `${disconnectedSystems.map((system) => system.label).join(', ')} is not fully connected, which can force fallback behavior.` : null,
+    form.outputType === 'custom' && !form.outputSpec.trim() ? 'The final artifact is still underspecified, which increases revision risk.' : null,
+  ].filter(Boolean).slice(0, 3);
+  const uncertainty = [
+    preview ? null : 'Branch graph is still estimated until you run Preview plan.',
+    missionSummary.confidence >= 75 ? null : 'Commander is missing a little specificity on scope, destination, or success criteria.',
+    routingDecision.contextPackIds.length <= 1 ? 'Only the core context pack is loaded so far.' : null,
+  ].filter(Boolean).slice(0, 3);
+
+  return {
+    expectedBranches,
+    expectedDuration,
+    estimatedCost,
+    approvalPosture: form.missionMode === 'watch_and_approve' ? 'human_required' : routingDecision.approvalLevel,
+    contextPacks: routingDecision.contextPackIds,
+    requiredCapabilities: routingDecision.requiredCapabilities,
+    topRisks,
+    uncertainty,
+  };
+}
+
 function SegmentedControl({ options, value, onChange }) {
   return (
     <div className="flex gap-2">
@@ -499,6 +569,21 @@ export function MissionCreatorPanel({
   const flightPlan = useMemo(() => buildFlightPlan(preview, missionSummary, form), [preview, missionSummary, form]);
   const branchPreview = useMemo(() => buildBranchPreview(preview), [preview]);
   const systemsReadback = useMemo(() => inferSystemsReadback(form, connectedSystems), [connectedSystems, form]);
+  const routingDecision = useMemo(() => deriveRoutingDecision({
+    intent: form.intent,
+    targetType: form.targetType,
+    outputType: form.outputType === 'custom' ? form.outputSpec || form.outputType : form.outputType,
+    repeat: form.when === 'repeat' ? { frequency: form.repeatFrequency, time: form.repeatTime } : null,
+    mode: form.mode,
+    requiresApproval: form.missionMode === 'watch_and_approve',
+  }, selectedAgent, null), [form.intent, form.mode, form.missionMode, form.outputSpec, form.outputType, form.repeatFrequency, form.repeatTime, form.targetType, form.when, selectedAgent]);
+  const preflight = useMemo(() => buildPreflightReadback({
+    form,
+    preview,
+    missionSummary,
+    systemsReadback,
+    routingDecision,
+  }), [form, preview, missionSummary, systemsReadback, routingDecision]);
   const selectedAgentIsPersistent = !!(selectedAgent && !selectedAgent.isEphemeral && !selectedAgent.isSyntheticCommander);
 
   useEffect(() => {
@@ -802,6 +887,100 @@ export function MissionCreatorPanel({
                         {cue}
                       </span>
                     ))}
+                  </div>
+                </div>
+
+                <div className="mt-4 rounded-[20px] border border-aurora-blue/15 bg-[linear-gradient(135deg,rgba(96,165,250,0.08),rgba(167,139,250,0.05))] px-4 py-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="text-[10px] uppercase tracking-[0.18em] text-aurora-blue font-semibold">Mission Preflight</div>
+                      <div className="mt-1 text-sm font-semibold text-text-primary">Commander briefing before launch</div>
+                      <div className="mt-1 text-[11px] leading-relaxed text-text-body">
+                        Expected branches, loaded context, launch cost, approval posture, and the main uncertainty rail before you commit.
+                      </div>
+                    </div>
+                    <div className="rounded-full border border-aurora-blue/20 bg-aurora-blue/10 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-aurora-blue">
+                      {preview ? 'verified preview' : 'estimated preflight'}
+                    </div>
+                  </div>
+
+                  <div className="mt-4 grid grid-cols-2 gap-3">
+                    <div className="rounded-2xl border border-white/[0.08] bg-black/20 px-3 py-3">
+                      <div className="text-[9px] uppercase tracking-[0.18em] text-text-muted">Expected branches</div>
+                      <div className="mt-1 text-[12px] font-semibold text-text-primary">{preflight.expectedBranches}</div>
+                    </div>
+                    <div className="rounded-2xl border border-white/[0.08] bg-black/20 px-3 py-3">
+                      <div className="text-[9px] uppercase tracking-[0.18em] text-text-muted">Likely cost</div>
+                      <div className="mt-1 text-[12px] font-semibold text-text-primary">{preflight.estimatedCost}</div>
+                    </div>
+                    <div className="rounded-2xl border border-white/[0.08] bg-black/20 px-3 py-3">
+                      <div className="text-[9px] uppercase tracking-[0.18em] text-text-muted">Approval posture</div>
+                      <div className="mt-1 text-[12px] font-semibold text-text-primary">{formatApprovalLabel(preflight.approvalPosture)}</div>
+                    </div>
+                    <div className="rounded-2xl border border-white/[0.08] bg-black/20 px-3 py-3">
+                      <div className="text-[9px] uppercase tracking-[0.18em] text-text-muted">Expected duration</div>
+                      <div className="mt-1 text-[12px] font-semibold text-text-primary">{preflight.expectedDuration}</div>
+                    </div>
+                  </div>
+
+                  <div className="mt-3 grid gap-3 xl:grid-cols-2">
+                    <div className="rounded-2xl border border-white/[0.08] bg-black/20 px-3 py-3">
+                      <div className="flex items-center gap-2">
+                        <ShieldCheck className="h-4 w-4 text-aurora-teal" />
+                        <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Context loaded</div>
+                      </div>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {preflight.contextPacks.map((pack) => (
+                          <span key={pack} className="rounded-full border border-aurora-teal/20 bg-aurora-teal/10 px-2 py-1 text-[10px] font-semibold text-aurora-teal">
+                            {pack}
+                          </span>
+                        ))}
+                      </div>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {preflight.requiredCapabilities.length > 0 ? preflight.requiredCapabilities.map((capability) => (
+                          <span key={capability} className="rounded-full border border-white/[0.08] bg-white/[0.03] px-2 py-1 text-[10px] font-semibold text-text-body">
+                            {capability}
+                          </span>
+                        )) : (
+                          <span className="text-[11px] text-text-muted">No extra capability pressure inferred yet.</span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="rounded-2xl border border-white/[0.08] bg-black/20 px-3 py-3">
+                      <div className="flex items-center gap-2">
+                        <CircleAlert className="h-4 w-4 text-aurora-amber" />
+                        <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Confidence + uncertainty rail</div>
+                      </div>
+                      <div className="mt-3 space-y-2">
+                        {preflight.uncertainty.length === 0 && (
+                          <div className="rounded-2xl border border-aurora-teal/20 bg-aurora-teal/10 px-3 py-2 text-[11px] text-text-body">
+                            Commander has enough clarity to route this mission without a major uncertainty warning.
+                          </div>
+                        )}
+                        {preflight.uncertainty.map((entry) => (
+                          <div key={entry} className="rounded-2xl border border-aurora-amber/20 bg-aurora-amber/10 px-3 py-2 text-[11px] text-text-body">
+                            {entry}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mt-3 rounded-2xl border border-white/[0.08] bg-black/20 px-3 py-3">
+                    <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Top risks before launch</div>
+                    <div className="mt-2 space-y-2">
+                      {preflight.topRisks.length === 0 && (
+                        <div className="rounded-2xl border border-aurora-teal/20 bg-aurora-teal/10 px-3 py-2 text-[11px] text-text-body">
+                          No major launch blocker is inferred right now. This looks safe enough to route with the current posture.
+                        </div>
+                      )}
+                      {preflight.topRisks.map((risk) => (
+                        <div key={risk} className="rounded-2xl border border-white/[0.08] bg-white/[0.03] px-3 py-2 text-[11px] text-text-body">
+                          {risk}
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 </div>
 

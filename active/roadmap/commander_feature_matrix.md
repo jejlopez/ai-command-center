@@ -129,17 +129,17 @@ Legend:
 ## Current Read
 
 - `Shipped`: 15
-- `In Progress`: 33
+- `In Progress`: 34
 - `Next`: 0
 - `Queued`: 16
 - `Later / Future`: 48
 
 ## Immediate Next Four
 
-1. Mission preflight + confidence readback
-2. Bottleneck rail + autonomy ratio visibility
-3. Mission-pattern memory and rescue-aware learning
-4. Recurring tuning feedback into recommendations
+1. Bottleneck rail + autonomy ratio visibility
+2. Mission-pattern memory and rescue-aware learning
+3. Recurring tuning feedback into recommendations
+4. Preflight-to-runtime alignment checks
 
 ## Epic Experience Layer Additions
 
@@ -173,12 +173,12 @@ These are not separate feature IDs yet. They should be implemented as depth adde
 
 ## Updated Immediate Next Order
 
-1. Add mission preflight + confidence readback
-2. Add bottleneck rail + autonomy ratio visibility
-3. Add mission-pattern memory and rescue-aware learning
-4. Keep specialist lifecycle memory unified across fleet surfaces
-5. Push trend-aware doctrine scoring deeper into recommendations
-6. Feed recurring tuning outcomes back into recommendation rank
+1. Add bottleneck rail + autonomy ratio visibility
+2. Add mission-pattern memory and rescue-aware learning
+3. Keep specialist lifecycle memory unified across fleet surfaces
+4. Push trend-aware doctrine scoring deeper into recommendations
+5. Feed recurring tuning outcomes back into recommendation rank
+6. Keep preflight readback aligned with actual routing behavior
 
 ## Autodrive Program Rule
 

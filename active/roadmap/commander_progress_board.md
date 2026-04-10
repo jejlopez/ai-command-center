@@ -6,8 +6,8 @@ This is the live build tracker for the Jarvis / Stark / Musk Commander program.
 
 - Jarvis vision size: `100` scoped features
 - Shipped foundation: `15`
-- Active buildout: `33`
-- Immediate next targets: `8`
+- Active buildout: `34`
+- Immediate next targets: `7`
 - Deferred / later items: `64`
 
 ## Shipped
@@ -72,6 +72,7 @@ This is the live build tracker for the Jarvis / Stark / Musk Commander program.
 - Structured intervention history in Mission Control
 - First-class specialist lifecycle memory
 - Recurring flow management and tuning
+- Mission preflight and confidence readback
 
 ## Epic Experience Layer
 
@@ -189,8 +190,8 @@ Default posture:
 
 Build next:
 
-1. add mission preflight and confidence rails
-2. add autonomy, bottleneck, and mission-pattern visibility
-3. keep fleet lifecycle memory visible across Intelligence and Mission Control
-4. deepen doctrine scoring with recurring-flow and intervention trend data
-5. make recurring tuning outcomes feed recommendations automatically
+1. add autonomy, bottleneck, and mission-pattern visibility
+2. keep fleet lifecycle memory visible across Intelligence and Mission Control
+3. deepen doctrine scoring with recurring-flow and intervention trend data
+4. make recurring tuning outcomes feed recommendations automatically
+5. keep the preflight layer aligned with actual launch behavior as routing evolves
