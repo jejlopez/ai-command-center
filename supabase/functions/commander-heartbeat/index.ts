@@ -78,6 +78,16 @@ type TaskRow = {
   node_type?: string | null;
   workflow_status?: string | null;
   depends_on?: string[] | null;
+  domain?: string | null;
+  intent_type?: string | null;
+  budget_class?: string | null;
+  risk_level?: string | null;
+  approval_level?: string | null;
+  execution_strategy?: string | null;
+  context_pack_ids?: unknown;
+  required_capabilities?: unknown;
+  model_override?: string | null;
+  provider_override?: string | null;
 };
 
 type ReviewRow = {
@@ -285,7 +295,7 @@ Deno.serve(async (req: Request) => {
         .eq('role', 'commander'),
     db
       .from('tasks')
-      .select('id,user_id,name,title,description,status,agent_id,created_by_commander_id,priority,progress_percent,run_at,started_at,created_at,parent_id,root_mission_id,node_type,workflow_status,depends_on')
+      .select('id,user_id,name,title,description,status,agent_id,created_by_commander_id,priority,progress_percent,run_at,started_at,created_at,parent_id,root_mission_id,node_type,workflow_status,depends_on,domain,intent_type,budget_class,risk_level,approval_level,execution_strategy,context_pack_ids,required_capabilities,model_override,provider_override')
       .eq('status', 'queued')
       .order('priority', { ascending: false })
       .order('created_at', { ascending: true }),
@@ -492,6 +502,29 @@ Deno.serve(async (req: Request) => {
           tokens: 0,
           duration_ms: 0,
         }),
+        db.from('task_outcomes').upsert({
+          user_id: task.user_id,
+          task_id: task.id,
+          root_mission_id: task.root_mission_id || task.id,
+          agent_id: effectiveAgentId,
+          outcome_status: 'completed',
+          score: outcome.finalScore,
+          trust: outcome.trust,
+          doctrine_feedback: doctrineFeedback,
+          model: task.model_override || agent.model || null,
+          provider: task.provider_override || null,
+          domain: task.domain || 'general',
+          intent_type: task.intent_type || 'general',
+          budget_class: task.budget_class || 'balanced',
+          risk_level: task.risk_level || 'medium',
+          approval_level: task.approval_level || 'risk_weighted',
+          execution_strategy: task.execution_strategy || 'sequential',
+          cost_usd: cost,
+          duration_ms: latency,
+          context_pack_ids: Array.isArray(task.context_pack_ids) ? task.context_pack_ids : [],
+          required_capabilities: Array.isArray(task.required_capabilities) ? task.required_capabilities : [],
+          metadata: { source: 'commander-heartbeat' },
+        }, { onConflict: 'task_id,outcome_status' }),
 
         db.from('pending_reviews').insert({
           id: reviewId,
@@ -550,6 +583,29 @@ Deno.serve(async (req: Request) => {
           tokens: 0,
           duration_ms: 0,
         }),
+        db.from('task_outcomes').upsert({
+          user_id: task.user_id,
+          task_id: task.id,
+          root_mission_id: task.root_mission_id || task.id,
+          agent_id: effectiveAgentId,
+          outcome_status: 'failed',
+          score: outcome.finalScore,
+          trust: outcome.trust,
+          doctrine_feedback: 'Failure path detected. Escalate similar branches or add stronger verifier coverage before scaling.',
+          model: task.model_override || agent.model || null,
+          provider: task.provider_override || null,
+          domain: task.domain || 'general',
+          intent_type: task.intent_type || 'general',
+          budget_class: task.budget_class || 'balanced',
+          risk_level: task.risk_level || 'medium',
+          approval_level: task.approval_level || 'risk_weighted',
+          execution_strategy: task.execution_strategy || 'sequential',
+          cost_usd: 0,
+          duration_ms: Date.now() - startTime,
+          context_pack_ids: Array.isArray(task.context_pack_ids) ? task.context_pack_ids : [],
+          required_capabilities: Array.isArray(task.required_capabilities) ? task.required_capabilities : [],
+          metadata: { source: 'commander-heartbeat' },
+        }, { onConflict: 'task_id,outcome_status' }),
       ]);
 
       await updateMissionGraphProgress(db, { ...task, status: 'failed', workflow_status: 'failed' });

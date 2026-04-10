@@ -979,6 +979,83 @@ export function useSkillBank() {
   return { skills, loading, refetch: fetchSkills };
 }
 
+export function useTaskOutcomes() {
+  const { user } = useAuth();
+  const [outcomes, setOutcomes] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetchOutcomes = useCallback(async () => {
+    if (!user) {
+      setOutcomes([]);
+      setLoading(false);
+      return;
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from('task_outcomes')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      setOutcomes((data || []).map((row) => ({
+        id: row.id,
+        taskId: row.task_id,
+        rootMissionId: row.root_mission_id,
+        agentId: row.agent_id,
+        outcomeStatus: row.outcome_status || 'completed',
+        score: Number(row.score || 0),
+        trust: row.trust || 'medium',
+        doctrineFeedback: row.doctrine_feedback || '',
+        model: row.model || '',
+        provider: normalizeModelProvider(row.provider),
+        domain: row.domain || 'general',
+        intentType: row.intent_type || 'general',
+        budgetClass: row.budget_class || 'balanced',
+        riskLevel: row.risk_level || 'medium',
+        approvalLevel: row.approval_level || 'risk_weighted',
+        executionStrategy: row.execution_strategy || 'sequential',
+        costUsd: Number(row.cost_usd || 0),
+        durationMs: Number(row.duration_ms || 0),
+        contextPackIds: Array.isArray(row.context_pack_ids) ? row.context_pack_ids : [],
+        requiredCapabilities: Array.isArray(row.required_capabilities) ? row.required_capabilities : [],
+        metadata: row.metadata || {},
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+      })));
+    } catch (error) {
+      console.error('[useTaskOutcomes] Fetch error:', error);
+      setOutcomes([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) return;
+
+    fetchOutcomes();
+    const channel = supabase
+      .channel(createRealtimeChannelName('task-outcomes-user', user.id))
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'task_outcomes',
+        filter: `user_id=eq.${user.id}`,
+      }, () => {
+        fetchOutcomes();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user, fetchOutcomes]);
+
+  return { outcomes, loading, refetch: fetchOutcomes };
+}
+
 /**
  * Insert a new agent into Supabase.
  */

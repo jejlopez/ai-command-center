@@ -36,14 +36,14 @@ import { useLearningMemory } from '../utils/useLearningMemory';
 import { DoctrineCards } from '../components/command/DoctrineCards';
 import { TruthAuditStrip } from '../components/command/TruthAuditStrip';
 import { useCommandCenterTruth } from '../utils/useCommandCenterTruth';
-import { useConnectedSystems } from '../utils/useSupabase';
+import { useConnectedSystems, useTaskOutcomes } from '../utils/useSupabase';
 import { ReactorCoreBoard } from '../components/command/ReactorCoreBoard';
 import { CommandTimelineRail } from '../components/command/CommandTimelineRail';
 import { TacticalInterventionConsole } from '../components/command/TacticalInterventionConsole';
 import { buildTimelineEntries } from '../utils/buildCommandTimeline';
 import { TaskDAG } from '../components/TaskDAG';
 import { getWorkflowMeta } from '../utils/missionLifecycle';
-import { parseDoctrineFeedbackLogs, parseOutcomeScoreLogs } from '../utils/commanderAnalytics';
+import { getOutcomeMemorySummary, parseDoctrineFeedbackLogs } from '../utils/commanderAnalytics';
 
 // ═══════════════════════════════════════════════════════════════
 // UI ATOMS
@@ -267,7 +267,7 @@ function ApprovalCard({ item, agents, onClick, onApprove, onReject }) {
   );
 }
 
-function MissionGraphPanel({ tasks, agents, logs, selectedId, onSelect, onRetry, onStop, onApprove, onCancel, onUpdateBranchRouting, onUpdateBranchDependencies }) {
+function MissionGraphPanel({ tasks, agents, logs, outcomes, selectedId, onSelect, onRetry, onStop, onApprove, onCancel, onUpdateBranchRouting, onUpdateBranchDependencies }) {
   const graphTaskSet = useMemo(() => {
     if (!tasks.length) return [];
     const selectedTask = tasks.find((task) => task.id === selectedId) || tasks[0];
@@ -294,6 +294,8 @@ function MissionGraphPanel({ tasks, agents, logs, selectedId, onSelect, onRetry,
   const [dependencySaving, setDependencySaving] = useState(false);
   const [dependencyMessage, setDependencyMessage] = useState('');
   const selectedRootMissionId = selectedTask?.rootMissionId || selectedTask?.id || null;
+  const rootOutcomes = outcomes.filter((entry) => !selectedRootMissionId || entry.rootMissionId === selectedRootMissionId);
+  const outcomeMemory = getOutcomeMemorySummary(rootOutcomes);
   const selectedDependencySummary = selectedTask ? getDependencySummary(selectedTask, graphTaskSet) : { dependencies: [], unlocks: [] };
   const retirementEvents = (
     logs
@@ -305,7 +307,13 @@ function MissionGraphPanel({ tasks, agents, logs, selectedId, onSelect, onRetry,
       .slice(-4)
       .reverse()
   );
-  const outcomeHistory = parseOutcomeScoreLogs(logs).filter((entry) => !selectedRootMissionId || entry.rootMissionId === selectedRootMissionId).slice(0, 6);
+  const outcomeHistory = rootOutcomes.slice(0, 6).map((entry) => ({
+    id: entry.id,
+    score: entry.score,
+    trust: entry.trust,
+    cleanMessage: `${entry.outcomeStatus} · ${entry.domain} / ${entry.intentType} · ${entry.model || 'adaptive lane'} · ${entry.provider || 'adaptive'} · ${entry.doctrineFeedback || 'Outcome persisted.'}`,
+    timestamp: entry.createdAt,
+  }));
   const doctrineFeedback = parseDoctrineFeedbackLogs(logs).filter((entry) => !selectedRootMissionId || entry.cleanMessage.includes(selectedRootMissionId)).slice(0, 6);
   const branchHistory = (
     logs
@@ -658,7 +666,7 @@ function MissionGraphPanel({ tasks, agents, logs, selectedId, onSelect, onRetry,
             {[
               { label: 'Persistent', value: persistentSpecialists.length, tone: 'text-aurora-blue' },
               { label: 'Spawned', value: spawnedSpecialists.length, tone: 'text-aurora-violet' },
-              { label: 'Retired', value: retirementEvents.length, tone: 'text-aurora-teal' },
+              { label: 'Avg outcome', value: outcomeMemory.averageScore, tone: 'text-aurora-teal' },
             ].map((metric) => (
               <div key={metric.label} className="rounded-[16px] border border-white/8 bg-white/[0.02] px-3 py-3">
                 <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">{metric.label}</div>
@@ -1344,6 +1352,7 @@ export function MissionControlView() {
   const primaryAgent = agents.find(agent => /tony|atlas/i.test(agent.name || '')) || agents.find(agent => agent.role === 'commander') || agents[0];
   const truth = useCommandCenterTruth();
   const { connectedSystems } = useConnectedSystems();
+  const { outcomes } = useTaskOutcomes();
 
   return (
     <div className="flex flex-col h-full overflow-hidden relative">
@@ -1497,6 +1506,7 @@ export function MissionControlView() {
                 tasks={graphTasks}
                 agents={agents}
                 logs={logs}
+                outcomes={outcomes}
                 selectedId={sel}
                 onSelect={setSel}
                 onRetry={handleRetry}

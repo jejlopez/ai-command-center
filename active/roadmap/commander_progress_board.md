@@ -6,7 +6,7 @@ This is the live build tracker for the Jarvis / Stark / Musk Commander program.
 
 - Jarvis vision size: `100` scoped features
 - Shipped foundation: `15`
-- Active buildout: `28`
+- Active buildout: `30`
 - Immediate next targets: `0`
 - Deferred / later items: `64`
 
@@ -63,49 +63,50 @@ This is the live build tracker for the Jarvis / Stark / Musk Commander program.
 - Local-first workload balancing
 - Automation-next recommendation rack
 - Mission Control outcome and doctrine timelines
+- First-class task outcome memory
+- Launch recurring flows from automation recommendations
 
 ## Next Program Targets
 
-### 1. Persist Outcome Scoring Into First-Class Mission Memory
+### 1. Doctrine Feedback Persistence Into Recommendations And Learning Memory
 
 Goal:
-- promote derived outcome quality into a reusable mission memory layer
+- let durable outcome signals directly shape visible recommendations and doctrine
 
 Definition of done:
-- quality snapshots survive outside activity logs
-- doctrine can learn from them directly without reparsing messages
+- outcome memory writes feed system recommendations or learning memory automatically
+- doctrine updates stop depending on manual interpretation
 
 Likely surfaces:
-- [`/Users/Jjarvis/ai-command-center/src/lib/api.js`](/Users/Jjarvis/ai-command-center/src/lib/api.js)
-- [`/Users/Jjarvis/ai-command-center/supabase/functions/dispatch-task/index.ts`](/Users/Jjarvis/ai-command-center/supabase/functions/dispatch-task/index.ts)
-- [`/Users/Jjarvis/ai-command-center/supabase/functions/commander-heartbeat/index.ts`](/Users/Jjarvis/ai-command-center/supabase/functions/commander-heartbeat/index.ts)
+- [`/Users/Jjarvis/ai-command-center/src/utils/useLearningMemory.js`](/Users/Jjarvis/ai-command-center/src/utils/useLearningMemory.js)
+- [`/Users/Jjarvis/ai-command-center/src/views/IntelligenceView.jsx`](/Users/Jjarvis/ai-command-center/src/views/IntelligenceView.jsx)
 
-### 2. Branch-Level Override Timeline Polish In Mission Control
+### 2. Unified Intervention Timeline Rail In Mission Control
 
 Goal:
-- make intervention and override history easier to scan during live operations
+- compress overrides, approvals, outcomes, and doctrine guidance into one pressure-ready rail
 
 Definition of done:
-- route changes, promotions, dependencies, outcome scores, and feedback read as one coherent timeline
+- one timeline answers what changed, why, and what to do next
 - operator review becomes fast under pressure
 
-### 3. Local/Cloud Balancing Upgrades From Observed Benchmark Winners
+### 3. Benchmark-Aware Provider Escalation Explanations
 
 Goal:
-- route more work to the cheapest reliable lane using observed winners, not just heuristics
+- make provider/model escalation understandable when Commander leaves the default lane
 
 Definition of done:
-- local-first and premium-escalation rules use benchmark evidence
-- Commander can explain why it stayed local or escalated
+- Mission Control and Intelligence explain benchmark-driven lane choices clearly
+- operators can see why a route escalated or stayed cheap
 
-### 4. Turn Automation Recommendations Into Launchable Recurring Flows
+### 4. Recurring Flow Editing And Automation Guardrails
 
 Goal:
-- let the operator convert high-confidence automation candidates into real recurring workflows
+- turn first-launch recurring flows into safer, tunable automations
 
 Definition of done:
-- recommendation cards can launch automation setup directly
-- ROI stays visible after automation is activated
+- launched recurring flows can be reviewed and tuned easily
+- approval and cadence guardrails stay visible after launch
 
 ## Later
 
@@ -137,7 +138,7 @@ When autodrive is enabled:
 
 Build next:
 
-1. persist outcome scoring into first-class mission memory
-2. branch-level override timeline polish in Mission Control
-3. local/cloud balancing upgrades from observed benchmark winners
-4. turn automation recommendations into launchable recurring flows
+1. doctrine feedback persistence into recommendations and learning memory
+2. unified intervention timeline rail in Mission Control
+3. benchmark-aware provider escalation explanations
+4. recurring flow editing and automation guardrails

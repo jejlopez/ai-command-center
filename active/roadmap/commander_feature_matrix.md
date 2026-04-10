@@ -25,7 +25,7 @@ Legend:
 | 10 | Hybrid approval system | 2 | Now | In Progress |
 | 11 | Mission modes: do now / plan first / watch | 1 | Now | In Progress |
 | 12 | Mission templates | 1 | Later | Queued |
-| 13 | Recurring automations | 1 | Later | Queued |
+| 13 | Recurring automations | 1 | Later | In Progress |
 | 14 | Real-time mission graph | 2 | Now | Shipped |
 | 15 | Live execution timeline | 2 | Now | Shipped |
 | 16 | Command Center readiness score | 1 | Now | Shipped |
@@ -80,7 +80,7 @@ Legend:
 | 65 | Automation ROI board | 4 | Later | In Progress |
 | 66 | “What should I do next?” command briefing | 6 | Later | In Progress |
 | 67 | “What can I automate next?” recommendation engine | 4 | Later | In Progress |
-| 68 | Memory engine for successful mission patterns | 3 | Later | Later |
+| 68 | Memory engine for successful mission patterns | 3 | Later | In Progress |
 | 69 | Memory recall by domain / project / person / task type | 3 | Later | Later |
 | 70 | Adaptive doctrine that updates preferred routes | 4 | Now | In Progress |
 | 71 | Bug pattern detector across repeated failures | 4 | Later | Later |
@@ -129,17 +129,17 @@ Legend:
 ## Current Read
 
 - `Shipped`: 15
-- `In Progress`: 28
+- `In Progress`: 30
 - `Next`: 0
 - `Queued`: 16
 - `Later / Future`: 48
 
 ## Immediate Next Four
 
-1. Persist outcome scoring into first-class mission memory
-2. Branch-level override timeline polish in Mission Control
-3. Local/cloud balancing upgrades from observed benchmark winners
-4. Turn automation recommendations into launchable recurring flows
+1. Doctrine feedback persistence into recommendations and learning memory
+2. Unified intervention timeline rail in Mission Control
+3. Benchmark-aware provider escalation explanations
+4. Recurring flow editing and automation guardrails
 
 ## Future Summary
 

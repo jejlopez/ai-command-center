@@ -51,6 +51,16 @@ type TaskGraphRow = {
   workflow_status?: string | null;
   depends_on?: string[] | null;
   result_text?: string | null;
+  domain?: string | null;
+  intent_type?: string | null;
+  budget_class?: string | null;
+  risk_level?: string | null;
+  approval_level?: string | null;
+  execution_strategy?: string | null;
+  context_pack_ids?: unknown;
+  required_capabilities?: unknown;
+  model_override?: string | null;
+  provider_override?: string | null;
 };
 
 type AgentCleanupRow = {
@@ -290,7 +300,7 @@ Deno.serve(async (req: Request) => {
   if (task_id) {
     const { data } = await db
       .from('tasks')
-      .select('id,user_id,title,name,description,status,parent_id,root_mission_id,node_type,workflow_status,depends_on,result_text')
+      .select('id,user_id,title,name,description,status,parent_id,root_mission_id,node_type,workflow_status,depends_on,result_text,domain,intent_type,budget_class,risk_level,approval_level,execution_strategy,context_pack_ids,required_capabilities,model_override,provider_override')
       .eq('id', task_id)
       .single();
     taskRow = (data as TaskGraphRow) || null;
@@ -436,6 +446,29 @@ Deno.serve(async (req: Request) => {
         tokens: 0,
         duration_ms: 0,
       }),
+      db.from('task_outcomes').upsert({
+        user_id: user.id,
+        task_id: taskId,
+        root_mission_id: taskRow?.root_mission_id || taskId,
+        agent_id: agent.id,
+        outcome_status: 'completed',
+        score: outcome.finalScore,
+        trust: outcome.trust,
+        doctrine_feedback: doctrineFeedback,
+        model: taskRow?.model_override || agent.model || null,
+        provider: taskRow?.provider_override || null,
+        domain: taskRow?.domain || 'general',
+        intent_type: taskRow?.intent_type || 'general',
+        budget_class: taskRow?.budget_class || 'balanced',
+        risk_level: taskRow?.risk_level || 'medium',
+        approval_level: taskRow?.approval_level || 'risk_weighted',
+        execution_strategy: taskRow?.execution_strategy || 'sequential',
+        cost_usd: cost,
+        duration_ms: latency,
+        context_pack_ids: Array.isArray(taskRow?.context_pack_ids) ? taskRow?.context_pack_ids : [],
+        required_capabilities: Array.isArray(taskRow?.required_capabilities) ? taskRow?.required_capabilities : [],
+        metadata: { source: 'dispatch-task' },
+      }, { onConflict: 'task_id,outcome_status' }),
 
       db.from('pending_reviews').insert({
         id: reviewId,
@@ -512,6 +545,29 @@ Deno.serve(async (req: Request) => {
         tokens: 0,
         duration_ms: 0,
       }),
+      db.from('task_outcomes').upsert({
+        user_id: user.id,
+        task_id: task_id || null,
+        root_mission_id: taskRow?.root_mission_id || task_id || null,
+        agent_id: agent_id,
+        outcome_status: 'failed',
+        score: outcome.finalScore,
+        trust: outcome.trust,
+        doctrine_feedback: 'Failure path detected. Escalate similar branches or add stronger verifier coverage before scaling.',
+        model: taskRow?.model_override || agent?.model || null,
+        provider: taskRow?.provider_override || null,
+        domain: taskRow?.domain || 'general',
+        intent_type: taskRow?.intent_type || 'general',
+        budget_class: taskRow?.budget_class || 'balanced',
+        risk_level: taskRow?.risk_level || 'medium',
+        approval_level: taskRow?.approval_level || 'risk_weighted',
+        execution_strategy: taskRow?.execution_strategy || 'sequential',
+        cost_usd: 0,
+        duration_ms: latency,
+        context_pack_ids: Array.isArray(taskRow?.context_pack_ids) ? taskRow?.context_pack_ids : [],
+        required_capabilities: Array.isArray(taskRow?.required_capabilities) ? taskRow?.required_capabilities : [],
+        metadata: { source: 'dispatch-task' },
+      }, { onConflict: 'task_id,outcome_status' }),
     ]);
 
     return corsResponse({ error: error.message }, 500);

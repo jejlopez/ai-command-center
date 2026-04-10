@@ -26,7 +26,7 @@ import {
   YAxis,
 } from 'recharts';
 import { container, item } from '../utils/variants';
-import { useActivityLog, useAgents, useCostData, usePendingReviews, useTasks } from '../utils/useSupabase';
+import { useActivityLog, useAgents, useCostData, usePendingReviews, useTaskOutcomes, useTasks } from '../utils/useSupabase';
 import { AnimatedNumber } from '../components/command/AnimatedNumber';
 import { CommandSectionHeader } from '../components/command/CommandSectionHeader';
 import { useLearningMemory } from '../utils/useLearningMemory';
@@ -34,6 +34,7 @@ import { DoctrineCards } from '../components/command/DoctrineCards';
 import { TruthAuditStrip } from '../components/command/TruthAuditStrip';
 import { useCommandCenterTruth } from '../utils/useCommandCenterTruth';
 import { getAutomationCandidates, getAutomationRoiSummary, getObservedModelBenchmarks, parseDoctrineFeedbackLogs, parseOutcomeScoreLogs, scoreTaskOutcome } from '../utils/commanderAnalytics';
+import { createMission } from '../lib/api';
 
 const PERIOD_OPTIONS = ['30d', '90d', 'QTD'];
 const STATUS_COLORS = {
@@ -403,9 +404,11 @@ function ReportsDashboardHeader({ period, setPeriod, summary }) {
 export function ReportsView() {
   const [period, setPeriod] = useState('30d');
   const [pressureFocus, setPressureFocus] = useState('activity');
+  const [automationMessage, setAutomationMessage] = useState('');
   const { data: costData } = useCostData();
   const { agents } = useAgents();
   const { tasks } = useTasks();
+  const { outcomes } = useTaskOutcomes();
   const { reviews } = usePendingReviews();
   const { logs } = useActivityLog();
   const truth = useCommandCenterTruth();
@@ -496,10 +499,37 @@ export function ReportsView() {
     return { average, top };
   }, [tasks]);
   const roiSummary = useMemo(() => getAutomationRoiSummary(tasks, humanHourlyRate), [tasks]);
-  const benchmarkBoard = useMemo(() => getObservedModelBenchmarks(tasks, agents).slice(0, 5), [tasks, agents]);
+  const benchmarkBoard = useMemo(() => getObservedModelBenchmarks(outcomes.length ? outcomes : tasks, agents).slice(0, 5), [outcomes, tasks, agents]);
   const automationCandidates = useMemo(() => getAutomationCandidates(tasks, humanHourlyRate).slice(0, 4), [tasks]);
-  const persistedOutcomeScores = useMemo(() => parseOutcomeScoreLogs(logs).slice(0, 5), [logs]);
+  const persistedOutcomeScores = useMemo(() => (
+    outcomes.length
+      ? outcomes.slice(0, 5).map((entry) => ({ id: entry.id, trust: entry.trust, score: entry.score, cleanMessage: `${entry.outcomeStatus} · ${entry.domain} / ${entry.intentType} · ${entry.model || 'adaptive lane'}`, createdAt: entry.createdAt }))
+      : parseOutcomeScoreLogs(logs).slice(0, 5)
+  ), [outcomes, logs]);
   const persistedDoctrineFeedback = useMemo(() => parseDoctrineFeedbackLogs(logs).slice(0, 4), [logs]);
+
+  async function handleLaunchRecurring(candidate) {
+    const commander = agents.find((agent) => agent.role === 'commander' && !agent.isSyntheticCommander) || agents.find((agent) => agent.role === 'commander') || agents[0] || null;
+    const cadence = candidate.runs >= 4 ? { frequency: 'daily', time: '09:00' } : { frequency: 'weekly', time: '09:00' };
+    try {
+      await createMission({
+        intent: candidate.title,
+        agentId: commander?.id || null,
+        agentName: commander?.name || 'Commander',
+        missionMode: 'plan_first',
+        mode: 'normal',
+        when: 'repeat',
+        repeat: cadence,
+        targetType: candidate.domain,
+        outputType: candidate.intentType === 'report' ? 'summary' : 'action_plan',
+        priority: 'normal',
+        priorityScore: 5,
+      }, agents);
+      setAutomationMessage(`Recurring flow launched for ${candidate.title}.`);
+    } catch (error) {
+      setAutomationMessage(error.message || 'Could not launch recurring flow.');
+    }
+  }
   const peakActivity = useMemo(
     () => activityWave.reduce((best, bucket) => (bucket.volume > best.volume ? bucket : best), activityWave[0] || { name: 'No activity yet', volume: 0 }),
     [activityWave]
@@ -563,101 +593,7 @@ export function ReportsView() {
           />
         </Motion.section>
 
-        <Motion.section variants={item} className="grid grid-cols-1 gap-5 xl:grid-cols-2">
-          <HudFrame
-            eyebrow="Outcome Quality"
-            title="Was the work actually good?"
-            detail="Completion is not enough. This board scores trust, context discipline, autonomy, and cost posture."
-            accent="violet"
-          >
-            <div className="grid gap-3 md:grid-cols-3">
-              <div className="rounded-[20px] border border-white/8 bg-[#111827] p-4">
-                <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Average quality</div>
-                <div className="mt-2 text-2xl font-semibold text-text-primary"><AnimatedNumber value={qualitySummary.average} /></div>
-              </div>
-              <div className="rounded-[20px] border border-white/8 bg-[#111827] p-4">
-                <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Autonomous wins</div>
-                <div className="mt-2 text-2xl font-semibold text-text-primary"><AnimatedNumber value={roiSummary.autonomousRuns} /></div>
-              </div>
-              <div className="rounded-[20px] border border-white/8 bg-[#111827] p-4">
-                <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Scored missions</div>
-                <div className="mt-2 text-2xl font-semibold text-text-primary"><AnimatedNumber value={tasks.length} /></div>
-              </div>
-            </div>
-            <div className="mt-4 space-y-2">
-              {qualitySummary.top.length === 0 && <div className="text-[12px] text-text-muted">No mission outcomes are scored yet.</div>}
-              {qualitySummary.top.map(({ task, outcome }) => (
-                <div key={task.id} className="rounded-[18px] border border-white/8 bg-black/20 px-3 py-3">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="text-[12px] font-semibold text-text-primary">{task.name || task.title || 'Mission'}</div>
-                    <div className="rounded-full border border-aurora-violet/20 bg-aurora-violet/10 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-aurora-violet">
-                      {outcome.score} {outcome.label}
-                    </div>
-                  </div>
-                  <div className="mt-1 text-[11px] text-text-muted">{task.domain} / {task.intentType} / {task.workflowStatus || task.status}</div>
-                </div>
-              ))}
-            </div>
-          </HudFrame>
-
-          <HudFrame
-            eyebrow="Automation ROI"
-            title="Where Commander is creating leverage"
-            detail="This ties mission throughput to time saved and spend, so the founder-OS value is visible."
-            accent="teal"
-          >
-            <div className="grid gap-3 md:grid-cols-2">
-              <div className="rounded-[20px] border border-white/8 bg-[#111827] p-4">
-                <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Human equivalent</div>
-                <div className="mt-2 text-2xl font-semibold text-text-primary"><AnimatedNumber value={roiSummary.humanEquivalent} prefix="$" decimals={2} /></div>
-              </div>
-              <div className="rounded-[20px] border border-white/8 bg-[#111827] p-4">
-                <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Agent spend</div>
-                <div className="mt-2 text-2xl font-semibold text-text-primary"><AnimatedNumber value={roiSummary.totalAgentSpend} prefix="$" decimals={2} /></div>
-              </div>
-              <div className="rounded-[20px] border border-white/8 bg-[#111827] p-4">
-                <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Savings</div>
-                <div className={`mt-2 text-2xl font-semibold ${roiSummary.savings >= 0 ? 'text-aurora-teal' : 'text-aurora-rose'}`}>
-                  <AnimatedNumber value={Math.abs(roiSummary.savings)} prefix={roiSummary.savings >= 0 ? '$' : '-$'} decimals={2} />
-                </div>
-              </div>
-              <div className="rounded-[20px] border border-white/8 bg-[#111827] p-4">
-                <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">ROI multiple</div>
-                <div className="mt-2 text-2xl font-semibold text-text-primary"><AnimatedNumber value={roiSummary.roiMultiple} decimals={1} suffix="x" /></div>
-              </div>
-            </div>
-            <div className="mt-4 rounded-2xl border border-aurora-teal/15 bg-aurora-teal/[0.05] px-3 py-2 text-[11px] text-text-body">
-              Commander has an estimated <span className="font-semibold text-aurora-teal">{roiSummary.estimatedHoursSaved.toFixed(1)} hours</span> of leveraged throughput across <span className="font-semibold text-aurora-teal">{roiSummary.closedTasks}</span> closed missions.
-            </div>
-          </HudFrame>
-        </Motion.section>
-
         <Motion.section variants={item}>
-          <HudFrame
-            eyebrow="Model Benchmark Board"
-            title="Observed winners by real mission outcomes"
-            detail="This ranks lanes by quality, success, speed, and cost so doctrine can move from opinion to evidence."
-            accent="amber"
-          >
-            <div className="grid gap-3 md:grid-cols-5">
-              {benchmarkBoard.length === 0 && <div className="text-[12px] text-text-muted">No benchmark data yet. Commander needs more routed mission history.</div>}
-              {benchmarkBoard.map((entry) => (
-                <div key={entry.key} className="rounded-[18px] border border-white/8 bg-[#111827] p-3">
-                  <div className="text-[12px] font-semibold text-text-primary">{entry.model}</div>
-                  <div className="mt-1 text-[10px] uppercase tracking-[0.16em] text-text-muted">{entry.provider}</div>
-                  <div className="mt-3 text-xl font-semibold text-text-primary">{entry.benchmarkScore}</div>
-                  <div className="mt-2 space-y-1 text-[10px] text-text-muted">
-                    <div>quality {entry.avgQuality}</div>
-                    <div>success {entry.successRate}%</div>
-                    <div>avg cost ${entry.avgCost.toFixed(2)}</div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </HudFrame>
-        </Motion.section>
-
-        <Motion.section variants={item} className="grid grid-cols-1 gap-5 xl:grid-cols-2">
           <HudFrame
             eyebrow="Automate Next"
             title="What Commander should automate next"
@@ -680,49 +616,28 @@ export function ReportsView() {
                     <div>{entry.estimatedHours.toFixed(1)}h</div>
                     <div>{entry.roi.toFixed(1)}x ROI</div>
                   </div>
+                  <div className="mt-3 flex justify-end">
+                    <button
+                      type="button"
+                      onClick={() => handleLaunchRecurring(entry)}
+                      className="rounded-xl border border-aurora-blue/20 bg-aurora-blue/10 px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-aurora-blue transition-colors hover:bg-aurora-blue/14"
+                    >
+                      Launch recurring flow
+                    </button>
+                  </div>
                 </div>
               ))}
+              {automationMessage && (
+                <div className="rounded-[14px] border border-white/8 bg-black/20 px-3 py-2 text-[11px] text-text-body">
+                  {automationMessage}
+                </div>
+              )}
             </div>
           </HudFrame>
 
-          <HudFrame
-            eyebrow="Persisted Feedback"
-            title="Outcome memory and doctrine pressure"
-            detail="These entries are persisted in the runtime log so the system can learn from real outcomes instead of re-deriving everything each render."
-            accent="violet"
-          >
-            <div className="grid gap-3">
-              <div className="rounded-[18px] border border-white/8 bg-[#111827] p-3">
-                <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Latest outcome scores</div>
-                <div className="mt-3 space-y-2">
-                  {persistedOutcomeScores.length === 0 && <div className="text-[11px] text-text-muted">No persisted outcome-score logs yet.</div>}
-                  {persistedOutcomeScores.map((entry) => (
-                    <div key={entry.id} className="rounded-[14px] border border-white/8 bg-black/20 px-3 py-2.5">
-                      <div className="flex items-center justify-between gap-3">
-                        <div className="text-[10px] font-mono uppercase text-aurora-teal">{entry.trust} trust</div>
-                        <div className="text-[10px] font-mono text-text-disabled">{entry.score ?? '—'}</div>
-                      </div>
-                      <div className="mt-1 text-[11px] text-text-body">{entry.cleanMessage}</div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-              <div className="rounded-[18px] border border-white/8 bg-[#111827] p-3">
-                <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Latest doctrine feedback</div>
-                <div className="mt-3 space-y-2">
-                  {persistedDoctrineFeedback.length === 0 && <div className="text-[11px] text-text-muted">No persisted doctrine feedback yet.</div>}
-                  {persistedDoctrineFeedback.map((entry) => (
-                    <div key={entry.id} className="rounded-[14px] border border-white/8 bg-black/20 px-3 py-2.5 text-[11px] text-text-body">
-                      {entry.cleanMessage}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </HudFrame>
         </Motion.section>
 
-        <Motion.section variants={item} className="grid grid-cols-1 gap-5 xl:grid-cols-[1.65fr_0.35fr]">
+        <Motion.section variants={item}>
           <div className="rounded-[24px] border border-white/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.015))] p-4">
             <CommandSectionHeader
               eyebrow="Pressure Map"
@@ -928,29 +843,160 @@ export function ReportsView() {
               </div>
             </div>
           </div>
-          <div className="space-y-3">
-            <div className="rounded-[24px] border border-white/8 bg-[#111827]/90 p-4">
-              <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Read first</div>
-              <div className="mt-2 text-[15px] font-semibold text-text-primary">{readFirstItems[0]?.title}</div>
-              <p className="mt-2 text-[11px] leading-5 text-text-muted">{readFirstItems[0]?.detail}</p>
-            </div>
-            <div className="rounded-[24px] border border-white/8 bg-[#111827]/90 p-4">
-              <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Next action</div>
-              <div className="mt-2 text-[15px] font-semibold text-text-primary">{readFirstItems[1]?.title}</div>
-              <p className="mt-2 text-[11px] leading-5 text-text-muted">{readFirstItems[1]?.detail}</p>
-            </div>
-          </div>
         </Motion.section>
 
-        <Motion.section variants={item} className="grid grid-cols-1 gap-5 xl:grid-cols-[1.05fr_0.95fr]">
+        <Motion.section variants={item}>
           <TopOperatorTable agents={summary.topAgents} />
+        </Motion.section>
+
+        <Motion.section variants={item}>
           <CollapsedPanel
             eyebrow="Details"
-            title="Audit and doctrine"
-            summary="Open only when you want validation and deeper reasoning."
+            title="Audit, doctrine, and deeper analysis"
+            summary="Open only when you want validation, economics, quality scoring, and doctrine moves."
           >
-            <div className="space-y-4">
-              <ExecutiveSignalRail learningMemory={learningMemory} summary={summary} burnByModel={burnByModel} />
+            <div className="space-y-5">
+              <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
+                <HudFrame
+                  eyebrow="Outcome Quality"
+                  title="Was the work actually good?"
+                  detail="Completion is not enough. This board scores trust, context discipline, autonomy, and cost posture."
+                  accent="violet"
+                >
+                  <div className="grid gap-3 md:grid-cols-3">
+                    <div className="rounded-[20px] border border-white/8 bg-[#111827] p-4">
+                      <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Average quality</div>
+                      <div className="mt-2 text-2xl font-semibold text-text-primary"><AnimatedNumber value={qualitySummary.average} /></div>
+                    </div>
+                    <div className="rounded-[20px] border border-white/8 bg-[#111827] p-4">
+                      <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Autonomous wins</div>
+                      <div className="mt-2 text-2xl font-semibold text-text-primary"><AnimatedNumber value={roiSummary.autonomousRuns} /></div>
+                    </div>
+                    <div className="rounded-[20px] border border-white/8 bg-[#111827] p-4">
+                      <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Scored missions</div>
+                      <div className="mt-2 text-2xl font-semibold text-text-primary"><AnimatedNumber value={tasks.length} /></div>
+                    </div>
+                  </div>
+                  <div className="mt-4 space-y-2">
+                    {qualitySummary.top.length === 0 && <div className="text-[12px] text-text-muted">No mission outcomes are scored yet.</div>}
+                    {qualitySummary.top.map(({ task, outcome }) => (
+                      <div key={task.id} className="rounded-[18px] border border-white/8 bg-black/20 px-3 py-3">
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="text-[12px] font-semibold text-text-primary">{task.name || task.title || 'Mission'}</div>
+                          <div className="rounded-full border border-aurora-violet/20 bg-aurora-violet/10 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-aurora-violet">
+                            {outcome.score} {outcome.label}
+                          </div>
+                        </div>
+                        <div className="mt-1 text-[11px] text-text-muted">{task.domain} / {task.intentType} / {task.workflowStatus || task.status}</div>
+                      </div>
+                    ))}
+                  </div>
+                </HudFrame>
+
+                <HudFrame
+                  eyebrow="Automation ROI"
+                  title="Where Commander is creating leverage"
+                  detail="This ties mission throughput to time saved and spend."
+                  accent="teal"
+                >
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <div className="rounded-[20px] border border-white/8 bg-[#111827] p-4">
+                      <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Human equivalent</div>
+                      <div className="mt-2 text-2xl font-semibold text-text-primary"><AnimatedNumber value={roiSummary.humanEquivalent} prefix="$" decimals={2} /></div>
+                    </div>
+                    <div className="rounded-[20px] border border-white/8 bg-[#111827] p-4">
+                      <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Agent spend</div>
+                      <div className="mt-2 text-2xl font-semibold text-text-primary"><AnimatedNumber value={roiSummary.totalAgentSpend} prefix="$" decimals={2} /></div>
+                    </div>
+                    <div className="rounded-[20px] border border-white/8 bg-[#111827] p-4">
+                      <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Savings</div>
+                      <div className={`mt-2 text-2xl font-semibold ${roiSummary.savings >= 0 ? 'text-aurora-teal' : 'text-aurora-rose'}`}>
+                        <AnimatedNumber value={Math.abs(roiSummary.savings)} prefix={roiSummary.savings >= 0 ? '$' : '-$'} decimals={2} />
+                      </div>
+                    </div>
+                    <div className="rounded-[20px] border border-white/8 bg-[#111827] p-4">
+                      <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">ROI multiple</div>
+                      <div className="mt-2 text-2xl font-semibold text-text-primary"><AnimatedNumber value={roiSummary.roiMultiple} decimals={1} suffix="x" /></div>
+                    </div>
+                  </div>
+                </HudFrame>
+              </div>
+
+              <HudFrame
+                eyebrow="Model Benchmark Board"
+                title="Observed winners by real mission outcomes"
+                detail="Ranks lanes by quality, success, speed, and cost."
+                accent="amber"
+              >
+                <div className="grid gap-3 md:grid-cols-5">
+                  {benchmarkBoard.length === 0 && <div className="text-[12px] text-text-muted">No benchmark data yet. Commander needs more routed mission history.</div>}
+                  {benchmarkBoard.map((entry) => (
+                    <div key={entry.key} className="rounded-[18px] border border-white/8 bg-[#111827] p-3">
+                      <div className="text-[12px] font-semibold text-text-primary">{entry.model}</div>
+                      <div className="mt-1 text-[10px] uppercase tracking-[0.16em] text-text-muted">{entry.provider}</div>
+                      <div className="mt-3 text-xl font-semibold text-text-primary">{entry.benchmarkScore}</div>
+                      <div className="mt-2 space-y-1 text-[10px] text-text-muted">
+                        <div>quality {entry.avgQuality}</div>
+                        <div>success {entry.successRate}%</div>
+                        <div>avg cost ${entry.avgCost.toFixed(2)}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </HudFrame>
+
+              <HudFrame
+                eyebrow="Persisted Feedback"
+                title="Outcome memory and doctrine pressure"
+                detail="These entries are persisted in the runtime log so the system can learn from real outcomes."
+                accent="violet"
+              >
+                <div className="grid gap-3">
+                  <div className="rounded-[18px] border border-white/8 bg-[#111827] p-3">
+                    <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Latest outcome scores</div>
+                    <div className="mt-3 space-y-2">
+                      {persistedOutcomeScores.length === 0 && <div className="text-[11px] text-text-muted">No persisted outcome-score logs yet.</div>}
+                      {persistedOutcomeScores.map((entry) => (
+                        <div key={entry.id} className="rounded-[14px] border border-white/8 bg-black/20 px-3 py-2.5">
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="text-[10px] font-mono uppercase text-aurora-teal">{entry.trust} trust</div>
+                            <div className="text-[10px] font-mono text-text-disabled">{entry.score ?? '—'}</div>
+                          </div>
+                          <div className="mt-1 text-[11px] text-text-body">{entry.cleanMessage}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="rounded-[18px] border border-white/8 bg-[#111827] p-3">
+                    <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Latest doctrine feedback</div>
+                    <div className="mt-3 space-y-2">
+                      {persistedDoctrineFeedback.length === 0 && <div className="text-[11px] text-text-muted">No persisted doctrine feedback yet.</div>}
+                      {persistedDoctrineFeedback.map((entry) => (
+                        <div key={entry.id} className="rounded-[14px] border border-white/8 bg-black/20 px-3 py-2.5 text-[11px] text-text-body">
+                          {entry.cleanMessage}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </HudFrame>
+
+              <div className="grid grid-cols-1 gap-5 xl:grid-cols-[0.6fr_1.4fr]">
+                <div className="space-y-3">
+                  <div className="rounded-[24px] border border-white/8 bg-[#111827]/90 p-4">
+                    <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Read first</div>
+                    <div className="mt-2 text-[15px] font-semibold text-text-primary">{readFirstItems[0]?.title}</div>
+                    <p className="mt-2 text-[11px] leading-5 text-text-muted">{readFirstItems[0]?.detail}</p>
+                  </div>
+                  <div className="rounded-[24px] border border-white/8 bg-[#111827]/90 p-4">
+                    <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Next action</div>
+                    <div className="mt-2 text-[15px] font-semibold text-text-primary">{readFirstItems[1]?.title}</div>
+                    <p className="mt-2 text-[11px] leading-5 text-text-muted">{readFirstItems[1]?.detail}</p>
+                  </div>
+                </div>
+                <ExecutiveSignalRail learningMemory={learningMemory} summary={summary} burnByModel={burnByModel} />
+              </div>
+
               <TruthAuditStrip truth={truth} />
             </div>
           </CollapsedPanel>

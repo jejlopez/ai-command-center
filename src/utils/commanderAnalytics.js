@@ -123,6 +123,25 @@ export function parseOutcomeScoreLogs(logs = []) {
     .sort((left, right) => new Date(right.timestamp || 0).getTime() - new Date(left.timestamp || 0).getTime());
 }
 
+export function getOutcomeMemorySummary(outcomes = []) {
+  const averageScore = outcomes.length
+    ? Math.round(outcomes.reduce((sum, outcome) => sum + Number(outcome.score || 0), 0) / outcomes.length)
+    : 0;
+  const byTrust = outcomes.reduce((acc, outcome) => {
+    const trust = outcome.trust || 'unknown';
+    acc[trust] = (acc[trust] || 0) + 1;
+    return acc;
+  }, {});
+
+  return {
+    averageScore,
+    total: outcomes.length,
+    highTrust: byTrust.high || 0,
+    mediumTrust: byTrust.medium || 0,
+    lowTrust: byTrust.low || 0,
+  };
+}
+
 export function parseDoctrineFeedbackLogs(logs = []) {
   return logs
     .filter((entry) => String(entry.message || '').includes('[doctrine-feedback]'))

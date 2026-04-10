@@ -481,6 +481,7 @@ async function buildMissionSubtasks({
   estimatedCostCents,
   routingPolicyId,
   routingDecision,
+  observedWinningLane,
   runAt,
   scheduleType,
 }) {
@@ -513,6 +514,7 @@ async function buildMissionSubtasks({
       selectedAgent: payload.selectedAgent || null,
       commander: payload.commander || null,
       routingDecision,
+      observedWinningLane,
     });
 
     rows.push({
@@ -577,18 +579,17 @@ async function resolveBranchAssignment({
   routingPolicy,
   selectedAgent,
   commander,
-  routingDecision,
+  observedWinningLane,
 }) {
   const liveAgents = agents.filter((agent) => !agent.isSyntheticCommander);
   const branchRole = branch.agentRole || routingPolicy?.preferredAgentRole || selectedAgent?.role || 'executor';
   const fallbackOrder = Array.isArray(routingPolicy?.fallbackOrder) ? routingPolicy.fallbackOrder : [];
   const roleFallback = fallbackOrder.find((entry) => entry.role === branchRole) || null;
-  const modelOverride = branch.modelOverride || roleFallback?.model || routingPolicy?.preferredModel || null;
-  const providerOverride = branch.providerOverride || roleFallback?.provider || routingPolicy?.preferredProvider || null;
+  const modelOverride = branch.modelOverride || roleFallback?.model || observedWinningLane?.model || routingPolicy?.preferredModel || null;
+  const providerOverride = branch.providerOverride || roleFallback?.provider || observedWinningLane?.provider || routingPolicy?.preferredProvider || null;
   const recommendedSkillNames = Array.isArray(branch.recommendedSkillNames)
     ? branch.recommendedSkillNames
     : [];
-  const localPreferred = routingDecision.riskLevel === 'low' && routingDecision.budgetClass !== 'premium';
 
   const exactRoleMatches = liveAgents
     .filter((agent) => agent.role === branchRole)
@@ -603,11 +604,6 @@ async function resolveBranchAssignment({
         const rightProviderMatch = Number(rightProvider === providerOverride);
         const leftProviderMatch = Number(leftProvider === providerOverride);
         if (rightProviderMatch !== leftProviderMatch) return rightProviderMatch - leftProviderMatch;
-      }
-      if (localPreferred) {
-        const rightLocal = Number(rightProvider === 'Ollama');
-        const leftLocal = Number(leftProvider === 'Ollama');
-        if (rightLocal !== leftLocal) return rightLocal - leftLocal;
       }
       const leftSkillScore = (left.skills || []).filter((skill) => recommendedSkillNames.includes(skill)).length;
       const rightSkillScore = (right.skills || []).filter((skill) => recommendedSkillNames.includes(skill)).length;
@@ -805,6 +801,53 @@ async function selectRoutingPolicyRow(user, routingDecision) {
   );
 }
 
+async function selectOutcomeWinningLane(user, routingDecision) {
+  if (!user?.id) return null;
+
+  const { data, error } = await supabase
+    .from('task_outcomes')
+    .select('provider,model,score,cost_usd')
+    .eq('user_id', user.id)
+    .eq('domain', routingDecision.domain)
+    .eq('intent_type', routingDecision.intentType)
+    .eq('outcome_status', 'completed')
+    .order('created_at', { ascending: false })
+    .limit(24);
+
+  if (error) {
+    console.error('[api] selectOutcomeWinningLane:', error.message);
+    return null;
+  }
+
+  const grouped = new Map();
+  (data || []).forEach((row) => {
+    const key = `${row.provider || 'Adaptive'}::${row.model || 'Adaptive lane'}`;
+    const current = grouped.get(key) || {
+      provider: row.provider || 'Adaptive',
+      model: row.model || 'Adaptive lane',
+      runs: 0,
+      totalScore: 0,
+      totalCost: 0,
+    };
+    current.runs += 1;
+    current.totalScore += Number(row.score || 0);
+    current.totalCost += Number(row.cost_usd || 0);
+    grouped.set(key, current);
+  });
+
+  return Array.from(grouped.values())
+    .map((entry) => ({
+      ...entry,
+      avgScore: entry.runs ? entry.totalScore / entry.runs : 0,
+      avgCost: entry.runs ? entry.totalCost / entry.runs : 0,
+      rank: (entry.runs ? entry.totalScore / entry.runs : 0) - ((entry.runs ? entry.totalCost / entry.runs : 0) * 8),
+    }))
+    .sort((left, right) => {
+      if (right.rank !== left.rank) return right.rank - left.rank;
+      return right.runs - left.runs;
+    })[0] || null;
+}
+
 export async function createMission(payload, agents = []) {
   if (!isSupabaseConfigured) {
     return {
@@ -867,6 +910,7 @@ export async function createMission(payload, agents = []) {
     return null;
   });
   const routingDecision = deriveRoutingDecision(payload, selectedAgent, routingPolicy);
+  const observedWinningLane = await selectOutcomeWinningLane(user, routingDecision);
   const hasDelegatedSteps = plannedBranches.length > 1;
   const executionPosture = getMissionExecutionPosture(payload);
   const workflowStatus = hasDelegatedSteps
@@ -948,6 +992,7 @@ export async function createMission(payload, agents = []) {
     estimatedCostCents: estimated.estimatedCostCents,
     routingPolicyId: routingPolicy?.id || null,
     routingDecision,
+    observedWinningLane,
     runAt,
     scheduleType,
   });
