@@ -846,6 +846,7 @@ async function resolveBranchAssignment({
   user,
   agents,
   routingPolicy,
+  routingDecision,
   selectedAgent,
   commander,
   observedWinningLane,
@@ -918,9 +919,15 @@ async function resolveBranchAssignment({
       agents: liveAgents,
       tasks: persistentLaneSignals?.tasks || [],
     });
+    const domainScopedGap = (promotionGuidance.domainTargets || []).find((entry) => (
+      entry.role === branchRole
+      && entry.domain === routingDecision.domain
+      && entry.intentType === routingDecision.intentType
+    ));
     const durableGap = Boolean(
-      Array.isArray(promotionGuidance.autoCreateRoles)
-      && promotionGuidance.autoCreateRoles.includes(branchRole)
+      (Array.isArray(promotionGuidance.autoCreateRoles)
+        && promotionGuidance.autoCreateRoles.includes(branchRole))
+      || domainScopedGap
     );
 
     assignedAgent = await (durableGap ? createPersistentBranchSpecialist : ensureBranchSpecialistAgent)({
