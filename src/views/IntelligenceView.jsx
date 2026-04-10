@@ -29,7 +29,7 @@ import {
   YAxis,
 } from 'recharts';
 import { container, item } from '../utils/variants';
-import { useActivityLog, useAgents, useKnowledgeNamespaces, useModelBank, useRoutingPolicies, useSharedDirectives, useSystemRecommendations, useTasks } from '../utils/useSupabase';
+import { cleanupTempAgents, createTempAgent, useActivityLog, useAgents, useKnowledgeNamespaces, useModelBank, useRoutingPolicies, useSharedDirectives, useSystemRecommendations, useTasks } from '../utils/useSupabase';
 import { CommandDeckHero } from '../components/command/CommandDeckHero';
 import { AnimatedNumber } from '../components/command/AnimatedNumber';
 import { CommandSectionHeader } from '../components/command/CommandSectionHeader';
@@ -187,11 +187,11 @@ function StrategicReadFirst({ items }) {
           initial={{ opacity: 0, y: 18 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.4, ease: 'easeOut' }}
-          className="rounded-[24px] border border-white/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.04),rgba(255,255,255,0.015))] p-4"
+          className="rounded-[22px] border border-white/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.04),rgba(255,255,255,0.015))] p-3.5"
         >
           <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">{entry.eyebrow}</div>
-          <div className="mt-2 text-base font-semibold text-text-primary">{entry.title}</div>
-          <p className="mt-2 text-[12px] leading-relaxed text-text-body">{entry.detail}</p>
+          <div className="mt-1.5 text-[15px] font-semibold text-text-primary">{entry.title}</div>
+          <p className="mt-1.5 text-[11px] leading-5 text-text-body">{entry.detail}</p>
         </Motion.div>
       ))}
     </Motion.section>
@@ -278,8 +278,8 @@ function StrategyRail({ derivedRecommendations, learningMemory, humanHourlyRate,
 
   return (
     <div className="space-y-5">
-      <div className="rounded-[28px] border border-white/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.015))] p-2">
-        <div className="flex flex-wrap gap-2 rounded-[24px] bg-black/20 p-2">
+      <div className="rounded-[24px] border border-white/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.015))] p-1.5">
+        <div className="flex flex-wrap gap-2 rounded-[20px] bg-black/20 p-1.5">
           {[
             { id: 'economics', label: 'Economics' },
             { id: 'doctrine', label: 'Doctrine' },
@@ -290,7 +290,7 @@ function StrategyRail({ derivedRecommendations, learningMemory, humanHourlyRate,
               type="button"
               onClick={() => setFocus(tab.id)}
               className={cn(
-                'flex-1 rounded-[18px] px-4 py-3 text-[12px] font-semibold transition-all',
+                'flex-1 rounded-[16px] px-3 py-2.5 text-[11px] font-semibold transition-all',
                 focus === tab.id ? 'border border-white/10 bg-white/[0.05] text-text-primary' : 'text-text-muted hover:text-text-primary'
               )}
             >
@@ -304,13 +304,13 @@ function StrategyRail({ derivedRecommendations, learningMemory, humanHourlyRate,
         <HudPanel
           eyebrow="Economics"
           title="Human vs agent"
-          description={`Warren would want the savings line. Elon would want the efficiency multiple. Baseline is $${humanHourlyRate}/hour.`}
+          description={`Baseline is $${humanHourlyRate}/hour.`}
           accent="amber"
         >
           <CommandSectionHeader
             eyebrow="Command Economics"
             title="What the stack is actually buying"
-            description="Keep the economics ruthless and visible."
+            description="Quick economics read."
             icon={TrendingUp}
             tone="amber"
           />
@@ -349,19 +349,19 @@ function StrategyRail({ derivedRecommendations, learningMemory, humanHourlyRate,
 
       {focus === 'doctrine' && (
         <>
-          <HudPanel
-            eyebrow="Shared Doctrine"
-            title="What the system is starting to believe"
-            description="Tony wants signal clarity. Elon wants the shortest path to the next better default."
-            accent="violet"
-          >
+        <HudPanel
+          eyebrow="Shared Doctrine"
+          title="What the system is starting to believe"
+          description="The strongest live signals."
+          accent="violet"
+        >
             <CommandSectionHeader
               eyebrow="Doctrine Stack"
               title="Three live beliefs"
-              description="No clutter, just the strongest shared signals."
-              icon={Sparkles}
-              tone="violet"
-            />
+            description="Three live beliefs."
+            icon={Sparkles}
+            tone="violet"
+          />
             <DoctrineCards items={learningMemory.doctrine.slice(0, 3)} columns="one" />
           </HudPanel>
           <DoctrineSignalRail learningMemory={learningMemory} />
@@ -372,13 +372,13 @@ function StrategyRail({ derivedRecommendations, learningMemory, humanHourlyRate,
         <HudPanel
           eyebrow="Optimization Orders"
           title="Where to tighten the stack"
-          description="The shortest ruthless list, not a dashboard sermon."
+          description="Three high-leverage moves."
           accent="blue"
         >
           <CommandSectionHeader
             eyebrow="Command Orders"
             title="Three system moves"
-            description="These are the upgrades most likely to increase throughput and lower drag."
+            description="Highest leverage next."
             icon={Gauge}
             tone="teal"
           />
@@ -389,6 +389,66 @@ function StrategyRail({ derivedRecommendations, learningMemory, humanHourlyRate,
           </div>
         </HudPanel>
       )}
+    </div>
+  );
+}
+
+function StrategicKpi({ label, detail, tone = 'teal', icon, valueNode }) {
+  const KpiIcon = icon;
+  const toneStyles = {
+    teal: 'text-aurora-teal border-aurora-teal/20 bg-aurora-teal/8',
+    amber: 'text-aurora-amber border-aurora-amber/20 bg-aurora-amber/8',
+    rose: 'text-aurora-rose border-aurora-rose/20 bg-aurora-rose/8',
+    blue: 'text-aurora-blue border-aurora-blue/20 bg-aurora-blue/8',
+  };
+
+  return (
+    <div className="rounded-[22px] border border-white/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.015))] p-3.5">
+      <div className="flex items-center justify-between">
+        <span className="text-[10px] uppercase tracking-[0.22em] text-text-muted">{label}</span>
+        <div className={`rounded-xl border px-2.5 py-2 ${toneStyles[tone]}`}>
+          <KpiIcon className="h-4 w-4" />
+        </div>
+      </div>
+      <div className="mt-3 text-[30px] font-semibold tracking-tight text-text-primary">{valueNode}</div>
+      <p className="mt-1.5 text-[11px] leading-5 text-text-muted">{detail}</p>
+    </div>
+  );
+}
+
+function SystemsOperatorTable({ models }) {
+  return (
+    <div className="rounded-[24px] border border-white/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.015))] p-4">
+      <CommandSectionHeader
+        eyebrow="Model Roles"
+        title="Which branch wins which role"
+        description="Simple ranked answers instead of more floating cards."
+        icon={Cpu}
+        tone="blue"
+      />
+      <div className="mt-4 overflow-hidden rounded-[20px] border border-white/8 bg-black/20">
+        <div className="grid grid-cols-[1.4fr_0.9fr_0.9fr] border-b border-white/8 px-4 py-2.5 text-[10px] uppercase tracking-[0.16em] text-text-muted">
+          <div>Model</div>
+          <div>Reliability</div>
+          <div>Cost discipline</div>
+        </div>
+        {models.length === 0 ? (
+          <div className="px-4 py-6 text-sm text-text-muted">
+            No live model data yet.
+          </div>
+        ) : (
+          models.slice(0, 5).map((model, index) => (
+            <div
+              key={model.model}
+              className={`grid grid-cols-[1.4fr_0.9fr_0.9fr] px-4 py-2.5 text-[13px] ${index !== Math.min(models.length, 5) - 1 ? 'border-b border-white/8' : ''}`}
+            >
+              <div className="font-semibold text-text-primary">{model.model}</div>
+              <div className="text-text-body">{model.reliability}</div>
+              <div className="text-text-body">{model.costDiscipline}</div>
+            </div>
+          ))
+        )}
+      </div>
     </div>
   );
 }
@@ -644,7 +704,7 @@ function ModelRegistryTab({ availableModels, agents, tasks }) {
   );
 }
 
-function RoutingDoctrineTab({ routingPolicies, tasks, agents, upsertPolicy, ensureDefaultPolicy }) {
+function RoutingDoctrineTab({ routingPolicies, tasks, agents, logs, upsertPolicy, ensureDefaultPolicy }) {
   const [selectedPolicyId, setSelectedPolicyId] = useState('');
   const [draft, setDraft] = useState(null);
   const [saving, setSaving] = useState(false);
@@ -1244,7 +1304,154 @@ function RoutingDoctrineTab({ routingPolicies, tasks, agents, upsertPolicy, ensu
           </HudPanel>
         </div>
       </div>
+
+      <SpecialistFleetTab agents={agents} logs={logs} />
     </div>
+  );
+}
+
+function SpecialistFleetTab({ agents, logs }) {
+  const commander = agents.find((agent) => agent.role === 'commander' && !agent.isSyntheticCommander) || agents.find((agent) => agent.role === 'commander') || null;
+  const modelOptions = [...new Set(agents.map((agent) => agent.model).filter(Boolean))];
+  const persistentSpecialists = agents.filter((agent) => !agent.isEphemeral && !['commander', 'executor'].includes(agent.role || ''));
+  const spawnedSpecialists = agents.filter((agent) => agent.isEphemeral);
+  const lifecycleEvents = logs
+    .filter((entry) => {
+      const message = String(entry.message || '');
+      return message.includes('[specialist-spawned]') || message.includes('[specialist-retired]');
+    })
+    .slice(-6)
+    .reverse();
+  const [objective, setObjective] = useState('');
+  const [role, setRole] = useState('researcher');
+  const [model, setModel] = useState(modelOptions[0] || '');
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState('');
+
+  async function handleSpawn() {
+    if (!objective.trim() || !model) return;
+    setBusy(true);
+    setMessage('');
+    try {
+      const agent = await createTempAgent({ objective: objective.trim(), role, model, commanderId: commander?.id || null });
+      setObjective('');
+      setMessage(`Spawned ${agent.name}. Refresh the dock after the next live event to see it on the deck.`);
+    } catch (error) {
+      setMessage(error.message || 'Could not spawn specialist.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleCleanup() {
+    setBusy(true);
+    setMessage('');
+    try {
+      const removed = await cleanupTempAgents();
+      setMessage(removed > 0 ? `Retired ${removed} idle specialist lane${removed === 1 ? '' : 's'}.` : 'No idle spawned specialists were eligible for cleanup.');
+    } catch (error) {
+      setMessage(error.message || 'Could not clean up specialists.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <HudPanel
+      eyebrow="Specialist Fleet"
+      title="Persistent and spawned lanes"
+      description="Keep the specialist rack visible, spawn utility lanes on demand, and retire idle ephemeral lanes without leaving Intelligence."
+      accent="violet"
+    >
+      <div className="grid gap-3 md:grid-cols-3">
+        {[
+          { label: 'Persistent', value: persistentSpecialists.length, tone: 'text-aurora-blue' },
+          { label: 'Spawned', value: spawnedSpecialists.length, tone: 'text-aurora-violet' },
+          { label: 'Lifecycle events', value: lifecycleEvents.length, tone: 'text-aurora-teal' },
+        ].map((metric) => (
+          <div key={metric.label} className="rounded-[20px] border border-white/8 bg-black/20 p-4">
+            <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">{metric.label}</div>
+            <div className={cn('mt-2 text-2xl font-semibold', metric.tone)}>{metric.value}</div>
+          </div>
+        ))}
+      </div>
+
+      <div className="mt-4 grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
+        <div className="rounded-[22px] border border-white/8 bg-black/20 p-4">
+          <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Spawn specialist</div>
+          <div className="mt-3 space-y-3">
+            <input
+              value={objective}
+              onChange={(event) => setObjective(event.target.value)}
+              placeholder="Objective for the new specialist lane"
+              className="w-full rounded-xl border border-white/8 bg-black/20 px-3 py-2 text-[12px] text-text-primary outline-none placeholder:text-text-disabled"
+            />
+            <div className="grid gap-3 md:grid-cols-2">
+              <select value={role} onChange={(event) => setRole(event.target.value)} className="w-full rounded-xl border border-white/8 bg-black/20 px-3 py-2 text-[12px] text-text-primary outline-none">
+                {['planner', 'researcher', 'builder', 'verifier', 'executor'].map((entry) => (
+                  <option key={entry} value={entry}>{entry}</option>
+                ))}
+              </select>
+              <select value={model} onChange={(event) => setModel(event.target.value)} className="w-full rounded-xl border border-white/8 bg-black/20 px-3 py-2 text-[12px] text-text-primary outline-none">
+                {modelOptions.map((entry) => (
+                  <option key={entry} value={entry}>{entry}</option>
+                ))}
+              </select>
+            </div>
+            <div className="flex gap-2">
+              <button type="button" disabled={busy || !objective.trim() || !model} onClick={handleSpawn} className="rounded-xl border border-aurora-violet/20 bg-aurora-violet/10 px-3 py-2 text-[11px] font-semibold text-aurora-violet transition-colors hover:bg-aurora-violet/14 disabled:opacity-50">
+                {busy ? 'Working...' : 'Spawn specialist'}
+              </button>
+              <button type="button" disabled={busy} onClick={handleCleanup} className="rounded-xl border border-aurora-teal/20 bg-aurora-teal/10 px-3 py-2 text-[11px] font-semibold text-aurora-teal transition-colors hover:bg-aurora-teal/14 disabled:opacity-50">
+                Cleanup idle spawned
+              </button>
+            </div>
+            {message && (
+              <div className="rounded-xl border border-white/8 bg-white/[0.02] px-3 py-2 text-[11px] text-text-body">
+                {message}
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="grid gap-4">
+          <div className="rounded-[22px] border border-white/8 bg-black/20 p-4">
+            <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Persistent lanes</div>
+            <div className="mt-3 space-y-2">
+              {persistentSpecialists.length === 0 && <div className="text-[11px] text-text-muted">No persistent specialist lanes yet.</div>}
+              {persistentSpecialists.slice(0, 5).map((agent) => (
+                <div key={agent.id} className="rounded-[16px] border border-white/8 bg-white/[0.02] px-3 py-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <div className="text-[12px] font-semibold text-text-primary">{agent.name}</div>
+                      <div className="mt-1 text-[10px] font-mono uppercase text-aurora-blue">{agent.role}</div>
+                    </div>
+                    <div className="text-[10px] font-mono text-text-disabled">{agent.model || 'Adaptive lane'}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="rounded-[22px] border border-white/8 bg-black/20 p-4">
+            <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Lifecycle rail</div>
+            <div className="mt-3 space-y-2">
+              {lifecycleEvents.length === 0 && <div className="text-[11px] text-text-muted">No specialist lifecycle events yet.</div>}
+              {lifecycleEvents.map((entry) => (
+                <div key={entry.id} className="rounded-[16px] border border-white/8 bg-white/[0.02] px-3 py-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="text-[10px] font-mono uppercase text-text-muted">{entry.type}</div>
+                    <div className="text-[10px] font-mono text-text-disabled">{entry.timestamp ? new Date(entry.timestamp).toLocaleTimeString() : 'Live'}</div>
+                  </div>
+                  <div className="mt-2 text-[11px] leading-relaxed text-text-body">
+                    {String(entry.message || '').replace('[specialist-spawned] ', '').replace('[specialist-retired] ', '')}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    </HudPanel>
   );
 }
 
@@ -1634,29 +1841,28 @@ export function IntelligenceView() {
             title="Strategic Systems"
             description="Model power, doctrine drift, and execution efficiency in one clean command surface."
             chrome="epic"
-            titleClassName="text-[clamp(2.2rem,4vw,3.4rem)] leading-[1] tracking-[-0.04em]"
-            descriptionClassName="max-w-2xl text-[15px] leading-7 text-text-body"
+            titleClassName="text-[clamp(1.8rem,3vw,2.7rem)] leading-[1.04] tracking-[-0.04em]"
+            descriptionClassName="max-w-xl text-[13px] leading-5 text-text-body"
             badges={[
               { label: 'models online', value: availableModels.length, tone: 'teal' },
               { label: 'active agents', value: systemSummary.activeAgents, tone: 'blue' },
               { label: 'routed missions', value: systemSummary.routedMissions, tone: 'amber' },
-              { label: 'local branches', value: systemSummary.localModels, tone: 'violet' },
             ]}
             sideContent={
-              <div className="grid w-full grid-cols-2 gap-3 rounded-[24px] border border-white/10 bg-black/25 p-4 backdrop-blur-sm">
-                <div className="rounded-2xl border border-white/8 bg-white/[0.02] p-3">
+              <div className="grid w-full grid-cols-2 gap-2.5 rounded-[22px] border border-white/10 bg-black/25 p-3.5 backdrop-blur-sm">
+                <div className="rounded-2xl border border-white/8 bg-white/[0.02] p-2.5">
                   <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Recommendations</div>
                   <div className="mt-2 text-2xl font-semibold text-text-primary"><AnimatedNumber value={systemSummary.recommendationCount} /></div>
                 </div>
-                <div className="rounded-2xl border border-white/8 bg-white/[0.02] p-3">
+                <div className="rounded-2xl border border-white/8 bg-white/[0.02] p-2.5">
                   <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Error agents</div>
                   <div className="mt-2 text-2xl font-semibold text-text-primary"><AnimatedNumber value={systemSummary.errorAgents} /></div>
                 </div>
-                <div className="rounded-2xl border border-white/8 bg-white/[0.02] p-3">
+                <div className="rounded-2xl border border-white/8 bg-white/[0.02] p-2.5">
                   <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Routing policies</div>
                   <div className="mt-2 text-2xl font-semibold text-text-primary"><AnimatedNumber value={routingPolicies.length} /></div>
                 </div>
-                <div className="rounded-2xl border border-white/8 bg-white/[0.02] p-3">
+                <div className="rounded-2xl border border-white/8 bg-white/[0.02] p-2.5">
                   <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Live telemetry</div>
                   <div className="mt-2 text-2xl font-semibold text-text-primary"><AnimatedNumber value={systemSummary.liveTraffic} /></div>
                 </div>
@@ -1665,11 +1871,33 @@ export function IntelligenceView() {
           />
         </Motion.div>
 
-        <StrategicReadFirst items={readFirstItems.slice(0, 2)} />
-        <TruthAuditStrip truth={truth} />
+        <Motion.section variants={item} className="grid grid-cols-1 gap-3.5 xl:grid-cols-3">
+          <StrategicKpi
+            label="Models Online"
+            valueNode={<AnimatedNumber value={availableModels.length} />}
+            detail="Live model lanes currently available to Commander."
+            tone="teal"
+            icon={Cpu}
+          />
+          <StrategicKpi
+            label="Active Directives"
+            valueNode={<AnimatedNumber value={sharedDirectives.length} />}
+            detail="Shared rules shaping routing, memory, and execution behavior."
+            tone="amber"
+            icon={ShieldCheck}
+          />
+          <StrategicKpi
+            label="Connected Systems"
+            valueNode={<AnimatedNumber value={truth.connectedSystemsCount} />}
+            detail="External systems wired into the live dock and available to the stack."
+            tone="blue"
+            icon={Database}
+          />
+        </Motion.section>
 
-        <Motion.section variants={item} className="grid grid-cols-1 gap-5 xl:grid-cols-[1.55fr_0.45fr]">
+        <Motion.section variants={item} className="grid grid-cols-1 gap-5 xl:grid-cols-[1.42fr_0.58fr]">
           <div className="space-y-5">
+            <StrategicReadFirst items={readFirstItems.slice(0, 2)} />
             <div className="rounded-[28px] border border-white/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.015))] p-2">
               <div className="flex flex-wrap gap-2 rounded-[24px] bg-black/20 p-2">
                 {tabs.map((tab) => (
@@ -1691,7 +1919,7 @@ export function IntelligenceView() {
 
             <div className="rounded-[28px] border border-white/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.015))] p-5">
               {activeTab === 'models' && <ModelRegistryTab availableModels={availableModels} agents={agents} tasks={tasks} />}
-              {activeTab === 'routing' && <RoutingDoctrineTab routingPolicies={routingPolicies} tasks={tasks} agents={agents} upsertPolicy={upsertPolicy} ensureDefaultPolicy={ensureDefaultPolicy} />}
+              {activeTab === 'routing' && <RoutingDoctrineTab routingPolicies={routingPolicies} tasks={tasks} agents={agents} logs={logs} upsertPolicy={upsertPolicy} ensureDefaultPolicy={ensureDefaultPolicy} />}
               {activeTab === 'knowledge' && <KnowledgeMapTab namespaces={knowledgeNamespaces} />}
               {activeTab === 'directives' && <DirectivesTab directives={sharedDirectives} agents={agents} tasks={tasks} recommendations={persistedRecommendations} />}
             </div>
@@ -1703,6 +1931,11 @@ export function IntelligenceView() {
             humanHourlyRate={humanHourlyRate}
             economics={economics}
           />
+        </Motion.section>
+
+        <Motion.section variants={item} className="grid grid-cols-1 gap-5 xl:grid-cols-[1.05fr_0.95fr]">
+          <SystemsOperatorTable models={availableModels} />
+          <TruthAuditStrip truth={truth} />
         </Motion.section>
       </Motion.div>
     </div>

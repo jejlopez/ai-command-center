@@ -97,6 +97,23 @@ function getDependencySummary(task, tasks) {
   return { dependencies, unlocks };
 }
 
+function wouldCreateDependencyCycle(tasks, sourceId, targetId) {
+  if (!sourceId || !targetId || sourceId === targetId) return true;
+  const visited = new Set();
+  const stack = [sourceId];
+
+  while (stack.length) {
+    const currentId = stack.pop();
+    if (!currentId || visited.has(currentId)) continue;
+    if (currentId === targetId) return true;
+    visited.add(currentId);
+    const currentTask = tasks.find((task) => task.id === currentId);
+    (currentTask?.dependsOn || []).forEach((dependencyId) => stack.push(dependencyId));
+  }
+
+  return false;
+}
+
 const stColor = {
   queued:              { bg: 'bg-aurora-blue/10', tx: 'text-aurora-blue', lb: 'Queued' },
   running:             { bg: 'bg-aurora-amber/10', tx: 'text-aurora-amber', lb: 'Running' },
@@ -356,7 +373,23 @@ function MissionGraphPanel({ tasks, agents, logs, selectedId, onSelect, onRetry,
         </div>
       </div>
       <div className="mt-4 h-[320px] rounded-[22px] border border-white/8 bg-[radial-gradient(circle_at_top,rgba(45,212,191,0.06),transparent_40%),rgba(255,255,255,0.02)] p-3">
-        <TaskDAG tasks={dagTasks} onNodeClick={(task) => onSelect(task.id)} />
+        <TaskDAG
+          tasks={dagTasks}
+          onNodeClick={(task) => onSelect(task.id)}
+          editable
+          selectedNodeId={selectedTask?.id || null}
+          onDependencyConnect={(sourceId, targetId) => {
+            const targetTask = graphTaskSet.find((task) => task.id === targetId);
+            if (!targetTask) return;
+            if (wouldCreateDependencyCycle(graphTaskSet, sourceId, targetId)) {
+              setDependencyMessage('That dependency would create a cycle. Choose a branch that does not already trace back to this node.');
+              return;
+            }
+            const nextDependencies = [...new Set([...(targetTask.dependsOn || []), sourceId])];
+            onUpdateBranchDependencies?.(targetId, nextDependencies);
+            onSelect(targetId);
+          }}
+        />
       </div>
       {selectedTask && (
         <div className="mt-4 grid gap-3 xl:grid-cols-[0.9fr_1.1fr]">
@@ -534,6 +567,10 @@ function MissionGraphPanel({ tasks, agents, logs, selectedId, onSelect, onRetry,
                   disabled={dependencySaving}
                   onClick={async () => {
                     if (!selectedTask) return;
+                    if (dependencyDraft.some((dependencyId) => wouldCreateDependencyCycle(graphTaskSet, dependencyId, selectedTask.id))) {
+                      setDependencyMessage('One of the selected dependencies would create a cycle. Remove it and try again.');
+                      return;
+                    }
                     setDependencySaving(true);
                     setDependencyMessage('');
                     try {
@@ -749,6 +786,19 @@ function Drawer({ item, agents, tasks, logs, onClose, onApprove, onReject, onRet
   const isCompleted = ['completed', 'approved', 'done'].includes(item.status);
   const isRunning = item.status === 'running';
   const itemLogs = logs.filter(l => l.agentId === (item.agentId || item.agent_id));
+  const branchDiffLogs = logs.filter((log) => {
+    const message = String(log.message || '');
+    return (
+      message.includes(item.id)
+      || message.includes(item.rootMissionId || '')
+      || (item.agentId && log.agentId === item.agentId)
+    ) && (
+      message.includes('[branch-routing]')
+      || message.includes('[branch-dependency]')
+      || message.includes('[specialist-spawned]')
+      || message.includes('[specialist-retired]')
+    );
+  });
 
   async function act(name, fn) {
     setActionLoading(name); setActionError(null);
@@ -795,7 +845,7 @@ function Drawer({ item, agents, tasks, logs, onClose, onApprove, onReject, onRet
       {actionError && <div className="px-5 py-2 border-b border-aurora-rose/10 bg-aurora-rose/5 flex items-center gap-2"><AlertTriangle className="w-3.5 h-3.5 text-aurora-rose shrink-0" /><span className="text-[11px] text-aurora-rose flex-1">{actionError}</span><button onClick={() => setActionError(null)} className="text-[10px] text-aurora-rose font-bold">Dismiss</button></div>}
 
       <div className="flex border-b border-border px-5 shrink-0">
-        {['timeline', 'routing', 'history', 'output', 'notes'].map(t => (
+        {['timeline', 'diffs', 'routing', 'history', 'output', 'notes'].map(t => (
           <button key={t} onClick={() => setTab(t)} className={cn("px-4 py-3 text-sm font-medium border-b-2 transition-colors capitalize", tab === t ? "border-aurora-teal text-aurora-teal" : "border-transparent text-text-muted hover:text-text-primary")}>{t}</button>
         ))}
       </div>
@@ -815,6 +865,26 @@ function Drawer({ item, agents, tasks, logs, onClose, onApprove, onReject, onRet
             </div>);
           })}
         </div>)}
+        {tab === 'diffs' && (
+          <div className="space-y-3">
+            {branchDiffLogs.length === 0 && <p className="text-sm text-text-disabled text-center py-8">No branch deltas yet.</p>}
+            {branchDiffLogs.map((entry) => (
+              <div key={entry.id} className="rounded-xl border border-white/8 bg-black/20 px-3 py-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="text-[10px] font-mono uppercase text-text-muted">{entry.type}</div>
+                  <div className="text-[10px] font-mono text-text-disabled">{entry.timestamp ? new Date(entry.timestamp).toLocaleTimeString() : 'Live'}</div>
+                </div>
+                <div className="mt-2 text-[11px] leading-relaxed text-text-body">
+                  {String(entry.message || '')
+                    .replace('[branch-routing] ', '')
+                    .replace('[branch-dependency] ', '')
+                    .replace('[specialist-spawned] ', '')
+                    .replace('[specialist-retired] ', '')}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
         {tab === 'history' && (() => {
           const itemName = item.name || item.title || '';
           const history = tasks.filter(t => t.name === itemName && t.id !== item.id);

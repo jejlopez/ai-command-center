@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { motion as Motion } from 'framer-motion';
 // Active parents pass live task data as props.
 
@@ -316,14 +316,46 @@ function formatDuration(ms) {
   return `${(ms / 1000).toFixed(1)}s`;
 }
 
-export function TaskDAG({ onNodeClick, tasks }) {
+export function TaskDAG({ onNodeClick, onDependencyConnect, tasks, editable = false, selectedNodeId = null }) {
   const [hoveredId, setHoveredId] = useState(null);
+  const [connectSourceId, setConnectSourceId] = useState(null);
+  const [dragPoint, setDragPoint] = useState(null);
   const { nodes, edges, dependencyEdges } = useMemo(() => computeLayout(tasks || []), [tasks]);
+  const selectedNode = nodes.find((node) => node.id === selectedNodeId) || null;
+  const activeConnectSourceId = connectSourceId && (!selectedNodeId || connectSourceId === selectedNodeId)
+    ? connectSourceId
+    : null;
 
   return (
     <div className="w-full h-full flex justify-center items-center overflow-visible relative">
+      {editable && (
+        <div className="absolute left-3 top-3 z-10 rounded-full border border-aurora-blue/20 bg-black/40 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-aurora-blue">
+          {activeConnectSourceId ? 'Drag to another branch to create dependency' : 'Shift + drag from a branch to wire a dependency'}
+        </div>
+      )}
       <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 h-px bg-gradient-to-r from-transparent via-white/5 to-transparent pointer-events-none" />
-      <svg className="w-full h-full min-h-[300px]" viewBox="0 0 640 280" style={{ overflow: 'visible' }}>
+      <svg
+        className="w-full h-full min-h-[300px]"
+        viewBox="0 0 640 280"
+        style={{ overflow: 'visible' }}
+        onMouseMove={(event) => {
+          if (!activeConnectSourceId) return;
+          const svg = event.currentTarget;
+          const rect = svg.getBoundingClientRect();
+          const scaleX = 640 / rect.width;
+          const scaleY = 280 / rect.height;
+          setDragPoint({
+            x: (event.clientX - rect.left) * scaleX,
+            y: (event.clientY - rect.top) * scaleY,
+          });
+        }}
+        onMouseUp={() => {
+          if (activeConnectSourceId) {
+            setConnectSourceId(null);
+            setDragPoint(null);
+          }
+        }}
+      >
         <defs>
           <filter id="node-glow" x="-50%" y="-50%" width="200%" height="200%">
             <feGaussianBlur stdDeviation="6" result="blur" />
@@ -378,6 +410,22 @@ export function TaskDAG({ onNodeClick, tasks }) {
           );
         })}
 
+        {activeConnectSourceId && dragPoint && (() => {
+          const source = nodes.find((node) => node.id === activeConnectSourceId);
+          if (!source) return null;
+          const midX = (source.cx + dragPoint.x) / 2;
+          return (
+            <path
+              d={`M ${source.cx} ${source.cy} Q ${midX} ${Math.min(source.cy, dragPoint.y) - 20} ${dragPoint.x} ${dragPoint.y}`}
+              stroke="#60a5fa"
+              strokeWidth="2"
+              strokeDasharray="6 6"
+              fill="none"
+              opacity="0.8"
+            />
+          );
+        })()}
+
         {/* Nodes */}
         {nodes.map((node, i) => {
           const color = statusColors[node.status];
@@ -397,6 +445,19 @@ export function TaskDAG({ onNodeClick, tasks }) {
               onMouseEnter={() => setHoveredId(node.id)}
               onMouseLeave={() => setHoveredId(null)}
               onClick={() => onNodeClick?.(node)}
+              onMouseDown={(event) => {
+                if (!editable || !event.shiftKey) return;
+                event.stopPropagation();
+                setConnectSourceId(node.id);
+                setDragPoint({ x: node.cx, y: node.cy });
+              }}
+              onMouseUp={(event) => {
+                if (!editable || !activeConnectSourceId || activeConnectSourceId === node.id) return;
+                event.stopPropagation();
+                onDependencyConnect?.(activeConnectSourceId, node.id);
+                setConnectSourceId(null);
+                setDragPoint(null);
+              }}
               className="cursor-pointer"
               transition={{ delay: i * 0.12, type: 'spring', stiffness: 200, damping: 20 }}
               style={{ transformOrigin: `${node.cx}px ${node.cy}px` }}
@@ -449,6 +510,19 @@ export function TaskDAG({ onNodeClick, tasks }) {
                   cx={node.cx + node.r - 3} cy={node.cy - node.r + 3} r={3.5}
                   fill={color} stroke="#161616" strokeWidth="2"
                 />
+
+                {selectedNode?.id === node.id && (
+                  <circle
+                    cx={node.cx}
+                    cy={node.cy}
+                    r={node.r + 8}
+                    fill="none"
+                    stroke="#60a5fa"
+                    strokeWidth="1.8"
+                    strokeDasharray="5 5"
+                    opacity="0.8"
+                  />
+                )}
 
                 {/* Label pill */}
                 <rect

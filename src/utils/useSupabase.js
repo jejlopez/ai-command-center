@@ -1019,6 +1019,12 @@ export async function createTempAgent({ objective, role, model, commanderId }) {
   };
   const { data, error } = await supabase.from('agents').insert([row]).select().single();
   if (error) throw error;
+  await supabase.from('activity_log').insert([{
+    user_id: user.id,
+    agent_id: data.id,
+    type: 'SYS',
+    message: `[specialist-spawned] ${data.name} (${row.role}) created from Intelligence for "${objective}" on ${model}.`,
+  }]);
   return mapAgentFromDb(data);
 }
 
@@ -1028,6 +1034,25 @@ export async function createTempAgent({ objective, role, model, commanderId }) {
 export async function cleanupTempAgents() {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error('Not authenticated');
+
+  const { data: idleAgents, error: fetchError } = await supabase
+    .from('agents')
+    .select('id,name,role,model')
+    .eq('user_id', user.id)
+    .eq('is_ephemeral', true)
+    .in('status', ['idle', 'error']);
+
+  if (fetchError) throw fetchError;
+  if (!idleAgents?.length) return 0;
+
+  await supabase.from('activity_log').insert(
+    idleAgents.map((agent) => ({
+      user_id: user.id,
+      agent_id: agent.id,
+      type: 'SYS',
+      message: `[specialist-retired] ${agent.name} (${agent.role || 'specialist'}) retired from Intelligence cleanup on ${agent.model || 'adaptive lane'}.`,
+    }))
+  );
 
   const { data, error } = await supabase
     .from('agents')
