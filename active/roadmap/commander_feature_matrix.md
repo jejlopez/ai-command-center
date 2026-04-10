@@ -129,17 +129,17 @@ Legend:
 ## Current Read
 
 - `Shipped`: 15
-- `In Progress`: 43
+- `In Progress`: 46
 - `Next`: 0
 - `Queued`: 16
 - `Later / Future`: 48
 
 ## Immediate Next Four
 
-1. Wider doctrine-delta trust rails across operator surfaces
-2. Stronger durable-fleet shaping defaults from lifecycle pressure
-3. Deeper recurring automation trust tuning from runtime memory
-4. Mission-pattern winners pushed into provider and lane defaults
+1. Deeper recurring automation trust tuning from runtime memory
+2. Runtime confidence closure steering more lane and provider defaults
+3. Stronger durable-fleet shaping defaults across more mission types
+4. Wider trust and doctrine readback where operators intervene
 
 ## Epic Experience Layer Additions
 
@@ -173,12 +173,12 @@ These are not separate feature IDs yet. They should be implemented as depth adde
 
 ## Updated Immediate Next Order
 
-1. Keep widening doctrine-delta visibility as a cross-surface trust rail
-2. Convert promotion guidance into more automatic durable-fleet shaping
-3. Deepen recurring automation trust tuning from runtime memory
-4. Push mission-pattern winners harder into provider and lane defaults
-5. Tighten recurring autonomy posture when trust memory drifts
-6. Let runtime confidence closure steer more lane and provider defaults
+1. Deepen recurring automation trust tuning from runtime memory
+2. Let runtime confidence closure steer more lane and provider defaults
+3. Convert promotion guidance into more automatic durable-fleet shaping
+4. Tighten recurring autonomy posture when trust memory drifts
+5. Keep widening trust and doctrine readback where operators intervene
+6. Push mission-pattern winners into more mission-type defaults
 
 ## Autodrive Program Rule
 

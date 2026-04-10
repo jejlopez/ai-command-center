@@ -820,7 +820,13 @@ async function resolveBranchAssignment({
   persistentLaneSignals,
 }) {
   const liveAgents = agents.filter((agent) => !agent.isSyntheticCommander);
-  const branchRole = branch.agentRole || routingPolicy?.preferredAgentRole || selectedAgent?.role || 'executor';
+  const branchRole = branch.agentRole
+    || (observedWinningLane?.confidence === 'high' && observedWinningLane?.agentRole && !['commander', 'executor'].includes(observedWinningLane.agentRole)
+      ? observedWinningLane.agentRole
+      : null)
+    || routingPolicy?.preferredAgentRole
+    || selectedAgent?.role
+    || 'executor';
   const fallbackOrder = Array.isArray(routingPolicy?.fallbackOrder) ? routingPolicy.fallbackOrder : [];
   const roleFallback = fallbackOrder.find((entry) => entry.role === branchRole) || null;
   const modelOverride = branch.modelOverride || roleFallback?.model || observedWinningLane?.model || routingPolicy?.preferredModel || null;
@@ -865,13 +871,12 @@ async function resolveBranchAssignment({
       agents: liveAgents,
       tasks: persistentLaneSignals?.tasks || [],
     });
-    const durableGap = promotionGuidance.topGap
+    const durableGap = Boolean(
+      promotionGuidance.shouldAutoCreate
+      && promotionGuidance.topGap
       && promotionGuidance.topGap.role === branchRole
       && !promotionGuidance.topGap.covered
-      && (
-        promotionGuidance.topGap.count >= 3
-        || ['thin', 'churn-heavy'].includes(promotionGuidance.posture)
-      );
+    );
 
     assignedAgent = await (durableGap ? createPersistentBranchSpecialist : ensureBranchSpecialistAgent)({
       user,
@@ -1132,7 +1137,7 @@ async function selectOutcomeWinningLane(user, routingDecision) {
 
   const { data, error } = await supabase
     .from('task_outcomes')
-    .select('provider,model,score,cost_usd')
+    .select('provider,model,score,cost_usd,agent_role,execution_strategy,approval_level')
     .eq('user_id', user.id)
     .eq('domain', routingDecision.domain)
     .eq('intent_type', routingDecision.intentType)
@@ -1151,6 +1156,9 @@ async function selectOutcomeWinningLane(user, routingDecision) {
     const current = grouped.get(key) || {
       provider: row.provider || 'Adaptive',
       model: row.model || 'Adaptive lane',
+      agentRole: row.agent_role || 'executor',
+      executionStrategy: row.execution_strategy || 'sequential',
+      approvalLevel: row.approval_level || 'risk_weighted',
       runs: 0,
       totalScore: 0,
       totalCost: 0,
@@ -1166,7 +1174,10 @@ async function selectOutcomeWinningLane(user, routingDecision) {
       ...entry,
       avgScore: entry.runs ? entry.totalScore / entry.runs : 0,
       avgCost: entry.runs ? entry.totalCost / entry.runs : 0,
-      rank: (entry.runs ? entry.totalScore / entry.runs : 0) - ((entry.runs ? entry.totalCost / entry.runs : 0) * 8),
+      confidence: entry.runs >= 8 ? 'high' : entry.runs >= 4 ? 'medium' : 'low',
+      rank: (entry.runs ? entry.totalScore / entry.runs : 0)
+        + Math.min(18, entry.runs * 2.5)
+        - ((entry.runs ? entry.totalCost / entry.runs : 0) * 7),
     }))
     .sort((left, right) => {
       if (right.rank !== left.rank) return right.rank - left.rank;

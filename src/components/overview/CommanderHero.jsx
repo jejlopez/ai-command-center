@@ -30,6 +30,7 @@ export function CommanderHero({
   operatorCount,
   summary,
   readiness,
+  deltaItems = [],
   onOpenDetail,
   onNavigate,
 }) {
@@ -140,6 +141,30 @@ export function CommanderHero({
                 {commander.model || 'Unassigned model'}
               </div>
             </div>
+            {deltaItems.length > 0 && (
+              <div className="mt-3 rounded-2xl border border-white/8 bg-black/20 p-3">
+                <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Trust movement</div>
+                <div className="mt-3 space-y-2">
+                  {deltaItems.map((entry) => (
+                    <div key={entry.id} className="flex items-center justify-between gap-3 rounded-2xl border border-white/8 bg-white/[0.03] px-3 py-2.5">
+                      <div className="min-w-0">
+                        <div className="text-[11px] font-semibold text-text-primary">{entry.owner}</div>
+                        <div className="mt-1 truncate text-[10px] text-text-muted">{entry.changeSummary}</div>
+                      </div>
+                      <span className={`rounded-full border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] ${
+                        entry.trend === 'up'
+                          ? 'border-aurora-teal/20 bg-aurora-teal/10 text-aurora-teal'
+                          : entry.trend === 'down'
+                            ? 'border-aurora-rose/20 bg-aurora-rose/10 text-aurora-rose'
+                            : 'border-white/10 bg-white/[0.03] text-text-muted'
+                      }`}>
+                        {entry.delta > 0 ? '+' : ''}{entry.delta} pts
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
           {summary.flaggedAgentCount > 0 && (

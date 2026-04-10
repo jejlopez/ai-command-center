@@ -43,7 +43,7 @@ import { TacticalInterventionConsole } from '../components/command/TacticalInter
 import { buildTimelineEntries } from '../utils/buildCommandTimeline';
 import { TaskDAG } from '../components/TaskDAG';
 import { getWorkflowMeta } from '../utils/missionLifecycle';
-import { getDoctrineDeltaSummary, getFleetPostureSummary, getOutcomeMemorySummary, getPostLaunchConfidenceSummary, parseDoctrineFeedbackLogs } from '../utils/commanderAnalytics';
+import { getDoctrineDeltaSummary, getFleetPostureSummary, getMissionPatternDefaultSummary, getOutcomeMemorySummary, getPostLaunchConfidenceSummary, parseDoctrineFeedbackLogs } from '../utils/commanderAnalytics';
 
 // ═══════════════════════════════════════════════════════════════
 // UI ATOMS
@@ -1290,6 +1290,8 @@ function IntelSidebar({ tasks, approvals, completed, agents, schedules, logs, le
   const runningCount = tasks.filter(t => t.status === 'running').length;
   const avgApprovalWait = approvals.length > 0 ? Math.round(approvals.reduce((s, a) => s + (a.waitingMs || 0), 0) / approvals.length / 60000) : 0;
   const timelineEntries = buildTimelineEntries({ tasks, reviews: approvals, logs, connectedSystems });
+  const doctrineDeltas = getDoctrineDeltaSummary(learningMemory?.doctrine || []).slice(0, 2);
+  const patternSummary = getMissionPatternDefaultSummary(learningMemory);
 
   // Derive recommendations from real data
   const recs = [];
@@ -1368,6 +1370,36 @@ function IntelSidebar({ tasks, approvals, completed, agents, schedules, logs, le
     <div className="p-3.5 rounded-[24px] bg-surface border border-border">
       <div className="flex items-center gap-2 mb-2.5"><Brain className="w-3.5 h-3.5 text-aurora-teal" /><span className="text-[11px] font-bold uppercase text-text-muted tracking-wider">Cross-Page Doctrine</span></div>
       <DoctrineCards items={learningMemory.missionThree} compact columns="one" />
+    </div>
+
+    <div className="p-3.5 rounded-[24px] bg-surface border border-border">
+      <div className="flex items-center gap-2 mb-2.5"><TrendingUp className="w-3.5 h-3.5 text-aurora-violet" /><span className="text-[11px] font-bold uppercase text-text-muted tracking-wider">Trust Movement</span></div>
+      <div className="space-y-2">
+        {doctrineDeltas.length === 0 && <div className="rounded-2xl border border-white/[0.06] bg-black/20 px-3 py-3 text-[11px] text-text-muted">Commander still needs more doctrine history before Mission Control can show meaningful trust movement.</div>}
+        {doctrineDeltas.map((entry) => (
+          <div key={entry.id} className="rounded-2xl border border-white/[0.06] bg-black/20 px-3 py-3">
+            <div className="flex items-center justify-between gap-3">
+              <div className="text-[11px] font-semibold text-text-primary">{entry.owner}</div>
+              <span className={cn(
+                'rounded-full border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em]',
+                entry.trend === 'up'
+                  ? 'border-aurora-teal/20 bg-aurora-teal/10 text-aurora-teal'
+                  : entry.trend === 'down'
+                    ? 'border-aurora-rose/20 bg-aurora-rose/10 text-aurora-rose'
+                    : 'border-white/10 bg-white/[0.03] text-text-muted'
+              )}>
+                {entry.delta > 0 ? '+' : ''}{entry.delta} pts
+              </span>
+            </div>
+            <p className="mt-2 text-[11px] leading-relaxed text-text-body">{entry.changeSummary}</p>
+          </div>
+        ))}
+      </div>
+      <div className="mt-3 rounded-2xl border border-white/[0.06] bg-black/20 px-3 py-3">
+        <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Pattern default pressure</div>
+        <div className="mt-2 text-[12px] font-semibold text-text-primary">{patternSummary.label}</div>
+        <p className="mt-2 text-[11px] leading-relaxed text-text-body">{patternSummary.detail}</p>
+      </div>
     </div>
 
     <CommandTimelineRail

@@ -833,6 +833,12 @@ export function getPersistentPromotionGuidance({ lifecycleEvents = [], agents = 
       .filter((agent) => !agent.isEphemeral && !['commander', 'executor'].includes(agent.role || ''))
       .map((agent) => agent.role || 'specialist')
   );
+  const spawnedByRole = lifecycleEvents.reduce((acc, entry) => {
+    if ((entry.eventType || '') !== 'spawned') return acc;
+    const role = entry.role || 'specialist';
+    acc[role] = (acc[role] || 0) + 1;
+    return acc;
+  }, {});
   const roleDemand = tasks.reduce((acc, task) => {
     const role = task.agentRole || task.assignedRole || task.role;
     if (!role || ['commander', 'executor'].includes(role)) return acc;
@@ -840,16 +846,38 @@ export function getPersistentPromotionGuidance({ lifecycleEvents = [], agents = 
     return acc;
   }, {});
   const rankedRoleDemand = Object.entries(roleDemand)
-    .map(([role, count]) => ({ role, count, covered: persistentRoles.has(role) }))
+    .map(([role, count]) => ({
+      role,
+      count,
+      covered: persistentRoles.has(role),
+      spawnedCount: Number(spawnedByRole[role] || 0),
+    }))
     .sort((left, right) => {
       if (left.covered !== right.covered) return left.covered ? 1 : -1;
+      if ((right.spawnedCount || 0) !== (left.spawnedCount || 0)) return (right.spawnedCount || 0) - (left.spawnedCount || 0);
       return right.count - left.count;
     });
   const topGap = rankedRoleDemand.find((entry) => !entry.covered) || rankedRoleDemand[0] || null;
+  const pressureScore = topGap
+    ? (topGap.count * 8) + ((topGap.spawnedCount || 0) * 10)
+      + (fleetPosture.posture === 'thin' ? 18 : 0)
+      + (fleetPosture.posture === 'churn-heavy' ? 14 : 0)
+    : 0;
+  const shouldAutoCreate = Boolean(
+    topGap
+    && !topGap.covered
+    && (
+      pressureScore >= 34
+      || topGap.count >= 4
+      || (topGap.count >= 2 && (topGap.spawnedCount || 0) >= 2)
+    )
+  );
   const recommendation = topGap
     ? topGap.covered
       ? `Persistent ${topGap.role} coverage exists already, so promotion pressure is low unless that lane starts choking.`
-      : `Promote or create a persistent ${topGap.role} lane next. It is showing up in ${topGap.count} branch assignments without durable coverage.`
+      : shouldAutoCreate
+        ? `Commander should auto-create a persistent ${topGap.role} lane next. It is showing up in ${topGap.count} branch assignments with ${topGap.spawnedCount || 0} spawned specialist materializations and no durable coverage.`
+        : `Promote or create a persistent ${topGap.role} lane next. It is showing up in ${topGap.count} branch assignments without durable coverage.`
     : 'Mission traffic is still too diffuse to call the next persistent specialist confidently.';
 
   return {
@@ -857,6 +885,36 @@ export function getPersistentPromotionGuidance({ lifecycleEvents = [], agents = 
     topGap,
     rankedRoleDemand,
     recommendation,
+    pressureScore,
+    shouldAutoCreate,
+  };
+}
+
+export function getMissionPatternDefaultSummary(learningMemory = null) {
+  const patternDoctrine = learningMemory?.doctrineById?.['doctrine-mission-patterns']
+    || learningMemory?.doctrineById?.['mission-pattern-memory']
+    || null;
+  const winningPattern = patternDoctrine?.metrics?.winningPattern || null;
+
+  if (!winningPattern) {
+    return {
+      available: false,
+      label: 'Pattern defaults still forming',
+      detail: 'Commander still needs more repeated mission shapes before it should push one pattern harder into default routing and lane choice.',
+      tone: 'slate',
+    };
+  }
+
+  const confidence = Number(patternDoctrine?.confidence || 0);
+  const tone = confidence >= 78 ? 'teal' : confidence >= 60 ? 'amber' : 'blue';
+
+  return {
+    available: true,
+    winningPattern,
+    confidence,
+    tone,
+    label: `${winningPattern.domain} / ${winningPattern.intentType} is the strongest reusable pattern`,
+    detail: `${winningPattern.executionStrategy} with ${winningPattern.approvalLevel} approval is closing ${(winningPattern.completionRate * 100).toFixed(0)}% of ${winningPattern.runs} runs, so Commander should bias defaults toward that shape more aggressively.`,
   };
 }
 
