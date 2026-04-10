@@ -45,7 +45,7 @@ export function MemoryView() {
 
         {/* Top Analytics Tier */}
         <motion.div variants={item} className="grid grid-cols-12 gap-6">
-          <div className="col-span-4 spatial-panel p-6 border-aurora-teal/20 relative overflow-hidden group hover:shadow-glow-blue transition-all">
+          <div className="col-span-4 ui-panel p-6 border-aurora-teal/20 relative overflow-hidden group hover:shadow-glow-blue transition-all">
             <div className="absolute top-0 right-0 p-4 opacity-10 flex items-center justify-center transform group-hover:scale-110 transition-transform"><Database size={80} /></div>
             <h3 className="text-sm text-text-muted uppercase tracking-widest mb-1 relative z-10">Total Extracted Vectors</h3>
             <div className="text-4xl font-mono text-aurora-teal font-bold relative z-10">{logs.length}</div>
@@ -54,7 +54,7 @@ export function MemoryView() {
             </div>
           </div>
           
-          <div className="col-span-4 spatial-panel p-6 border-white/5 relative overflow-hidden">
+          <div className="col-span-4 ui-panel p-6 border-white/5 relative overflow-hidden">
             <div className="absolute top-0 right-0 p-4 opacity-10 flex items-center justify-center"><Server size={80} /></div>
             <h3 className="text-sm text-text-muted uppercase tracking-widest mb-1">Memory Footprint</h3>
             <div className="text-4xl font-mono text-text-primary font-bold">{(logs.length / 100).toFixed(1)} <span className="text-2xl text-text-muted font-normal">GB</span></div>
@@ -64,7 +64,7 @@ export function MemoryView() {
             <p className="text-[10px] text-text-muted mt-2 text-right">{Math.min(100, logs.length)}% Storage Index</p>
           </div>
 
-          <div className="col-span-4 spatial-panel p-6 border-white/5 relative overflow-hidden">
+          <div className="col-span-4 ui-panel p-6 border-white/5 relative overflow-hidden">
              <div className="absolute top-0 right-0 p-4 opacity-10 flex items-center justify-center"><Layers size={80} /></div>
              <h3 className="text-sm text-text-muted uppercase tracking-widest mb-1">Active Namespaces</h3>
              <div className="text-4xl font-mono text-text-primary font-bold">{new Set(logs.map((log) => (log.agentId ? 'agent-memory' : 'system-events'))).size}</div>
@@ -76,7 +76,7 @@ export function MemoryView() {
         </motion.div>
 
         {/* Data Console Matrix */}
-        <motion.div variants={item} className="spatial-panel flex flex-col">
+        <motion.div variants={item} className="ui-shell flex flex-col">
           <div className="p-4 border-b border-border flex items-center justify-between bg-black/20 rounded-t-xl">
              <h3 className="text-xs uppercase tracking-widest text-text-muted font-semibold flex items-center gap-2">
                <Hash className="w-4 h-4 text-aurora-teal" /> Live Semantic Matrix

@@ -85,7 +85,7 @@ function Toggle({ value, onChange }) {
 
 function SectionShell({ eyebrow, title, description, children }) {
   return (
-    <section className="jarvis-column overflow-hidden rounded-[1.4rem] px-5 py-5">
+    <section className="ui-panel overflow-hidden rounded-[1.4rem] px-5 py-5">
       <div className="mb-4">
         <div className="text-[10px] font-semibold uppercase tracking-[0.22em] text-text-muted">{eyebrow}</div>
         <h3 className="mt-2 text-base font-semibold text-text-primary">{title}</h3>
@@ -98,7 +98,7 @@ function SectionShell({ eyebrow, title, description, children }) {
 
 function SettingRow({ label, description, children }) {
   return (
-    <div className="flex items-center justify-between gap-4 rounded-2xl border border-white/[0.05] bg-white/[0.02] px-4 py-3">
+    <div className="ui-card-row flex items-center justify-between gap-4 px-4 py-3">
       <div className="min-w-0">
         <div className="text-sm font-medium text-text-primary">{label}</div>
         {description && <div className="mt-1 text-xs leading-5 text-text-body">{description}</div>}
@@ -110,7 +110,7 @@ function SettingRow({ label, description, children }) {
 
 function SummaryChip({ label, value, tone = 'text-text-primary' }) {
   return (
-    <div className="min-w-0 rounded-[1.15rem] border border-white/[0.08] bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.012))] px-4 py-3">
+    <div className="ui-stat min-w-0 px-4 py-3">
       <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-text-muted">{label}</div>
       <div className={cn('mt-2 truncate text-lg font-semibold tracking-[-0.02em]', tone)}>{value}</div>
     </div>
@@ -126,7 +126,7 @@ function SegmentedControl({ options, value, onChange }) {
           type="button"
           onClick={() => onChange(option.value)}
           className={cn(
-            'rounded-full border px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.16em] transition-colors',
+            'ui-chip rounded-full border px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.16em] transition-colors',
             value === option.value
               ? 'border-aurora-teal/30 bg-aurora-teal/10 text-aurora-teal'
               : 'border-white/[0.08] bg-white/[0.03] text-text-body hover:bg-white/[0.05] hover:text-text-primary'
@@ -141,7 +141,7 @@ function SegmentedControl({ options, value, onChange }) {
 
 function CapabilityBadge({ children }) {
   return (
-    <span className="rounded-full border border-white/[0.08] bg-white/[0.04] px-2.5 py-1 text-[10px] font-mono uppercase tracking-[0.14em] text-text-body">
+    <span className="ui-chip rounded-full px-2.5 py-1 text-[10px] font-mono uppercase tracking-[0.14em] text-text-body">
       {children}
     </span>
   );

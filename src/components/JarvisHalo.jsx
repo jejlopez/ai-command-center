@@ -4,7 +4,7 @@ import { cn } from '../utils/cn';
 export function JarvisHalo({ className }) {
   return (
     <div className={cn('relative flex h-[220px] w-[220px] items-center justify-center', className)}>
-      <div className="jarvis-halo-glow absolute inset-0 rounded-full" />
+      <div className="absolute inset-0 rounded-full bg-[radial-gradient(circle,rgba(96,165,250,0.16),transparent_52%)] blur-2xl" />
 
       <motion.div
         animate={{ rotate: 360 }}
@@ -30,7 +30,7 @@ export function JarvisHalo({ className }) {
       <motion.div
         animate={{ rotate: [0, 8, -8, 0] }}
         transition={{ duration: 7, repeat: Infinity, ease: 'easeInOut' }}
-        className="jarvis-dot-field absolute inset-[11%] rounded-full"
+        className="absolute inset-[11%] rounded-full bg-[radial-gradient(circle,rgba(255,255,255,0.3)_1px,transparent_1.5px)] [background-size:18px_18px] opacity-[0.22]"
       />
 
       <motion.div
@@ -44,7 +44,7 @@ export function JarvisHalo({ className }) {
         transition={{ duration: 8, repeat: Infinity, ease: 'linear' }}
         className="absolute inset-[7%] rounded-full"
       >
-        <div className="jarvis-sweep absolute left-1/2 top-0 h-1/2 w-px -translate-x-1/2 origin-bottom" />
+        <div className="absolute left-1/2 top-0 h-1/2 w-px -translate-x-1/2 origin-bottom bg-gradient-to-t from-transparent via-aurora-teal to-aurora-blue shadow-[0_0_18px_rgba(0,217,200,0.35)]" />
       </motion.div>
 
       <div className="relative flex h-[86px] w-[86px] flex-col items-center justify-center rounded-full border border-white/10 bg-black/45 backdrop-blur-xl shadow-[0_0_50px_rgba(96,165,250,0.15)]">

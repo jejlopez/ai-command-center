@@ -62,8 +62,8 @@ export function LoginView() {
       {/* Aurora background */}
       <div className="aurora-drift absolute inset-0 pointer-events-none" />
       <div className="noise-overlay absolute inset-0 pointer-events-none" />
-      <div className="jarvis-grid absolute inset-0 pointer-events-none opacity-60" />
-      <div className="jarvis-login-orb absolute left-1/2 top-1/2 h-[36rem] w-[36rem] -translate-x-1/2 -translate-y-1/2 pointer-events-none" />
+      <div className="absolute inset-0 pointer-events-none opacity-[0.08] [background-image:linear-gradient(rgba(255,255,255,0.05)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.04)_1px,transparent_1px)] [background-size:140px_140px]" />
+      <div className="absolute left-1/2 top-1/2 h-[36rem] w-[36rem] -translate-x-1/2 -translate-y-1/2 rounded-full bg-[radial-gradient(circle,rgba(0,217,200,0.10),transparent_55%)] pointer-events-none" />
 
       <motion.div
         initial={{ opacity: 0, y: 20, scale: 0.98 }}
@@ -81,7 +81,7 @@ export function LoginView() {
         </div>
 
         {/* Form Card */}
-        <form onSubmit={handleSubmit} className="spatial-panel p-6 space-y-5">
+        <form onSubmit={handleSubmit} className="ui-shell p-6 space-y-5">
           {/* Error Banner */}
           {error && (
             <motion.div
@@ -131,7 +131,7 @@ export function LoginView() {
                 onChange={e => setEmail(e.target.value)}
                 placeholder="you@example.com"
                 autoComplete="email"
-                className="w-full pl-10 pr-3 py-2.5 bg-white/[0.03] border border-white/[0.07] rounded-lg text-sm font-mono text-text-primary placeholder-text-disabled focus:border-aurora-teal/40 outline-none transition-colors"
+                className="w-full pl-10 pr-3 py-2.5 bg-panel-soft border border-hairline rounded-lg text-sm font-mono text-text-primary placeholder-text-disabled focus:border-aurora-teal/40 outline-none transition-colors"
               />
             </div>
           </div>
@@ -151,7 +151,7 @@ export function LoginView() {
                 onChange={e => setPassword(e.target.value)}
                 placeholder={isSignUp ? 'Min 6 characters' : 'Enter password'}
                 autoComplete={isSignUp ? 'new-password' : 'current-password'}
-                className="w-full pl-10 pr-3 py-2.5 bg-white/[0.03] border border-white/[0.07] rounded-lg text-sm font-mono text-text-primary placeholder-text-disabled focus:border-aurora-teal/40 outline-none transition-colors"
+                className="w-full pl-10 pr-3 py-2.5 bg-panel-soft border border-hairline rounded-lg text-sm font-mono text-text-primary placeholder-text-disabled focus:border-aurora-teal/40 outline-none transition-colors"
               />
             </div>
           </div>
@@ -164,7 +164,7 @@ export function LoginView() {
               "w-full py-3 rounded-xl text-sm font-bold font-mono uppercase tracking-wider transition-all",
               loading
                 ? "bg-aurora-teal/50 text-black/50 cursor-wait"
-                : "bg-aurora-teal text-black hover:bg-[#00ebd8] shadow-[0_0_20px_rgba(0,217,200,0.3)] hover:shadow-[0_0_30px_rgba(0,217,200,0.5)]"
+                : "ui-button-primary bg-aurora-teal text-black hover:bg-[#00ebd8] shadow-[0_0_20px_rgba(0,217,200,0.3)] hover:shadow-[0_0_30px_rgba(0,217,200,0.5)]"
             )}
           >
             {loading ? (

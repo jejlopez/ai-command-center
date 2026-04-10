@@ -5,10 +5,13 @@
 :root {
   --color-canvas: #080808;
   --color-canvas-elevated: #101113;
+  --color-canvas-overlay: rgba(8, 10, 14, 0.98);
   --color-panel: rgba(18, 20, 24, 0.82);
   --color-panel-strong: rgba(22, 24, 29, 0.92);
+  --color-panel-soft: rgba(255, 255, 255, 0.025);
   --color-hairline: rgba(255, 255, 255, 0.07);
   --color-hairline-strong: rgba(255, 255, 255, 0.12);
+  --color-hairline-soft: rgba(255, 255, 255, 0.05);
   --color-aurora-teal: #00D9C8;
   --color-aurora-violet: #a78bfa;
   --color-aurora-rose: #fb7185;
@@ -33,6 +36,7 @@
 
 body {
   background-color: var(--color-canvas);
+  color-scheme: dark;
   background-image:
     radial-gradient(ellipse 70% 50% at var(--ax1) var(--ay1), rgba(167,139,250,0.08) 0%, transparent 60%),
     radial-gradient(ellipse 60% 40% at var(--ax2) var(--ay2), rgba(0,217,200,0.06) 0%, transparent 60%),
@@ -114,6 +118,41 @@ body::after {
     0 30px 80px rgba(0,0,0,0.24);
 }
 
+.ui-shell,
+.ui-drawer {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid var(--color-hairline);
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.008)),
+    var(--color-panel);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.04),
+    0 24px 72px rgba(0,0,0,0.28);
+}
+
+.ui-shell {
+  border-radius: 2rem;
+}
+
+.ui-drawer {
+  border-radius: 0;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.006)),
+    var(--color-canvas-overlay);
+}
+
+.ui-shell::before,
+.ui-drawer::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(135deg, rgba(214,199,161,0.05), transparent 26%),
+    radial-gradient(circle at top right, rgba(96,165,250,0.08), transparent 28%);
+}
+
 .deck-shell::before {
   content: '';
   position: absolute;
@@ -135,11 +174,97 @@ body::after {
   box-shadow: inset 0 1px 0 rgba(255,255,255,0.03);
 }
 
+.ui-panel,
+.ui-card-row,
+.ui-stat {
+  position: relative;
+  overflow: hidden;
+  border-radius: 1.5rem;
+  border: 1px solid rgba(255,255,255,0.06);
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.006)),
+    rgba(13,15,18,0.92);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.03);
+}
+
+.ui-card-row {
+  border-radius: 1.35rem;
+}
+
+.ui-stat {
+  border-radius: 1.15rem;
+}
+
 .deck-panel-soft {
   position: relative;
   border-radius: 1.25rem;
   background: rgba(255,255,255,0.025);
   box-shadow: inset 0 1px 0 rgba(255,255,255,0.025);
+}
+
+.ui-panel-soft,
+.ui-segmented {
+  position: relative;
+  border-radius: 1.2rem;
+  background: var(--color-panel-soft);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.025),
+    0 0 0 1px rgba(255,255,255,0.05);
+}
+
+.ui-kicker {
+  color: var(--color-metal);
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+}
+
+.ui-chip {
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,0.08);
+  background: rgba(255,255,255,0.03);
+  color: #c9cbd3;
+}
+
+.ui-button-primary {
+  border-radius: 0.95rem;
+  background: rgba(0, 217, 200, 0.95);
+  color: #030507;
+  transition: background-color 180ms ease, transform 180ms ease;
+}
+
+.ui-button-primary:hover {
+  background: #00ebd8;
+}
+
+.ui-button-secondary {
+  border-radius: 0.95rem;
+  border: 1px solid rgba(255,255,255,0.08);
+  background: rgba(255,255,255,0.03);
+  color: #f3f4f7;
+  transition: background-color 180ms ease, border-color 180ms ease;
+}
+
+.ui-button-secondary:hover {
+  background: rgba(255,255,255,0.05);
+}
+
+.ui-input {
+  border-radius: 0.95rem;
+  border: 1px solid rgba(255,255,255,0.08);
+  background: rgba(255,255,255,0.03);
+  color: #f3f4f7;
+  transition: background-color 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
+}
+
+.ui-input:hover {
+  border-color: rgba(255,255,255,0.12);
+}
+
+.ui-input:focus,
+.ui-input:focus-visible {
+  outline: none;
+  border-color: rgba(0, 217, 200, 0.28);
+  box-shadow: 0 0 0 2px rgba(0, 217, 200, 0.14);
 }
 
 .deck-rule {

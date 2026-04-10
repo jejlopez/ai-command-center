@@ -12,13 +12,13 @@ export function NeuralPulse({ systemHealth = 100, agentCount = 0, idleCount = 0,
   else if (systemHealth <= 90) orbColor = '#fbbf24'; // amber
 
   return (
-    <div className="relative overflow-hidden spatial-panel">
+    <div className="relative overflow-hidden ui-shell">
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(96,165,250,0.15),transparent_32%),radial-gradient(circle_at_80%_0%,rgba(167,139,250,0.12),transparent_28%),linear-gradient(135deg,rgba(255,255,255,0.05),transparent_45%)]" />
       <div className="pointer-events-none absolute inset-y-6 left-[33%] hidden w-px bg-gradient-to-b from-transparent via-white/10 to-transparent lg:block" />
 
       <div className="relative flex flex-col gap-8 p-6 lg:flex-row lg:items-center lg:justify-between">
         <div className="max-w-xl">
-          <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.03] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.24em] text-text-muted">
+          <div className="ui-chip mb-4 inline-flex items-center gap-2 rounded-full px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.24em] text-text-muted">
             <Sparkles className="h-3.5 w-3.5 text-aurora-violet" />
             Jarvis Command Layer
           </div>
@@ -64,11 +64,11 @@ export function NeuralPulse({ systemHealth = 100, agentCount = 0, idleCount = 0,
               </span>
               <span className="text-xs font-mono text-aurora-teal">{agentCount} Active</span>
             </div>
-            <div className="flex items-center gap-2 rounded-xl border border-white/8 bg-white/[0.03] px-3 py-2">
+            <div className="ui-card-row flex items-center gap-2 rounded-xl px-3 py-2">
               <Activity className="h-3.5 w-3.5 text-aurora-blue" />
               <span className="text-xs font-mono text-text-muted">{idleCount} Idle</span>
             </div>
-            <div className="flex items-center gap-2 rounded-xl border border-white/8 bg-white/[0.03] px-3 py-2">
+            <div className="ui-card-row flex items-center gap-2 rounded-xl px-3 py-2">
               <ShieldCheck className="h-3.5 w-3.5 text-aurora-green" />
               <span className="text-xs font-mono text-text-muted">{systemHealth}% Health</span>
             </div>
@@ -89,7 +89,7 @@ export function NeuralPulse({ systemHealth = 100, agentCount = 0, idleCount = 0,
               ['Standby', `${idleCount}`],
               ['Alerts', `${errorCount}`],
             ].map(([label, value]) => (
-              <div key={label} className="rounded-xl border border-white/8 bg-black/20 px-3 py-2">
+              <div key={label} className="ui-stat px-3 py-2">
                 <div className="text-[9px] uppercase tracking-[0.22em] text-text-disabled">{label}</div>
                 <div className="mt-1 font-mono text-sm text-text-primary">{value}</div>
               </div>
@@ -100,7 +100,7 @@ export function NeuralPulse({ systemHealth = 100, agentCount = 0, idleCount = 0,
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
             onClick={onDeploy}
-            className="flex items-center gap-2 rounded-xl bg-aurora-teal px-4 py-2 text-sm font-semibold text-black transition-colors hover:bg-aurora-teal/90 shadow-glow-teal"
+            className="ui-button-primary flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold text-black transition-colors shadow-glow-teal"
           >
             <Plus className="h-4 w-4" />
             Deploy Agent

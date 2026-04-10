@@ -19,7 +19,7 @@ const MapWidget = () => {
   }, []);
 
   return (
-    <div className="col-span-12 spatial-panel relative overflow-hidden h-[340px] flex items-center justify-center border-aurora-teal/20 shadow-glow-teal group">
+    <div className="col-span-12 ui-shell relative overflow-hidden h-[340px] flex items-center justify-center border-aurora-teal/20 shadow-glow-teal group">
       <div className="absolute top-6 left-6 z-10 pointer-events-none">
         <h3 className="text-xl font-bold text-text-primary tracking-wide">Global Protocol Trajectory</h3>
         <p className="text-sm font-mono text-aurora-teal mt-1">24 Active Satellite Downlinks</p>
@@ -53,7 +53,7 @@ export function FleetView({ onOpenDetail }) {
           <h2 className="text-xl font-bold text-text-primary mb-1">Agent Fleet</h2>
           <p className="text-sm text-text-muted">Monitor and control your deployed AI workforce.</p>
         </div>
-        <div className="spatial-panel px-4 py-2 text-sm font-mono text-aurora-teal">
+        <div className="ui-card-row px-4 py-2 text-sm font-mono text-aurora-teal">
           {agents.length} Active Workforce
         </div>
       </div>

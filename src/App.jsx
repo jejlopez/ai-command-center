@@ -11,11 +11,13 @@ const OverviewView = lazy(() => import('./views/OverviewView').then(mod => ({ de
 const ReviewRoomView = lazy(() => import('./views/ReviewRoomView').then(mod => ({ default: mod.ReviewRoomView })));
 const ReportsView = lazy(() => import('./views/ReportsView').then(mod => ({ default: mod.ReportsView })));
 const IntelligenceView = lazy(() => import('./views/IntelligenceView').then(mod => ({ default: mod.IntelligenceView })));
+const ManagedOpsView = lazy(() => import('./views/ManagedOpsView').then(mod => ({ default: mod.ManagedOpsView })));
 import { LoginView } from './views/LoginView';
 const MissionControlView = lazy(() => import('./views/MissionControlView').then(mod => ({ default: mod.MissionControlView })));
 import { TimeRangeProvider } from './utils/useTimeRange';
 import { useSystemState } from './context/SystemStateContext';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { WorkspaceProvider } from './context/WorkspaceContext';
 import { useAgents, usePendingReviews, useTasks } from './utils/useSupabase';
 import { useDerivedAlerts } from './utils/useDerivedAlerts';
 import { useCommandCenterTruth } from './utils/useCommandCenterTruth';
@@ -253,6 +255,7 @@ function Dashboard() {
               />
             )}
             {activeRoute === 'missions' && <MissionControlView />}
+            {activeRoute === 'managedOps' && <ManagedOpsView />}
             {activeRoute === 'reports' && <ReportsView />}
             {activeRoute === 'intelligence' && <IntelligenceView />}
             {activeRoute === 'review' && <ReviewRoomView />}
@@ -295,9 +298,11 @@ function AuthGate() {
   }
 
   return (
-    <TimeRangeProvider>
-      <Dashboard />
-    </TimeRangeProvider>
+    <WorkspaceProvider>
+      <TimeRangeProvider>
+        <Dashboard />
+      </TimeRangeProvider>
+    </WorkspaceProvider>
   );
 }
 

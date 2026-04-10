@@ -26,13 +26,13 @@ function formatTimestamp(value) {
 
 export function CommandTimelineRail({ entries = [], title = 'Command Timeline', description = 'What changed most recently across the system.' }) {
   return (
-    <div className="rounded-[24px] border border-white/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.015))] p-4">
+    <div className="ui-panel p-4">
       <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">{title}</div>
       <p className="mt-2 text-[12px] leading-relaxed text-text-muted">{description}</p>
 
       <div className="mt-4 space-y-3">
         {entries.length === 0 && (
-          <div className="rounded-[18px] border border-white/8 bg-black/20 px-4 py-4 text-[12px] text-text-muted">
+          <div className="ui-card-row px-4 py-4 text-[12px] text-text-muted">
             No live command events yet.
           </div>
         )}
@@ -43,12 +43,12 @@ export function CommandTimelineRail({ entries = [], title = 'Command Timeline', 
           return (
             <div key={entry.id} className="flex gap-3">
               <div className="flex flex-col items-center">
-                <div className="flex h-9 w-9 items-center justify-center rounded-2xl border border-white/8 bg-black/20">
+                <div className="ui-panel-soft flex h-9 w-9 items-center justify-center">
                   <Icon className={cn('h-4 w-4', tone)} />
                 </div>
                 {index < entries.length - 1 && <div className="mt-2 w-px flex-1 bg-white/8" />}
               </div>
-              <div className="min-w-0 flex-1 rounded-[18px] border border-white/8 bg-black/20 px-4 py-3">
+              <div className="ui-card-row min-w-0 flex-1 px-4 py-3">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <div className="text-sm font-semibold text-text-primary">{entry.title}</div>

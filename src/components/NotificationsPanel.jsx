@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { motion as Motion, AnimatePresence } from 'framer-motion';
 import {
   AlertTriangle,
@@ -6,8 +6,6 @@ import {
   Bell,
   BrainCircuit,
   CheckCircle2,
-  Clock3,
-  Radar,
   ShieldCheck,
   Sparkles,
   Trash2,
@@ -63,45 +61,62 @@ function relativeTime(date) {
   return `${Math.floor(hours / 24)}d ago`;
 }
 
+function FilterButton({ active, label, onClick }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        'ui-chip rounded-full border px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aurora-teal/40',
+        active
+          ? 'border-aurora-teal/25 bg-aurora-teal/10 text-aurora-teal'
+          : 'border-white/[0.08] bg-white/[0.03] text-text-muted hover:text-text-primary'
+      )}
+    >
+      {label}
+    </button>
+  );
+}
+
 function AlertCard({ alert, onClick, onDismiss }) {
   const meta = TYPE_META[alert.type] || TYPE_META.system;
   const Icon = meta.icon;
 
   return (
     <Motion.button
+      type="button"
       layout
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, x: 32 }}
       whileHover={{ y: -2 }}
       onClick={() => onClick(alert)}
-      className="group relative w-full overflow-hidden rounded-[24px] border border-white/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.04),rgba(255,255,255,0.015))] p-4 text-left"
+      className="ui-panel w-full p-4 text-left transition-colors hover:bg-white/[0.04]"
     >
       <div className={cn('absolute left-0 top-0 bottom-0 w-[3px]', meta.rail)} />
-      <div className="pointer-events-none absolute inset-0 opacity-[0.06] [background-image:repeating-linear-gradient(180deg,rgba(255,255,255,0.16)_0px,rgba(255,255,255,0.16)_1px,transparent_1px,transparent_12px)]" />
       <div className="flex items-start gap-3">
-        <div className={cn('flex h-11 w-11 items-center justify-center rounded-2xl border', meta.tone)}>
+        <div className={cn('mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border', meta.tone)}>
           <Icon className="h-4 w-4" />
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex items-start justify-between gap-3">
-            <div>
+            <div className="min-w-0">
               <div className="text-[13px] font-semibold leading-snug text-text-primary">{alert.headline}</div>
               <div className="mt-1 text-[11px] uppercase tracking-[0.16em] text-text-disabled">{relativeTime(alert.createdAt)}</div>
             </div>
-            {alert.unread && <span className="mt-1 h-2.5 w-2.5 rounded-full bg-aurora-teal shadow-[0_0_16px_rgba(0,217,200,0.45)]" />}
+            {alert.unread ? <span className="mt-1 h-2.5 w-2.5 rounded-full bg-aurora-teal shadow-[0_0_16px_rgba(0,217,200,0.45)]" /> : null}
           </div>
-          <p className="mt-3 text-[12px] leading-relaxed text-text-body">{alert.detail}</p>
-          <div className="mt-4 flex items-center justify-between gap-3">
-            <span className="rounded-full border border-white/8 bg-white/[0.03] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-text-muted">
-              {alert.actionLabel}
-            </span>
+          <p className="mt-3 text-[12px] leading-6 text-text-body">{alert.detail}</p>
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+            <span className="ui-chip px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.14em]">{alert.actionLabel}</span>
             <button
+              type="button"
+              aria-label={`Dismiss ${alert.headline}`}
               onClick={(event) => {
                 event.stopPropagation();
                 onDismiss(alert.id);
               }}
-              className="rounded-xl border border-white/8 bg-white/[0.03] px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-text-disabled transition-colors hover:text-aurora-rose"
+              className="rounded-xl border border-white/[0.08] bg-white/[0.03] px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-text-disabled transition-colors hover:text-aurora-rose focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aurora-teal/40"
             >
               Dismiss
             </button>
@@ -127,15 +142,17 @@ export function NotificationsPanel({ notificationsOpen, setNotificationsOpen, on
     directive,
   } = useDerivedAlerts();
 
-  const visibleAlerts = useMemo(() => {
-    return derivedVisibleAlerts.filter((alert) => !dismissedIds.includes(alert.id));
-  }, [derivedVisibleAlerts, dismissedIds]);
+  const visibleAlerts = useMemo(
+    () => derivedVisibleAlerts.filter((alert) => !dismissedIds.includes(alert.id)),
+    [derivedVisibleAlerts, dismissedIds]
+  );
+
   const filtered = useMemo(
     () => activeFilter === 'all' ? visibleAlerts : visibleAlerts.filter((alert) => alert.type === activeFilter),
     [activeFilter, visibleAlerts]
   );
 
-  const dismiss = useCallback((id) => setDismissedIds((prev) => [...prev, id]), []);
+  const dismiss = useCallback((id) => setDismissedIds((current) => [...current, id]), []);
   const clearAll = useCallback(() => setDismissedIds(visibleAlerts.map((alert) => alert.id)), [visibleAlerts]);
   const handleAlertClick = useCallback((alert) => {
     if (alert.action && onNavigate) {
@@ -146,7 +163,7 @@ export function NotificationsPanel({ notificationsOpen, setNotificationsOpen, on
 
   return (
     <AnimatePresence>
-      {notificationsOpen && (
+      {notificationsOpen ? (
         <>
           <Motion.div
             initial={{ opacity: 0 }}
@@ -161,39 +178,29 @@ export function NotificationsPanel({ notificationsOpen, setNotificationsOpen, on
             animate={{ x: 0, opacity: 1 }}
             exit={{ x: 420, opacity: 0 }}
             transition={{ type: 'spring', damping: 30, stiffness: 220 }}
-            className="fixed inset-y-0 right-0 z-50 flex w-[420px] max-w-[96vw] flex-col overflow-hidden border-l border-white/8 bg-[linear-gradient(180deg,rgba(8,10,14,0.98),rgba(6,9,12,0.98))] shadow-[-18px_0_60px_rgba(0,0,0,0.55)]"
+            className="ui-drawer fixed inset-y-0 right-0 z-50 flex w-[440px] max-w-[96vw] flex-col overflow-hidden shadow-[-18px_0_60px_rgba(0,0,0,0.55)]"
           >
-            <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(251,191,36,0.10),transparent_24%),radial-gradient(circle_at_18%_8%,rgba(45,212,191,0.12),transparent_22%),linear-gradient(180deg,rgba(255,255,255,0.02),transparent_24%)]" />
+            <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(214,199,161,0.08),transparent_24%),radial-gradient(circle_at_18%_8%,rgba(45,212,191,0.10),transparent_22%),linear-gradient(180deg,rgba(255,255,255,0.02),transparent_24%)]" />
 
-            <div className="relative border-b border-white/[0.08] px-5 py-5">
+            <div className="relative border-b border-hairline px-5 py-5">
               <div className="flex items-start justify-between gap-4">
                 <div>
-                  <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.22em] text-text-muted">
-                    <Bell className="h-3.5 w-3.5 text-aurora-amber" />
+                  <div className="ui-kicker inline-flex items-center gap-2 rounded-full border border-hairline bg-panel-soft px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.22em] text-text-muted">
+                    <Bell className="h-3.5 w-3.5 text-[#d6c7a1]" />
                     Command Alerts
                   </div>
-                  <h2 className="mt-4 text-2xl font-semibold tracking-tight text-text-primary">Live command traffic, approvals, and failures.</h2>
-                  <p className="mt-2 text-[13px] leading-relaxed text-text-muted">Tony’s alert bus. Elon’s attention filter. Only the things worth acting on should survive here.</p>
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    <div className="inline-flex items-center rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-text-muted">
-                      Alert posture: {alertPosture === 'critical_only' ? 'Critical only' : alertPosture === 'full_feed' ? 'Full feed' : 'Balanced'}
-                    </div>
-                    <div className="inline-flex items-center rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-text-muted">
-                      Route: {notificationRoute === 'command_center' ? 'In-app' : notificationRoute}
-                    </div>
-                    <div className="inline-flex items-center rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-text-muted">
-                      Persona: {commanderPersona}
-                    </div>
-                    {quietActive && (
-                      <div className="inline-flex items-center rounded-full border border-aurora-violet/20 bg-aurora-violet/10 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-aurora-violet">
-                        Quiet hours active
-                      </div>
-                    )}
-                  </div>
+                  <h2 className="mt-4 max-w-sm text-2xl font-semibold tracking-tight text-text-primary text-balance">
+                    Keep only the alerts worth acting on.
+                  </h2>
+                  <p className="mt-2 max-w-sm text-[13px] leading-relaxed text-text-muted">
+                    The lane is simpler now: current posture, one clear directive, and the alerts that still deserve attention.
+                  </p>
                 </div>
                 <button
+                  type="button"
+                  aria-label="Close notifications"
                   onClick={() => setNotificationsOpen(false)}
-                  className="rounded-2xl border border-white/[0.08] bg-white/[0.03] p-2 text-text-muted transition-colors hover:text-text-primary"
+                  className="ui-button-secondary p-2 text-text-muted transition-colors hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aurora-teal/40"
                 >
                   <X className="h-4.5 w-4.5" />
                 </button>
@@ -201,68 +208,74 @@ export function NotificationsPanel({ notificationsOpen, setNotificationsOpen, on
 
               <div className="mt-5 grid grid-cols-3 gap-3">
                 {[
-                  { label: 'Unread', value: unreadCount, icon: Radar, tone: 'text-aurora-teal' },
-                  { label: 'Critical', value: criticalCount, icon: AlertTriangle, tone: 'text-aurora-rose' },
-                  { label: 'Approvals', value: approvalCount, icon: ShieldCheck, tone: 'text-aurora-amber' },
-                ].map((stat) => (
-                  <div key={stat.label} className="rounded-[20px] border border-white/8 bg-black/20 p-3">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[10px] uppercase tracking-[0.16em] text-text-muted">{stat.label}</span>
-                      <stat.icon className={cn('h-3.5 w-3.5', stat.tone)} />
-                    </div>
-                    <div className="mt-2 text-2xl font-semibold text-text-primary">{stat.value}</div>
+                  { label: 'Unread', value: unreadCount },
+                  { label: 'Critical', value: criticalCount },
+                  { label: 'Approvals', value: approvalCount },
+                ].map((item) => (
+                  <div key={item.label} className="ui-stat p-3">
+                    <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">{item.label}</div>
+                    <div className="mt-2 text-2xl font-semibold text-text-primary">{item.value}</div>
                   </div>
                 ))}
               </div>
+
+              <div className="mt-4 flex flex-wrap gap-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-text-muted">
+                <span className="ui-chip px-3 py-1">Posture: {alertPosture === 'critical_only' ? 'Critical Only' : alertPosture === 'full_feed' ? 'Full Feed' : 'Balanced'}</span>
+                <span className="ui-chip px-3 py-1">Route: {notificationRoute === 'command_center' ? 'In-App' : notificationRoute}</span>
+                <span className="ui-chip px-3 py-1">Persona: {commanderPersona}</span>
+                {quietActive ? <span className="ui-chip border-aurora-violet/20 bg-aurora-violet/10 px-3 py-1 text-aurora-violet">Quiet Hours</span> : null}
+              </div>
             </div>
 
-            <div className="relative px-5 pt-4">
+            <div className="relative px-5 py-4">
               <button
+                type="button"
                 onClick={() => handleAlertClick({ action: directive.action })}
                 className={cn(
-                  'mb-4 w-full rounded-[22px] border p-4 text-left transition-colors',
+                  'ui-panel w-full p-4 text-left transition-colors hover:bg-white/[0.04]',
                   directive.tone === 'rose'
-                    ? 'border-aurora-rose/20 bg-aurora-rose/[0.07]'
+                    ? 'border-aurora-rose/20'
                     : directive.tone === 'amber'
-                      ? 'border-aurora-amber/20 bg-aurora-amber/[0.07]'
-                      : 'border-aurora-teal/20 bg-aurora-teal/[0.07]'
+                      ? 'border-aurora-amber/20'
+                      : 'border-aurora-teal/20'
                 )}
               >
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">{directive.eyebrow}</div>
+                    <div className="ui-kicker text-[10px] font-semibold uppercase">{directive.eyebrow}</div>
                     <div className="mt-2 text-base font-semibold text-text-primary">{directive.title}</div>
-                    <p className="mt-2 text-[12px] leading-relaxed text-text-muted">{directive.detail}</p>
+                    <p className="mt-2 text-[12px] leading-6 text-text-muted">{directive.detail}</p>
                   </div>
                   <ArrowRight className={cn(
                     'mt-1 h-4 w-4 shrink-0',
                     directive.tone === 'rose' ? 'text-aurora-rose' : directive.tone === 'amber' ? 'text-aurora-amber' : 'text-aurora-teal'
                   )} />
                 </div>
-                <div className="mt-4 inline-flex items-center rounded-full border border-white/8 bg-white/[0.04] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-text-muted">
-                  {directive.actionLabel}
-                </div>
               </button>
 
-              <div className="flex flex-wrap gap-2">
-                {FILTERS.map((filter) => (
-                  <button
-                    key={filter.id}
-                    onClick={() => setActiveFilter(filter.id)}
-                    className={cn(
-                      'rounded-full border px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] transition-colors',
-                      activeFilter === filter.id
-                        ? 'border-aurora-teal/25 bg-aurora-teal/10 text-aurora-teal'
-                        : 'border-white/8 bg-white/[0.03] text-text-muted hover:text-text-primary'
-                    )}
-                  >
-                    {filter.label}
-                  </button>
-                ))}
+              <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+                <div className="flex flex-wrap gap-2">
+                  {FILTERS.map((filter) => (
+                    <FilterButton
+                      key={filter.id}
+                      active={activeFilter === filter.id}
+                      label={filter.label}
+                      onClick={() => setActiveFilter(filter.id)}
+                    />
+                  ))}
+                </div>
+                <button
+                  type="button"
+                  onClick={clearAll}
+                  className="ui-chip inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-text-muted transition-colors hover:text-aurora-rose focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aurora-teal/40"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  Clear All
+                </button>
               </div>
             </div>
 
-            <div className="relative flex-1 space-y-3 overflow-y-auto px-5 py-4 no-scrollbar">
+            <div className="relative flex-1 space-y-3 overflow-y-auto px-5 pb-5 no-scrollbar">
               <AnimatePresence mode="popLayout">
                 {filtered.length === 0 ? (
                   <Motion.div
@@ -270,11 +283,11 @@ export function NotificationsPanel({ notificationsOpen, setNotificationsOpen, on
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
                     exit={{ opacity: 0 }}
-                    className="flex h-52 flex-col items-center justify-center rounded-[24px] border border-white/8 bg-black/20 text-center"
+                    className="ui-panel flex h-52 flex-col items-center justify-center p-6 text-center"
                   >
                     <Sparkles className="h-5 w-5 text-aurora-teal" />
-                    <div className="mt-3 text-sm font-semibold text-text-primary">Command lane is clean.</div>
-                    <p className="mt-2 max-w-[250px] text-[12px] leading-relaxed text-text-muted">Nothing in this filter deserves your attention right now.</p>
+                    <div className="mt-3 text-sm font-semibold text-text-primary">This lane is clear</div>
+                    <p className="mt-2 max-w-[260px] text-[12px] leading-6 text-text-muted">Nothing in this filter deserves your attention right now.</p>
                   </Motion.div>
                 ) : (
                   filtered.map((alert) => (
@@ -288,28 +301,9 @@ export function NotificationsPanel({ notificationsOpen, setNotificationsOpen, on
                 )}
               </AnimatePresence>
             </div>
-
-            <div className="relative border-t border-white/[0.08] px-5 py-4">
-              <div className="grid grid-cols-2 gap-3">
-                <div className="rounded-[20px] border border-white/8 bg-black/20 p-3">
-                  <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">System health</div>
-                  <div className="mt-2 text-sm font-semibold text-text-primary">{criticalCount > 0 ? 'Needs attention' : 'Nominal'}</div>
-                </div>
-                <button
-                  onClick={clearAll}
-                  className="rounded-[20px] border border-white/8 bg-black/20 p-3 text-left transition-colors hover:border-aurora-rose/20"
-                >
-                  <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.16em] text-text-muted">
-                    <Trash2 className="h-3.5 w-3.5 text-aurora-rose" />
-                    Clear lane
-                  </div>
-                  <div className="mt-2 text-sm font-semibold text-text-primary">Dismiss all alerts</div>
-                </button>
-              </div>
-            </div>
           </Motion.aside>
         </>
-      )}
+      ) : null}
     </AnimatePresence>
   );
 }

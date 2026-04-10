@@ -35,17 +35,17 @@ export function AgentLogDrawer({ agentName, onClose }) {
             animate={{ x: 0, opacity: 1 }}
             exit={{ x: '100%', opacity: 0 }}
             transition={{ type: 'spring', damping: 30, stiffness: 200 }}
-            className="fixed top-2 right-2 bottom-2 w-[450px] spatial-panel rounded-2xl z-50 flex flex-col overflow-hidden border border-modern-border/30 shadow-2xl"
+            className="ui-drawer fixed top-2 right-2 bottom-2 w-[450px] rounded-2xl z-50 flex flex-col overflow-hidden shadow-2xl"
           >
             {/* Header */}
-            <div className="p-5 border-b border-modern-border/50 flex justify-between items-center bg-modern-panel">
+            <div className="p-5 border-b border-hairline flex justify-between items-center bg-panel-soft">
               <div className="flex items-center gap-3">
-                <Terminal className="w-5 h-5 text-modern-accent" />
-                <h3 className="font-sans text-sm font-medium text-white">
+                <Terminal className="w-5 h-5 text-aurora-teal" />
+                <h3 className="font-sans text-sm font-medium text-text-primary">
                   {agentName}
                 </h3>
               </div>
-              <button onClick={onClose} className="p-1.5 text-modern-muted hover:text-white bg-modern-bg rounded-lg transition-colors border border-modern-border">
+              <button onClick={onClose} className="ui-button-secondary p-1.5 text-text-muted hover:text-text-primary rounded-lg transition-colors">
                 <X className="w-4 h-4" />
               </button>
             </div>
@@ -53,12 +53,12 @@ export function AgentLogDrawer({ agentName, onClose }) {
             {/* Log Output Area */}
             <div 
                ref={scrollRef}
-               className="flex-1 overflow-y-auto p-6 font-mono text-[12px] leading-relaxed text-modern-muted space-y-3 bg-modern-bg/50"
+               className="flex-1 overflow-y-auto p-6 font-mono text-[12px] leading-relaxed text-text-muted space-y-3 bg-canvas/50"
             >
               {logs.map((log, i) => {
                 const isError = log.includes('[ERR]') || log.includes('OOM');
                 const isWarn = log.includes('[WARN]');
-                const color = isError ? 'text-modern-alert' : isWarn ? 'text-modern-warning' : 'text-modern-accent';
+                const color = isError ? 'text-aurora-rose' : isWarn ? 'text-aurora-amber' : 'text-aurora-teal';
                 return (
                   <motion.div 
                     key={i}
@@ -72,7 +72,7 @@ export function AgentLogDrawer({ agentName, onClose }) {
                 );
               })}
               {logs.length === 0 && (
-                <div className="text-modern-muted">No logs recorded for this agent yet.</div>
+                <div className="text-text-muted">No logs recorded for this agent yet.</div>
               )}
               
               <motion.div 
@@ -83,13 +83,13 @@ export function AgentLogDrawer({ agentName, onClose }) {
             </div>
             
             {/* Input Bar */}
-            <div className="p-4 border-t border-modern-border/50 bg-modern-panel flex items-center gap-3">
-              <span className="text-modern-muted font-mono">{'>'}</span>
+            <div className="p-4 border-t border-hairline bg-panel-soft flex items-center gap-3">
+              <span className="text-text-muted font-mono">{'>'}</span>
               <input 
                 type="text" 
                 readOnly 
                 placeholder="Terminal streaming..." 
-                className="bg-transparent border-none focus:outline-none text-xs font-mono text-modern-accent w-full" 
+                className="bg-transparent border-none focus:outline-none text-xs font-mono text-aurora-teal w-full" 
               />
             </div>
           </motion.div>

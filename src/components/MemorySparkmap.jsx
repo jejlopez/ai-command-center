@@ -25,7 +25,7 @@ export function MemorySparkmap() {
   };
 
   return (
-    <div className="spatial-panel p-6 h-full flex flex-col items-center justify-center relative">
+    <div className="ui-shell p-6 h-full flex flex-col items-center justify-center relative">
       <div className="text-[10px] uppercase tracking-[0.15em] text-text-muted mb-4 font-semibold w-full text-center">
         Memory Core
       </div>

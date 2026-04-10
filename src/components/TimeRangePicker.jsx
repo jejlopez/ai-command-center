@@ -22,7 +22,7 @@ export function TimeRangePicker() {
     <div className="relative">
       <button
         onClick={() => setOpen(!open)}
-        className="flex items-center gap-2 px-3 py-2 rounded-xl border border-white/[0.06] bg-white/[0.03] hover:bg-white/[0.055] transition-colors text-xs font-medium text-text-primary"
+        className="ui-button-secondary flex items-center gap-2 px-3 py-2 rounded-xl transition-colors text-xs font-medium text-text-primary"
       >
         <span>{activeRange?.label || 'Last 1h'}</span>
         <ChevronDown className="w-3 h-3 text-text-muted" />
@@ -35,7 +35,7 @@ export function TimeRangePicker() {
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -8 }}
             transition={{ type: 'spring', stiffness: 300, damping: 25 }}
-            className="absolute top-full right-0 mt-2 w-32 spatial-panel p-1 z-50 overflow-hidden"
+            className="absolute top-full right-0 mt-2 w-32 ui-shell p-1 z-50 overflow-hidden"
           >
             {ranges.map(r => (
               <button

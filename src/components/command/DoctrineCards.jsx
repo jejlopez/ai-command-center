@@ -61,9 +61,9 @@ function DoctrineDrawer({ item, onClose }) {
             animate={{ x: 0 }}
             exit={{ x: '100%' }}
             transition={{ type: 'spring', stiffness: 280, damping: 30 }}
-            className="fixed inset-y-0 right-0 z-50 flex w-[480px] max-w-[92vw] flex-col border-l border-white/10 bg-[linear-gradient(180deg,rgba(8,10,14,0.98),rgba(6,9,12,0.98))] shadow-[-20px_0_60px_rgba(0,0,0,0.55)]"
+            className="ui-drawer fixed inset-y-0 right-0 z-50 flex w-[480px] max-w-[92vw] flex-col shadow-[-20px_0_60px_rgba(0,0,0,0.55)]"
           >
-            <div className="border-b border-white/[0.08] px-6 py-5">
+            <div className="border-b border-hairline px-6 py-5">
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <span className={cn('inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em]', toneClass[item.tone] || toneClass.teal)}>
@@ -76,7 +76,7 @@ function DoctrineDrawer({ item, onClose }) {
                 <button
                   type="button"
                   onClick={onClose}
-                  className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-[11px] font-semibold text-text-muted transition-colors hover:text-text-primary"
+                  className="ui-button-secondary px-3 py-2 text-[11px] font-semibold text-text-muted hover:text-text-primary"
                 >
                   Close
                 </button>
@@ -85,12 +85,12 @@ function DoctrineDrawer({ item, onClose }) {
 
             <div className="flex-1 space-y-5 overflow-y-auto px-6 py-5">
               <div className="grid gap-3 sm:grid-cols-2">
-                <div className="rounded-[22px] border border-white/8 bg-black/20 p-4">
+                <div className="ui-stat">
                   <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Confidence</div>
                   <div className="mt-2 text-3xl font-semibold text-text-primary">{item.confidence}%</div>
                   <p className="mt-2 text-[12px] text-text-muted">{item.changeSummary}</p>
                 </div>
-                <div className="rounded-[22px] border border-white/8 bg-black/20 p-4">
+                <div className="ui-stat">
                   <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Recorded</div>
                   <div className="mt-2 text-sm font-semibold text-text-primary">{formatTimestamp(item.latestSnapshotAt || item.lastSeenAt)}</div>
                   <p className="mt-2 text-[12px] text-text-muted">
@@ -101,14 +101,14 @@ function DoctrineDrawer({ item, onClose }) {
                 </div>
               </div>
 
-              <div className="rounded-[24px] border border-white/8 bg-black/20 p-4">
+              <div className="ui-panel-soft p-4">
                 <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-text-muted">
                   <BrainCircuit className="h-3.5 w-3.5 text-aurora-teal" />
                   Why The System Believes This
                 </div>
                 <div className="mt-4 space-y-2">
                   {(item.whyItBelievesThis || []).map((fact) => (
-                    <div key={fact} className="rounded-2xl border border-white/8 bg-white/[0.02] px-3 py-2.5 text-[12px] leading-relaxed text-text-body">
+                    <div key={fact} className="ui-card-row px-3 py-2.5 text-[12px] leading-relaxed text-text-body">
                       {fact}
                     </div>
                   ))}
@@ -116,11 +116,11 @@ function DoctrineDrawer({ item, onClose }) {
               </div>
 
               {metrics.length > 0 && (
-                <div className="rounded-[24px] border border-white/8 bg-black/20 p-4">
+                <div className="ui-panel-soft p-4">
                   <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-text-muted">Signal Metrics</div>
                   <div className="mt-4 grid gap-3 sm:grid-cols-2">
                     {metrics.map(([key, value]) => (
-                      <div key={key} className="rounded-2xl border border-white/8 bg-white/[0.02] p-3">
+                      <div key={key} className="ui-stat p-3">
                         <div className="text-[10px] uppercase tracking-[0.16em] text-text-disabled">{key.replaceAll('_', ' ')}</div>
                         <div className="mt-2 text-sm font-semibold text-text-primary">{formatMetricValue(value)}</div>
                       </div>
@@ -129,19 +129,19 @@ function DoctrineDrawer({ item, onClose }) {
                 </div>
               )}
 
-              <div className="rounded-[24px] border border-white/8 bg-black/20 p-4">
+              <div className="ui-panel-soft p-4">
                 <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-text-muted">
                   <History className="h-3.5 w-3.5 text-aurora-violet" />
                   Doctrine Change Over Time
                 </div>
                 <div className="mt-4 space-y-3">
                   {history.length === 0 && (
-                    <div className="rounded-2xl border border-white/8 bg-white/[0.02] px-3 py-3 text-[12px] text-text-muted">
+                    <div className="ui-card-row px-3 py-3 text-[12px] text-text-muted">
                       No historical snapshots yet.
                     </div>
                   )}
                   {history.map((entry, index) => (
-                    <div key={entry.id || `${entry.snapshotHash}-${index}`} className="rounded-2xl border border-white/8 bg-white/[0.02] px-3 py-3">
+                    <div key={entry.id || `${entry.snapshotHash}-${index}`} className="ui-card-row px-3 py-3">
                       <div className="flex items-center justify-between gap-3">
                         <div className="text-[12px] font-semibold text-text-primary">{entry.title}</div>
                         <div className="text-[11px] font-mono text-aurora-teal">{entry.confidence}%</div>
@@ -184,14 +184,14 @@ export function DoctrineCards({ items = [], compact = false, columns = 'three' }
               whileHover={{ y: -2 }}
               type="button"
               onClick={() => setSelectedId(item.id || item.title)}
-              className="rounded-[22px] border border-white/8 bg-black/20 p-4 text-left transition-colors hover:border-white/14 hover:bg-black/26"
+              className="ui-card-row p-4 text-left transition-colors hover:border-hairline-strong hover:bg-panel-soft/90"
             >
               <div className="flex items-start justify-between gap-2">
                 <span className={cn('inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em]', toneClass[item.tone] || toneClass.teal)}>
                   <Icon className="h-3 w-3" />
                   {item.owner}
                 </span>
-                <span className="rounded-full border border-white/8 bg-white/[0.03] px-2 py-1 text-[10px] font-mono text-text-muted">
+                <span className="ui-chip px-2 py-1 text-[10px] font-mono text-text-muted">
                   {item.confidence}%
                 </span>
               </div>

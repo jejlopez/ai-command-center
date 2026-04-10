@@ -3,7 +3,7 @@ import { CommandSectionHeader } from '../command/CommandSectionHeader';
 
 function Kpi({ label, value, tone = 'text-text-primary', detail }) {
   return (
-    <div className="rounded-[20px] border border-white/8 bg-black/20 p-4">
+    <div className="ui-stat p-4">
       <div className="text-[10px] uppercase tracking-[0.16em] text-text-disabled">{label}</div>
       <div className={`mt-2 text-3xl font-semibold tracking-[-0.03em] ${tone}`}>{value}</div>
       {detail ? <p className="mt-2 text-[12px] leading-relaxed text-text-muted">{detail}</p> : null}
@@ -13,7 +13,7 @@ function Kpi({ label, value, tone = 'text-text-primary', detail }) {
 
 export function FleetHealthPanel({ summary, onOpenDetail }) {
   return (
-    <div className="rounded-[28px] border border-white/8 bg-[linear-gradient(180deg,rgba(96,165,250,0.05),rgba(255,255,255,0.015))] p-5">
+    <div className="ui-panel p-5">
       <CommandSectionHeader
         eyebrow="Fleet Command Zone"
         title="System Posture"
@@ -30,21 +30,21 @@ export function FleetHealthPanel({ summary, onOpenDetail }) {
       </div>
 
       <div className="mt-4 grid gap-3 md:grid-cols-3">
-        <div className="rounded-[20px] border border-white/8 bg-white/[0.03] p-4">
+        <div className="ui-stat p-4">
           <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.16em] text-text-muted">
             <Gauge className="h-3.5 w-3.5 text-aurora-amber" />
             Median latency
           </div>
           <div className="mt-2 font-mono text-2xl text-text-primary">{summary.medianLatency}ms</div>
         </div>
-        <div className="rounded-[20px] border border-white/8 bg-white/[0.03] p-4">
+        <div className="ui-stat p-4">
           <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.16em] text-text-muted">
             <Wifi className="h-3.5 w-3.5 text-aurora-blue" />
             Stalled operators
           </div>
           <div className="mt-2 font-mono text-2xl text-text-primary">{summary.stalledAgents}</div>
         </div>
-        <div className="rounded-[20px] border border-white/8 bg-white/[0.03] p-4">
+        <div className="ui-stat p-4">
           <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.16em] text-text-muted">
             <AlertTriangle className="h-3.5 w-3.5 text-aurora-amber" />
             Watch list
@@ -55,7 +55,7 @@ export function FleetHealthPanel({ summary, onOpenDetail }) {
 
       <div className="mt-4 space-y-3">
         {summary.flaggedAgents.length === 0 && (
-          <div className="rounded-[20px] border border-aurora-green/15 bg-aurora-green/5 px-4 py-4 text-sm text-aurora-green">
+          <div className="ui-card-row border-aurora-green/15 bg-aurora-green/5 px-4 py-4 text-sm text-aurora-green">
             No flagged operators. Fleet posture is stable.
           </div>
         )}
@@ -65,7 +65,7 @@ export function FleetHealthPanel({ summary, onOpenDetail }) {
             key={agent.id}
             type="button"
             onClick={() => onOpenDetail?.(agent.id)}
-            className="flex w-full items-start justify-between rounded-[20px] border border-white/8 bg-black/20 px-4 py-4 text-left transition-colors hover:bg-white/[0.04]"
+            className="ui-card-row flex w-full items-start justify-between px-4 py-4 text-left transition-colors hover:bg-white/[0.04] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aurora-teal/35"
           >
             <div>
               <div className="text-sm font-medium text-text-primary">{agent.name}</div>

@@ -17,11 +17,11 @@ export function LaunchProtocolPanel({ actions, onNavigate, onOpenDetail, onAddOp
   }
 
   return (
-    <div className="rounded-[28px] border border-white/8 bg-[linear-gradient(180deg,rgba(45,212,191,0.05),rgba(255,255,255,0.02))] p-5">
+    <div className="ui-panel p-5">
       <CommandSectionHeader
         eyebrow="Launch Protocol"
         title="What the commander should do next"
-        description="A curated sequence of the next best actions already available in the system."
+        description="The next actions that improve throughput, reduce drag, or open the cleanest lane."
         icon={Rocket}
         tone="teal"
       />
@@ -34,15 +34,15 @@ export function LaunchProtocolPanel({ actions, onNavigate, onOpenDetail, onAddOp
               key={`${action.label}-${index}`}
               type="button"
               onClick={() => handleAction(action)}
-              className="flex w-full items-start gap-4 rounded-[22px] border border-white/8 bg-black/20 p-4 text-left transition-colors hover:bg-white/[0.04]"
+              className="ui-card-row flex w-full items-start gap-4 p-4 text-left transition-colors hover:bg-white/[0.04] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aurora-teal/35"
             >
-              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-white/8 bg-white/[0.03]">
+              <div className="ui-panel-soft flex h-11 w-11 shrink-0 items-center justify-center">
                 <Icon className={`h-4.5 w-4.5 ${action.tone}`} />
               </div>
               <div className="min-w-0 flex-1">
                 <div className="flex items-center justify-between gap-3">
                   <div className="text-sm font-semibold text-text-primary">{action.label}</div>
-                  <div className="rounded-full border border-white/10 bg-white/[0.03] px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-text-muted">
+                  <div className="ui-chip px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em]">
                     {action.badge}
                   </div>
                 </div>

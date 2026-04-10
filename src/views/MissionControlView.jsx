@@ -25,10 +25,11 @@ import {
   fetchTaskNotes, createTaskNote,
   acknowledgeItem, reopenReview, snoozeReview,
   fetchSchedules, toggleSchedule, dispatchFromSchedule,
-  previewMissionPlan, createMission, updateMissionBranchRouting, updateMissionBranchDependencies,
+  previewMissionPlan, createMission,
 } from '../lib/api';
 import { useSystemState } from '../context/SystemStateContext';
 import { MissionCreatorPanel } from '../components/mission/MissionCreatorPanel';
+import { ScratchpadStrip } from '../components/mission/ScratchpadStrip';
 import { CommandDeckHero } from '../components/command/CommandDeckHero';
 import { AnimatedNumber } from '../components/command/AnimatedNumber';
 import { CommandSectionHeader } from '../components/command/CommandSectionHeader';
@@ -36,14 +37,11 @@ import { useLearningMemory } from '../utils/useLearningMemory';
 import { DoctrineCards } from '../components/command/DoctrineCards';
 import { TruthAuditStrip } from '../components/command/TruthAuditStrip';
 import { useCommandCenterTruth } from '../utils/useCommandCenterTruth';
-import { createPersistentSpecialist, promoteAgentToPersistent, useConnectedSystems, useSpecialistLifecycle, useTaskInterventions, useTaskOutcomes } from '../utils/useSupabase';
+import { useConnectedSystems } from '../utils/useSupabase';
 import { ReactorCoreBoard } from '../components/command/ReactorCoreBoard';
 import { CommandTimelineRail } from '../components/command/CommandTimelineRail';
 import { TacticalInterventionConsole } from '../components/command/TacticalInterventionConsole';
 import { buildTimelineEntries } from '../utils/buildCommandTimeline';
-import { TaskDAG } from '../components/TaskDAG';
-import { getWorkflowMeta } from '../utils/missionLifecycle';
-import { getAutomationCandidates, getDoctrineDeltaSummary, getFleetPostureSummary, getMissionPatternDefaultSummary, getOutcomeMemorySummary, getPatternApprovalBiasSummary, getPersistentPromotionGuidance, getPostLaunchConfidenceSummary, getRecurringAutonomyTuningSummary, parseDoctrineFeedbackLogs } from '../utils/commanderAnalytics';
 
 // ═══════════════════════════════════════════════════════════════
 // UI ATOMS
@@ -90,145 +88,6 @@ function formatProgress(task) {
   return `${Math.max(0, Math.min(100, task.progressPercent))}%`;
 }
 
-function getDependencySummary(task, tasks) {
-  const dependencies = (task.dependsOn || [])
-    .map((dependencyId) => tasks.find((candidate) => candidate.id === dependencyId))
-    .filter(Boolean);
-  const unlocks = tasks.filter((candidate) => (candidate.dependsOn || []).includes(task.id));
-  return { dependencies, unlocks };
-}
-
-function wouldCreateDependencyCycle(tasks, sourceId, targetId) {
-  if (!sourceId || !targetId || sourceId === targetId) return true;
-  const visited = new Set();
-  const stack = [sourceId];
-
-  while (stack.length) {
-    const currentId = stack.pop();
-    if (!currentId || visited.has(currentId)) continue;
-    if (currentId === targetId) return true;
-    visited.add(currentId);
-    const currentTask = tasks.find((task) => task.id === currentId);
-    (currentTask?.dependsOn || []).forEach((dependencyId) => stack.push(dependencyId));
-  }
-
-  return false;
-}
-
-function toRailTimestamp(value) {
-  const date = new Date(value || 0);
-  return Number.isNaN(date.getTime()) ? 0 : date.getTime();
-}
-
-function normalizeTimelineMessage(message = '', rootMissionId = null) {
-  return String(message || '')
-    .replace('[automation-guardrail] ', '')
-    .replace('[branch-routing] ', '')
-    .replace('[branch-dependency] ', '')
-    .replace('[intervention-approve] ', '')
-    .replace('[intervention-retry] ', '')
-    .replace('[intervention-stop] ', '')
-    .replace('[intervention-cancel] ', '')
-    .replace('[specialist-spawned] ', '')
-    .replace('[specialist-retired] ', '')
-    .replace('[specialist-persistent] ', '')
-    .replace('[outcome-score] ', '')
-    .replace('[doctrine-feedback] ', '')
-    .replace(rootMissionId ? `root ${rootMissionId} ` : '', '');
-}
-
-function buildInterventionRailEntries({ branchHistory = [], lifecycleEvents = [], outcomeHistory = [], doctrineFeedback = [], rootMissionId = null }) {
-  const branchEntries = branchHistory.map((entry) => {
-    const message = String(entry.message || '');
-    let tone = 'blue';
-    let label = 'Intervention';
-    if (message.includes('[specialist-retired]')) {
-      tone = 'violet';
-      label = 'Retirement';
-    } else if (message.includes('[automation-guardrail]')) {
-      tone = 'amber';
-      label = 'Guardrail';
-    } else if (message.includes('[intervention-stop]') || message.includes('[intervention-cancel]')) {
-      tone = 'rose';
-      label = 'Intervention';
-    } else if (message.includes('[intervention-approve]') || message.includes('[intervention-retry]')) {
-      tone = 'amber';
-      label = 'Intervention';
-    } else if (message.includes('[specialist-spawned]') || message.includes('[specialist-persistent]')) {
-      tone = 'violet';
-      label = 'Specialist';
-    } else if (message.includes('[branch-dependency]')) {
-      tone = 'amber';
-      label = 'Dependency';
-    } else if (message.includes('[branch-routing]')) {
-      tone = 'teal';
-      label = 'Routing';
-    }
-
-    return {
-      id: `branch-${entry.id}`,
-      timestamp: entry.timestamp,
-      sortValue: toRailTimestamp(entry.timestamp),
-      tone,
-      label,
-      title: label === 'Guardrail'
-        ? 'Automation guardrail applied'
-        : label === 'Routing'
-          ? 'Branch lane changed'
-          : label === 'Dependency'
-            ? 'Branch dependency changed'
-            : 'Specialist lifecycle event',
-      detail: normalizeTimelineMessage(message, rootMissionId),
-      meta: entry.type || 'SYS',
-    };
-  });
-
-  const outcomeEntries = outcomeHistory.map((entry) => ({
-    id: `outcome-${entry.id}`,
-    timestamp: entry.timestamp,
-    sortValue: toRailTimestamp(entry.timestamp),
-    tone: entry.trust === 'high' ? 'teal' : entry.trust === 'low' ? 'rose' : 'amber',
-    label: 'Outcome',
-    title: `Outcome score ${entry.score ?? '—'} · ${entry.trust || 'unknown'} trust`,
-    detail: entry.cleanMessage,
-    meta: 'SCORE',
-  }));
-
-  const doctrineEntries = doctrineFeedback.map((entry) => ({
-    id: `doctrine-${entry.id}`,
-    timestamp: entry.timestamp,
-    sortValue: toRailTimestamp(entry.timestamp),
-    tone: 'blue',
-    label: 'Doctrine',
-    title: 'Doctrine feedback persisted',
-    detail: normalizeTimelineMessage(entry.cleanMessage, rootMissionId),
-    meta: 'LEARN',
-  }));
-
-  const lifecycleRailEntries = lifecycleEvents.map((entry) => ({
-    id: `lifecycle-${entry.id}`,
-    timestamp: entry.createdAt || entry.timestamp,
-    sortValue: toRailTimestamp(entry.createdAt || entry.timestamp),
-    tone: ['retired', 'cleaned_up'].includes(entry.eventType) ? 'violet' : entry.isEphemeral ? 'violet' : 'blue',
-    label: ['retired', 'cleaned_up'].includes(entry.eventType) ? 'Retirement' : 'Specialist',
-    title: entry.eventType === 'promoted'
-      ? 'Specialist promoted to persistent lane'
-      : entry.eventType === 'persistent_created'
-        ? 'Persistent specialist created'
-        : entry.eventType === 'cleaned_up'
-          ? 'Idle specialist cleaned up'
-          : entry.eventType === 'retired'
-            ? 'Specialist retired'
-            : 'Specialist materialized',
-    detail: normalizeTimelineMessage(entry.message || '', rootMissionId),
-    meta: 'FLEET',
-  }));
-
-  return [...branchEntries, ...lifecycleRailEntries, ...outcomeEntries, ...doctrineEntries]
-    .sort((left, right) => right.sortValue - left.sortValue)
-    .slice(0, 14);
-}
-
 const stColor = {
   queued:              { bg: 'bg-aurora-blue/10', tx: 'text-aurora-blue', lb: 'Queued' },
   running:             { bg: 'bg-aurora-amber/10', tx: 'text-aurora-amber', lb: 'Running' },
@@ -250,14 +109,6 @@ const stColor = {
 };
 
 const urgColors = { critical: '#fb7185', high: '#fbbf24', normal: '#00D9C8' };
-const workflowTone = {
-  teal: 'bg-aurora-teal/10 text-aurora-teal border-aurora-teal/20',
-  amber: 'bg-aurora-amber/10 text-aurora-amber border-aurora-amber/20',
-  blue: 'bg-aurora-blue/10 text-aurora-blue border-aurora-blue/20',
-  rose: 'bg-aurora-rose/10 text-aurora-rose border-aurora-rose/20',
-  green: 'bg-aurora-green/10 text-aurora-green border-aurora-green/20',
-  slate: 'bg-white/5 text-text-muted border-white/10',
-};
 
 function Card({ children, className, onClick, selected }) {
   return (
@@ -280,10 +131,8 @@ function Card({ children, className, onClick, selected }) {
 
 function ItemRow({ item, agents, selected, onClick }) {
   const cfg = stColor[item.status] || stColor.pending;
-  const workflow = getWorkflowMeta(item.workflowStatus);
   const isRun = item.status === 'running';
   const agent = agents.find(a => a.id === (item.agentId || item.agent_id));
-  const isEphemeral = !!agent?.isEphemeral;
   const urgC = item.urgency ? urgColors[item.urgency] : null;
   const progress = formatProgress(item);
   const relativeTime = formatTaskMoment(item);
@@ -308,14 +157,7 @@ function ItemRow({ item, agents, selected, onClick }) {
 
       <div className="flex items-center gap-3 ml-8 flex-wrap">
         {agent?.model && <ModelChip model={agent.model} />}
-        <span className={cn("rounded-full border px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.14em]", workflowTone[workflow.tone])}>
-          {workflow.label}
-        </span>
-        {isEphemeral && <span className="px-2 py-0.5 rounded-full text-[9px] font-mono font-semibold bg-aurora-violet/10 text-aurora-violet border border-aurora-violet/20 uppercase">Spawned Specialist</span>}
-        {item.agentRole && <span className="px-2 py-0.5 rounded-full text-[9px] font-mono font-semibold bg-white/[0.04] text-text-muted border border-border uppercase">{item.agentRole}</span>}
-        {item.branchLabel && <span className="px-2 py-0.5 rounded-full text-[9px] font-mono font-semibold bg-white/[0.04] text-text-muted border border-border">{item.branchLabel}</span>}
         {item.mode && <span className="px-2 py-0.5 rounded-full text-[9px] font-mono font-semibold bg-surface-raised text-text-muted border border-border uppercase">{item.mode}</span>}
-        {item.domain && <span className="px-2 py-0.5 rounded-full text-[9px] font-mono font-semibold bg-white/[0.04] text-text-muted border border-border uppercase">{item.domain}</span>}
         {item.durationMs > 0 && <span className="text-[10px] font-mono text-text-disabled flex items-center gap-1"><Timer className="w-3 h-3" />{item.durationMs < 1000 ? `${item.durationMs}ms` : `${(item.durationMs/1000).toFixed(1)}s`}</span>}
         {costLabel && <span className="text-[10px] font-mono text-text-disabled">{costLabel}</span>}
         {item.waitingMs > 0 && <span className="text-[10px] font-mono text-text-disabled flex items-center gap-1"><Clock className="w-3 h-3" />{Math.round(item.waitingMs/60000)}m waiting</span>}
@@ -326,7 +168,6 @@ function ItemRow({ item, agents, selected, onClick }) {
 
       {item.summary && <p className="text-[10px] text-text-muted mt-1.5 ml-8 leading-relaxed line-clamp-1">{item.summary}</p>}
       {!item.summary && item.description && <p className="text-[10px] text-text-muted mt-1.5 ml-8 leading-relaxed line-clamp-1">{item.description}</p>}
-      {item.routingReason && <p className="ml-8 mt-1 text-[10px] font-mono text-text-disabled line-clamp-1">Route: {item.routingReason}</p>}
       {progress && (
         <div className="ml-8 mt-2">
           <div className="w-full h-1.5 rounded-full bg-surface-raised overflow-hidden">
@@ -381,734 +222,6 @@ function ApprovalCard({ item, agents, onClick, onApprove, onReject }) {
   );
 }
 
-function MissionGraphPanel({ tasks, agents, logs, outcomes, interventions, lifecycleEvents, learningMemory, selectedId, onSelect, onRetry, onStop, onApprove, onCancel, onUpdateBranchRouting, onUpdateBranchDependencies }) {
-  const graphTaskSet = useMemo(() => {
-    if (!tasks.length) return [];
-    const selectedTask = tasks.find((task) => task.id === selectedId) || tasks[0];
-    const rootMissionId = selectedTask?.rootMissionId || selectedTask?.id;
-    return tasks.filter((task) => (task.rootMissionId || task.id) === rootMissionId);
-  }, [selectedId, tasks]);
-
-  const dagTasks = useMemo(() => (
-    graphTaskSet.map((task) => ({
-      ...task,
-      status: getWorkflowMeta(task.workflowStatus).dagStatus,
-    }))
-  ), [graphTaskSet]);
-
-  const spawnedSpecialists = useMemo(() => {
-    const graphAgentIds = [...new Set(graphTaskSet.map((task) => task.agentId).filter(Boolean))];
-    return agents.filter((agent) => graphAgentIds.includes(agent.id) && agent.isEphemeral);
-  }, [agents, graphTaskSet]);
-  const selectedTask = graphTaskSet.find((task) => task.id === selectedId) || graphTaskSet[0] || null;
-  const [routingDraft, setRoutingDraft] = useState({ agentId: '', providerOverride: '', modelOverride: '' });
-  const [routingSaving, setRoutingSaving] = useState(false);
-  const [routingMessage, setRoutingMessage] = useState('');
-  const [dependencyDraft, setDependencyDraft] = useState([]);
-  const [dependencySaving, setDependencySaving] = useState(false);
-  const [dependencyMessage, setDependencyMessage] = useState('');
-  const [promotionSavingId, setPromotionSavingId] = useState(null);
-  const [promotionMessage, setPromotionMessage] = useState('');
-  const [fleetActionSaving, setFleetActionSaving] = useState(false);
-  const selectedRootMissionId = selectedTask?.rootMissionId || selectedTask?.id || null;
-  const rootOutcomes = outcomes.filter((entry) => !selectedRootMissionId || entry.rootMissionId === selectedRootMissionId);
-  const outcomeMemory = getOutcomeMemorySummary(rootOutcomes);
-  const rootInterventions = interventions.filter((entry) => !selectedRootMissionId || (entry.rootMissionId || entry.taskId) === selectedRootMissionId);
-  const runtimeConfidence = getPostLaunchConfidenceSummary({ outcomes: rootOutcomes, interventions: rootInterventions });
-  const doctrineDeltas = getDoctrineDeltaSummary(learningMemory?.doctrine || []).slice(0, 2);
-  const selectedDependencySummary = selectedTask ? getDependencySummary(selectedTask, graphTaskSet) : { dependencies: [], unlocks: [] };
-  const retirementEvents = lifecycleEvents
-    .filter((entry) => entry.eventType === 'retired' && (!selectedRootMissionId || entry.rootMissionId === selectedRootMissionId))
-    .slice(0, 4);
-  const rootLifecycleEvents = lifecycleEvents
-    .filter((entry) => !selectedRootMissionId || entry.rootMissionId === selectedRootMissionId)
-    .slice(0, 10);
-  const fleetPosture = useMemo(() => getFleetPostureSummary(lifecycleEvents, agents), [lifecycleEvents, agents]);
-  const outcomeHistory = rootOutcomes.slice(0, 6).map((entry) => ({
-    id: entry.id,
-    score: entry.score,
-    trust: entry.trust,
-    cleanMessage: `${entry.outcomeStatus} · ${entry.domain} / ${entry.intentType} · ${entry.model || 'adaptive lane'} · ${entry.provider || 'adaptive'} · ${entry.doctrineFeedback || 'Outcome persisted.'}`,
-    timestamp: entry.createdAt,
-  }));
-  const doctrineFeedback = parseDoctrineFeedbackLogs(logs).filter((entry) => !selectedRootMissionId || entry.cleanMessage.includes(selectedRootMissionId)).slice(0, 6);
-  const recurringTrustSignals = useMemo(() => {
-    if (!selectedTask?.scheduleType || selectedTask.scheduleType !== 'recurring') return null;
-    const domain = selectedTask.domain || 'general';
-    const intentType = selectedTask.intentType || 'general';
-    const matchingOutcomes = outcomes.filter((entry) => entry.domain === domain && entry.intentType === intentType);
-    const matchingInterventions = interventions.filter((entry) => entry.domain === domain && entry.intentType === intentType);
-    return {
-      domain,
-      intentType,
-      runs: Math.max(graphTaskSet.length, matchingOutcomes.length),
-      rescueCount: matchingInterventions.filter((entry) => ['retry', 'stop', 'cancel'].includes(entry.eventType)).length,
-      guardrailCount: matchingInterventions.filter((entry) => entry.eventType === 'guardrail').length,
-      tuningCount: matchingInterventions.filter((entry) => ['reroute', 'dependency_update', 'approve'].includes(entry.eventType)).length,
-      avgOutcome: matchingOutcomes.length
-        ? Math.round(matchingOutcomes.reduce((sum, entry) => sum + Number(entry.score || 0), 0) / matchingOutcomes.length)
-        : 0,
-      maturityScore: matchingOutcomes.length
-        ? Math.max(28, Math.min(100, Math.round((matchingOutcomes.reduce((sum, entry) => sum + Number(entry.score || 0), 0) / matchingOutcomes.length) - (matchingInterventions.length * 4))))
-        : 0,
-      trustLabel: matchingOutcomes.length
-        ? (matchingInterventions.filter((entry) => ['retry', 'stop', 'cancel', 'guardrail'].includes(entry.eventType)).length >= 4 ? 'Fragile' : matchingInterventions.length >= 2 ? 'Watch' : 'Stable')
-        : 'Watch',
-    };
-  }, [graphTaskSet.length, interventions, outcomes, selectedTask]);
-  const recurringTrustSummary = recurringTrustSignals ? getRecurringAutonomyTuningSummary(recurringTrustSignals) : null;
-  const branchHistory = useMemo(() => (
-    selectedRootMissionId
-      ? rootInterventions
-        .slice(0, 8)
-        .map((entry) => ({
-          id: entry.id,
-          message: entry.message,
-          timestamp: entry.createdAt,
-          type: entry.eventType,
-        }))
-      : []
-  ), [rootInterventions, selectedRootMissionId]);
-  const persistentSpecialists = agents.filter((agent) => !agent.isEphemeral && !['commander', 'executor'].includes(agent.role || ''));
-  const promotionGuidance = useMemo(() => getPersistentPromotionGuidance({ lifecycleEvents, agents, tasks: graphTaskSet }), [agents, graphTaskSet, lifecycleEvents]);
-  const interventionRail = useMemo(() => (
-    buildInterventionRailEntries({
-      branchHistory,
-      lifecycleEvents: rootLifecycleEvents,
-      outcomeHistory,
-      doctrineFeedback,
-      rootMissionId: selectedRootMissionId,
-    })
-  ), [branchHistory, doctrineFeedback, outcomeHistory, rootLifecycleEvents, selectedRootMissionId]);
-
-  const branchSummary = useMemo(() => {
-    const running = graphTaskSet.filter((task) => task.workflowStatus === 'running').length;
-    const waiting = graphTaskSet.filter((task) => task.workflowStatus === 'waiting_on_human').length;
-    const blocked = graphTaskSet.filter((task) => ['blocked', 'failed', 'cancelled'].includes(task.workflowStatus)).length;
-    return { running, waiting, blocked };
-  }, [graphTaskSet]);
-
-  useEffect(() => {
-    if (!selectedTask) return;
-    setRoutingDraft({
-      agentId: selectedTask.agentId || '',
-      providerOverride: selectedTask.providerOverride || '',
-      modelOverride: selectedTask.modelOverride || '',
-    });
-    setRoutingMessage('');
-    setDependencyDraft(selectedTask.dependsOn || []);
-    setDependencyMessage('');
-  }, [selectedTask]);
-
-  const handlePromoteSpecialist = async (agent) => {
-    if (!agent?.id) return;
-    setPromotionSavingId(agent.id);
-    setPromotionMessage('');
-    try {
-      await promoteAgentToPersistent(agent.id);
-      setPromotionMessage(`${agent.name} is now a persistent ${agent.role || 'specialist'} lane.`);
-    } catch (error) {
-      setPromotionMessage(error.message || 'Could not promote specialist.');
-    } finally {
-      setPromotionSavingId(null);
-    }
-  };
-
-  const handleCreateRecommendedLane = async (target) => {
-    if (!target?.role) return;
-    setFleetActionSaving(true);
-    setPromotionMessage('');
-    try {
-      const defaultModel = selectedTask?.modelOverride
-        || persistentSpecialists[0]?.model
-        || agents.find((agent) => !agent.isEphemeral && agent.model)?.model
-        || agents.find((agent) => agent.model)?.model
-        || '';
-      if (!defaultModel) throw new Error('No model available for the new persistent lane.');
-      const objective = target.domain
-        ? `Persistent ${target.role} coverage for ${target.domain} mission families.`
-        : `Persistent ${target.role} coverage for durable branch demand in Mission Control.`;
-      const agent = await createPersistentSpecialist({
-        name: `${target.role}-${target.domain || 'mission'}-lane`,
-        objective,
-        role: target.role,
-        model: defaultModel,
-        commanderId: null,
-        skills: [],
-      });
-      setPromotionMessage(`${agent.name} is now live as persistent coverage for ${target.domain || target.role}.`);
-    } catch (error) {
-      setPromotionMessage(error.message || 'Could not create recommended lane.');
-    } finally {
-      setFleetActionSaving(false);
-    }
-  };
-
-  if (!graphTaskSet.length) {
-    return (
-      <div className="rounded-[24px] border border-white/[0.06] bg-black/15 px-5 py-6">
-        <div className="text-sm font-semibold text-text-primary">No mission graph yet</div>
-        <p className="mt-2 text-[12px] leading-relaxed text-text-muted">
-          Launch a mission or create the first delegated branch to see the parent/child execution graph appear here.
-        </p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="rounded-[24px] border border-white/[0.06] bg-black/15 p-5">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Mission Graph</div>
-          <div className="mt-2 text-lg font-semibold text-text-primary">Parent / child execution map</div>
-          <p className="mt-2 text-[12px] leading-relaxed text-text-muted">
-            First canonical graph view for the selected mission root. Click a node to open the mission drawer.
-          </p>
-        </div>
-        <div className="grid grid-cols-3 gap-2">
-          {[
-            { label: 'Nodes', value: graphTaskSet.length, tone: 'text-text-primary' },
-            { label: 'Running', value: branchSummary.running, tone: 'text-aurora-amber' },
-            { label: 'Waiting', value: branchSummary.waiting + branchSummary.blocked, tone: branchSummary.blocked > 0 ? 'text-aurora-rose' : 'text-aurora-blue' },
-          ].map((metric) => (
-            <div key={metric.label} className="rounded-[18px] border border-white/8 bg-white/[0.02] px-3 py-3">
-              <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">{metric.label}</div>
-              <div className={cn('mt-2 text-lg font-semibold', metric.tone)}>{metric.value}</div>
-            </div>
-          ))}
-        </div>
-      </div>
-      <div className="mt-4 h-[320px] rounded-[22px] border border-white/8 bg-[radial-gradient(circle_at_top,rgba(45,212,191,0.06),transparent_40%),rgba(255,255,255,0.02)] p-3">
-        <TaskDAG
-          tasks={dagTasks}
-          onNodeClick={(task) => onSelect(task.id)}
-          editable
-          selectedNodeId={selectedTask?.id || null}
-          onDependencyConnect={(sourceId, targetId) => {
-            const targetTask = graphTaskSet.find((task) => task.id === targetId);
-            if (!targetTask) return;
-            if (wouldCreateDependencyCycle(graphTaskSet, sourceId, targetId)) {
-              setDependencyMessage('That dependency would create a cycle. Choose a branch that does not already trace back to this node.');
-              return;
-            }
-            const nextDependencies = [...new Set([...(targetTask.dependsOn || []), sourceId])];
-            onUpdateBranchDependencies?.(targetId, nextDependencies);
-            onSelect(targetId);
-          }}
-        />
-      </div>
-      <div className="mt-4 rounded-[20px] border border-white/8 bg-[linear-gradient(180deg,rgba(96,165,250,0.08),rgba(255,255,255,0.02))] p-4">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Fleet posture</div>
-            <div className="mt-1 text-sm font-semibold text-text-primary">{fleetPosture.label}</div>
-            <p className="mt-2 max-w-2xl text-[12px] leading-relaxed text-text-body">{fleetPosture.detail}</p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <span className="rounded-full border border-aurora-blue/20 bg-aurora-blue/10 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-aurora-blue">
-              persistent {fleetPosture.persistentCount}
-            </span>
-            <span className="rounded-full border border-aurora-violet/20 bg-aurora-violet/10 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-aurora-violet">
-              spawned {fleetPosture.spawnedCount}
-            </span>
-            <span className="rounded-full border border-aurora-teal/20 bg-aurora-teal/10 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-aurora-teal">
-              promotions {fleetPosture.promotionCount}
-            </span>
-          </div>
-        </div>
-      </div>
-      {(recurringTrustSummary || promotionGuidance.recommendedActions?.length > 0) && (
-        <div className="mt-4 grid gap-3 xl:grid-cols-[0.95fr_1.05fr]">
-          {recurringTrustSummary && (
-            <div className="rounded-[20px] border border-aurora-amber/20 bg-aurora-amber/10 p-4">
-              <div className="text-[10px] uppercase tracking-[0.18em] text-aurora-amber">Recurring trust recovery</div>
-              <div className="mt-1 text-sm font-semibold text-text-primary">{recurringTrustSummary.actionLabel}</div>
-              <p className="mt-2 text-[12px] leading-relaxed text-text-body">{recurringTrustSummary.detail}</p>
-              <p className="mt-2 text-[11px] leading-relaxed text-aurora-amber">{recurringTrustSummary.recoveryLabel}</p>
-              <p className="mt-2 text-[11px] leading-relaxed text-aurora-teal">{recurringTrustSummary.recoveryUpgradeLabel}</p>
-              <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/[0.08]">
-                <div
-                  className="h-full rounded-full bg-gradient-to-r from-aurora-amber via-aurora-violet to-aurora-teal"
-                  style={{ width: `${Math.max(8, recurringTrustSummary.recoveryProgress || 0)}%` }}
-                />
-              </div>
-              <div className="mt-2 text-[10px] text-text-muted">{recurringTrustSummary.recoveryProgressLabel}</div>
-              <div className="mt-3 flex flex-wrap gap-2">
-                <span className="rounded-full border border-aurora-violet/20 bg-aurora-violet/10 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-aurora-violet">
-                  {recurringTrustSummary.posture}
-                </span>
-                <span className="rounded-full border border-aurora-blue/20 bg-aurora-blue/10 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-aurora-blue">
-                  cadence {recurringTrustSummary.recommendedFrequency}
-                </span>
-                <span className="rounded-full border border-white/10 bg-white/[0.03] px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-text-muted">
-                  {recurringTrustSummary.recommendedApprovalPosture.replaceAll('_', ' ')}
-                </span>
-              </div>
-            </div>
-          )}
-          {promotionGuidance.recommendedActions?.length > 0 && (
-            <div className="rounded-[20px] border border-aurora-blue/20 bg-aurora-blue/10 p-4">
-              <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Default fleet actions</div>
-              <div className="mt-1 text-sm font-semibold text-text-primary">Commander is seeing durable role pressure here</div>
-              <p className="mt-2 text-[12px] leading-relaxed text-text-body">{promotionGuidance.recommendation}</p>
-              <div className="mt-3 flex flex-wrap gap-2">
-                {promotionGuidance.recommendedActions.slice(0, 3).map((entry) => (
-                  <button
-                    key={entry.key}
-                    type="button"
-                    disabled={fleetActionSaving}
-                    onClick={() => handleCreateRecommendedLane(entry)}
-                    className={cn(
-                      'rounded-full border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] disabled:opacity-50',
-                      entry.tone === 'violet'
-                        ? 'border-aurora-violet/20 bg-aurora-violet/10 text-aurora-violet'
-                        : 'border-aurora-blue/20 bg-aurora-blue/10 text-aurora-blue'
-                    )}
-                  >
-                    {fleetActionSaving ? 'Working...' : entry.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-      <div className="mt-4 grid gap-3 xl:grid-cols-[0.95fr_1.05fr]">
-        <div className="rounded-[20px] border border-white/8 bg-[linear-gradient(180deg,rgba(45,212,191,0.08),rgba(255,255,255,0.02))] p-4">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Post-launch confidence</div>
-              <div className="mt-1 text-sm font-semibold text-text-primary">{runtimeConfidence.label}</div>
-              <p className="mt-2 text-[12px] leading-relaxed text-text-body">{runtimeConfidence.detail}</p>
-            </div>
-            <span className={cn(
-              'rounded-full border px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.16em]',
-              runtimeConfidence.posture === 'grounded'
-                ? 'border-aurora-teal/20 bg-aurora-teal/10 text-aurora-teal'
-                : runtimeConfidence.posture === 'cautious'
-                  ? 'border-aurora-amber/20 bg-aurora-amber/10 text-aurora-amber'
-                  : 'border-aurora-rose/20 bg-aurora-rose/10 text-aurora-rose'
-            )}>
-              {runtimeConfidence.runtimeConfidence}% runtime confidence
-            </span>
-          </div>
-          <div className="mt-3 grid gap-2 md:grid-cols-4">
-            {[
-              { label: 'Avg outcome', value: outcomeMemory.averageScore || '—', tone: 'text-text-primary' },
-              { label: 'Rescues', value: runtimeConfidence.rescueEvents, tone: 'text-aurora-rose' },
-              { label: 'Reroutes', value: runtimeConfidence.rerouteEvents, tone: 'text-aurora-blue' },
-              { label: 'Guardrails', value: runtimeConfidence.guardrailEvents, tone: 'text-aurora-amber' },
-            ].map((metric) => (
-              <div key={metric.label} className="rounded-[16px] border border-white/8 bg-black/20 px-3 py-3">
-                <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">{metric.label}</div>
-                <div className={cn('mt-2 text-lg font-semibold', metric.tone)}>{metric.value}</div>
-              </div>
-            ))}
-          </div>
-        </div>
-        <div className="rounded-[20px] border border-white/8 bg-[linear-gradient(180deg,rgba(167,139,250,0.08),rgba(255,255,255,0.02))] p-4">
-          <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Doctrine delta</div>
-          <div className="mt-1 text-sm font-semibold text-text-primary">How mission trust is moving right now</div>
-          <div className="mt-3 space-y-2">
-            {doctrineDeltas.length === 0 && (
-              <div className="rounded-[16px] border border-white/8 bg-black/20 px-3 py-3 text-[11px] text-text-muted">
-                Commander has not accumulated enough doctrine history yet to show meaningful confidence movement.
-              </div>
-            )}
-            {doctrineDeltas.map((entry) => (
-              <div key={entry.id} className="rounded-[16px] border border-white/8 bg-black/20 px-3 py-3">
-                <div className="flex items-center justify-between gap-3">
-                  <div className="text-[12px] font-semibold text-text-primary">{entry.owner}</div>
-                  <span className={cn(
-                    'rounded-full border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em]',
-                    entry.trend === 'up'
-                      ? 'border-aurora-teal/20 bg-aurora-teal/10 text-aurora-teal'
-                      : entry.trend === 'down'
-                        ? 'border-aurora-rose/20 bg-aurora-rose/10 text-aurora-rose'
-                        : 'border-white/10 bg-white/[0.03] text-text-muted'
-                  )}>
-                    {entry.delta > 0 ? '+' : ''}{entry.delta} pts
-                  </span>
-                </div>
-                <div className="mt-1 text-[11px] leading-5 text-text-body">{entry.changeSummary}</div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-      {selectedTask && (
-        <div className="mt-4 grid gap-3 xl:grid-cols-[0.9fr_1.1fr]">
-          <div className="rounded-[20px] border border-white/8 bg-black/20 p-4">
-            <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Branch Dependencies</div>
-            <div className="mt-2 text-sm font-semibold text-text-primary">{selectedTask.name || selectedTask.title}</div>
-            <div className="mt-3 flex flex-wrap gap-2">
-              {selectedDependencySummary.dependencies.length === 0 && (
-                <span className="rounded-full border border-aurora-teal/20 bg-aurora-teal/10 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-aurora-teal">
-                  Ready at launch
-                </span>
-              )}
-              {selectedDependencySummary.dependencies.map((dependency) => (
-                <span key={dependency.id} className="rounded-full border border-white/8 bg-white/[0.03] px-2 py-1 text-[10px] font-semibold text-text-body">
-                  depends on {dependency.branchLabel || dependency.name || dependency.title}
-                </span>
-              ))}
-            </div>
-            <div className="mt-4 text-[10px] uppercase tracking-[0.18em] text-text-muted">Unlocks next</div>
-            <div className="mt-2 flex flex-wrap gap-2">
-              {selectedDependencySummary.unlocks.length === 0 && (
-                <span className="rounded-full border border-white/8 bg-white/[0.03] px-2 py-1 text-[10px] font-semibold text-text-muted">
-                  Terminal branch
-                </span>
-              )}
-              {selectedDependencySummary.unlocks.map((branch) => (
-                <span key={branch.id} className="rounded-full border border-aurora-blue/20 bg-aurora-blue/10 px-2 py-1 text-[10px] font-semibold text-aurora-blue">
-                  {branch.branchLabel || branch.name || branch.title}
-                </span>
-              ))}
-            </div>
-          </div>
-          <div className="rounded-[20px] border border-white/8 bg-black/20 p-4">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Branch Controls</div>
-                <div className="mt-1 text-[12px] text-text-body">Intervene on the selected branch without losing the whole mission graph.</div>
-              </div>
-              <span className="rounded-full border border-white/8 bg-white/[0.03] px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-text-muted">
-                {selectedTask.agentRole || 'executor'}
-              </span>
-            </div>
-            <div className="mt-4 flex flex-wrap gap-2">
-              {selectedTask.workflowStatus === 'waiting_on_human' || selectedTask.status === 'needs_approval' ? (
-                <>
-                  <button onClick={() => onApprove(selectedTask.id)} className="rounded-xl border border-aurora-teal/20 bg-aurora-teal/10 px-3 py-2 text-[11px] font-semibold text-aurora-teal transition-colors hover:bg-aurora-teal/14">
-                    Approve branch
-                  </button>
-                  <button onClick={() => onCancel(selectedTask.id)} className="rounded-xl border border-aurora-rose/20 bg-aurora-rose/10 px-3 py-2 text-[11px] font-semibold text-aurora-rose transition-colors hover:bg-aurora-rose/14">
-                    Cancel branch
-                  </button>
-                </>
-              ) : (
-                <>
-                  <button onClick={() => onRetry(selectedTask.id)} className="rounded-xl border border-aurora-amber/20 bg-aurora-amber/10 px-3 py-2 text-[11px] font-semibold text-aurora-amber transition-colors hover:bg-aurora-amber/14">
-                    Rerun branch
-                  </button>
-                  {(selectedTask.workflowStatus === 'running' || selectedTask.status === 'running') && (
-                    <button onClick={() => onStop(selectedTask.id)} className="rounded-xl border border-aurora-rose/20 bg-aurora-rose/10 px-3 py-2 text-[11px] font-semibold text-aurora-rose transition-colors hover:bg-aurora-rose/14">
-                      Stop branch
-                    </button>
-                  )}
-                </>
-              )}
-            </div>
-              <div className="mt-4 grid gap-2 md:grid-cols-2">
-                <div className="rounded-[16px] border border-white/8 bg-white/[0.02] px-3 py-3">
-                  <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Execution strategy</div>
-                  <div className="mt-2 text-[12px] font-semibold text-text-primary">{selectedTask.executionStrategy || 'sequential'}</div>
-                </div>
-              <div className="rounded-[16px] border border-white/8 bg-white/[0.02] px-3 py-3">
-                <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Assigned lane</div>
-                  <div className="mt-2 text-[12px] font-semibold text-text-primary">{selectedTask.providerOverride || 'adaptive'} / {selectedTask.modelOverride || 'default model'}</div>
-                </div>
-              </div>
-            <div className="mt-4 rounded-[16px] border border-white/8 bg-white/[0.02] p-3">
-              <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Reassign branch lane</div>
-              <div className="mt-3 grid gap-3 md:grid-cols-3">
-                <label>
-                  <div className="text-[10px] uppercase tracking-[0.14em] text-text-muted">Agent</div>
-                  <select
-                    value={routingDraft.agentId}
-                    onChange={(event) => setRoutingDraft((current) => ({ ...current, agentId: event.target.value }))}
-                    className="mt-2 w-full rounded-xl border border-white/8 bg-black/20 px-3 py-2 text-[12px] text-text-primary outline-none"
-                  >
-                    <option value="">Unassigned</option>
-                    {agents.map((agent) => (
-                      <option key={agent.id} value={agent.id}>{agent.name} · {agent.role}</option>
-                    ))}
-                  </select>
-                </label>
-                <label>
-                  <div className="text-[10px] uppercase tracking-[0.14em] text-text-muted">Provider override</div>
-                  <select
-                    value={routingDraft.providerOverride}
-                    onChange={(event) => setRoutingDraft((current) => ({ ...current, providerOverride: event.target.value }))}
-                    className="mt-2 w-full rounded-xl border border-white/8 bg-black/20 px-3 py-2 text-[12px] text-text-primary outline-none"
-                  >
-                    <option value="">Policy default</option>
-                    {['Anthropic', 'OpenAI', 'Google', 'Ollama', 'Custom'].map((provider) => (
-                      <option key={provider} value={provider}>{provider}</option>
-                    ))}
-                  </select>
-                </label>
-                <label>
-                  <div className="text-[10px] uppercase tracking-[0.14em] text-text-muted">Model override</div>
-                  <input
-                    value={routingDraft.modelOverride}
-                    onChange={(event) => setRoutingDraft((current) => ({ ...current, modelOverride: event.target.value }))}
-                    placeholder="Leave blank for lane default"
-                    className="mt-2 w-full rounded-xl border border-white/8 bg-black/20 px-3 py-2 text-[12px] text-text-primary outline-none placeholder:text-text-disabled"
-                  />
-                </label>
-              </div>
-              <div className="mt-3 flex items-center justify-between gap-3">
-                <div className="text-[11px] text-text-muted">Use this to redirect one branch without rewriting the full mission policy.</div>
-                <button
-                  type="button"
-                  disabled={routingSaving}
-                  onClick={async () => {
-                    if (!selectedTask) return;
-                    setRoutingSaving(true);
-                    setRoutingMessage('');
-                    try {
-                      await onUpdateBranchRouting(selectedTask.id, routingDraft);
-                      setRoutingMessage('Branch lane updated.');
-                    } catch (error) {
-                      setRoutingMessage(error.message || 'Could not update branch lane.');
-                    } finally {
-                      setRoutingSaving(false);
-                    }
-                  }}
-                  className="rounded-xl border border-aurora-teal/20 bg-aurora-teal/10 px-3 py-2 text-[11px] font-semibold text-aurora-teal transition-colors hover:bg-aurora-teal/14 disabled:opacity-50"
-                >
-                  {routingSaving ? 'Saving...' : 'Save branch lane'}
-                </button>
-              </div>
-              {routingMessage && (
-                <div className="mt-3 rounded-xl border border-white/8 bg-black/20 px-3 py-2 text-[11px] text-text-body">
-                  {routingMessage}
-                </div>
-              )}
-            </div>
-            <div className="mt-4 rounded-[16px] border border-white/8 bg-white/[0.02] p-3">
-              <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Edit branch dependencies</div>
-              <div className="mt-2 text-[11px] text-text-muted">Choose which branches must complete before this branch becomes runnable.</div>
-              <div className="mt-3 flex flex-wrap gap-2">
-                {graphTaskSet.filter((task) => task.id !== selectedTask.id).map((task) => {
-                  const active = dependencyDraft.includes(task.id);
-                  return (
-                    <button
-                      key={task.id}
-                      type="button"
-                      onClick={() => setDependencyDraft((current) => (
-                        active ? current.filter((id) => id !== task.id) : [...current, task.id]
-                      ))}
-                      className={cn(
-                        'rounded-full border px-3 py-1.5 text-[10px] font-semibold transition-colors',
-                        active
-                          ? 'border-aurora-blue/20 bg-aurora-blue/10 text-aurora-blue'
-                          : 'border-white/8 bg-black/20 text-text-muted hover:border-white/12'
-                      )}
-                    >
-                      {task.branchLabel || task.name || task.title}
-                    </button>
-                  );
-                })}
-              </div>
-              <div className="mt-3 flex items-center justify-between gap-3">
-                <div className="text-[11px] text-text-muted">
-                  {dependencyDraft.length === 0 ? 'This branch can launch as soon as policy and scheduling allow.' : `${dependencyDraft.length} dependency gate${dependencyDraft.length === 1 ? '' : 's'} selected.`}
-                </div>
-                <button
-                  type="button"
-                  disabled={dependencySaving}
-                  onClick={async () => {
-                    if (!selectedTask) return;
-                    if (dependencyDraft.some((dependencyId) => wouldCreateDependencyCycle(graphTaskSet, dependencyId, selectedTask.id))) {
-                      setDependencyMessage('One of the selected dependencies would create a cycle. Remove it and try again.');
-                      return;
-                    }
-                    setDependencySaving(true);
-                    setDependencyMessage('');
-                    try {
-                      await onUpdateBranchDependencies(selectedTask.id, dependencyDraft);
-                      setDependencyMessage('Branch dependencies updated.');
-                    } catch (error) {
-                      setDependencyMessage(error.message || 'Could not update branch dependencies.');
-                    } finally {
-                      setDependencySaving(false);
-                    }
-                  }}
-                  className="rounded-xl border border-aurora-blue/20 bg-aurora-blue/10 px-3 py-2 text-[11px] font-semibold text-aurora-blue transition-colors hover:bg-aurora-blue/14 disabled:opacity-50"
-                >
-                  {dependencySaving ? 'Saving...' : 'Save dependencies'}
-                </button>
-              </div>
-              {dependencyMessage && (
-                <div className="mt-3 rounded-xl border border-white/8 bg-black/20 px-3 py-2 text-[11px] text-text-body">
-                  {dependencyMessage}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-      {spawnedSpecialists.length > 0 && (
-        <div className="mt-4 rounded-[20px] border border-aurora-violet/15 bg-[linear-gradient(180deg,rgba(167,139,250,0.08),rgba(255,255,255,0.02))] p-4">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <div className="text-[10px] uppercase tracking-[0.18em] text-aurora-violet">Spawned Specialists</div>
-              <p className="mt-1 text-[12px] leading-relaxed text-text-muted">
-                These temporary branch agents were materialized from routing doctrine to cover missing live lanes.
-              </p>
-            </div>
-            <div className="rounded-full border border-aurora-violet/20 bg-aurora-violet/10 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-aurora-violet">
-              {spawnedSpecialists.length} active
-            </div>
-          </div>
-          <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
-            {spawnedSpecialists.map((agent) => (
-              <div key={agent.id} className="rounded-[18px] border border-white/8 bg-black/20 px-3 py-3">
-                <div className="flex items-center justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="text-[12px] font-semibold text-text-primary truncate">{agent.name}</div>
-                    <div className="mt-1 text-[10px] font-mono uppercase text-aurora-violet">{agent.role || 'specialist'}</div>
-                  </div>
-                  <span className="rounded-full border border-aurora-violet/20 bg-aurora-violet/10 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.14em] text-aurora-violet">
-                    Ephemeral
-                  </span>
-                </div>
-                <div className="mt-2 text-[10px] font-mono text-text-disabled">{agent.model || 'Adaptive lane'}</div>
-                {agent.roleDescription && <div className="mt-2 text-[11px] leading-relaxed text-text-muted">{agent.roleDescription}</div>}
-                <div className="mt-3 flex items-center justify-between gap-2">
-                  <div className="text-[10px] text-text-muted">Promote if this role keeps recurring.</div>
-                  <button
-                    type="button"
-                    disabled={promotionSavingId === agent.id}
-                    onClick={() => handlePromoteSpecialist(agent)}
-                    className="rounded-xl border border-aurora-teal/20 bg-aurora-teal/10 px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-aurora-teal transition-colors hover:bg-aurora-teal/14 disabled:opacity-50"
-                  >
-                    {promotionSavingId === agent.id ? 'Promoting...' : 'Promote lane'}
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-          {promotionMessage && (
-            <div className="mt-3 rounded-[16px] border border-white/8 bg-black/20 px-3 py-2 text-[11px] text-text-body">
-              {promotionMessage}
-            </div>
-          )}
-        </div>
-      )}
-      {retirementEvents.length > 0 && (
-        <div className="mt-4 rounded-[20px] border border-white/8 bg-black/20 p-4">
-          <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Specialist Retirement Audit</div>
-          <div className="mt-3 space-y-2">
-            {retirementEvents.map((event) => (
-              <div key={event.id} className="rounded-[16px] border border-white/8 bg-white/[0.02] px-3 py-3 text-[11px] leading-relaxed text-text-body">
-                {String(event.message || '').replace('[specialist-retired] ', '')}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-      <div className="mt-4 grid gap-3 xl:grid-cols-[0.95fr_1.05fr]">
-        <div className="rounded-[20px] border border-white/8 bg-black/20 p-4">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Specialist Fleet</div>
-              <div className="mt-1 text-[12px] text-text-body">Persistent lanes, spawned lanes, and retirement posture for this mission graph.</div>
-            </div>
-            <div className="rounded-full border border-white/8 bg-white/[0.03] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-text-muted">
-              {persistentSpecialists.length + spawnedSpecialists.length} lanes
-            </div>
-          </div>
-          <div className="mt-3 grid grid-cols-3 gap-2">
-            {[
-              { label: 'Persistent', value: persistentSpecialists.length, tone: 'text-aurora-blue' },
-              { label: 'Spawned', value: spawnedSpecialists.length, tone: 'text-aurora-violet' },
-              { label: 'Avg outcome', value: outcomeMemory.averageScore, tone: 'text-aurora-teal' },
-            ].map((metric) => (
-              <div key={metric.label} className="rounded-[16px] border border-white/8 bg-white/[0.02] px-3 py-3">
-                <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">{metric.label}</div>
-                <div className={cn('mt-2 text-lg font-semibold', metric.tone)}>{metric.value}</div>
-              </div>
-            ))}
-          </div>
-          <div className="mt-3 space-y-2">
-            {persistentSpecialists.slice(0, 4).map((agent) => (
-              <div key={agent.id} className="rounded-[16px] border border-white/8 bg-white/[0.02] px-3 py-3">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <div className="text-[12px] font-semibold text-text-primary">{agent.name}</div>
-                    <div className="mt-1 text-[10px] font-mono uppercase text-aurora-blue">{agent.role}</div>
-                  </div>
-                  <div className="text-[10px] font-mono text-text-disabled">{agent.model || 'Adaptive lane'}</div>
-                </div>
-              </div>
-            ))}
-            {persistentSpecialists.length === 0 && (
-              <div className="rounded-[16px] border border-white/8 bg-white/[0.02] px-3 py-3 text-[11px] text-text-muted">
-                No persistent specialist lanes are live beyond Commander yet.
-              </div>
-            )}
-          </div>
-        </div>
-        <div className="rounded-[20px] border border-white/8 bg-black/20 p-4">
-          <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Intervention Rail</div>
-          <div className="mt-1 text-[12px] text-text-body">One unified timeline for overrides, outcomes, doctrine changes, and specialist lifecycle on this mission root.</div>
-          <div className="mt-3 space-y-2">
-            {interventionRail.length === 0 && (
-              <div className="rounded-[16px] border border-white/8 bg-white/[0.02] px-3 py-3 text-[11px] text-text-muted">
-                No intervention history yet for this mission root.
-              </div>
-            )}
-            {interventionRail.map((entry) => (
-              <div key={entry.id} className="rounded-[16px] border border-white/8 bg-white/[0.02] px-3 py-3">
-                <div className="flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-2">
-                    <span className={cn(
-                      'rounded-full border px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.14em]',
-                      entry.tone === 'teal' && 'border-aurora-teal/20 bg-aurora-teal/10 text-aurora-teal',
-                      entry.tone === 'amber' && 'border-aurora-amber/20 bg-aurora-amber/10 text-aurora-amber',
-                      entry.tone === 'rose' && 'border-aurora-rose/20 bg-aurora-rose/10 text-aurora-rose',
-                      entry.tone === 'violet' && 'border-aurora-violet/20 bg-aurora-violet/10 text-aurora-violet',
-                      entry.tone === 'blue' && 'border-aurora-blue/20 bg-aurora-blue/10 text-aurora-blue'
-                    )}>
-                      {entry.label}
-                    </span>
-                    <div className="text-[10px] font-mono uppercase text-text-muted">{entry.meta}</div>
-                  </div>
-                  <div className="text-[10px] font-mono text-text-disabled">{entry.timestamp ? new Date(entry.timestamp).toLocaleString() : 'Live'}</div>
-                </div>
-                <div className="mt-2 text-[12px] font-semibold text-text-primary">{entry.title}</div>
-                <div className="mt-1 text-[11px] leading-relaxed text-text-body">{entry.detail}</div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-      <div className="mt-4 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
-        {graphTaskSet.map((task) => {
-          const workflow = getWorkflowMeta(task.workflowStatus);
-          const taskAgent = agents.find((agent) => agent.id === task.agentId);
-          return (
-            <button
-              key={task.id}
-              type="button"
-              onClick={() => onSelect(task.id)}
-              className={cn(
-                'rounded-[18px] border bg-black/20 px-3 py-3 text-left transition-colors',
-                selectedId === task.id ? 'border-aurora-teal/30 shadow-glow-teal' : 'border-white/8 hover:border-white/12'
-              )}
-            >
-              <div className="flex items-center justify-between gap-3">
-                <div className="min-w-0">
-                  <div className="truncate text-[12px] font-semibold text-text-primary">{task.name || task.title}</div>
-                  {taskAgent?.isEphemeral && <div className="mt-1 text-[10px] font-mono uppercase text-aurora-violet">Spawned specialist lane</div>}
-                </div>
-                <span className={cn('rounded-full border px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.14em]', workflowTone[workflow.tone])}>
-                  {workflow.label}
-                </span>
-              </div>
-              <div className="mt-2 text-[10px] font-mono text-text-disabled truncate">{task.routingReason || 'Awaiting deeper routing readback'}</div>
-            </button>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
 // ═══════════════════════════════════════════════════════════════
 // DETAIL DRAWER
 // ═══════════════════════════════════════════════════════════════
@@ -1146,27 +259,12 @@ function Drawer({ item, agents, tasks, logs, onClose, onApprove, onReject, onRet
   if (!item) return null;
   const agent = agents.find(a => a.id === (item.agentId || item.agent_id));
   const cfg = stColor[item.status] || stColor.pending;
-  const workflow = getWorkflowMeta(item.workflowStatus);
-  const isEphemeralAgent = !!agent?.isEphemeral;
   const isMissionApproval = item.status === 'needs_approval';
   const isReviewApproval = item.urgency != null || (item.outputType != null && !item.mode);
   const isApproval = isMissionApproval || isReviewApproval;
   const isCompleted = ['completed', 'approved', 'done'].includes(item.status);
   const isRunning = item.status === 'running';
   const itemLogs = logs.filter(l => l.agentId === (item.agentId || item.agent_id));
-  const branchDiffLogs = logs.filter((log) => {
-    const message = String(log.message || '');
-    return (
-      message.includes(item.id)
-      || message.includes(item.rootMissionId || '')
-      || (item.agentId && log.agentId === item.agentId)
-    ) && (
-      message.includes('[branch-routing]')
-      || message.includes('[branch-dependency]')
-      || message.includes('[specialist-spawned]')
-      || message.includes('[specialist-retired]')
-    );
-  });
 
   async function act(name, fn) {
     setActionLoading(name); setActionError(null);
@@ -1186,8 +284,6 @@ function Drawer({ item, agents, tasks, logs, onClose, onApprove, onReject, onRet
             <h3 className="text-lg font-semibold text-text-primary truncate">{item.name || item.title}</h3>
             <div className="flex items-center gap-3 mt-1">
               <span className={cn("text-xs font-mono font-bold", cfg.tx)}>{cfg.lb}</span>
-              <span className={cn("rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em]", workflowTone[workflow.tone])}>{workflow.label}</span>
-              {isEphemeralAgent && <span className="rounded-full border border-aurora-violet/20 bg-aurora-violet/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-aurora-violet">Spawned Specialist</span>}
               {item.durationMs > 0 && <span className="text-xs text-text-disabled font-mono flex items-center gap-1"><Clock className="w-3 h-3" />{item.durationMs < 1000 ? `${item.durationMs}ms` : `${(item.durationMs/1000).toFixed(1)}s`}</span>}
               {item.mode && <span className="text-xs text-text-disabled font-mono uppercase">{item.mode}</span>}
               {item.actualCostCents != null && <span className="text-xs text-text-disabled font-mono">${(item.actualCostCents / 100).toFixed(2)}</span>}
@@ -1199,21 +295,11 @@ function Drawer({ item, agents, tasks, logs, onClose, onApprove, onReject, onRet
       </div>
 
       {(item.summary || item.description) && <div className="px-5 py-3 border-b border-border bg-surface"><p className="text-[12px] text-text-body leading-relaxed">{item.summary || item.description}</p></div>}
-      <div className="grid grid-cols-2 gap-2 border-b border-border bg-surface px-5 py-3">
-        <div className="rounded-xl border border-white/8 bg-black/20 px-3 py-2">
-          <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Routing</div>
-          <div className="mt-1 text-[11px] font-mono text-text-primary">{item.routingReason || 'Legacy route or not yet inferred'}</div>
-        </div>
-        <div className="rounded-xl border border-white/8 bg-black/20 px-3 py-2">
-          <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Graph</div>
-          <div className="mt-1 text-[11px] font-mono text-text-primary">{item.rootMissionId || item.id}</div>
-        </div>
-      </div>
 
       {actionError && <div className="px-5 py-2 border-b border-aurora-rose/10 bg-aurora-rose/5 flex items-center gap-2"><AlertTriangle className="w-3.5 h-3.5 text-aurora-rose shrink-0" /><span className="text-[11px] text-aurora-rose flex-1">{actionError}</span><button onClick={() => setActionError(null)} className="text-[10px] text-aurora-rose font-bold">Dismiss</button></div>}
 
       <div className="flex border-b border-border px-5 shrink-0">
-        {['timeline', 'diffs', 'routing', 'history', 'output', 'notes'].map(t => (
+        {['timeline', 'history', 'output', 'notes'].map(t => (
           <button key={t} onClick={() => setTab(t)} className={cn("px-4 py-3 text-sm font-medium border-b-2 transition-colors capitalize", tab === t ? "border-aurora-teal text-aurora-teal" : "border-transparent text-text-muted hover:text-text-primary")}>{t}</button>
         ))}
       </div>
@@ -1233,26 +319,6 @@ function Drawer({ item, agents, tasks, logs, onClose, onApprove, onReject, onRet
             </div>);
           })}
         </div>)}
-        {tab === 'diffs' && (
-          <div className="space-y-3">
-            {branchDiffLogs.length === 0 && <p className="text-sm text-text-disabled text-center py-8">No branch deltas yet.</p>}
-            {branchDiffLogs.map((entry) => (
-              <div key={entry.id} className="rounded-xl border border-white/8 bg-black/20 px-3 py-3">
-                <div className="flex items-center justify-between gap-3">
-                  <div className="text-[10px] font-mono uppercase text-text-muted">{entry.type}</div>
-                  <div className="text-[10px] font-mono text-text-disabled">{entry.timestamp ? new Date(entry.timestamp).toLocaleTimeString() : 'Live'}</div>
-                </div>
-                <div className="mt-2 text-[11px] leading-relaxed text-text-body">
-                  {String(entry.message || '')
-                    .replace('[branch-routing] ', '')
-                    .replace('[branch-dependency] ', '')
-                    .replace('[specialist-spawned] ', '')
-                    .replace('[specialist-retired] ', '')}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
         {tab === 'history' && (() => {
           const itemName = item.name || item.title || '';
           const history = tasks.filter(t => t.name === itemName && t.id !== item.id);
@@ -1281,39 +347,6 @@ function Drawer({ item, agents, tasks, logs, onClose, onApprove, onReject, onRet
             </div>
           );
         })()}
-        {tab === 'routing' && (
-          <div className="space-y-3">
-            {[
-              { label: 'Domain', value: item.domain || 'general' },
-              { label: 'Intent', value: item.intentType || 'general' },
-              { label: 'Agent role', value: item.agentRole || 'executor' },
-              { label: 'Lane type', value: isEphemeralAgent ? 'Ephemeral specialist' : 'Persistent fleet agent' },
-              { label: 'Branch label', value: item.branchLabel || 'Root Mission' },
-              { label: 'Provider override', value: item.providerOverride || 'Policy default' },
-              { label: 'Model override', value: item.modelOverride || 'Lane default' },
-              { label: 'Budget class', value: item.budgetClass || 'balanced' },
-              { label: 'Risk level', value: item.riskLevel || 'medium' },
-              { label: 'Approval level', value: item.approvalLevel || 'risk_weighted' },
-              { label: 'Policy', value: item.routingPolicyId || 'Default adaptive lane' },
-            ].map((entry) => (
-              <div key={entry.label} className="rounded-xl border border-white/8 bg-black/20 px-3 py-3">
-                <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">{entry.label}</div>
-                <div className="mt-1 text-[12px] font-mono text-text-primary">{entry.value}</div>
-              </div>
-            ))}
-            <div className="rounded-xl border border-white/8 bg-black/20 px-3 py-3">
-              <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Required capabilities</div>
-              <div className="mt-2 flex flex-wrap gap-2">
-                {(item.requiredCapabilities || []).length === 0 && <span className="text-[12px] text-text-muted">No explicit capabilities inferred yet.</span>}
-                {(item.requiredCapabilities || []).map((capability) => (
-                  <span key={capability} className="rounded-full border border-white/10 bg-white/[0.03] px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-text-primary">
-                    {capability}
-                  </span>
-                ))}
-              </div>
-            </div>
-          </div>
-        )}
         {tab === 'output' && (item.payload || item.resultText) && <div className={cn("p-4 rounded-lg text-sm font-mono leading-relaxed whitespace-pre-wrap border", item.outputType === 'error' ? "bg-aurora-rose/5 border-aurora-rose/20 text-aurora-rose/90" : item.outputType === 'code' ? "bg-black/40 border-white/5 text-text-primary" : "bg-white/[0.02] border-white/5 text-text-body")}>{item.payload || item.resultText}</div>}
         {tab === 'output' && !item.payload && !item.resultText && <p className="text-sm text-text-disabled text-center py-8">No output payload.</p>}
         {tab === 'notes' && (
@@ -1397,29 +430,15 @@ function Drawer({ item, agents, tasks, logs, onClose, onApprove, onReject, onRet
 // INTELLIGENCE SIDEBAR
 // ═══════════════════════════════════════════════════════════════
 
-function IntelSidebar({ tasks, approvals, completed, agents, schedules, logs, learningMemory, connectedSystems, truth, interventions, outcomes, onOpenApprovals, onOpenSystems, onOpenCreator, onOpenOps }) {
+function IntelSidebar({ tasks, approvals, completed, agents, schedules, logs, learningMemory, connectedSystems, truth, onOpenApprovals, onOpenSystems, onOpenCreator, onOpenOps }) {
   const totalCost = tasks.reduce((sum, task) => sum + Number(task.costUsd || 0), 0);
   const failedCount = tasks.filter(t => t.status === 'failed' || t.status === 'error').length;
   const runningCount = tasks.filter(t => t.status === 'running').length;
   const avgApprovalWait = approvals.length > 0 ? Math.round(approvals.reduce((s, a) => s + (a.waitingMs || 0), 0) / approvals.length / 60000) : 0;
   const timelineEntries = buildTimelineEntries({ tasks, reviews: approvals, logs, connectedSystems });
-  const doctrineDeltas = getDoctrineDeltaSummary(learningMemory?.doctrine || []).slice(0, 2);
-  const patternSummary = getMissionPatternDefaultSummary(learningMemory);
-  const patternApprovalBias = getPatternApprovalBiasSummary({
-    winningPattern: learningMemory?.doctrineById?.['doctrine-mission-patterns']?.metrics?.winningPattern,
-    routingDecision: { approvalLevel: 'risk_weighted' },
-  });
-  const recurringRecoveryReadyCount = useMemo(() => (
-    getAutomationCandidates(tasks, 150, interventions, outcomes)
-      .map((entry) => getRecurringAutonomyTuningSummary(entry))
-      .filter((entry) => entry.earnedAutonomy).length
-  ), [interventions, outcomes, tasks]);
 
   // Derive recommendations from real data
   const recs = [];
-  if (recurringRecoveryReadyCount > 0) {
-    recs.push({ type: 'autonomy', text: `${recurringRecoveryReadyCount} recurring flow${recurringRecoveryReadyCount === 1 ? '' : 's'} have earned a lighter posture back. Review recurring systems and let Commander scale the clean ones.`, imp: 'low' });
-  }
   if (failedCount > 0) {
     const failedAgents = [...new Set(tasks.filter(t => t.status === 'failed' || t.status === 'error').map(t => t.agentName || 'Unknown'))];
     recs.push({ type: 'anomaly', text: `${failedCount} failed task${failedCount > 1 ? 's' : ''} from ${failedAgents.join(', ')}. Check agent health and retry or reassign.`, imp: 'high' });
@@ -1458,7 +477,6 @@ function IntelSidebar({ tasks, approvals, completed, agents, schedules, logs, le
           { label: 'Approvals', value: approvals.length, tone: 'text-aurora-amber' },
           { label: 'Completed', value: completed.length, tone: 'text-aurora-teal' },
           { label: 'Failed', value: failedCount, tone: 'text-aurora-rose' },
-          { label: 'Autonomy ready', value: recurringRecoveryReadyCount, tone: 'text-aurora-teal' },
         ].map((item) => (
           <div key={item.label} className="rounded-2xl border border-white/[0.06] bg-black/20 px-3 py-2.5">
             <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">{item.label}</div>
@@ -1496,41 +514,6 @@ function IntelSidebar({ tasks, approvals, completed, agents, schedules, logs, le
     <div className="p-3.5 rounded-[24px] bg-surface border border-border">
       <div className="flex items-center gap-2 mb-2.5"><Brain className="w-3.5 h-3.5 text-aurora-teal" /><span className="text-[11px] font-bold uppercase text-text-muted tracking-wider">Cross-Page Doctrine</span></div>
       <DoctrineCards items={learningMemory.missionThree} compact columns="one" />
-    </div>
-
-    <div className="p-3.5 rounded-[24px] bg-surface border border-border">
-      <div className="flex items-center gap-2 mb-2.5"><TrendingUp className="w-3.5 h-3.5 text-aurora-violet" /><span className="text-[11px] font-bold uppercase text-text-muted tracking-wider">Trust Movement</span></div>
-      <div className="space-y-2">
-        {doctrineDeltas.length === 0 && <div className="rounded-2xl border border-white/[0.06] bg-black/20 px-3 py-3 text-[11px] text-text-muted">Commander still needs more doctrine history before Mission Control can show meaningful trust movement.</div>}
-        {doctrineDeltas.map((entry) => (
-          <div key={entry.id} className="rounded-2xl border border-white/[0.06] bg-black/20 px-3 py-3">
-            <div className="flex items-center justify-between gap-3">
-              <div className="text-[11px] font-semibold text-text-primary">{entry.owner}</div>
-              <span className={cn(
-                'rounded-full border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em]',
-                entry.trend === 'up'
-                  ? 'border-aurora-teal/20 bg-aurora-teal/10 text-aurora-teal'
-                  : entry.trend === 'down'
-                    ? 'border-aurora-rose/20 bg-aurora-rose/10 text-aurora-rose'
-                    : 'border-white/10 bg-white/[0.03] text-text-muted'
-              )}>
-                {entry.delta > 0 ? '+' : ''}{entry.delta} pts
-              </span>
-            </div>
-            <p className="mt-2 text-[11px] leading-relaxed text-text-body">{entry.changeSummary}</p>
-          </div>
-        ))}
-      </div>
-      <div className="mt-3 rounded-2xl border border-white/[0.06] bg-black/20 px-3 py-3">
-        <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Pattern default pressure</div>
-        <div className="mt-2 text-[12px] font-semibold text-text-primary">{patternSummary.label}</div>
-        <p className="mt-2 text-[11px] leading-relaxed text-text-body">{patternSummary.detail}</p>
-        {patternApprovalBias.available && (
-          <div className="mt-3 rounded-xl border border-aurora-blue/20 bg-aurora-blue/10 px-3 py-2 text-[11px] text-text-body">
-            Approval default pressure: {patternApprovalBias.detail}
-          </div>
-        )}
-      </div>
     </div>
 
     <CommandTimelineRail
@@ -1628,7 +611,7 @@ export function MissionControlView() {
   const reload = useCallback(async () => {
     const [a, t, l, p, c, s] = await Promise.all([fetchAgents(), fetchTasks(), fetchActivityLog(), fetchPendingReviews(), fetchCompletedOutputs(), fetchSchedules()]);
     setAgents(a); setTasks(t); setLogs(l); setApprovals(p); setCompleted(c); setSchedules(s);
-    setPendingCount(p.length + t.filter(task => task.workflowStatus === 'waiting_on_human' || task.status === 'needs_approval').length);
+    setPendingCount(p.length + t.filter(task => task.status === 'needs_approval').length);
   }, [setPendingCount]);
 
   // Initial mission data load for the screen.
@@ -1638,23 +621,19 @@ export function MissionControlView() {
   useEffect(() => { const u = subscribeToTasks(() => reload()); return u; }, [reload]);
 
   const missionApprovals = useMemo(
-    () => tasks.filter(task => !task.parentId && (task.workflowStatus === 'waiting_on_human' || task.status === 'needs_approval' || task.lane === 'approvals')),
+    () => tasks.filter(task => task.status === 'needs_approval' || task.lane === 'approvals'),
     [tasks]
   );
   const approvalItems = useMemo(() => [...missionApprovals, ...approvals], [missionApprovals, approvals]);
   const completedItems = useMemo(
     () => [
-      ...tasks.filter(task => task.workflowStatus === 'completed' || ['done', 'completed'].includes(task.status)),
+      ...tasks.filter(task => ['done', 'completed'].includes(task.status)),
       ...completed,
     ],
     [tasks, completed]
   );
   const operationalTasks = useMemo(
-    () => tasks.filter(task => !task.parentId && task.workflowStatus !== 'completed' && task.workflowStatus !== 'waiting_on_human' && !['done', 'completed'].includes(task.status) && task.status !== 'needs_approval'),
-    [tasks]
-  );
-  const graphTasks = useMemo(
-    () => tasks.filter(task => task.nodeType === 'mission' || task.nodeType === 'subtask'),
+    () => tasks.filter(task => !['done', 'completed'].includes(task.status) && task.status !== 'needs_approval'),
     [tasks]
   );
   const totalMissionCost = useMemo(
@@ -1668,13 +647,13 @@ export function MissionControlView() {
     costData: { total: totalMissionCost, models: [] },
   });
 
-  const running = tasks.filter(t => ['running', 'ready'].includes(t.workflowStatus) || t.status === 'running' || t.status === 'queued').length;
-  const failed = tasks.filter(t => ['failed', 'blocked', 'cancelled'].includes(t.workflowStatus) || ['failed', 'error', 'blocked', 'cancelled'].includes(t.status)).length;
+  const running = tasks.filter(t => t.status === 'running' || t.status === 'queued').length;
+  const failed = tasks.filter(t => ['failed', 'error', 'blocked', 'cancelled'].includes(t.status)).length;
 
   const criticalItems = useMemo(() => {
     const c = [];
     approvalItems.filter(a => a.urgency === 'critical' || a.status === 'needs_intervention' || a.priority >= 8).forEach(a => c.push(a));
-    tasks.filter(t => ['failed', 'blocked'].includes(t.workflowStatus) || ['failed', 'error', 'blocked'].includes(t.status)).slice(0, 2).forEach(t => c.push(t));
+    tasks.filter(t => ['failed', 'error', 'blocked'].includes(t.status)).slice(0, 2).forEach(t => c.push(t));
     return c.slice(0, 3);
   }, [approvalItems, tasks]);
 
@@ -1704,14 +683,6 @@ export function MissionControlView() {
     await createMission({ ...payload, priorityScore }, agents);
     await reload();
   }
-  async function handleUpdateBranchRouting(taskId, updates) {
-    await updateMissionBranchRouting(taskId, updates, agents);
-    await reload();
-  }
-  async function handleUpdateBranchDependencies(taskId, dependsOn) {
-    await updateMissionBranchDependencies(taskId, dependsOn);
-    await reload();
-  }
   function handleCopy(item) { navigator.clipboard?.writeText(`${item.name || item.title}\nStatus: ${item.status}\nAgent: ${item.agentName || ''}\nCost: ${item.actualCostCents != null ? `$${(item.actualCostCents / 100).toFixed(2)}` : `$${item.costUsd?.toFixed(3) || '0.000'}`}`); }
 
   const selectedItem = sel ? [...tasks, ...approvalItems, ...completedItems].find(i => i.id === sel) : null;
@@ -1721,9 +692,6 @@ export function MissionControlView() {
   const primaryAgent = agents.find(agent => /tony|atlas/i.test(agent.name || '')) || agents.find(agent => agent.role === 'commander') || agents[0];
   const truth = useCommandCenterTruth();
   const { connectedSystems } = useConnectedSystems();
-  const { outcomes } = useTaskOutcomes();
-  const { interventions } = useTaskInterventions();
-  const { events: lifecycleEvents } = useSpecialistLifecycle();
 
   return (
     <div className="flex flex-col h-full overflow-hidden relative">
@@ -1747,12 +715,12 @@ export function MissionControlView() {
             { label: 'awaiting human input', value: approvalItems.length, tone: 'amber' },
           ]}
           actions={
-            <button onClick={() => setCreatorOpen(true)} className="flex items-center justify-center gap-2 rounded-2xl bg-aurora-teal px-4 py-3 text-sm font-semibold text-black transition-colors hover:bg-[#00ebd8] shadow-glow-teal">
-              <Plus className="w-4 h-4" /> Tell Commander what you want
+            <button onClick={() => setCreatorOpen(true)} className="ui-button-primary flex items-center justify-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold text-black shadow-glow-teal">
+              <Plus className="w-4 h-4" /> Spin up a Mission
             </button>
           }
           sideContent={
-            <div className="rounded-[24px] border border-white/10 bg-black/25 px-4 py-4 backdrop-blur-sm min-w-[260px]">
+            <div className="ui-panel min-w-[260px] px-4 py-4 backdrop-blur-sm">
               <div className="flex items-center justify-between mb-3">
                 <span className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Command Pulse</span>
                 <span className="text-[10px] font-mono text-aurora-teal">LIVE</span>
@@ -1770,15 +738,13 @@ export function MissionControlView() {
                   <span className="text-text-muted">Blocked / failed</span>
                   <span className="text-aurora-rose font-semibold"><AnimatedNumber value={failed} /></span>
                 </div>
-                <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] px-3 py-2.5 mt-1">
+                <div className="ui-panel-soft mt-1 px-3 py-2.5">
                   <div className="text-[10px] uppercase tracking-[0.14em] text-text-muted mb-1">Readback</div>
                   <p className="text-[12px] leading-relaxed text-text-body">
                     {approvalItems.length > 0
                       ? 'Human gates are the only real drag right now.'
                       : running > 0
-                        ? 'Tony is moving cleanly with no immediate choke point.'
-                        : getAutomationCandidates(tasks, 150, interventions, outcomes).some((entry) => getRecurringAutonomyTuningSummary(entry).earnedAutonomy)
-                          ? 'One or more recurring systems have earned autonomy back. Good time to scale the clean automations.'
+                        ? 'Execution is moving cleanly with no immediate choke point.'
                         : 'The deck is calm. Good time to launch the next mission.'}
                   </p>
                 </div>
@@ -1795,7 +761,7 @@ export function MissionControlView() {
           <ReactorCoreBoard truth={truth} summary={{ burnRate: totalMissionCost }} />
         </div>
 
-        <div className="mt-4 flex items-center gap-1 bg-surface/90 rounded-2xl p-1.5 border border-border backdrop-blur-sm">
+        <div className="mt-4 ui-segmented flex items-center gap-1 rounded-2xl p-1.5 backdrop-blur-sm">
           {[
             { id: 'ops', lb: 'Operations', ic: Radio, ct: running },
             { id: 'plan', lb: 'Planner', ic: Calendar, ct: schedules.filter(s => s.enabled).length },
@@ -1812,14 +778,13 @@ export function MissionControlView() {
         </div>
       </div>
 
-      {/* Pulse strip */}
       <div className="grid grid-cols-3 gap-3 mb-5">
         {[
           { lb: 'Live Missions', desc: 'Queued or executing now', v: running, c: 'text-aurora-amber' },
-          { lb: 'Needs You', desc: 'Waiting on your judgment', v: approvalItems.length, c: 'text-aurora-amber' },
-          { lb: 'Closed Cleanly', desc: 'Completed without drag', v: completedItems.length, c: 'text-aurora-teal' },
+          { lb: 'Needs Decision', desc: 'Waiting on your judgment', v: approvalItems.length, c: 'text-aurora-amber' },
+          { lb: 'Completed', desc: 'Closed without drag', v: completedItems.length, c: 'text-aurora-teal' },
         ].map(s => (
-          <div key={s.lb} className="rounded-[22px] bg-surface/90 border border-border px-4 py-3.5 backdrop-blur-sm">
+          <div key={s.lb} className="ui-stat px-4 py-3.5">
             <div className="flex items-center justify-between">
               <span className="text-[10px] font-medium text-text-muted uppercase tracking-[0.18em]">{s.lb}</span>
               <span className={cn("text-2xl font-mono font-bold", s.c)}><AnimatedNumber value={s.v} /></span>
@@ -1829,13 +794,12 @@ export function MissionControlView() {
         ))}
       </div>
 
-      {/* Critical lane */}
       {criticalItems.length > 0 && (
         <div className="mb-4">
-          <div className="flex items-center gap-2 mb-2"><div className="w-2 h-2 rounded-full bg-aurora-rose animate-pulse" /><span className="text-[11px] font-bold uppercase text-aurora-rose tracking-wider">Critical lane</span></div>
+          <div className="flex items-center gap-2 mb-2"><div className="w-2 h-2 rounded-full bg-aurora-rose animate-pulse" /><span className="text-[11px] font-bold uppercase text-aurora-rose tracking-wider">Resolve First</span></div>
           <div className="grid grid-cols-3 gap-3">
             {criticalItems.map(item => (
-              <Card key={item.id} onClick={() => setSel(item.id)} className="p-4 bg-[linear-gradient(135deg,rgba(251,113,133,0.06),rgba(255,255,255,0.02))] min-h-[92px]">
+              <Card key={item.id} onClick={() => setSel(item.id)} className="p-4 bg-[linear-gradient(135deg,rgba(251,113,133,0.06),rgba(255,255,255,0.02))] border-aurora-rose/16 min-h-[92px]">
                 <div className="absolute left-0 top-0 bottom-0 w-[3px] bg-aurora-rose rounded-l-2xl" />
                 <div className="flex items-center gap-2 mb-1">
                   <AgentAvatar agent={agents.find(a => a.id === (item.agentId || item.agent_id))} name={item.agentName} />
@@ -1850,7 +814,7 @@ export function MissionControlView() {
 
       {/* Main: content + intel sidebar */}
       <div className="flex-1 flex gap-4 overflow-hidden min-h-0">
-        <div className="flex-[3.2] min-w-0 overflow-hidden rounded-[28px] border border-white/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.025),rgba(255,255,255,0.01))] backdrop-blur-sm">
+        <div className="ui-shell flex-[3.2] min-w-0 overflow-hidden backdrop-blur-sm">
           <div className="h-full overflow-y-auto no-scrollbar space-y-2 pr-1 px-4 py-4">
             <div className="flex items-center justify-between mb-2 px-1">
               <CommandSectionHeader
@@ -1867,61 +831,42 @@ export function MissionControlView() {
                 tone={tab === 'ops' ? 'teal' : tab === 'plan' ? 'blue' : 'amber'}
               />
               {tab === 'ops' && (
-                <button onClick={() => setCreatorOpen(true)} className="flex items-center gap-2 px-3 py-2 rounded-xl border border-aurora-teal/20 bg-aurora-teal/8 text-aurora-teal text-[11px] font-semibold hover:bg-aurora-teal/12 transition-colors">
-                  <Plus className="w-3.5 h-3.5" /> New Mission
-                </button>
+                  <button onClick={() => setCreatorOpen(true)} className="ui-button-secondary flex items-center gap-2 px-3 py-2 rounded-xl text-[11px] font-semibold text-aurora-teal hover:bg-aurora-teal/12">
+                    <Plus className="w-3.5 h-3.5" /> New Mission
+                  </button>
               )}
             </div>
 
           {tab === 'ops' && (
-            <div className="space-y-4">
-              <MissionGraphPanel
-                tasks={graphTasks}
-                agents={agents}
-                logs={logs}
-                outcomes={outcomes}
-                interventions={interventions}
-                lifecycleEvents={lifecycleEvents}
-                learningMemory={learningMemory}
-                selectedId={sel}
-                onSelect={setSel}
-                onRetry={handleRetry}
-                onStop={handleStop}
-                onApprove={handleApprove}
-                onCancel={(id) => handleReject(id, 'Cancelled from branch controls')}
-                onUpdateBranchRouting={handleUpdateBranchRouting}
-                onUpdateBranchDependencies={handleUpdateBranchDependencies}
-              />
-              <AnimatePresence mode="popLayout">
-                {operationalTasks.map(t => (
-                  <Motion.div
-                    key={t.id}
-                    layout
-                    initial={{ opacity: 0, y: 16, scale: 0.98 }}
-                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                    exit={{ opacity: 0, y: -14, scale: 0.98 }}
-                    transition={{ duration: 0.24, ease: 'easeOut' }}
-                  >
-                    <ItemRow item={t} agents={agents} selected={sel === t.id} onClick={() => setSel(t.id)} />
-                  </Motion.div>
-                ))}
-              </AnimatePresence>
-            </div>
+            <AnimatePresence mode="popLayout">
+              {operationalTasks.map(t => (
+                <Motion.div
+                  key={t.id}
+                  layout
+                  initial={{ opacity: 0, y: 16, scale: 0.98 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: -14, scale: 0.98 }}
+                  transition={{ duration: 0.24, ease: 'easeOut' }}
+                >
+                  <ItemRow item={t} agents={agents} selected={sel === t.id} onClick={() => setSel(t.id)} />
+                </Motion.div>
+              ))}
+            </AnimatePresence>
           )}
           {tab === 'ops' && operationalTasks.length === 0 && (
-            <div className="rounded-[24px] border border-white/[0.06] bg-black/15 px-6 py-8">
+            <div className="ui-panel-soft px-6 py-8">
               <div className="grid gap-5 xl:grid-cols-[1.2fr_0.8fr]">
                 <div>
                   <p className="text-base font-semibold text-text-primary">No live missions right now</p>
                   <p className="mt-2 text-sm text-text-muted">The deck is clear. Launch something new, check approvals, or let the scheduled systems take the next pass.</p>
                   <div className="mt-4 flex flex-wrap gap-2">
-                    <button onClick={() => setCreatorOpen(true)} className="rounded-xl border border-aurora-teal/20 bg-aurora-teal/10 px-3 py-2 text-[11px] font-semibold text-aurora-teal transition-colors hover:bg-aurora-teal/14">
+                    <button onClick={() => setCreatorOpen(true)} className="ui-button-secondary rounded-xl border-aurora-teal/20 bg-aurora-teal/10 px-3 py-2 text-[11px] font-semibold text-aurora-teal transition-colors hover:bg-aurora-teal/14">
                       Launch mission
                     </button>
-                    <button onClick={() => setTab('app')} className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-[11px] font-semibold text-text-primary transition-colors hover:bg-white/[0.06]">
+                    <button onClick={() => setTab('app')} className="ui-button-secondary rounded-xl px-3 py-2 text-[11px] font-semibold text-text-primary transition-colors hover:bg-white/[0.06]">
                       Review approvals
                     </button>
-                    <button onClick={() => setTab('plan')} className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-[11px] font-semibold text-text-primary transition-colors hover:bg-white/[0.06]">
+                    <button onClick={() => setTab('plan')} className="ui-button-secondary rounded-xl px-3 py-2 text-[11px] font-semibold text-text-primary transition-colors hover:bg-white/[0.06]">
                       Open planner
                     </button>
                   </div>
@@ -1932,7 +877,7 @@ export function MissionControlView() {
                     { label: 'Blocked', value: failed },
                     { label: 'Scheduled', value: schedules.filter(s => s.enabled).length },
                   ].map((metric) => (
-                    <div key={metric.label} className="rounded-[18px] border border-white/8 bg-white/[0.02] px-3 py-3">
+                    <div key={metric.label} className="ui-stat px-3 py-3">
                       <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">{metric.label}</div>
                       <div className="mt-2 text-lg font-semibold text-text-primary">{metric.value}</div>
                     </div>
@@ -2009,8 +954,7 @@ export function MissionControlView() {
         </div>
         </div>
 
-        {/* Intel sidebar */}
-        <div className="w-[320px] shrink-0 overflow-y-auto no-scrollbar rounded-[28px] border border-white/8 bg-[linear-gradient(180deg,rgba(96,165,250,0.06),rgba(255,255,255,0.015))] backdrop-blur-sm p-3">
+        <div className="ui-shell w-[320px] shrink-0 overflow-y-auto no-scrollbar p-3 backdrop-blur-sm">
           <IntelSidebar
             tasks={tasks}
             approvals={approvalItems}
@@ -2021,13 +965,12 @@ export function MissionControlView() {
             learningMemory={learningMemory}
             connectedSystems={connectedSystems}
             truth={truth}
-            interventions={interventions}
-            outcomes={outcomes}
             onOpenApprovals={() => setTab('app')}
             onOpenSystems={() => setSettingsOpen(true)}
             onOpenCreator={() => setCreatorOpen(true)}
             onOpenOps={() => setTab('ops')}
           />
+          <ScratchpadStrip />
         </div>
       </div>
 

@@ -28,7 +28,7 @@ function urgencyTone(task) {
 
 export function LiveOpsTable({ tasks, loading, onOpenDetail, onNavigate }) {
   return (
-    <div className="rounded-[28px] border border-white/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.015))] p-5">
+    <div className="ui-panel p-5">
       <CommandSectionHeader
         eyebrow="Immediate Action Zone"
         title="Command Queue"
@@ -39,7 +39,7 @@ export function LiveOpsTable({ tasks, loading, onOpenDetail, onNavigate }) {
           <button
             type="button"
             onClick={() => onNavigate?.('missions')}
-            className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-xs font-semibold text-text-primary transition-colors hover:bg-white/[0.05]"
+            className="ui-button-secondary px-3 py-2 text-xs font-semibold"
           >
             Open Mission Control
           </button>
@@ -48,7 +48,7 @@ export function LiveOpsTable({ tasks, loading, onOpenDetail, onNavigate }) {
 
       <div className="space-y-3">
         {loading && (
-          <div className="rounded-[22px] border border-white/8 bg-black/20 px-5 py-10 text-center text-text-muted">
+          <div className="ui-card-row px-5 py-10 text-center text-text-muted">
             <div className="inline-flex items-center gap-2">
               <Loader2 className="h-4 w-4 animate-spin text-aurora-teal" />
               Loading live command queue
@@ -57,7 +57,7 @@ export function LiveOpsTable({ tasks, loading, onOpenDetail, onNavigate }) {
         )}
 
         {!loading && tasks.length === 0 && (
-          <div className="rounded-[22px] border border-white/8 bg-black/20 px-6 py-10 text-center">
+          <div className="ui-card-row px-6 py-10 text-center">
             <div className="text-base font-semibold text-text-primary">No live queue right now</div>
             <p className="mt-2 text-sm leading-6 text-text-muted">
               The bridge is clear. Launch a mission or let the automation lanes take the next cycle.
@@ -69,7 +69,7 @@ export function LiveOpsTable({ tasks, loading, onOpenDetail, onNavigate }) {
           <div
             key={task.id}
             className={cn(
-              'rounded-[22px] border p-4 transition-colors hover:bg-white/[0.04]',
+              'ui-card-row p-4 transition-colors hover:bg-white/[0.04]',
               urgencyTone(task)
             )}
           >
@@ -98,7 +98,7 @@ export function LiveOpsTable({ tasks, loading, onOpenDetail, onNavigate }) {
               <button
                 type="button"
                 onClick={() => (task.needsReview ? onNavigate?.('missions') : onOpenDetail?.(task.agentId))}
-                className="inline-flex items-center gap-1.5 self-start rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-xs font-semibold text-text-primary transition-colors hover:bg-white/[0.06]"
+                className="ui-button-secondary inline-flex items-center gap-1.5 self-start px-3 py-2 text-xs font-semibold"
               >
                 {task.needsReview ? 'Resolve in Missions' : 'Open Operator'}
                 <ArrowRight className="h-3.5 w-3.5" />
@@ -106,19 +106,19 @@ export function LiveOpsTable({ tasks, loading, onOpenDetail, onNavigate }) {
             </div>
 
             <div className="mt-4 grid gap-3 md:grid-cols-4">
-              <div className="rounded-2xl border border-white/8 bg-white/[0.03] px-3 py-3">
+              <div className="ui-stat px-3 py-3">
                 <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Operator</div>
                 <div className="mt-2 text-sm font-semibold text-text-primary">{task.agentName || 'Unassigned'}</div>
               </div>
-              <div className="rounded-2xl border border-white/8 bg-white/[0.03] px-3 py-3">
+              <div className="ui-stat px-3 py-3">
                 <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Runtime</div>
                 <div className="mt-2 font-mono text-sm text-text-primary">{formatDuration(task.durationMs)}</div>
               </div>
-              <div className="rounded-2xl border border-white/8 bg-white/[0.03] px-3 py-3">
+              <div className="ui-stat px-3 py-3">
                 <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Cost</div>
                 <div className="mt-2 font-mono text-sm text-text-primary">${Number(task.costUsd || 0).toFixed(3)}</div>
               </div>
-              <div className="rounded-2xl border border-white/8 bg-white/[0.03] px-3 py-3">
+              <div className="ui-stat px-3 py-3">
                 <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Posture</div>
                 <div className="mt-2 text-sm font-semibold text-text-primary">
                   {task.status === 'error' ? 'Recovery needed' : task.needsReview ? 'Waiting on commander' : task.status === 'pending' ? 'Queued for launch' : 'Advancing'}

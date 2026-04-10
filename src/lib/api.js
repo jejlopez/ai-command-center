@@ -2401,6 +2401,62 @@ export async function createTaskNote(taskId, content, author = 'Human') {
   return { success: true };
 }
 
+function getScratchpadDateKey() {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = `${now.getMonth() + 1}`.padStart(2, '0');
+  const day = `${now.getDate()}`.padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+export async function fetchScratchpadNote(workspaceId) {
+  if (!isSupabaseConfigured || !workspaceId) return null;
+
+  const noteDate = getScratchpadDateKey();
+  const { data, error } = await supabase
+    .from('scratchpad_notes')
+    .select('*')
+    .eq('workspace_id', workspaceId)
+    .eq('note_date', noteDate)
+    .maybeSingle();
+
+  if (error) {
+    console.error('[api] fetchScratchpadNote:', error.message);
+    return null;
+  }
+
+  if (!data) return null;
+  return {
+    id: data.id,
+    workspaceId: data.workspace_id,
+    noteDate: data.note_date,
+    content: data.content || '',
+    updatedAt: data.updated_at,
+  };
+}
+
+export async function upsertScratchpadNote(workspaceId, content) {
+  if (!isSupabaseConfigured || !workspaceId) return { success: true };
+
+  const user = (await supabase.auth.getUser()).data?.user;
+  if (!user) throw new Error('Not authenticated');
+
+  const payload = {
+    user_id: user.id,
+    workspace_id: workspaceId,
+    note_date: getScratchpadDateKey(),
+    content,
+    updated_at: new Date().toISOString(),
+  };
+
+  const { error } = await supabase
+    .from('scratchpad_notes')
+    .upsert(payload, { onConflict: 'workspace_id,note_date' });
+
+  if (error) throw error;
+  return { success: true };
+}
+
 // ── Acknowledge / Reopen / Snooze ───────────────────────────────
 
 export async function acknowledgeItem(table, itemId) {

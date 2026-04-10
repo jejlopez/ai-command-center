@@ -48,7 +48,7 @@ function MetricCard({ label, value, detail, tone = 'teal' }) {
   };
 
   return (
-    <div className="rounded-[22px] border border-white/[0.08] bg-[linear-gradient(180deg,rgba(255,255,255,0.035),rgba(255,255,255,0.015))] p-4">
+    <div className="ui-stat">
       <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">{label}</div>
       <div className={cn('mt-3 text-2xl font-semibold tracking-tight', toneMap[tone] || toneMap.teal)}>{value}</div>
       <div className="mt-2 text-[12px] leading-relaxed text-text-muted">{detail}</div>
@@ -67,10 +67,10 @@ function CommandLink({ iconComponent: IconComponent, label, detail, onClick, ton
     <button
       type="button"
       onClick={onClick}
-      className={cn('flex w-full items-center justify-between rounded-[18px] border px-4 py-3 text-left transition-colors', toneClass)}
+      className={cn('flex w-full items-center justify-between rounded-[18px] border px-4 py-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aurora-teal/60', toneClass)}
     >
       <div className="flex items-start gap-3">
-        <div className={cn('mt-0.5 rounded-xl border p-2', destructive ? 'border-aurora-rose/20 bg-aurora-rose/10' : 'border-white/[0.08] bg-black/20')}>
+        <div className={cn('mt-0.5 rounded-xl border p-2', destructive ? 'border-aurora-rose/20 bg-aurora-rose/10' : 'border-hairline bg-panel-soft')}>
           {React.createElement(IconComponent, {
             className: cn('h-4 w-4', destructive ? 'text-aurora-rose' : 'text-aurora-teal'),
           })}
@@ -182,25 +182,24 @@ export function UserProfilePanel({ profileOpen, setProfileOpen, onAction }) {
             animate={{ x: 0, opacity: 1 }}
             exit={{ x: 460, opacity: 0 }}
             transition={{ type: 'spring', damping: 30, stiffness: 220 }}
-            className="fixed inset-y-0 right-0 z-50 flex w-[540px] max-w-[96vw] flex-col overflow-hidden border-l border-white/[0.08] bg-[linear-gradient(180deg,rgba(8,10,14,0.985),rgba(6,9,12,0.985))] shadow-[-18px_0_60px_rgba(0,0,0,0.55)]"
+            className="ui-drawer fixed inset-y-0 right-0 z-50 flex w-[540px] max-w-[96vw] flex-col overflow-hidden shadow-[-18px_0_60px_rgba(0,0,0,0.55)]"
           >
-            <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(45,212,191,0.12),transparent_22%),radial-gradient(circle_at_24%_10%,rgba(96,165,250,0.1),transparent_24%),linear-gradient(180deg,rgba(255,255,255,0.02),transparent_24%)]" />
-            <div className="pointer-events-none absolute inset-0 opacity-[0.05] [background-image:repeating-linear-gradient(180deg,rgba(255,255,255,0.18)_0px,rgba(255,255,255,0.18)_1px,transparent_1px,transparent_12px)]" />
+            <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(45,212,191,0.12),transparent_22%),radial-gradient(circle_at_24%_10%,rgba(96,165,250,0.08),transparent_24%)]" />
 
-            <div className="relative border-b border-white/[0.08] px-5 py-5">
+            <div className="relative border-b border-hairline px-5 py-5">
               <div className="flex items-start justify-between gap-4">
                 <div>
-                  <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.22em] text-text-muted">
+                  <div className="ui-kicker inline-flex items-center gap-2 px-3 py-1">
                     <Shield className="h-3.5 w-3.5 text-aurora-teal" />
-                    Commander Identity
+                    Profile
                   </div>
-                  <h2 className="mt-4 text-2xl font-semibold tracking-tight text-text-primary">Operator authority, live posture, and system access.</h2>
-                  <p className="mt-2 text-[13px] leading-relaxed text-text-muted">This is the human layer of the machine. It should feel like the same command system as Mission Control, Reports, Intelligence, and Overview.</p>
+                  <h2 className="mt-4 text-2xl font-semibold tracking-tight text-text-primary">Operator access, posture, and session control.</h2>
+                  <p className="mt-2 text-[13px] leading-relaxed text-text-muted">Your profile should help with decisions and control, not repeat the whole dashboard in miniature.</p>
                 </div>
                 <button
                   type="button"
                   onClick={() => setProfileOpen(false)}
-                  className="rounded-2xl border border-white/[0.08] bg-white/[0.03] p-2 text-text-muted transition-colors hover:text-text-primary"
+                  className="ui-button-secondary p-2 text-text-muted hover:text-text-primary"
                 >
                   <X className="h-4.5 w-4.5" />
                 </button>
@@ -208,9 +207,9 @@ export function UserProfilePanel({ profileOpen, setProfileOpen, onAction }) {
             </div>
 
             <div className="relative flex-1 overflow-y-auto px-5 py-5 no-scrollbar">
-              <div className="rounded-[30px] border border-white/[0.08] bg-[linear-gradient(135deg,rgba(255,255,255,0.05),rgba(255,255,255,0.018))] p-5 shadow-[0_24px_80px_rgba(0,0,0,0.25)]">
+              <div className="ui-shell p-5 shadow-[0_24px_80px_rgba(0,0,0,0.25)]">
                 <div className="flex items-start gap-4">
-                  <div className="flex h-16 w-16 items-center justify-center rounded-[22px] border border-aurora-teal/20 bg-aurora-teal/10 shadow-[0_0_28px_rgba(45,212,191,0.12)]">
+                  <div className="flex h-16 w-16 items-center justify-center rounded-[22px] border border-aurora-teal/20 bg-aurora-teal/10">
                     <span className="text-lg font-semibold tracking-[0.12em] text-aurora-teal">{initials}</span>
                   </div>
                   <div className="min-w-0 flex-1">
@@ -231,7 +230,7 @@ export function UserProfilePanel({ profileOpen, setProfileOpen, onAction }) {
                   </div>
                 </div>
 
-                <div className="mt-5 rounded-[24px] border border-white/[0.08] bg-black/20 p-4">
+                <div className="mt-5 ui-panel-soft p-4">
                   <div className="flex items-center justify-between gap-3">
                     <div>
                       <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Execution doctrine</div>
@@ -274,7 +273,7 @@ export function UserProfilePanel({ profileOpen, setProfileOpen, onAction }) {
               </div>
 
               <div className="mt-6 grid gap-4 md:grid-cols-[1.2fr_0.8fr]">
-                <div className="rounded-[26px] border border-white/[0.08] bg-[linear-gradient(180deg,rgba(255,255,255,0.035),rgba(255,255,255,0.015))] p-4">
+                <div className="ui-panel p-4">
                   <SectionLabel>Command Access</SectionLabel>
                   <div className="space-y-3">
                     <CommandLink
@@ -305,10 +304,10 @@ export function UserProfilePanel({ profileOpen, setProfileOpen, onAction }) {
                   </div>
                 </div>
 
-                <div className="rounded-[26px] border border-white/[0.08] bg-black/20 p-4">
-                  <SectionLabel>Identity + Access</SectionLabel>
+                <div className="ui-panel p-4">
+                  <SectionLabel>Operator Snapshot</SectionLabel>
                   <div className="space-y-3">
-                    <div className="rounded-[18px] border border-white/[0.08] bg-white/[0.03] p-3">
+                    <div className="ui-card-row p-3">
                       <div className="flex items-center gap-2 text-[11px] uppercase tracking-[0.18em] text-text-muted">
                         <Crown className="h-3.5 w-3.5 text-aurora-amber" />
                         Clearance
@@ -316,7 +315,7 @@ export function UserProfilePanel({ profileOpen, setProfileOpen, onAction }) {
                       <div className="mt-2 text-sm font-semibold text-text-primary">Full command authority</div>
                       <div className="mt-1 text-[12px] text-text-muted">Approvals, routing, missions, and command surfaces are all under your control.</div>
                     </div>
-                    <div className="rounded-[18px] border border-white/[0.08] bg-white/[0.03] p-3">
+                    <div className="ui-card-row p-3">
                       <div className="flex items-center gap-2 text-[11px] uppercase tracking-[0.18em] text-text-muted">
                         <Bot className="h-3.5 w-3.5 text-aurora-teal" />
                         Fleet reach
@@ -324,7 +323,7 @@ export function UserProfilePanel({ profileOpen, setProfileOpen, onAction }) {
                       <div className="mt-2 text-sm font-semibold text-text-primary">{agents.length} agents standing by</div>
                       <div className="mt-1 text-[12px] text-text-muted">The system can route through operations, planning, and specialized branches from one command layer.</div>
                     </div>
-                    <div className="rounded-[18px] border border-white/[0.08] bg-white/[0.03] p-3">
+                    <div className="ui-card-row p-3">
                       <div className="flex items-center gap-2 text-[11px] uppercase tracking-[0.18em] text-text-muted">
                         <User className="h-3.5 w-3.5 text-aurora-blue" />
                         Session state
@@ -332,7 +331,7 @@ export function UserProfilePanel({ profileOpen, setProfileOpen, onAction }) {
                       <div className="mt-2 text-sm font-semibold text-text-primary">Last sign-in {formatDateTime(user?.last_sign_in_at)}</div>
                       <div className="mt-1 text-[12px] text-text-muted">Member since {formatDateTime(user?.created_at)}.</div>
                     </div>
-                    <div className="rounded-[18px] border border-white/[0.08] bg-white/[0.03] p-3">
+                    <div className="ui-card-row p-3">
                       <div className="flex items-center gap-2 text-[11px] uppercase tracking-[0.18em] text-text-muted">
                         <ShieldCheck className="h-3.5 w-3.5 text-aurora-violet" />
                         Integration posture
@@ -340,7 +339,7 @@ export function UserProfilePanel({ profileOpen, setProfileOpen, onAction }) {
                       <div className="mt-2 text-sm font-semibold text-text-primary">{connectedSystems.length} systems connected</div>
                       <div className="mt-1 text-[12px] text-text-muted">{connectedSystems.length > 0 ? 'Core command surfaces are available from your profile, settings, and mission workflows.' : 'No external systems are wired yet. Use Systems Control to establish your base stack.'}</div>
                     </div>
-                    <div className="rounded-[18px] border border-white/[0.08] bg-white/[0.03] p-3">
+                    <div className="ui-card-row p-3">
                       <div className="flex items-center gap-2 text-[11px] uppercase tracking-[0.18em] text-text-muted">
                         <Shield className="h-3.5 w-3.5 text-aurora-amber" />
                         Approval doctrine
@@ -352,7 +351,7 @@ export function UserProfilePanel({ profileOpen, setProfileOpen, onAction }) {
                         {approvalDoctrine === 'always' ? 'Every meaningful write waits for human review.' : approvalDoctrine === 'exceptions_only' ? 'Only anomalies and exceptions should interrupt flow.' : 'Approval pressure is weighted by risk, not by volume.'}
                       </div>
                     </div>
-                    <div className="rounded-[18px] border border-white/[0.08] bg-white/[0.03] p-3">
+                    <div className="ui-card-row p-3">
                       <div className="flex items-center gap-2 text-[11px] uppercase tracking-[0.18em] text-text-muted">
                         <Bell className="h-3.5 w-3.5 text-aurora-blue" />
                         Alert routing
@@ -366,7 +365,7 @@ export function UserProfilePanel({ profileOpen, setProfileOpen, onAction }) {
                 </div>
               </div>
 
-              <div className="mt-6 rounded-[26px] border border-white/[0.08] bg-[linear-gradient(180deg,rgba(255,255,255,0.035),rgba(255,255,255,0.015))] p-4">
+              <div className="mt-6 ui-panel p-4">
                 <SectionLabel>Command Actions</SectionLabel>
                 <div className="grid gap-3 md:grid-cols-2">
                   <CommandLink

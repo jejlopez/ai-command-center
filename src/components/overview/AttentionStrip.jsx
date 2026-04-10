@@ -21,14 +21,14 @@ export function AttentionStrip({ items, loading, onSelect }) {
             key={item.id}
             onClick={() => onSelect?.(item)}
             className={cn(
-              'spatial-panel min-h-[96px] p-4 text-left transition-all',
+              'ui-card-row min-h-[96px] p-4 text-left transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aurora-teal/35',
               item.tone === 'critical' && 'border-aurora-rose/30 bg-aurora-rose/5',
               item.tone === 'warning' && 'border-aurora-amber/30 bg-aurora-amber/5',
               item.clickable && 'hover:-translate-y-0.5 hover:bg-white/[0.05]'
             )}
           >
             <div className="flex items-center justify-between">
-              <div className="rounded-lg border border-white/8 bg-white/[0.03] p-2">
+              <div className="ui-panel-soft rounded-lg p-2">
                 <Icon className={cn(
                   'h-4 w-4',
                   item.tone === 'critical' ? 'text-aurora-rose' : item.tone === 'warning' ? 'text-aurora-amber' : 'text-aurora-blue'

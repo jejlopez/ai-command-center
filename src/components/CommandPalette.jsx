@@ -100,7 +100,7 @@ export function CommandPalette({ isOpen, onClose, onExecute }) {
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: -20, scale: 0.98 }}
               transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-              className="w-full max-w-lg spatial-panel gradient-border origin-top pointer-events-auto flex flex-col overflow-hidden"
+              className="w-full max-w-lg ui-shell gradient-border origin-top pointer-events-auto flex flex-col overflow-hidden"
             >
               <div className="p-4 border-b border-border text-text-primary flex items-center">
                 <Icons.Search className="w-4 h-4 text-text-muted mr-3 shrink-0" />

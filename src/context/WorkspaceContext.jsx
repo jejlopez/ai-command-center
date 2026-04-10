@@ -2,7 +2,20 @@ import { createContext, useContext, useState, useCallback, useEffect, useRef } f
 import { supabase } from '../lib/supabaseClient';
 import { useAuth } from './AuthContext';
 
-const WorkspaceContext = createContext();
+const noopAsync = async () => {};
+const noop = () => {};
+
+const WorkspaceContext = createContext({
+  workspaces: [],
+  activeWorkspace: null,
+  setActiveWorkspace: noop,
+  createWorkspace: noopAsync,
+  updateWorkspace: noopAsync,
+  deleteWorkspace: noopAsync,
+  cloneWorkspaceData: noopAsync,
+  loading: false,
+  refetch: noopAsync,
+});
 
 const LS_KEY = 'jarvis_active_workspace';
 

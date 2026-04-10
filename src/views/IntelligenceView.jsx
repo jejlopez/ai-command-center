@@ -145,7 +145,7 @@ function HudPanel({ eyebrow, title, description, accent = 'teal', children, clas
       initial={{ opacity: 0, y: 18 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.45, ease: 'easeOut' }}
-      className={`relative overflow-hidden rounded-[28px] border border-white/8 bg-black/20 p-5 ${className}`}
+      className={`ui-panel relative overflow-hidden p-5 ${className}`}
     >
       <div className={`pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r ${accents[accent] || accents.teal}`} />
       <div className="pointer-events-none absolute inset-0 opacity-[0.06] [background-image:repeating-linear-gradient(180deg,rgba(255,255,255,0.16)_0px,rgba(255,255,255,0.16)_1px,transparent_1px,transparent_12px)]" />
@@ -187,7 +187,7 @@ function StrategicReadFirst({ items }) {
           initial={{ opacity: 0, y: 18 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.4, ease: 'easeOut' }}
-          className="rounded-[22px] border border-white/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.04),rgba(255,255,255,0.015))] p-3.5"
+          className="ui-panel p-4"
         >
           <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">{entry.eyebrow}</div>
           <div className="mt-1.5 text-[15px] font-semibold text-text-primary">{entry.title}</div>
@@ -206,9 +206,9 @@ function OptimizationCard({ recommendation }) {
       : 'border-l-aurora-teal';
 
   return (
-    <div className={`rounded-[22px] border border-white/8 border-l-[3px] ${toneClass} bg-black/20 p-4`}>
+    <div className={`ui-card-row border-l-[3px] ${toneClass} p-4`}>
       <div className="flex items-start gap-3">
-        <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.04]">
+        <div className="ui-panel-soft flex h-10 w-10 items-center justify-center rounded-2xl">
           <Sparkles className="h-4 w-4 text-aurora-teal" />
         </div>
         <div className="min-w-0 flex-1">
@@ -222,7 +222,7 @@ function OptimizationCard({ recommendation }) {
           </div>
           <p className="mt-2 text-[12px] leading-relaxed text-text-muted">{recommendation.description}</p>
           {recommendation.whyNow && (
-            <div className="mt-3 rounded-[14px] border border-white/8 bg-black/10 px-3 py-2 text-[11px] leading-relaxed text-text-body">
+            <div className="mt-3 ui-panel-soft px-3 py-2 text-[11px] leading-relaxed text-text-body">
               <span className="font-semibold text-text-primary">Why now:</span> {recommendation.whyNow}
             </div>
           )}
@@ -241,14 +241,14 @@ function DoctrineSignalRail({ learningMemory }) {
 
   return (
     <div className="space-y-4">
-      <div className="rounded-[24px] border border-white/8 bg-black/20 p-4">
+      <div className="ui-panel-soft p-4">
         <div className="flex items-center gap-2">
           <History className="h-4 w-4 text-aurora-violet" />
           <span className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Doctrine drift</span>
         </div>
         <div className="mt-4 space-y-3">
           {timeline.map((item) => (
-            <div key={item.id} className="rounded-2xl border border-white/8 bg-white/[0.02] px-3 py-3">
+            <div key={item.id} className="ui-card-row px-3 py-3">
               <div className="flex items-center justify-between gap-2">
                 <div className="text-[12px] font-semibold text-text-primary">{item.owner}</div>
                 <div className="text-[10px] font-mono text-aurora-teal">{item.confidence}%</div>
@@ -259,14 +259,14 @@ function DoctrineSignalRail({ learningMemory }) {
         </div>
       </div>
 
-      <div className="rounded-[24px] border border-white/8 bg-black/20 p-4">
+      <div className="ui-panel-soft p-4">
         <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Memory state</div>
         <div className="mt-4 grid grid-cols-2 gap-3">
-          <div className="rounded-2xl border border-white/8 bg-white/[0.02] p-3">
+          <div className="ui-stat p-3">
             <div className="text-[10px] uppercase tracking-[0.16em] text-text-disabled">Snapshots</div>
             <div className="mt-2 text-2xl font-semibold text-text-primary">{learningMemory.history.length}</div>
           </div>
-          <div className="rounded-2xl border border-white/8 bg-white/[0.02] p-3">
+          <div className="ui-stat p-3">
             <div className="text-[10px] uppercase tracking-[0.16em] text-text-disabled">Persistence</div>
             <div className="mt-2 text-sm font-semibold text-text-primary">
               {learningMemory.persistenceEnabled ? 'Supabase live' : 'Derived only'}
@@ -283,8 +283,8 @@ function StrategyRail({ derivedRecommendations, learningMemory, humanHourlyRate,
 
   return (
     <div className="space-y-5">
-      <div className="rounded-[24px] border border-white/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.015))] p-1.5">
-        <div className="flex flex-wrap gap-2 rounded-[20px] bg-black/20 p-1.5">
+      <div className="ui-panel p-1.5">
+        <div className="ui-segmented flex flex-wrap gap-2 rounded-[20px] p-1.5">
           {[
             { id: 'economics', label: 'Economics' },
             { id: 'doctrine', label: 'Doctrine' },
@@ -295,8 +295,8 @@ function StrategyRail({ derivedRecommendations, learningMemory, humanHourlyRate,
               type="button"
               onClick={() => setFocus(tab.id)}
               className={cn(
-                'flex-1 rounded-[16px] px-3 py-2.5 text-[11px] font-semibold transition-all',
-                focus === tab.id ? 'border border-white/10 bg-white/[0.05] text-text-primary' : 'text-text-muted hover:text-text-primary'
+                'ui-chip flex-1 rounded-[16px] px-3 py-2.5 text-[11px] font-semibold transition-all',
+                focus === tab.id ? 'border-aurora-teal/25 bg-aurora-teal/10 text-aurora-teal' : 'text-text-muted hover:text-text-primary'
               )}
             >
               {tab.label}
@@ -320,19 +320,19 @@ function StrategyRail({ derivedRecommendations, learningMemory, humanHourlyRate,
             tone="amber"
           />
           <div className="mt-5 grid gap-3">
-            <div className="rounded-[22px] border border-white/8 bg-black/20 p-4">
+            <div className="ui-stat p-4">
               <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Human equivalent</div>
               <div className="mt-2 text-2xl font-semibold text-text-primary">
                 <AnimatedNumber value={economics.humanCost} prefix="$" decimals={2} />
               </div>
             </div>
-            <div className="rounded-[22px] border border-white/8 bg-black/20 p-4">
+            <div className="ui-stat p-4">
               <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Agent spend</div>
               <div className="mt-2 text-2xl font-semibold text-text-primary">
                 <AnimatedNumber value={economics.agentCost} prefix="$" decimals={2} />
               </div>
             </div>
-            <div className="rounded-[22px] border border-white/8 bg-black/20 p-4">
+            <div className="ui-stat p-4">
               <div className="grid grid-cols-2 gap-4">
                 <div className="min-w-0">
                   <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Savings</div>
@@ -340,7 +340,7 @@ function StrategyRail({ derivedRecommendations, learningMemory, humanHourlyRate,
                     <AnimatedNumber value={Math.abs(economics.savings)} prefix={economics.savings >= 0 ? '$' : '-$'} decimals={2} />
                   </div>
                 </div>
-                <div className="min-w-0 border-l border-white/8 pl-4">
+                <div className="min-w-0 border-l border-hairline pl-4">
                   <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Efficiency</div>
                   <div className="mt-2 text-lg font-semibold leading-none text-text-primary">
                     <AnimatedNumber value={economics.multiplier} decimals={1} suffix="x" />
@@ -408,7 +408,7 @@ function StrategicKpi({ label, detail, tone = 'teal', icon, valueNode }) {
   };
 
   return (
-    <div className="rounded-[22px] border border-white/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.015))] p-3.5">
+    <div className="ui-panel p-3.5">
       <div className="flex items-center justify-between">
         <span className="text-[10px] uppercase tracking-[0.22em] text-text-muted">{label}</span>
         <div className={`rounded-xl border px-2.5 py-2 ${toneStyles[tone]}`}>
@@ -423,7 +423,7 @@ function StrategicKpi({ label, detail, tone = 'teal', icon, valueNode }) {
 
 function SystemsOperatorTable({ models }) {
   return (
-    <div className="rounded-[24px] border border-white/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.015))] p-4">
+    <div className="ui-panel p-4">
       <CommandSectionHeader
         eyebrow="Model Roles"
         title="Which branch wins which role"
@@ -431,8 +431,8 @@ function SystemsOperatorTable({ models }) {
         icon={Cpu}
         tone="blue"
       />
-      <div className="mt-4 overflow-hidden rounded-[20px] border border-white/8 bg-black/20">
-        <div className="grid grid-cols-[1.4fr_0.9fr_0.9fr] border-b border-white/8 px-4 py-2.5 text-[10px] uppercase tracking-[0.16em] text-text-muted">
+      <div className="mt-4 overflow-hidden rounded-[20px] border border-hairline bg-panel-soft">
+        <div className="grid grid-cols-[1.4fr_0.9fr_0.9fr] border-b border-hairline px-4 py-2.5 text-[10px] uppercase tracking-[0.16em] text-text-muted">
           <div>Model</div>
           <div>Reliability</div>
           <div>Cost discipline</div>
@@ -445,7 +445,7 @@ function SystemsOperatorTable({ models }) {
           models.slice(0, 5).map((model, index) => (
             <div
               key={model.model}
-              className={`grid grid-cols-[1.4fr_0.9fr_0.9fr] px-4 py-2.5 text-[13px] ${index !== Math.min(models.length, 5) - 1 ? 'border-b border-white/8' : ''}`}
+              className={`grid grid-cols-[1.4fr_0.9fr_0.9fr] px-4 py-2.5 text-[13px] ${index !== Math.min(models.length, 5) - 1 ? 'border-b border-hairline' : ''}`}
             >
               <div className="font-semibold text-text-primary">{model.model}</div>
               <div className="text-text-body">{model.reliability}</div>
@@ -462,7 +462,7 @@ function CollapsedPanel({ eyebrow, title, summary, children }) {
   const [open, setOpen] = useState(false);
 
   return (
-    <div className="rounded-[24px] border border-white/8 bg-[#111827]/90 p-4">
+    <div className="ui-panel p-4">
       <div className="flex items-center justify-between gap-4">
         <div>
           <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">{eyebrow}</div>
@@ -472,7 +472,7 @@ function CollapsedPanel({ eyebrow, title, summary, children }) {
         <button
           type="button"
           onClick={() => setOpen((value) => !value)}
-          className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-[11px] font-semibold text-text-primary transition-colors hover:bg-white/[0.06]"
+          className="ui-button-secondary rounded-xl px-3 py-2 text-[11px] font-semibold text-text-primary transition-colors hover:bg-white/[0.06]"
         >
           {open ? 'Hide' : 'Open'}
         </button>
@@ -490,7 +490,7 @@ function IntelligenceHeaderChip({ label, value, tone = 'teal' }) {
   };
 
   return (
-    <div className={`rounded-full border px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] ${tones[tone]}`}>
+    <div className={`ui-chip rounded-full border px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] ${tones[tone]}`}>
       {value} {label}
     </div>
   );
@@ -498,7 +498,7 @@ function IntelligenceHeaderChip({ label, value, tone = 'teal' }) {
 
 function IntelligenceHeader({ activeTab, setActiveTab, systemSummary, availableModels, truth }) {
   return (
-    <div className="rounded-[24px] border border-white/8 bg-[#111827]/92 p-5">
+    <div className="ui-shell p-5">
       <div className="grid gap-5 xl:grid-cols-[1.2fr_0.8fr] xl:items-start">
         <div>
           <div className="text-[10px] uppercase tracking-[0.22em] text-text-muted">Strategic Systems</div>
@@ -510,7 +510,7 @@ function IntelligenceHeader({ activeTab, setActiveTab, systemSummary, availableM
             <IntelligenceHeaderChip label="routed missions" value={systemSummary.routedMissions} tone="amber" />
           </div>
         </div>
-        <div className="rounded-[20px] border border-white/8 bg-[#0d1420] p-4">
+        <div className="ui-panel p-4">
           <div className="flex items-center justify-between">
             <span className="text-[10px] uppercase tracking-[0.18em] text-text-muted">System Controls</span>
             <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-aurora-teal">Live</span>
@@ -520,10 +520,10 @@ function IntelligenceHeader({ activeTab, setActiveTab, systemSummary, availableM
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`rounded-xl border px-3 py-2 text-[11px] font-semibold transition-colors ${
+                className={`ui-chip rounded-xl border px-3 py-2 text-[11px] font-semibold transition-colors ${
                   activeTab === tab.id
                     ? 'border-aurora-teal/25 bg-aurora-teal/10 text-aurora-teal'
-                    : 'border-white/8 bg-white/[0.03] text-text-muted hover:text-text-primary'
+                    : 'text-text-muted hover:text-text-primary'
                 }`}
               >
                 {tab.label.replace('Model Command Matrix', 'Models').replace('Routing Doctrine', 'Routing').replace('Knowledge Terrain', 'Knowledge').replace('Directive Pressure', 'Directives')}
@@ -531,11 +531,11 @@ function IntelligenceHeader({ activeTab, setActiveTab, systemSummary, availableM
             ))}
           </div>
           <div className="mt-4 grid grid-cols-2 gap-3">
-            <div className="rounded-[18px] border border-white/8 bg-[#111827] p-3">
+            <div className="ui-stat p-3">
               <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Recommendations</div>
               <div className="mt-2 text-2xl font-semibold text-text-primary"><AnimatedNumber value={systemSummary.recommendationCount} /></div>
             </div>
-            <div className="rounded-[18px] border border-white/8 bg-[#111827] p-3">
+            <div className="ui-stat p-3">
               <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Connected systems</div>
               <div className="mt-2 text-2xl font-semibold text-text-primary"><AnimatedNumber value={truth.connectedSystemsCount} /></div>
             </div>
@@ -587,8 +587,8 @@ function ModelRegistryTab({ availableModels, agents, tasks, logs, interventions 
 
   return (
     <div className="space-y-5">
-        <div className="rounded-[24px] border border-white/8 bg-black/20 p-2">
-          <div className="flex flex-wrap gap-2 rounded-[20px] bg-black/20 p-2">
+        <div className="ui-panel p-2">
+          <div className="ui-segmented flex flex-wrap gap-2 p-2">
             {[
               { id: 'constellation', label: 'Constellation' },
               { id: 'load', label: 'Load' },
@@ -600,8 +600,8 @@ function ModelRegistryTab({ availableModels, agents, tasks, logs, interventions 
                 type="button"
                 onClick={() => setDetailView(tab.id)}
                 className={cn(
-                  'flex-1 rounded-[16px] px-4 py-2.5 text-[12px] font-semibold transition-all',
-                  detailView === tab.id ? 'border border-white/10 bg-white/[0.05] text-text-primary' : 'text-text-muted hover:text-text-primary'
+                  'ui-chip flex-1 rounded-[16px] px-4 py-2.5 text-[12px] font-semibold transition-all',
+                  detailView === tab.id ? 'border-aurora-teal/25 bg-aurora-teal/10 text-aurora-teal' : 'text-text-muted hover:text-text-primary'
                 )}
               >
                 {tab.label}
@@ -630,7 +630,7 @@ function ModelRegistryTab({ availableModels, agents, tasks, logs, interventions 
               { label: 'Fastest branch', value: fastestModel?.model || 'No live model data yet', detail: 'Best current latency posture across routed branches.' },
               { label: 'Most disciplined', value: cheapestModel?.model || 'No live model data yet', detail: 'Best cost discipline based on configured spend profile.' },
             ].map((card) => (
-              <div key={card.label} className="rounded-[20px] border border-white/8 bg-black/20 p-4">
+              <div key={card.label} className="ui-panel p-4">
                 <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">{card.label}</div>
                 <div className="mt-2 text-sm font-semibold text-text-primary">{card.value}</div>
                 <p className="mt-2 text-[12px] leading-relaxed text-text-muted">{card.detail}</p>
@@ -638,7 +638,7 @@ function ModelRegistryTab({ availableModels, agents, tasks, logs, interventions 
             ))}
           </div>
           <div className="mt-5 space-y-3">
-            <div className="rounded-[22px] border border-white/8 bg-black/20 p-4">
+            <div className="ui-panel p-4">
               <div className="relative h-[320px]">
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={groupedComparisonData} layout="vertical" margin={{ top: 10, right: 12, left: 8, bottom: 4 }} barCategoryGap={16}>
@@ -701,16 +701,16 @@ function ModelRegistryTab({ availableModels, agents, tasks, logs, interventions 
           />
           <div className="mt-5 space-y-3">
             {modelLoad.length === 0 ? (
-              <div className="rounded-[22px] border border-dashed border-white/10 bg-black/10 p-6 text-center">
+              <div className="ui-panel-soft border border-dashed border-hairline p-6 text-center">
                 <div className="text-sm font-semibold text-text-primary">No mission load yet.</div>
                 <p className="mt-2 text-[12px] leading-relaxed text-text-muted">Once tasks start routing through model families, this wall will rank them by traffic share and show the dominant lane immediately.</p>
               </div>
             ) : (
               modelLoad.map((entry, index) => (
-                <div key={entry.name} className="rounded-[22px] border border-white/8 bg-black/20 p-4">
+                <div key={entry.name} className="ui-panel p-4">
                   <div className="flex items-center justify-between gap-3">
                     <div className="flex min-w-0 items-center gap-3">
-                      <div className="flex h-9 w-9 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.04] text-xs font-semibold text-text-primary">
+                      <div className="ui-panel-soft flex h-9 w-9 items-center justify-center rounded-2xl text-xs font-semibold text-text-primary">
                         {String(index + 1).padStart(2, '0')}
                       </div>
                       <div className="min-w-0">
@@ -762,7 +762,7 @@ function ModelRegistryTab({ availableModels, agents, tasks, logs, interventions 
               { label: 'Highest quality', value: [...observedBenchmarks].sort((a, b) => b.avgQuality - a.avgQuality)[0]?.model || 'No benchmark data yet', detail: 'Quality favors completion quality, trust, and clean routing posture.' },
               { label: 'Best value', value: [...observedBenchmarks].sort((a, b) => b.costScore - a.costScore)[0]?.model || 'No benchmark data yet', detail: 'Value favors low-cost lanes that still close work reliably.' },
             ].map((card) => (
-              <div key={card.label} className="rounded-[20px] border border-white/8 bg-black/20 p-4">
+              <div key={card.label} className="ui-panel p-4">
                 <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">{card.label}</div>
                 <div className="mt-2 text-sm font-semibold text-text-primary">{card.value}</div>
                 <p className="mt-2 text-[12px] leading-relaxed text-text-muted">{card.detail}</p>
@@ -771,17 +771,17 @@ function ModelRegistryTab({ availableModels, agents, tasks, logs, interventions 
           </div>
           <div className="mt-5 space-y-3">
             {observedBenchmarks.length === 0 ? (
-              <div className="rounded-[22px] border border-dashed border-white/10 bg-black/10 p-6 text-center">
+              <div className="ui-panel-soft border border-dashed border-hairline p-6 text-center">
                 <div className="text-sm font-semibold text-text-primary">No observed benchmark data yet.</div>
                 <p className="mt-2 text-[12px] leading-relaxed text-text-muted">This board fills in as Commander accumulates more routed mission outcomes.</p>
               </div>
             ) : (
               observedBenchmarks.map((entry, index) => (
-                <div key={entry.key} className="rounded-[22px] border border-white/8 bg-black/20 p-4">
+                <div key={entry.key} className="ui-panel p-4">
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <div className="flex items-center gap-2">
-                        <span className="flex h-7 w-7 items-center justify-center rounded-full border border-white/10 bg-white/[0.03] text-[10px] font-semibold text-text-primary">
+                        <span className="ui-panel-soft flex h-7 w-7 items-center justify-center rounded-full text-[10px] font-semibold text-text-primary">
                           {String(index + 1).padStart(2, '0')}
                         </span>
                         <span className="text-sm font-semibold text-text-primary">{entry.model}</span>
@@ -822,7 +822,7 @@ function ModelRegistryTab({ availableModels, agents, tasks, logs, interventions 
         )}
 
         {detailView === 'registry' && (
-        <div className="rounded-[28px] border border-white/8 bg-[linear-gradient(180deg,rgba(45,212,191,0.05),rgba(255,255,255,0.02))] p-5">
+        <div className="ui-panel p-5">
           <CommandSectionHeader
             eyebrow="Registry"
             title="Model command matrix"
@@ -832,12 +832,12 @@ function ModelRegistryTab({ availableModels, agents, tasks, logs, interventions 
           />
           <div className="mt-4 space-y-3">
             {availableModels.length === 0 && (
-              <div className="rounded-[22px] border border-white/8 bg-black/20 p-4 text-sm text-text-muted">
+              <div className="ui-panel p-4 text-sm text-text-muted">
                 Your model bank is empty. Add models from agent creation or config before using the registry.
               </div>
             )}
             {availableModels.slice(0, 6).map((model) => (
-              <div key={model.model} className="rounded-[22px] border border-white/8 bg-black/20 p-4">
+              <div key={model.model} className="ui-panel p-4">
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <div className="flex items-center gap-2">
@@ -846,7 +846,7 @@ function ModelRegistryTab({ availableModels, agents, tasks, logs, interventions 
                     </div>
                     <div className="mt-1 text-[11px] text-text-muted">{model.provider}</div>
                   </div>
-                  <span className="rounded-full border border-white/8 bg-white/[0.03] px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-text-muted">
+                  <span className="ui-chip px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-text-muted">
                     {model.contextWindow}
                   </span>
                 </div>
@@ -867,7 +867,7 @@ function ModelRegistryTab({ availableModels, agents, tasks, logs, interventions 
               </div>
             ))}
             {availableModels.length > 6 && (
-              <div className="rounded-[22px] border border-dashed border-white/10 bg-black/10 p-4 text-[12px] text-text-muted">
+              <div className="ui-panel-soft border border-dashed border-hairline p-4 text-[12px] text-text-muted">
                 {availableModels.length - 6} more models are available in the bank. This view is keeping the highest-signal lanes up front.
               </div>
             )}
@@ -1116,7 +1116,7 @@ function RoutingDoctrineTab({ routingPolicies, tasks, agents, logs, intervention
             { label: 'Human gates', value: humanGates },
             { label: 'Spawn lanes', value: delegatedBranches },
           ].map((metric) => (
-            <div key={metric.label} className="rounded-[20px] border border-white/8 bg-black/20 p-4">
+            <div key={metric.label} className="ui-panel p-4">
               <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">{metric.label}</div>
               <div className="mt-2 text-2xl font-semibold text-text-primary">
                 <AnimatedNumber value={metric.value} />
@@ -1132,7 +1132,7 @@ function RoutingDoctrineTab({ routingPolicies, tasks, agents, logs, intervention
       </HudPanel>
 
       <div className="grid gap-5 xl:grid-cols-[1.15fr_0.85fr]">
-        <div className="rounded-[28px] border border-white/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.015))] p-5">
+        <div className="ui-panel p-5">
           <CommandSectionHeader
             eyebrow="Policy Stack"
             title="Routing policies in command"
@@ -1142,7 +1142,7 @@ function RoutingDoctrineTab({ routingPolicies, tasks, agents, logs, intervention
           />
           <div className="mt-4 space-y-3">
             {routingPolicies.length === 0 && (
-              <div className="rounded-[22px] border border-dashed border-white/10 bg-black/10 p-5 text-sm text-text-muted">
+              <div className="ui-panel-soft border border-dashed border-hairline p-5 text-sm text-text-muted">
                 No routing policies are stored yet. Create the first default policy and Commander will start using it for mission routing.
                 <div className="mt-4">
                   <button
@@ -1162,8 +1162,8 @@ function RoutingDoctrineTab({ routingPolicies, tasks, agents, logs, intervention
                 type="button"
                 onClick={() => setSelectedPolicyId(policy.id)}
                 className={cn(
-                  'w-full rounded-[22px] border bg-black/20 p-4 text-left transition-colors',
-                  selectedPolicyId === policy.id ? 'border-aurora-teal/30 shadow-glow-teal' : 'border-white/8 hover:border-white/12'
+                  'ui-card-row w-full p-4 text-left transition-colors',
+                  selectedPolicyId === policy.id ? 'border-aurora-teal/30 bg-aurora-teal/[0.06] shadow-glow-teal' : 'hover:border-hairline-strong'
                 )}
               >
                 <div className="flex flex-wrap items-start justify-between gap-3">
@@ -1178,7 +1178,7 @@ function RoutingDoctrineTab({ routingPolicies, tasks, agents, logs, intervention
                     </div>
                     <div className="mt-1 text-[11px] text-text-muted">{policy.description || 'Adaptive Commander doctrine.'}</div>
                   </div>
-                  <div className="rounded-full border border-white/8 bg-white/[0.03] px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-text-muted">
+                  <div className="ui-chip px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-text-muted">
                     {policy.preferredProvider} / {policy.preferredAgentRole}
                   </div>
                 </div>
@@ -1213,75 +1213,75 @@ function RoutingDoctrineTab({ routingPolicies, tasks, agents, logs, intervention
             accent="teal"
           >
             {!draft && (
-              <div className="rounded-[22px] border border-white/8 bg-black/20 p-4 text-[12px] text-text-muted">
+              <div className="ui-panel p-4 text-[12px] text-text-muted">
                 Select a routing policy to edit it here.
               </div>
             )}
             {draft && (
               <div className="space-y-4">
                 <div className="grid gap-3 md:grid-cols-2">
-                  <label className="rounded-[20px] border border-white/8 bg-black/20 p-3">
+                  <label className="ui-panel-soft p-3">
                     <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Task domain</div>
                     <select
                       value={draft.taskDomain || 'general'}
                       onChange={(event) => updateDraft('taskDomain', event.target.value)}
-                      className="mt-2 w-full bg-transparent text-sm font-semibold text-text-primary outline-none"
+                      className="ui-input mt-2 w-full bg-transparent px-3 py-2 text-sm font-semibold text-text-primary"
                     >
                       {['general', 'build', 'research', 'ops', 'crm', 'finance', 'personal'].map((domain) => (
                         <option key={domain} value={domain} className="bg-[#0d1015]">{domain}</option>
                       ))}
                     </select>
                   </label>
-                  <label className="rounded-[20px] border border-white/8 bg-black/20 p-3">
+                  <label className="ui-panel-soft p-3">
                     <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Intent type</div>
                     <select
                       value={draft.intentType || 'general'}
                       onChange={(event) => updateDraft('intentType', event.target.value)}
-                      className="mt-2 w-full bg-transparent text-sm font-semibold text-text-primary outline-none"
+                      className="ui-input mt-2 w-full bg-transparent px-3 py-2 text-sm font-semibold text-text-primary"
                     >
                       {['general', 'planning', 'research', 'execution', 'verification', 'reporting'].map((intent) => (
                         <option key={intent} value={intent} className="bg-[#0d1015]">{intent}</option>
                       ))}
                     </select>
                   </label>
-                  <label className="rounded-[20px] border border-white/8 bg-black/20 p-3">
+                  <label className="ui-panel-soft p-3">
                     <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Policy name</div>
                     <input
                       value={draft.name || ''}
                       onChange={(event) => updateDraft('name', event.target.value)}
-                      className="mt-2 w-full bg-transparent text-sm font-semibold text-text-primary outline-none"
+                      className="ui-input mt-2 w-full bg-transparent px-3 py-2 text-sm font-semibold text-text-primary"
                     />
                   </label>
-                  <label className="rounded-[20px] border border-white/8 bg-black/20 p-3">
+                  <label className="ui-panel-soft p-3">
                     <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Preferred role</div>
                     <select
                       value={draft.preferredAgentRole || 'commander'}
                       onChange={(event) => updateDraft('preferredAgentRole', event.target.value)}
-                      className="mt-2 w-full bg-transparent text-sm font-semibold text-text-primary outline-none"
+                      className="ui-input mt-2 w-full bg-transparent px-3 py-2 text-sm font-semibold text-text-primary"
                     >
                       {['commander', 'planner', 'researcher', 'builder', 'verifier', 'executor'].map((role) => (
                         <option key={role} value={role} className="bg-[#0d1015]">{role}</option>
                       ))}
                     </select>
                   </label>
-                  <label className="rounded-[20px] border border-white/8 bg-black/20 p-3">
+                  <label className="ui-panel-soft p-3">
                     <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Preferred provider</div>
                     <select
                       value={draft.preferredProvider || 'Anthropic'}
                       onChange={(event) => updateDraft('preferredProvider', event.target.value)}
-                      className="mt-2 w-full bg-transparent text-sm font-semibold text-text-primary outline-none"
+                      className="ui-input mt-2 w-full bg-transparent px-3 py-2 text-sm font-semibold text-text-primary"
                     >
                       {['Anthropic', 'OpenAI', 'Google', 'Ollama', 'Custom'].map((provider) => (
                         <option key={provider} value={provider} className="bg-[#0d1015]">{provider}</option>
                       ))}
                     </select>
                   </label>
-                  <label className="rounded-[20px] border border-white/8 bg-black/20 p-3">
+                  <label className="ui-panel-soft p-3">
                     <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Preferred model</div>
                     <select
                       value={draft.preferredModel || ''}
                       onChange={(event) => updateDraft('preferredModel', event.target.value)}
-                      className="mt-2 w-full bg-transparent text-sm font-semibold text-text-primary outline-none"
+                      className="ui-input mt-2 w-full bg-transparent px-3 py-2 text-sm font-semibold text-text-primary"
                     >
                       <option value="" className="bg-[#0d1015]">No hard override</option>
                       {modelOptions.map((model) => (
@@ -1289,55 +1289,55 @@ function RoutingDoctrineTab({ routingPolicies, tasks, agents, logs, intervention
                       ))}
                     </select>
                   </label>
-                  <label className="rounded-[20px] border border-white/8 bg-black/20 p-3">
+                  <label className="ui-panel-soft p-3">
                     <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Approval rule</div>
                     <select
                       value={draft.approvalRule || 'risk_weighted'}
                       onChange={(event) => updateDraft('approvalRule', event.target.value)}
-                      className="mt-2 w-full bg-transparent text-sm font-semibold text-text-primary outline-none"
+                      className="ui-input mt-2 w-full bg-transparent px-3 py-2 text-sm font-semibold text-text-primary"
                     >
                       {['risk_weighted', 'human_required', 'auto_low_risk'].map((rule) => (
                         <option key={rule} value={rule} className="bg-[#0d1015]">{rule}</option>
                       ))}
                     </select>
                   </label>
-                  <label className="rounded-[20px] border border-white/8 bg-black/20 p-3">
+                  <label className="ui-panel-soft p-3">
                     <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Parallelization</div>
                     <select
                       value={draft.parallelizationPolicy || 'adaptive'}
                       onChange={(event) => updateDraft('parallelizationPolicy', event.target.value)}
-                      className="mt-2 w-full bg-transparent text-sm font-semibold text-text-primary outline-none"
+                      className="ui-input mt-2 w-full bg-transparent px-3 py-2 text-sm font-semibold text-text-primary"
                     >
                       {['adaptive', 'parallel_first', 'sequential_first'].map((policy) => (
                         <option key={policy} value={policy} className="bg-[#0d1015]">{policy}</option>
                       ))}
                     </select>
                   </label>
-                  <label className="rounded-[20px] border border-white/8 bg-black/20 p-3">
+                  <label className="ui-panel-soft p-3">
                     <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Context policy</div>
                     <select
                       value={draft.contextPolicy || 'minimal'}
                       onChange={(event) => updateDraft('contextPolicy', event.target.value)}
-                      className="mt-2 w-full bg-transparent text-sm font-semibold text-text-primary outline-none"
+                      className="ui-input mt-2 w-full bg-transparent px-3 py-2 text-sm font-semibold text-text-primary"
                     >
                       {['minimal', 'balanced', 'max_context'].map((policy) => (
                         <option key={policy} value={policy} className="bg-[#0d1015]">{policy}</option>
                       ))}
                     </select>
                   </label>
-                  <label className="rounded-[20px] border border-white/8 bg-black/20 p-3">
+                  <label className="ui-panel-soft p-3">
                     <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Budget class</div>
                     <select
                       value={draft.budgetClass || 'balanced'}
                       onChange={(event) => updateDraft('budgetClass', event.target.value)}
-                      className="mt-2 w-full bg-transparent text-sm font-semibold text-text-primary outline-none"
+                      className="ui-input mt-2 w-full bg-transparent px-3 py-2 text-sm font-semibold text-text-primary"
                     >
                       {['lean', 'balanced', 'premium'].map((budget) => (
                         <option key={budget} value={budget} className="bg-[#0d1015]">{budget}</option>
                       ))}
                     </select>
                   </label>
-                  <label className="rounded-[20px] border border-white/8 bg-black/20 p-3">
+                  <label className="ui-panel-soft p-3">
                     <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Risk level</div>
                     <select
                       value={draft.riskLevel || 'medium'}
@@ -1350,15 +1350,15 @@ function RoutingDoctrineTab({ routingPolicies, tasks, agents, logs, intervention
                     </select>
                   </label>
                 </div>
-                <label className="rounded-[20px] border border-white/8 bg-black/20 p-3 block">
+                <label className="ui-panel-soft p-3 block">
                   <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Description</div>
                   <textarea
                     value={draft.description || ''}
                     onChange={(event) => updateDraft('description', event.target.value)}
-                    className="mt-2 min-h-[88px] w-full bg-transparent text-[12px] leading-relaxed text-text-primary outline-none"
+                    className="ui-input mt-2 min-h-[88px] w-full bg-transparent px-3 py-2 text-[12px] leading-relaxed text-text-primary"
                   />
                 </label>
-                <label className="flex items-center gap-3 rounded-[20px] border border-white/8 bg-black/20 p-3">
+                <label className="flex items-center gap-3 ui-panel-soft p-3">
                   <input
                     type="checkbox"
                     checked={draft.evidenceRequired ?? false}
@@ -1370,7 +1370,7 @@ function RoutingDoctrineTab({ routingPolicies, tasks, agents, logs, intervention
                     <div className="mt-1 text-[11px] text-text-muted">Use for research-sensitive or high-stakes branches.</div>
                   </div>
                 </label>
-                <div className="rounded-[20px] border border-white/8 bg-black/20 p-3">
+                <div className="ui-panel-soft p-3">
                   <div className="grid gap-3 md:grid-cols-4">
                     {[
                       { label: 'Policy reach', value: matchingTasks.length, hint: 'matching tasks' },
@@ -1378,7 +1378,7 @@ function RoutingDoctrineTab({ routingPolicies, tasks, agents, logs, intervention
                       { label: 'Evidence mode', value: draft.evidenceRequired ? 'On' : 'Off', hint: 'pre-execution proof' },
                       { label: 'Parallel bias', value: draft.parallelizationPolicy || 'adaptive', hint: 'execution posture' },
                     ].map((entry) => (
-                      <div key={entry.label} className="rounded-[16px] border border-white/8 bg-white/[0.02] px-3 py-3">
+                      <div key={entry.label} className="ui-card-row px-3 py-3">
                         <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">{entry.label}</div>
                         <div className="mt-2 text-sm font-semibold text-text-primary">{entry.value}</div>
                         <div className="mt-1 text-[10px] text-text-disabled">{entry.hint}</div>
@@ -1386,7 +1386,7 @@ function RoutingDoctrineTab({ routingPolicies, tasks, agents, logs, intervention
                     ))}
                   </div>
                 </div>
-                <div className="rounded-[20px] border border-white/8 bg-black/20 p-3">
+                <div className="ui-panel-soft p-3">
                   <div className="flex items-center justify-between gap-3">
                     <div>
                       <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Fallback order</div>
@@ -1402,19 +1402,19 @@ function RoutingDoctrineTab({ routingPolicies, tasks, agents, logs, intervention
                   </div>
                   <div className="mt-4 space-y-3">
                     {(draft.fallbackOrder || []).length === 0 && (
-                      <div className="rounded-[16px] border border-dashed border-white/10 bg-black/10 px-3 py-3 text-[11px] text-text-muted">
+                      <div className="ui-panel-soft border border-dashed border-hairline px-3 py-3 text-[11px] text-text-muted">
                         No explicit fallback lanes yet. Commander will rely on the preferred lane and general heuristics.
                       </div>
                     )}
                     {(draft.fallbackOrder || []).map((entry, index) => (
-                      <div key={`${entry.role || 'lane'}-${index}`} className="rounded-[18px] border border-white/8 bg-white/[0.02] p-3">
+                      <div key={`${entry.role || 'lane'}-${index}`} className="ui-card-row p-3">
                         <div className="grid gap-3 md:grid-cols-[0.9fr_0.9fr_1fr_auto]">
                           <label>
                             <div className="text-[10px] uppercase tracking-[0.14em] text-text-muted">Role</div>
                             <select
                               value={entry.role || 'executor'}
                               onChange={(event) => updateFallback(index, 'role', event.target.value)}
-                              className="mt-2 w-full bg-transparent text-[12px] font-semibold text-text-primary outline-none"
+                              className="ui-input mt-2 w-full bg-transparent px-3 py-2 text-[12px] font-semibold text-text-primary"
                             >
                               {['commander', 'planner', 'researcher', 'builder', 'verifier', 'executor'].map((role) => (
                                 <option key={role} value={role} className="bg-[#0d1015]">{role}</option>
@@ -1426,7 +1426,7 @@ function RoutingDoctrineTab({ routingPolicies, tasks, agents, logs, intervention
                             <select
                               value={entry.provider || 'Anthropic'}
                               onChange={(event) => updateFallback(index, 'provider', event.target.value)}
-                              className="mt-2 w-full bg-transparent text-[12px] font-semibold text-text-primary outline-none"
+                              className="ui-input mt-2 w-full bg-transparent px-3 py-2 text-[12px] font-semibold text-text-primary"
                             >
                               {['Anthropic', 'OpenAI', 'Google', 'Ollama', 'Custom'].map((provider) => (
                                 <option key={provider} value={provider} className="bg-[#0d1015]">{provider}</option>
@@ -1438,7 +1438,7 @@ function RoutingDoctrineTab({ routingPolicies, tasks, agents, logs, intervention
                             <select
                               value={entry.model || ''}
                               onChange={(event) => updateFallback(index, 'model', event.target.value)}
-                              className="mt-2 w-full bg-transparent text-[12px] font-semibold text-text-primary outline-none"
+                              className="ui-input mt-2 w-full bg-transparent px-3 py-2 text-[12px] font-semibold text-text-primary"
                             >
                               <option value="" className="bg-[#0d1015]">No hard override</option>
                               {modelOptions.map((model) => (
@@ -1460,7 +1460,7 @@ function RoutingDoctrineTab({ routingPolicies, tasks, agents, logs, intervention
                     ))}
                   </div>
                 </div>
-                <div className="rounded-[20px] border border-aurora-blue/15 bg-aurora-blue/[0.05] p-3">
+                <div className="ui-card-row border-aurora-blue/15 bg-aurora-blue/[0.05] p-3">
                   <div className="text-[10px] uppercase tracking-[0.16em] text-aurora-blue">Doctrine readback</div>
                   <div className="mt-2 text-[12px] leading-relaxed text-text-body">
                     Commander will prefer <span className="font-semibold text-text-primary">{draft.preferredAgentRole || 'commander'}</span> on the{' '}
@@ -1471,7 +1471,7 @@ function RoutingDoctrineTab({ routingPolicies, tasks, agents, logs, intervention
                     <span className="font-semibold text-text-primary">{matchingTasks.length}</span> routed mission{matchingTasks.length === 1 ? '' : 's'}.
                   </div>
                 </div>
-                <div className="rounded-[20px] border border-white/8 bg-black/20 p-3">
+                <div className="ui-panel-soft p-3">
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
                       <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Policy trend and demotion pressure</div>
@@ -1492,54 +1492,54 @@ function RoutingDoctrineTab({ routingPolicies, tasks, agents, logs, intervention
                       { label: 'Recent rescue rate', value: demotionSummary.recentInterventionRate || 0 },
                       { label: 'Trend delta', value: demotionSummary.trendDelta },
                     ].map((entry) => (
-                      <div key={entry.label} className="rounded-[14px] border border-white/8 bg-white/[0.03] px-3 py-2">
+                      <div key={entry.label} className="ui-stat px-3 py-2">
                         <div className="text-[10px] uppercase tracking-[0.14em] text-text-muted">{entry.label}</div>
                         <div className="mt-1 text-[12px] font-semibold text-text-primary">{entry.value}</div>
                       </div>
                     ))}
                   </div>
-                  <div className="mt-3 rounded-[14px] border border-white/8 bg-white/[0.03] px-3 py-2 text-[11px] text-text-body">
+                  <div className="mt-3 ui-stat px-3 py-2 text-[11px] text-text-body">
                     {demotionSummary.trendDetail}
                   </div>
                   <div className="mt-3 grid gap-3 xl:grid-cols-2">
-                    <div className="rounded-[16px] border border-aurora-teal/15 bg-aurora-teal/[0.05] p-3">
+                    <div className="ui-card-row border-aurora-teal/15 bg-aurora-teal/[0.05] p-3">
                       <div className="text-[10px] uppercase tracking-[0.14em] text-aurora-teal">Why this lane still wins</div>
                       <div className="mt-2 space-y-2">
                         {demotionSummary.laneStrengths.length === 0 && (
                           <div className="text-[11px] text-text-muted">Commander still needs more matching runs before this lane has a durable strength signature.</div>
                         )}
                         {demotionSummary.laneStrengths.map((reason) => (
-                          <div key={reason} className="rounded-[12px] border border-white/8 bg-black/10 px-3 py-2 text-[11px] text-text-body">
+                          <div key={reason} className="ui-panel-soft px-3 py-2 text-[11px] text-text-body">
                             {reason}
                           </div>
                         ))}
                       </div>
                     </div>
-                    <div className="rounded-[16px] border border-aurora-amber/15 bg-aurora-amber/[0.05] p-3">
+                    <div className="ui-card-row border-aurora-amber/15 bg-aurora-amber/[0.05] p-3">
                       <div className="text-[10px] uppercase tracking-[0.14em] text-aurora-amber">Why this lane is losing trust</div>
                       <div className="mt-2 space-y-2">
                         {demotionSummary.pressureSources.map((source) => (
-                          <div key={source.key} className="rounded-[12px] border border-white/8 bg-black/10 px-3 py-2 text-[11px] text-text-body">
+                          <div key={source.key} className="ui-panel-soft px-3 py-2 text-[11px] text-text-body">
                             <span className="font-semibold text-text-primary">{source.label}:</span> {source.count} signal{source.count === 1 ? '' : 's'}. {source.detail}
                           </div>
                         ))}
                         {demotionSummary.reasons.map((reason) => (
-                          <div key={reason} className="rounded-[12px] border border-white/8 bg-black/10 px-3 py-2 text-[11px] text-text-body">
+                          <div key={reason} className="ui-panel-soft px-3 py-2 text-[11px] text-text-body">
                             {reason}
                           </div>
                         ))}
                         {demotionSummary.interventionCount > 0 && demotionSummary.pressureSources.length === 0 && demotionSummary.reasons.length === 0 && (
-                          <div className="rounded-[12px] border border-dashed border-white/10 bg-black/10 px-3 py-2 text-[11px] text-text-muted">
+                          <div className="ui-panel-soft border border-dashed border-hairline px-3 py-2 text-[11px] text-text-muted">
                             Rescue pressure exists, but Commander still needs a little more run density before the losing signals become specific.
                           </div>
                         )}
                         {demotionSummary.interventionCount === 0 && demotionSummary.laneRisks.length === 0 && (
-                          <div className="rounded-[12px] border border-dashed border-white/10 bg-black/10 px-3 py-2 text-[11px] text-text-muted">
+                          <div className="ui-panel-soft border border-dashed border-hairline px-3 py-2 text-[11px] text-text-muted">
                             No meaningful demotion pressure is registered yet.
                           </div>
                         )}
                         {demotionSummary.laneRisks.map((reason) => (
-                          <div key={reason} className="rounded-[12px] border border-white/8 bg-black/10 px-3 py-2 text-[11px] text-text-body">
+                          <div key={reason} className="ui-panel-soft px-3 py-2 text-[11px] text-text-body">
                             {reason}
                           </div>
                         ))}
@@ -1549,7 +1549,7 @@ function RoutingDoctrineTab({ routingPolicies, tasks, agents, logs, intervention
                 </div>
                 {(saveError || saveMessage) && (
                   <div className={cn(
-                    'rounded-[18px] border px-3 py-2 text-[11px]',
+                    'ui-panel-soft px-3 py-2 text-[11px]',
                     saveError ? 'border-aurora-rose/20 bg-aurora-rose/10 text-aurora-rose' : 'border-aurora-teal/20 bg-aurora-teal/10 text-aurora-teal'
                   )}>
                     {saveError || saveMessage}
@@ -1577,12 +1577,12 @@ function RoutingDoctrineTab({ routingPolicies, tasks, agents, logs, intervention
           >
             <div className="space-y-3">
               {workflowDistribution.length === 0 && (
-                <div className="rounded-[22px] border border-white/8 bg-black/20 p-4 text-[12px] text-text-muted">
+                <div className="ui-panel p-4 text-[12px] text-text-muted">
                   No task workflow data is live yet.
                 </div>
               )}
               {workflowDistribution.map((entry) => (
-                <div key={entry.status} className="rounded-[20px] border border-white/8 bg-black/20 p-4">
+                <div key={entry.status} className="ui-panel p-4">
                   <div className="flex items-center justify-between gap-3">
                     <div>
                       <div className="text-sm font-semibold text-text-primary">{entry.meta.label}</div>
@@ -1607,12 +1607,12 @@ function RoutingDoctrineTab({ routingPolicies, tasks, agents, logs, intervention
           >
             <div className="space-y-3">
               {capabilityDemand.length === 0 && (
-                <div className="rounded-[22px] border border-white/8 bg-black/20 p-4 text-[12px] text-text-muted">
+                <div className="ui-panel p-4 text-[12px] text-text-muted">
                   No required capabilities have been inferred yet.
                 </div>
               )}
               {capabilityDemand.map((entry) => (
-                <div key={entry.capability} className="rounded-[20px] border border-white/8 bg-black/20 p-4">
+                <div key={entry.capability} className="ui-panel p-4">
                   <div className="flex items-center justify-between gap-3">
                     <div className="text-sm font-semibold capitalize text-text-primary">{entry.capability}</div>
                     <div className="text-sm font-mono text-aurora-amber">{entry.count}</div>
@@ -1633,12 +1633,12 @@ function RoutingDoctrineTab({ routingPolicies, tasks, agents, logs, intervention
         >
           <div className="space-y-3">
             {observedBestLanes.length === 0 && (
-              <div className="rounded-[22px] border border-white/8 bg-black/20 p-4 text-[12px] text-text-muted">
+              <div className="ui-panel p-4 text-[12px] text-text-muted">
                 Not enough completed routed missions yet to name winner lanes with confidence.
               </div>
             )}
             {observedBestLanes.map((entry) => (
-              <div key={`${entry.domain}-${entry.intentType}`} className="rounded-[20px] border border-white/8 bg-black/20 p-4">
+              <div key={`${entry.domain}-${entry.intentType}`} className="ui-panel p-4">
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">{entry.domain} / {entry.intentType}</div>
@@ -1652,7 +1652,7 @@ function RoutingDoctrineTab({ routingPolicies, tasks, agents, logs, intervention
                 {entry.runnersUp.length > 0 && (
                   <div className="mt-3 flex flex-wrap gap-2">
                     {entry.runnersUp.map((runner) => (
-                      <span key={`${entry.domain}-${entry.intentType}-${runner.lane}`} className="rounded-full border border-white/8 bg-white/[0.03] px-2 py-1 text-[10px] font-semibold text-text-muted">
+                      <span key={`${entry.domain}-${entry.intentType}-${runner.lane}`} className="ui-chip px-2 py-1 text-[10px] font-semibold text-text-muted">
                         fallback {runner.lane}
                       </span>
                     ))}
@@ -1670,7 +1670,7 @@ function RoutingDoctrineTab({ routingPolicies, tasks, agents, logs, intervention
           accent="amber"
         >
           <div className="grid gap-4">
-            <div className="rounded-[20px] border border-white/8 bg-black/20 p-4">
+            <div className="ui-panel p-4">
               <div className="flex items-center justify-between gap-3">
                 <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Top context packs</div>
                 <div className="text-[10px] font-mono text-aurora-amber">{contextDemand.length} active</div>
@@ -1678,14 +1678,14 @@ function RoutingDoctrineTab({ routingPolicies, tasks, agents, logs, intervention
               <div className="mt-3 space-y-2">
                 {contextDemand.length === 0 && <div className="text-[11px] text-text-muted">No context-pack usage yet.</div>}
                 {contextDemand.map((entry) => (
-                  <div key={entry.packId} className="flex items-center justify-between rounded-[16px] border border-white/8 bg-white/[0.02] px-3 py-2.5">
+                  <div key={entry.packId} className="flex items-center justify-between ui-card-row px-3 py-2.5">
                     <div className="text-[12px] font-semibold text-text-primary">{entry.packId}</div>
                     <div className="text-[10px] font-mono text-aurora-amber">{entry.count}</div>
                   </div>
                 ))}
               </div>
             </div>
-            <div className="rounded-[20px] border border-white/8 bg-black/20 p-4">
+            <div className="ui-panel p-4">
               <div className="flex items-center justify-between gap-3">
                 <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Skill bank coverage</div>
                 <div className="text-[10px] font-mono text-aurora-blue">{skills.length} skills</div>
@@ -1843,14 +1843,14 @@ function SpecialistFleetTab({ agents, lifecycleEvents, skills, tasks }) {
           { label: 'Spawned', value: spawnedSpecialists.length, tone: 'text-aurora-violet' },
           { label: 'Promotions', value: fleetHistory.promotions.length, tone: 'text-aurora-teal' },
         ].map((metric) => (
-          <div key={metric.label} className="rounded-[20px] border border-white/8 bg-black/20 p-4">
+          <div key={metric.label} className="ui-panel p-4">
             <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">{metric.label}</div>
             <div className={cn('mt-2 text-2xl font-semibold', metric.tone)}>{metric.value}</div>
           </div>
         ))}
       </div>
 
-      <div className="mt-4 rounded-[22px] border border-white/8 bg-[linear-gradient(180deg,rgba(45,212,191,0.06),rgba(255,255,255,0.02))] p-4">
+      <div className="mt-4 ui-panel p-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Fleet posture</div>
@@ -1887,7 +1887,7 @@ function SpecialistFleetTab({ agents, lifecycleEvents, skills, tasks }) {
               </div>
             )}
             {(promotionGuidance.autoCreateRoles?.length > 0 || promotionGuidance.domainPackTargets?.length > 0) && (
-              <div className="mt-4 rounded-[18px] border border-white/8 bg-black/20 p-3">
+              <div className="mt-4 ui-panel-soft p-3">
                 <div className="flex items-center justify-between gap-3">
                   <div>
                     <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Fleet-shaping actions</div>
@@ -1948,34 +1948,34 @@ function SpecialistFleetTab({ agents, lifecycleEvents, skills, tasks }) {
       </div>
 
       <div className="mt-4 grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
-        <div className="rounded-[22px] border border-white/8 bg-black/20 p-4">
+        <div className="ui-panel p-4">
           <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Create lane</div>
           <div className="mt-3 space-y-3">
             <input
               value={objective}
               onChange={(event) => setObjective(event.target.value)}
               placeholder="Objective for the next specialist lane"
-              className="w-full rounded-xl border border-white/8 bg-black/20 px-3 py-2 text-[12px] text-text-primary outline-none placeholder:text-text-disabled"
+              className="w-full ui-input px-3 py-2 text-[12px] text-text-primary outline-none placeholder:text-text-disabled"
             />
             <input
               value={persistentName}
               onChange={(event) => setPersistentName(event.target.value)}
               placeholder="Optional persistent lane name"
-              className="w-full rounded-xl border border-white/8 bg-black/20 px-3 py-2 text-[12px] text-text-primary outline-none placeholder:text-text-disabled"
+              className="w-full ui-input px-3 py-2 text-[12px] text-text-primary outline-none placeholder:text-text-disabled"
             />
             <input
               value={persistentObjective}
               onChange={(event) => setPersistentObjective(event.target.value)}
               placeholder="Persistent lane mission focus"
-              className="w-full rounded-xl border border-white/8 bg-black/20 px-3 py-2 text-[12px] text-text-primary outline-none placeholder:text-text-disabled"
+              className="w-full ui-input px-3 py-2 text-[12px] text-text-primary outline-none placeholder:text-text-disabled"
             />
             <div className="grid gap-3 md:grid-cols-2">
-              <select value={role} onChange={(event) => setRole(event.target.value)} className="w-full rounded-xl border border-white/8 bg-black/20 px-3 py-2 text-[12px] text-text-primary outline-none">
+              <select value={role} onChange={(event) => setRole(event.target.value)} className="w-full ui-input px-3 py-2 text-[12px] text-text-primary outline-none">
                 {['planner', 'researcher', 'builder', 'verifier', 'executor'].map((entry) => (
                   <option key={entry} value={entry}>{entry}</option>
                 ))}
               </select>
-              <select value={model} onChange={(event) => setModel(event.target.value)} className="w-full rounded-xl border border-white/8 bg-black/20 px-3 py-2 text-[12px] text-text-primary outline-none">
+              <select value={model} onChange={(event) => setModel(event.target.value)} className="w-full ui-input px-3 py-2 text-[12px] text-text-primary outline-none">
                 {modelOptions.map((entry) => (
                   <option key={entry} value={entry}>{entry}</option>
                 ))}
@@ -1994,7 +1994,7 @@ function SpecialistFleetTab({ agents, lifecycleEvents, skills, tasks }) {
                       'rounded-full border px-2 py-1 text-[10px] font-semibold transition-colors',
                       selectedSkills.includes(skill.name)
                         ? 'border-aurora-blue/20 bg-aurora-blue/10 text-aurora-blue'
-                        : 'border-white/8 bg-black/20 text-text-muted hover:border-white/12'
+                        : 'text-text-muted hover:border-hairline-strong'
                     )}
                   >
                     {skill.name}
@@ -2003,18 +2003,18 @@ function SpecialistFleetTab({ agents, lifecycleEvents, skills, tasks }) {
               </div>
             </div>
             <div className="flex gap-2">
-              <button type="button" disabled={busy || !objective.trim() || !model} onClick={handleSpawn} className="rounded-xl border border-aurora-violet/20 bg-aurora-violet/10 px-3 py-2 text-[11px] font-semibold text-aurora-violet transition-colors hover:bg-aurora-violet/14 disabled:opacity-50">
+              <button type="button" disabled={busy || !objective.trim() || !model} onClick={handleSpawn} className="ui-button-secondary rounded-xl border-aurora-violet/20 bg-aurora-violet/10 px-3 py-2 text-[11px] font-semibold text-aurora-violet transition-colors hover:bg-aurora-violet/14 disabled:opacity-50">
                 {busy ? 'Working...' : 'Spawn specialist'}
               </button>
-              <button type="button" disabled={busy || !model} onClick={handleCreatePersistent} className="rounded-xl border border-aurora-blue/20 bg-aurora-blue/10 px-3 py-2 text-[11px] font-semibold text-aurora-blue transition-colors hover:bg-aurora-blue/14 disabled:opacity-50">
+              <button type="button" disabled={busy || !model} onClick={handleCreatePersistent} className="ui-button-secondary rounded-xl border-aurora-blue/20 bg-aurora-blue/10 px-3 py-2 text-[11px] font-semibold text-aurora-blue transition-colors hover:bg-aurora-blue/14 disabled:opacity-50">
                 Create persistent lane
               </button>
-              <button type="button" disabled={busy} onClick={handleCleanup} className="rounded-xl border border-aurora-teal/20 bg-aurora-teal/10 px-3 py-2 text-[11px] font-semibold text-aurora-teal transition-colors hover:bg-aurora-teal/14 disabled:opacity-50">
+              <button type="button" disabled={busy} onClick={handleCleanup} className="ui-button-secondary rounded-xl border-aurora-teal/20 bg-aurora-teal/10 px-3 py-2 text-[11px] font-semibold text-aurora-teal transition-colors hover:bg-aurora-teal/14 disabled:opacity-50">
                 Cleanup idle spawned
               </button>
             </div>
             {message && (
-              <div className="rounded-xl border border-white/8 bg-white/[0.02] px-3 py-2 text-[11px] text-text-body">
+              <div className="ui-panel-soft px-3 py-2 text-[11px] text-text-body">
                 {message}
               </div>
             )}
@@ -2022,12 +2022,12 @@ function SpecialistFleetTab({ agents, lifecycleEvents, skills, tasks }) {
         </div>
 
         <div className="grid gap-4">
-          <div className="rounded-[22px] border border-white/8 bg-black/20 p-4">
+          <div className="ui-panel p-4">
             <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Persistent lanes</div>
             <div className="mt-3 space-y-2">
               {persistentSpecialists.length === 0 && <div className="text-[11px] text-text-muted">No persistent specialist lanes yet.</div>}
               {persistentSpecialists.slice(0, 5).map((agent) => (
-                <div key={agent.id} className="rounded-[16px] border border-white/8 bg-white/[0.02] px-3 py-3">
+                <div key={agent.id} className="ui-card-row px-3 py-3">
                   <div className="flex items-center justify-between gap-3">
                     <div>
                       <div className="text-[12px] font-semibold text-text-primary">{agent.name}</div>
@@ -2048,12 +2048,12 @@ function SpecialistFleetTab({ agents, lifecycleEvents, skills, tasks }) {
               ))}
             </div>
           </div>
-          <div className="rounded-[22px] border border-white/8 bg-black/20 p-4">
+          <div className="ui-panel p-4">
             <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Spawned lanes</div>
             <div className="mt-3 space-y-2">
               {spawnedSpecialists.length === 0 && <div className="text-[11px] text-text-muted">No spawned specialists are active right now.</div>}
               {spawnedSpecialists.map((agent) => (
-                <div key={agent.id} className="rounded-[16px] border border-white/8 bg-white/[0.02] px-3 py-3">
+                <div key={agent.id} className="ui-card-row px-3 py-3">
                   <div className="flex items-center justify-between gap-3">
                     <div>
                       <div className="text-[12px] font-semibold text-text-primary">{agent.name}</div>
@@ -2073,23 +2073,23 @@ function SpecialistFleetTab({ agents, lifecycleEvents, skills, tasks }) {
               ))}
             </div>
           </div>
-          <div className="rounded-[22px] border border-white/8 bg-black/20 p-4">
+          <div className="ui-panel p-4">
             <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Coverage map</div>
             <div className="mt-3 grid grid-cols-2 gap-2">
               {['planner', 'researcher', 'builder', 'verifier'].map((roleName) => (
-                <div key={roleName} className="rounded-[16px] border border-white/8 bg-white/[0.02] px-3 py-3">
+                <div key={roleName} className="ui-card-row px-3 py-3">
                   <div className="text-[10px] uppercase tracking-[0.14em] text-text-muted">{roleName}</div>
                   <div className="mt-2 text-lg font-semibold text-text-primary">{fleetHistory.coverageByRole[roleName] || 0}</div>
                 </div>
               ))}
             </div>
           </div>
-          <div className="rounded-[22px] border border-white/8 bg-black/20 p-4">
+          <div className="ui-panel p-4">
             <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Lifecycle rail</div>
             <div className="mt-3 space-y-2">
               {lifecycleEvents.length === 0 && <div className="text-[11px] text-text-muted">No specialist lifecycle events yet.</div>}
               {recentLifecycleEvents.map((entry) => (
-                <div key={entry.id} className="rounded-[16px] border border-white/8 bg-white/[0.02] px-3 py-3">
+                <div key={entry.id} className="ui-card-row px-3 py-3">
                   <div className="flex items-center justify-between gap-3">
                     <div className="text-[10px] font-mono uppercase text-text-muted">{entry.type}</div>
                     <div className="text-[10px] font-mono text-text-disabled">{entry.timestamp ? new Date(entry.timestamp).toLocaleTimeString() : 'Live'}</div>
@@ -2101,12 +2101,12 @@ function SpecialistFleetTab({ agents, lifecycleEvents, skills, tasks }) {
               ))}
             </div>
           </div>
-          <div className="rounded-[22px] border border-white/8 bg-black/20 p-4">
+          <div className="ui-panel p-4">
             <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Promotion history</div>
             <div className="mt-3 space-y-2">
               {promotionHistory.length === 0 && <div className="text-[11px] text-text-muted">No promotion events yet.</div>}
               {promotionHistory.map((entry) => (
-                <div key={entry.id} className="rounded-[16px] border border-white/8 bg-white/[0.02] px-3 py-3">
+                <div key={entry.id} className="ui-card-row px-3 py-3">
                   <div className="flex items-center justify-between gap-3">
                     <div className="text-[10px] font-mono uppercase text-aurora-blue">PROMOTED</div>
                     <div className="text-[10px] font-mono text-text-disabled">{entry.timestamp ? new Date(entry.timestamp).toLocaleString() : 'Live'}</div>
@@ -2130,7 +2130,7 @@ function KnowledgeMapTab({ namespaces }) {
   return (
     <div className="grid gap-5 xl:grid-cols-[0.9fr_1.1fr]">
       <div className="space-y-5">
-        <div className="rounded-[28px] border border-white/8 bg-[linear-gradient(180deg,rgba(45,212,191,0.05),rgba(255,255,255,0.02))] p-5">
+        <div className="ui-panel p-5">
           <CommandSectionHeader
             eyebrow="Terrain Readout"
             title="Memory pressure at a glance"
@@ -2139,15 +2139,15 @@ function KnowledgeMapTab({ namespaces }) {
             tone="teal"
           />
           <div className="mt-5 grid gap-3">
-            <div className="rounded-[22px] border border-white/8 bg-black/20 p-4">
+            <div className="ui-panel p-4">
               <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Total vectors</div>
               <div className="mt-2 text-3xl font-semibold text-text-primary">{totalVectors.toLocaleString()}</div>
             </div>
-            <div className="rounded-[22px] border border-white/8 bg-black/20 p-4">
+            <div className="ui-panel p-4">
               <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Namespaces</div>
               <div className="mt-2 text-3xl font-semibold text-text-primary">{namespaces.length}</div>
             </div>
-            <div className="rounded-[22px] border border-white/8 bg-black/20 p-4">
+            <div className="ui-panel p-4">
               <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Stale terrain</div>
               <div className="mt-2 text-3xl font-semibold text-text-primary">
                 {namespaces.filter((namespace) => namespace.status !== 'active').length}
@@ -2156,7 +2156,7 @@ function KnowledgeMapTab({ namespaces }) {
           </div>
         </div>
 
-        <div className="rounded-[28px] border border-white/8 bg-[linear-gradient(180deg,rgba(96,165,250,0.05),rgba(255,255,255,0.02))] p-5">
+        <div className="ui-panel p-5">
           <CommandSectionHeader
             eyebrow="Territory Ranking"
             title="Memory zones by size"
@@ -2166,7 +2166,7 @@ function KnowledgeMapTab({ namespaces }) {
           />
           <div className="mt-5 space-y-3">
             {namespaces.length === 0 && (
-              <div className="rounded-[22px] border border-dashed border-white/10 bg-black/10 p-4 text-[12px] text-text-muted">
+              <div className="ui-panel-soft border border-dashed border-hairline p-4 text-[12px] text-text-muted">
                 No knowledge namespaces are stored yet. Once memory zones are persisted, this terrain will rank them here instead of inventing placeholders.
               </div>
             )}
@@ -2174,10 +2174,10 @@ function KnowledgeMapTab({ namespaces }) {
               .slice()
               .sort((a, b) => Number(b.vectors || 0) - Number(a.vectors || 0))
               .map((namespace, index) => (
-                <div key={namespace.id} className="rounded-[22px] border border-white/8 bg-black/20 p-4">
+                <div key={namespace.id} className="ui-panel p-4">
                   <div className="flex items-center justify-between gap-3">
                     <div className="flex items-center gap-3">
-                      <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.04] text-sm font-semibold text-text-primary">
+                      <div className="ui-panel-soft flex h-10 w-10 items-center justify-center rounded-2xl text-sm font-semibold text-text-primary">
                         {String(index + 1).padStart(2, '0')}
                       </div>
                       <div>
@@ -2196,7 +2196,7 @@ function KnowledgeMapTab({ namespaces }) {
         </div>
       </div>
 
-      <div className="rounded-[28px] border border-white/8 bg-[linear-gradient(180deg,rgba(167,139,250,0.06),rgba(255,255,255,0.02))] p-5">
+      <div className="ui-panel p-5">
         <CommandSectionHeader
           eyebrow="Knowledge Terrain"
           title="Where your memory is strongest"
@@ -2206,7 +2206,7 @@ function KnowledgeMapTab({ namespaces }) {
         />
         <div className="mt-5 grid gap-4 md:grid-cols-2">
           {namespaces.slice(0, 6).map((namespace) => (
-            <div key={namespace.id} className="rounded-[24px] border border-white/8 bg-black/20 p-4">
+            <div key={namespace.id} className="ui-panel p-4">
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <div className="text-sm font-semibold text-text-primary">{namespace.name}</div>
@@ -2237,7 +2237,7 @@ function KnowledgeMapTab({ namespaces }) {
               </div>
               <div className="mt-4 flex flex-wrap gap-2">
                 {namespace.agents.map((agent) => (
-                  <span key={agent} className="rounded-full border border-white/8 bg-white/[0.03] px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-text-muted">
+                  <span key={agent} className="ui-chip px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-text-muted">
                     {agent}
                   </span>
                 ))}
@@ -2246,7 +2246,7 @@ function KnowledgeMapTab({ namespaces }) {
           ))}
         </div>
         {namespaces.length > 6 && (
-          <div className="mt-4 rounded-[22px] border border-dashed border-white/10 bg-black/10 p-4 text-[12px] text-text-muted">
+          <div className="mt-4 ui-panel-soft border border-dashed border-hairline p-4 text-[12px] text-text-muted">
             {namespaces.length - 6} more namespaces are tracked. The terrain map is showing the strongest and largest zones first.
           </div>
         )}
@@ -2268,7 +2268,7 @@ function DirectivesTab({ directives, agents, tasks, recommendations }) {
 
   return (
     <div className="grid gap-5 xl:grid-cols-[1.05fr_0.95fr]">
-      <div className="rounded-[28px] border border-white/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.015))] p-5">
+      <div className="ui-panel p-5">
         <CommandSectionHeader
           eyebrow="Directive Pressure"
           title="Rules shaping throughput and safety"
@@ -2280,10 +2280,10 @@ function DirectivesTab({ directives, agents, tasks, recommendations }) {
           {directivePressure.map((directive) => {
             const Icon = directiveIconMap[directive.icon] || ShieldCheck;
             return (
-              <div key={directive.id} className="rounded-[22px] border border-white/8 bg-black/20 p-4">
+              <div key={directive.id} className="ui-panel p-4">
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex items-start gap-3">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.04]">
+                    <div className="ui-panel-soft flex h-10 w-10 items-center justify-center rounded-2xl">
                       <Icon className="h-4 w-4 text-aurora-teal" />
                     </div>
                     <div>
@@ -2331,7 +2331,7 @@ function DirectivesTab({ directives, agents, tasks, recommendations }) {
       </div>
 
       <div className="space-y-5">
-        <div className="rounded-[28px] border border-white/8 bg-[linear-gradient(180deg,rgba(45,212,191,0.05),rgba(255,255,255,0.02))] p-5">
+        <div className="ui-panel p-5">
           <CommandSectionHeader
             eyebrow="System Readback"
             title="What the rules are doing to the system"
@@ -2340,14 +2340,14 @@ function DirectivesTab({ directives, agents, tasks, recommendations }) {
             tone="teal"
           />
           <div className="mt-5 space-y-3">
-            <div className="rounded-[22px] border border-white/8 bg-black/20 p-4">
+            <div className="ui-panel p-4">
               <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Approval sensitivity</div>
               <div className="mt-2 text-3xl font-semibold text-text-primary">{approvalSensitiveTasks}</div>
               <p className="mt-2 text-[12px] leading-relaxed text-text-muted">
                 Missions currently halted by directives or approval gates before execution can continue.
               </p>
             </div>
-            <div className="rounded-[22px] border border-white/8 bg-black/20 p-4">
+            <div className="ui-panel p-4">
               <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Directives live</div>
               <div className="mt-2 text-3xl font-semibold text-text-primary">{directives.length}</div>
               <p className="mt-2 text-[12px] leading-relaxed text-text-muted">
@@ -2357,7 +2357,7 @@ function DirectivesTab({ directives, agents, tasks, recommendations }) {
           </div>
         </div>
 
-        <div className="rounded-[28px] border border-white/8 bg-[linear-gradient(180deg,rgba(167,139,250,0.06),rgba(255,255,255,0.02))] p-5">
+        <div className="ui-panel p-5">
           <CommandSectionHeader
             eyebrow="Optimization Orders"
             title="Persisted recommendation pressure"
@@ -2545,15 +2545,15 @@ export function IntelligenceView() {
 
         <Motion.section variants={item} className="space-y-5">
           <div className="space-y-5">
-            <div className="rounded-[20px] border border-white/8 bg-[#111827]/90 p-2">
-              <div className="flex flex-wrap gap-2 rounded-[20px] bg-black/20 p-2">
+            <div className="ui-panel p-2">
+              <div className="ui-segmented flex flex-wrap gap-2 rounded-[20px] p-2">
                 {tabs.map((tab) => (
                   <button
                     key={tab.id}
                     onClick={() => setActiveTab(tab.id)}
-                    className={`flex flex-1 items-center justify-center gap-2 rounded-[16px] px-3 py-2.5 text-[12px] font-semibold transition-all ${
+                    className={`ui-chip flex flex-1 items-center justify-center gap-2 rounded-[16px] px-3 py-2.5 text-[12px] font-semibold transition-all ${
                       activeTab === tab.id
-                        ? 'border border-white/10 bg-white/[0.05] text-text-primary shadow-sm'
+                        ? 'border-aurora-teal/25 bg-aurora-teal/10 text-aurora-teal shadow-sm'
                         : 'text-text-muted hover:text-text-primary'
                     }`}
                   >
@@ -2564,14 +2564,14 @@ export function IntelligenceView() {
               </div>
             </div>
 
-            <div className="rounded-[24px] border border-white/8 bg-[#111827]/90 p-4">
+            <div className="ui-panel p-4">
               {activeTab === 'models' && <ModelRegistryTab availableModels={availableModels} agents={agents} tasks={tasks} logs={logs} interventions={interventions} />}
               {activeTab === 'routing' && <RoutingDoctrineTab routingPolicies={routingPolicies} tasks={tasks} agents={agents} logs={logs} interventions={interventions} lifecycleEvents={lifecycleEvents} skills={skills} upsertPolicy={upsertPolicy} ensureDefaultPolicy={ensureDefaultPolicy} />}
               {activeTab === 'knowledge' && <KnowledgeMapTab namespaces={knowledgeNamespaces} />}
               {activeTab === 'directives' && <DirectivesTab directives={sharedDirectives} agents={agents} tasks={tasks} recommendations={derivedRecommendations} />}
             </div>
 
-            <div className="rounded-[24px] border border-white/8 bg-[#111827]/90 p-4">
+            <div className="ui-panel p-4">
               <CommandSectionHeader
                 eyebrow="Doctrine Delta"
                 title="What is rising or losing trust"
@@ -2581,7 +2581,7 @@ export function IntelligenceView() {
               />
               <div className="mt-4 grid gap-3 xl:grid-cols-3">
                 {doctrineDeltas.map((entry) => (
-                  <div key={entry.id} className="rounded-[20px] border border-white/8 bg-black/20 p-4">
+                  <div key={entry.id} className="ui-stat p-4">
                     <div className="flex items-center justify-between gap-3">
                       <div className="text-[12px] font-semibold text-text-primary">{entry.title}</div>
                       <span className={cn(
@@ -2590,7 +2590,7 @@ export function IntelligenceView() {
                           ? 'border-aurora-teal/20 bg-aurora-teal/10 text-aurora-teal'
                           : entry.trend === 'down'
                             ? 'border-aurora-rose/20 bg-aurora-rose/10 text-aurora-rose'
-                            : 'border-white/8 bg-white/[0.03] text-text-muted'
+                            : 'text-text-muted'
                       )}>
                         {entry.trend === 'up' ? `+${entry.delta}` : entry.delta}
                       </span>
@@ -2617,24 +2617,24 @@ export function IntelligenceView() {
             <div className="space-y-5">
               <div className="grid grid-cols-1 gap-5 xl:grid-cols-[0.55fr_1.45fr]">
                 <div className="space-y-3">
-                  <div className="rounded-[24px] border border-white/8 bg-[#111827]/90 p-4">
+                  <div className="ui-panel p-4">
                     <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Use first</div>
                     <div className="mt-2 text-[15px] font-semibold text-text-primary">{readFirstItems[0]?.title}</div>
                     <p className="mt-2 text-[11px] leading-5 text-text-muted">{readFirstItems[0]?.detail}</p>
                   </div>
-                  <div className="rounded-[24px] border border-white/8 bg-[#111827]/90 p-4">
+                  <div className="ui-panel p-4">
                     <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Economics snapshot</div>
                     <div className="mt-2 text-[15px] font-semibold text-text-primary">Human vs agent</div>
                     <div className="mt-3 grid gap-2">
-                      <div className="rounded-[16px] border border-white/8 bg-[#0d1420] px-3 py-2.5">
+                      <div className="ui-panel-soft px-3 py-2.5">
                         <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Human equivalent</div>
                         <div className="mt-1 text-lg font-semibold text-text-primary"><AnimatedNumber value={economics.humanCost} prefix="$" decimals={2} /></div>
                       </div>
-                      <div className="rounded-[16px] border border-white/8 bg-[#0d1420] px-3 py-2.5">
+                      <div className="ui-panel-soft px-3 py-2.5">
                         <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Agent spend</div>
                         <div className="mt-1 text-lg font-semibold text-text-primary"><AnimatedNumber value={economics.agentCost} prefix="$" decimals={2} /></div>
                       </div>
-                      <div className="rounded-[16px] border border-white/8 bg-[#0d1420] px-3 py-2.5">
+                      <div className="ui-panel-soft px-3 py-2.5">
                         <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Efficiency</div>
                         <div className="mt-1 text-lg font-semibold text-text-primary"><AnimatedNumber value={economics.multiplier} decimals={1} suffix="x" /></div>
                       </div>

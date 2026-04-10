@@ -68,7 +68,7 @@ export function ScratchpadStrip() {
           : 'Workspace synced';
 
   return (
-    <div className="deck-panel mt-4 shrink-0 p-4">
+    <div className="ui-panel mt-4 shrink-0 p-4">
       <div className="flex items-center gap-2 mb-2">
         <FileText className="w-3.5 h-3.5 text-text-disabled" />
         <span className="text-[9px] uppercase tracking-[0.2em] text-text-disabled font-bold">Scratchpad</span>
@@ -82,7 +82,7 @@ export function ScratchpadStrip() {
         onChange={e => setText(e.target.value)}
         placeholder="Quick thoughts that haven't been turned into tasks yet..."
         rows={3}
-        className="w-full rounded-xl bg-white/[0.025] px-3 py-3 text-[11px] font-mono text-text-primary resize-none outline-none ring-1 ring-white/[0.05] transition-colors leading-relaxed placeholder:text-text-disabled focus:ring-aurora-teal/25"
+        className="w-full rounded-xl border border-hairline bg-panel-soft px-3 py-3 text-[11px] font-mono text-text-primary resize-none outline-none transition-colors leading-relaxed placeholder:text-text-disabled focus:ring-2 focus:ring-aurora-teal/25"
       />
     </div>
   );
