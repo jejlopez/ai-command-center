@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { motion as Motion } from 'framer-motion';
 import { BrainCircuit, Loader2, Rocket, ShieldCheck, Sparkles } from 'lucide-react';
 import { container, item } from '../utils/variants';
-import { useActivityLog, useCostData, useModelBank, usePendingReviews, useSchedules } from '../utils/useSupabase';
+import { useActivityLog, useCostData, useModelBank, usePendingReviews, useSchedules, useTaskInterventions } from '../utils/useSupabase';
 import { CreateAgentModal } from '../components/CreateAgentModal';
 import { CommanderHero } from '../components/overview/CommanderHero';
 import { CommandReadFirst } from '../components/overview/CommandReadFirst';
@@ -21,6 +21,7 @@ import { useCommandCenterTruth } from '../utils/useCommandCenterTruth';
 import { ReactorCoreBoard } from '../components/command/ReactorCoreBoard';
 import { CommandTimelineRail } from '../components/command/CommandTimelineRail';
 import { buildTimelineEntries } from '../utils/buildCommandTimeline';
+import { getAutonomyMetrics, getPrimaryBottleneck } from '../utils/commanderAnalytics';
 
 function formatWaitLabel(ms) {
   if (!ms || ms <= 0) return 'None';
@@ -74,12 +75,42 @@ function ExecutiveBriefingPanel({ briefing, onNavigate, onOpenDetail, onAddOpera
   );
 }
 
+function BottleneckRail({ bottleneck, autonomyMetrics }) {
+  if (!bottleneck) return null;
+
+  return (
+    <div className="rounded-[28px] border border-white/8 bg-[linear-gradient(135deg,rgba(167,139,250,0.08),rgba(255,255,255,0.02))] p-5">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="max-w-2xl">
+          <div className="text-[10px] uppercase tracking-[0.18em] text-aurora-violet">Single Bottleneck</div>
+          <div className="mt-2 text-xl font-semibold text-text-primary">{bottleneck.title}</div>
+          <p className="mt-2 text-[13px] leading-6 text-text-body">{bottleneck.detail}</p>
+          <p className="mt-3 text-[12px] font-semibold text-aurora-violet">{bottleneck.action}</p>
+        </div>
+        <div className="grid gap-3 md:grid-cols-2">
+          <div className="rounded-[20px] border border-white/8 bg-black/20 p-4">
+            <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Autonomy ratio</div>
+            <div className="mt-2 text-[20px] font-semibold text-text-primary">{autonomyMetrics.autonomyRatio}%</div>
+            <div className="mt-1 text-[11px] text-text-muted">{autonomyMetrics.label}</div>
+          </div>
+          <div className="rounded-[20px] border border-white/8 bg-black/20 p-4">
+            <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Rescue rate</div>
+            <div className="mt-2 text-[20px] font-semibold text-text-primary">{autonomyMetrics.rescueRate}%</div>
+            <div className="mt-1 text-[11px] text-text-muted">{autonomyMetrics.rescueTouchedMissions} mission{autonomyMetrics.rescueTouchedMissions === 1 ? '' : 's'} needed rescue</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function OverviewView({ agents, tasks, loading, addOptimistic, onOpenDetail, onNavigate }) {
   const { logs } = useActivityLog();
   const { reviews } = usePendingReviews();
   const { schedules, loading: loadingSchedules } = useSchedules();
   const { models } = useModelBank();
   const { data: costData } = useCostData();
+  const { interventions } = useTaskInterventions();
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [referenceNow] = useState(() => new Date().getTime());
 
@@ -224,6 +255,14 @@ export function OverviewView({ agents, tasks, loading, addOptimistic, onOpenDeta
   const learningMemory = useLearningMemory({ agents, tasks, approvals: reviews, logs, costData });
   const truth = useCommandCenterTruth();
   const timelineEntries = useMemo(() => buildTimelineEntries({ tasks, reviews, logs }), [logs, reviews, tasks]);
+  const autonomyMetrics = useMemo(
+    () => getAutonomyMetrics(tasks, interventions, logs),
+    [tasks, interventions, logs]
+  );
+  const primaryBottleneck = useMemo(
+    () => getPrimaryBottleneck({ tasks, reviews, schedules, agents, interventions, logs, costData }),
+    [tasks, reviews, schedules, agents, interventions, logs, costData]
+  );
 
   const readiness = useMemo(() => {
     const score = Math.max(0, Math.min(100, 100 - (reviews.length * 8) - (failedTasks.length * 12) - (stalledAgents.length * 10) - (lateSchedules * 7)));
@@ -536,6 +575,10 @@ export function OverviewView({ agents, tasks, loading, addOptimistic, onOpenDeta
             onOpenDetail={onOpenDetail}
             onAddOperator={() => setCreateModalOpen(true)}
           />
+        </Motion.div>
+
+        <Motion.div variants={item}>
+          <BottleneckRail bottleneck={primaryBottleneck} autonomyMetrics={autonomyMetrics} />
         </Motion.div>
 
         <Motion.div variants={item}>

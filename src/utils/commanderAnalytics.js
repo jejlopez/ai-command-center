@@ -547,3 +547,135 @@ export function getAutomationCandidates(tasks = [], humanHourlyRate = 150) {
     })
     .slice(0, 6);
 }
+
+export function getAutonomyMetrics(tasks = [], interventions = [], logs = []) {
+  const normalizedInterventions = normalizeInterventionEvents(interventions, logs);
+  const runnableTasks = tasks.filter((task) => !['cancelled'].includes(String(task.status || '').toLowerCase()));
+  const completedTasks = runnableTasks.filter((task) => isTaskClosed(task));
+  const missionIds = completedTasks.map((task) => task.rootMissionId || task.id).filter(Boolean);
+  const uniqueMissionIds = [...new Set(missionIds)];
+  const interventionByMission = new Map();
+
+  normalizedInterventions.forEach((entry) => {
+    const key = entry.rootMissionId || entry.taskId;
+    if (!key) return;
+    const current = interventionByMission.get(key) || { total: 0, rescue: 0, reroute: 0, approval: 0, retry: 0 };
+    current.total += 1;
+    if (['stop', 'cancel'].includes(entry.eventType)) current.rescue += 1;
+    if (['reroute', 'dependency'].includes(entry.eventType)) current.reroute += 1;
+    if (['approve', 'guardrail'].includes(entry.eventType)) current.approval += 1;
+    if (entry.eventType === 'retry') current.retry += 1;
+    interventionByMission.set(key, current);
+  });
+
+  const cleanAutonomousMissions = uniqueMissionIds.filter((missionId) => {
+    const pressure = interventionByMission.get(missionId);
+    return !pressure || pressure.total === 0;
+  }).length;
+  const rescueTouchedMissions = uniqueMissionIds.filter((missionId) => {
+    const pressure = interventionByMission.get(missionId);
+    return pressure && (pressure.rescue > 0 || pressure.reroute > 0 || pressure.retry > 0);
+  }).length;
+  const approvalTouchedMissions = uniqueMissionIds.filter((missionId) => {
+    const pressure = interventionByMission.get(missionId);
+    return pressure && pressure.approval > 0;
+  }).length;
+
+  const totalMissions = Math.max(uniqueMissionIds.length, completedTasks.length, 1);
+  const autonomyRatio = Math.round((cleanAutonomousMissions / totalMissions) * 100);
+  const rescueRate = Math.round((rescueTouchedMissions / totalMissions) * 100);
+  const approvalRate = Math.round((approvalTouchedMissions / totalMissions) * 100);
+  const state = autonomyRatio >= 70 && rescueRate <= 15
+    ? 'self-driving'
+    : autonomyRatio >= 45
+      ? 'assisted'
+      : 'gated';
+
+  return {
+    totalMissions,
+    autonomyRatio,
+    rescueRate,
+    approvalRate,
+    cleanAutonomousMissions,
+    rescueTouchedMissions,
+    approvalTouchedMissions,
+    state,
+    label: state === 'self-driving' ? 'Self-driving' : state === 'assisted' ? 'Assisted' : 'Gate-heavy',
+    detail: state === 'self-driving'
+      ? 'Most completed work is closing without rescue or human gates.'
+      : state === 'assisted'
+        ? 'Commander is moving work, but human intervention is still shaping enough of the result to matter.'
+        : 'Too much of the finished work still needs rescue, approval, or rerouting to call the machine self-driving.',
+  };
+}
+
+export function getPrimaryBottleneck({ tasks = [], reviews = [], schedules = [], agents = [], interventions = [], logs = [], costData = null }) {
+  const normalizedInterventions = normalizeInterventionEvents(interventions, logs);
+  const failedTasks = tasks.filter((task) => isTaskFailed(task)).length;
+  const pendingApprovals = reviews.length;
+  const lateSchedules = schedules.filter((job) => job.status === 'active' && job.nextRunAt && new Date(job.nextRunAt).getTime() < Date.now()).length;
+  const stalledAgents = agents.filter((agent) => {
+    if (!agent.lastHeartbeat) return false;
+    const age = Date.now() - new Date(agent.lastHeartbeat).getTime();
+    return age > 10 * 60 * 1000 && agent.status !== 'idle';
+  }).length;
+  const reroutePressure = normalizedInterventions.filter((entry) => ['reroute', 'dependency'].includes(entry.eventType)).length;
+  const rescuePressure = normalizedInterventions.filter((entry) => ['stop', 'cancel', 'retry'].includes(entry.eventType)).length;
+  const guardrailPressure = normalizedInterventions.filter((entry) => entry.eventType === 'guardrail').length;
+  const topSpend = Array.isArray(costData?.models) ? Number(costData.models[0]?.cost || 0) : 0;
+
+  const candidates = [
+    {
+      key: 'approvals',
+      score: pendingApprovals * 10,
+      title: pendingApprovals > 0 ? `${pendingApprovals} approvals are the main choke point` : 'Approval drag is contained',
+      detail: pendingApprovals > 0
+        ? 'Human decisions are the first thing slowing throughput right now.'
+        : 'No meaningful human approval queue is visible.',
+      action: 'Clear or bundle low-risk approvals first.',
+      tone: pendingApprovals > 0 ? 'amber' : 'teal',
+    },
+    {
+      key: 'recovery',
+      score: (failedTasks * 9) + (stalledAgents * 8),
+      title: failedTasks + stalledAgents > 0 ? 'Recovery work is stealing throughput' : 'Recovery pressure is low',
+      detail: failedTasks + stalledAgents > 0
+        ? `${failedTasks} failed tasks and ${stalledAgents} stalled agents are forcing recovery before scale.`
+        : 'No major failure or stalled-agent cluster is visible.',
+      action: 'Stabilize the weak branches before adding more volume.',
+      tone: failedTasks + stalledAgents > 0 ? 'rose' : 'teal',
+    },
+    {
+      key: 'intervention',
+      score: (reroutePressure * 5) + (rescuePressure * 7) + (guardrailPressure * 4),
+      title: reroutePressure + rescuePressure + guardrailPressure > 0 ? 'Human rescue pressure is still high' : 'Intervention pressure is light',
+      detail: reroutePressure + rescuePressure + guardrailPressure > 0
+        ? `${reroutePressure} reroutes, ${rescuePressure} rescue events, and ${guardrailPressure} guardrails are still shaping results.`
+        : 'The recent mission set is holding without much human rescue.',
+      action: 'Demote brittle lanes and tighten recurring posture.',
+      tone: reroutePressure + rescuePressure + guardrailPressure > 0 ? 'blue' : 'teal',
+    },
+    {
+      key: 'automation',
+      score: lateSchedules * 8,
+      title: lateSchedules > 0 ? 'Automation timing drift is visible' : 'Automation timing is healthy',
+      detail: lateSchedules > 0
+        ? `${lateSchedules} recurring flows are behind schedule, which weakens trust in self-driving execution.`
+        : 'Recurring flows are not visibly behind schedule.',
+      action: 'Reset schedule drift before launching more automation.',
+      tone: lateSchedules > 0 ? 'amber' : 'teal',
+    },
+    {
+      key: 'spend',
+      score: topSpend >= 10 ? Math.round(topSpend) : 0,
+      title: topSpend >= 10 ? 'One expensive lane is dominating spend' : 'Spend concentration is manageable',
+      detail: topSpend >= 10
+        ? `The hottest model lane is burning $${topSpend.toFixed(2)}, so economics need attention.`
+        : 'No single lane is dominating AI spend yet.',
+      action: 'Route routine work down-stack and keep premium lanes for ambiguity.',
+      tone: topSpend >= 10 ? 'violet' : 'teal',
+    },
+  ];
+
+  return candidates.sort((left, right) => right.score - left.score)[0];
+}

@@ -33,7 +33,7 @@ import { useLearningMemory } from '../utils/useLearningMemory';
 import { DoctrineCards } from '../components/command/DoctrineCards';
 import { TruthAuditStrip } from '../components/command/TruthAuditStrip';
 import { useCommandCenterTruth } from '../utils/useCommandCenterTruth';
-import { buildPolicyDemotionSummary, buildProviderEscalationExplanation, getAutomationCandidates, getAutomationRoiSummary, getObservedModelBenchmarks, parseAutomationGuardrailEvents, parseDoctrineFeedbackLogs, parseOutcomeScoreLogs, scoreTaskOutcome } from '../utils/commanderAnalytics';
+import { buildPolicyDemotionSummary, buildProviderEscalationExplanation, getAutomationCandidates, getAutomationRoiSummary, getAutonomyMetrics, getObservedModelBenchmarks, getPrimaryBottleneck, parseAutomationGuardrailEvents, parseDoctrineFeedbackLogs, parseOutcomeScoreLogs, scoreTaskOutcome } from '../utils/commanderAnalytics';
 import { createMission, updateRecurringMissionFlow } from '../lib/api';
 
 const PERIOD_OPTIONS = ['30d', '90d', 'QTD'];
@@ -506,6 +506,8 @@ export function ReportsView() {
   const benchmarkBoard = useMemo(() => getObservedModelBenchmarks(outcomes.length ? outcomes : tasks, agents, logs, interventions).slice(0, 5), [outcomes, tasks, agents, logs, interventions]);
   const providerEscalation = useMemo(() => buildProviderEscalationExplanation(benchmarkBoard), [benchmarkBoard]);
   const automationCandidates = useMemo(() => getAutomationCandidates(tasks, humanHourlyRate).slice(0, 4), [tasks]);
+  const autonomyMetrics = useMemo(() => getAutonomyMetrics(tasks, interventions, logs), [tasks, interventions, logs]);
+  const primaryBottleneck = useMemo(() => getPrimaryBottleneck({ tasks, reviews, schedules: [], agents, interventions, logs, costData }), [tasks, reviews, agents, interventions, logs, costData]);
   const automationGuardrailEvents = useMemo(() => parseAutomationGuardrailEvents(interventions, logs).slice(0, 4), [interventions, logs]);
   const persistedOutcomeScores = useMemo(() => (
     outcomes.length
@@ -735,6 +737,32 @@ export function ReportsView() {
             tone="blue"
             icon={DollarSign}
           />
+        </Motion.section>
+
+        <Motion.section variants={item}>
+          <HudFrame
+            eyebrow="Command Constraint"
+            title={primaryBottleneck?.title || 'No dominant bottleneck is visible'}
+            detail={primaryBottleneck?.detail || 'The board is distributed enough that no single drag source is dominating yet.'}
+            accent="violet"
+          >
+            <div className="grid gap-3 md:grid-cols-[1.2fr_0.8fr_0.8fr]">
+              <div className="rounded-[20px] border border-white/8 bg-[#111827] p-4">
+                <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">What to do now</div>
+                <div className="mt-2 text-sm font-semibold text-text-primary">{primaryBottleneck?.action || 'Keep watching the board and let clean lanes scale.'}</div>
+              </div>
+              <div className="rounded-[20px] border border-white/8 bg-[#111827] p-4">
+                <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Autonomy ratio</div>
+                <div className="mt-2 text-2xl font-semibold text-text-primary"><AnimatedNumber value={autonomyMetrics.autonomyRatio} suffix="%" /></div>
+                <div className="mt-1 text-[11px] text-text-muted">{autonomyMetrics.label}</div>
+              </div>
+              <div className="rounded-[20px] border border-white/8 bg-[#111827] p-4">
+                <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Rescue rate</div>
+                <div className="mt-2 text-2xl font-semibold text-text-primary"><AnimatedNumber value={autonomyMetrics.rescueRate} suffix="%" /></div>
+                <div className="mt-1 text-[11px] text-text-muted">{autonomyMetrics.rescueTouchedMissions} rescue-touched missions</div>
+              </div>
+            </div>
+          </HudFrame>
         </Motion.section>
 
         <Motion.section variants={item}>
