@@ -22,6 +22,12 @@ const MODE_OPTIONS = [
   { value: 'efficient', label: 'Efficient', hint: 'Prioritize cost' },
 ];
 
+const MISSION_MODE_OPTIONS = [
+  { value: 'do_now', label: 'Do now', hint: 'Launch immediately with the selected routing lane.' },
+  { value: 'plan_first', label: 'Plan first', hint: 'Build the graph and hold execution until you step in.' },
+  { value: 'watch_and_approve', label: 'Watch and approve', hint: 'Prepare the work and pause at the first human gate.' },
+];
+
 const WHEN_OPTIONS = [
   { value: 'now', label: 'Now' },
   { value: 'later_today', label: 'Later today' },
@@ -63,6 +69,7 @@ const COMMANDER_PRESETS = [
     intent: 'Research 10 new 3PL prospects, rank them by fit, and draft intro emails for the best opportunities.',
     defaults: {
       mode: 'balanced',
+      missionMode: 'do_now',
       when: 'now',
       priority: 'standard',
       outputType: 'email_drafts',
@@ -76,6 +83,7 @@ const COMMANDER_PRESETS = [
     intent: 'Summarize today’s calls, extract decisions and follow-ups, and post clean notes to Pipedrive.',
     defaults: {
       mode: 'efficient',
+      missionMode: 'plan_first',
       when: 'later_today',
       priority: 'standard',
       outputType: 'crm_notes',
@@ -89,6 +97,7 @@ const COMMANDER_PRESETS = [
     intent: 'Review stalled quotes, identify the best follow-up angle for each one, and draft outreach for the top opportunities.',
     defaults: {
       mode: 'fast',
+      missionMode: 'watch_and_approve',
       when: 'now',
       priority: 'critical',
       outputType: 'email_drafts',
@@ -102,6 +111,7 @@ const COMMANDER_PRESETS = [
     intent: 'Check tracking on shipments delayed more than 2 days, summarize root causes, and flag any customers that need outreach.',
     defaults: {
       mode: 'balanced',
+      missionMode: 'watch_and_approve',
       when: 'repeat',
       priority: 'standard',
       outputType: 'summary',
@@ -237,6 +247,7 @@ function initialFormState(agents) {
     intent: '',
     agentId: session.agentId || primaryAgent?.id || '',
     mode: session.mode || 'balanced',
+    missionMode: session.missionMode || 'do_now',
     when: session.when || 'now',
     priority: session.priority || 'standard',
     outputType: session.outputType || 'summary',
@@ -315,11 +326,39 @@ function describeWhyMode(mode) {
   return 'Balanced mode keeps quality, speed, and spend in the middle lane.';
 }
 
+function describeMissionMode(missionMode) {
+  if (missionMode === 'plan_first') return 'Commander will build the mission graph, route the branches, and hold the machine in planning posture until you step in.';
+  if (missionMode === 'watch_and_approve') return 'Commander will prepare the work, but the first runnable branch will stop at a human gate so you can supervise before execution scales.';
+  return 'Commander will route the mission and start the runnable branches as soon as the launch gate is clear.';
+}
+
 function describeSchedule(form) {
   if (form.when === 'now') return 'Launch immediately when you hit the button.';
   if (form.when === 'later_today') return 'Queue for the next clean slot later today.';
   if (form.when === 'pick') return `Hold until ${form.runAt || 'your chosen time'}.`;
   return `Repeat ${form.repeatFrequency} at ${form.repeatTime}${form.repeatEndDate ? ` until ${form.repeatEndDate}` : ''}.`;
+}
+
+function inferSystemsReadback(form, connectedSystems) {
+  const intent = String(form.intent || '').toLowerCase();
+  const systems = [];
+
+  if (form.targetType !== 'internal' || /pipedrive|crm|deal|person/.test(intent)) systems.push('Pipedrive');
+  if (/email|draft|outreach|reply/.test(intent)) systems.push('Email lane');
+  if (/doc|report|summary|notes/.test(intent)) systems.push('Workspace docs');
+  if (/shipment|tracking|ops|delay/.test(intent)) systems.push('Ops telemetry');
+
+  const connectedLabels = connectedSystems
+    .filter((system) => system.status !== 'error')
+    .map((system) => system.integrationKey || system.name || '')
+    .filter(Boolean)
+    .map((value) => String(value).toLowerCase());
+
+  return [...new Set(systems)].map((label) => {
+    const key = label.toLowerCase();
+    const connected = connectedLabels.some((entry) => key.includes(entry) || entry.includes(key.split(' ')[0]));
+    return { label, connected };
+  });
 }
 
 function inferDoctrineDefaults({ intent, agents, learningMemory }) {
@@ -455,9 +494,12 @@ export function MissionCreatorPanel({
   const missionSummary = useMemo(() => summarizeMissionIntent(form.intent), [form.intent]);
   const agentRationale = useMemo(() => describeWhyAgent(form.intent, selectedAgent), [form.intent, selectedAgent]);
   const modeRationale = useMemo(() => describeWhyMode(form.mode), [form.mode]);
+  const missionModeRationale = useMemo(() => describeMissionMode(form.missionMode), [form.missionMode]);
   const scheduleRationale = useMemo(() => describeSchedule(form), [form]);
   const flightPlan = useMemo(() => buildFlightPlan(preview, missionSummary, form), [preview, missionSummary, form]);
   const branchPreview = useMemo(() => buildBranchPreview(preview), [preview]);
+  const systemsReadback = useMemo(() => inferSystemsReadback(form, connectedSystems), [connectedSystems, form]);
+  const selectedAgentIsPersistent = !!(selectedAgent && !selectedAgent.isEphemeral && !selectedAgent.isSyntheticCommander);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -521,6 +563,7 @@ export function MissionCreatorPanel({
     saveSessionDefaults({
       agentId: form.agentId,
       mode: form.mode,
+      missionMode: form.missionMode,
       when: form.when,
       priority: form.priority,
       outputType: form.outputType,
@@ -549,6 +592,7 @@ export function MissionCreatorPanel({
       intent: preset.intent,
       agentId: preset.defaults.agentId || inferred?.id || prev.agentId,
       mode: preset.defaults.mode || prev.mode,
+      missionMode: preset.defaults.missionMode || prev.missionMode,
       when: preset.defaults.when || prev.when,
       priority: preset.defaults.priority || prev.priority,
       outputType: preset.defaults.outputType || prev.outputType,
@@ -572,6 +616,7 @@ export function MissionCreatorPanel({
       intent: form.intent.trim(),
       agentId: launchAgentId,
       mode: form.mode,
+      missionMode: form.missionMode,
       when: form.when,
       priority: form.priority,
       outputType: form.outputType,
@@ -637,6 +682,7 @@ export function MissionCreatorPanel({
       defaults: {
         agentId: form.agentId,
         mode: form.mode,
+        missionMode: form.missionMode,
         when: form.when,
         priority: form.priority,
         outputType: form.outputType,
@@ -675,25 +721,25 @@ export function MissionCreatorPanel({
             exit={{ x: '100%' }}
             transition={{ type: 'spring', stiffness: 300, damping: 34 }}
             className="fixed top-0 right-0 bottom-0 w-[520px] max-w-[92vw] bg-[linear-gradient(180deg,rgba(7,12,18,0.98),rgba(8,10,14,0.98))] border-l border-aurora-teal/15 z-50 flex flex-col shadow-[-16px_0_48px_rgba(0,0,0,0.55)]"
-            aria-label="Spin up a Mission"
+            aria-label="Tell Commander what you want"
           >
             <div className="relative flex items-start justify-between px-6 py-5 border-b border-white/[0.08] shrink-0 bg-black/20 backdrop-blur overflow-hidden">
               <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(0,217,200,0.14),transparent_38%),linear-gradient(180deg,rgba(96,165,250,0.06),transparent_60%)] pointer-events-none" />
               <div>
                 <div className="flex items-center gap-2 text-aurora-teal mb-2">
                   <Sparkles className="w-4 h-4" />
-                  <span className="text-[10px] font-bold uppercase tracking-[0.18em]">Mission Creator</span>
+                  <span className="text-[10px] font-bold uppercase tracking-[0.18em]">Commander Intake</span>
                 </div>
-                <h2 className="text-xl font-semibold text-text-primary">Spin up a Mission</h2>
-                <p className="text-[12px] text-text-muted mt-1">Tell me what you want, I&apos;ll handle the wiring.</p>
+                <h2 className="text-xl font-semibold text-text-primary">Tell Commander what you want</h2>
+                <p className="text-[12px] text-text-muted mt-1">Describe the outcome naturally. Commander will translate it into a mission, route the lanes, and stage the right posture.</p>
                 <div className="mt-4 flex flex-wrap gap-2">
                   <div className="px-3 py-2 rounded-2xl border border-white/[0.08] bg-black/20">
-                    <div className="text-[9px] uppercase tracking-[0.18em] text-text-muted">Suggested Agent</div>
+                    <div className="text-[9px] uppercase tracking-[0.18em] text-text-muted">Primary Lane</div>
                     <div className="text-[12px] font-semibold text-text-primary mt-1">{selectedAgent?.name || 'Auto-selecting'}</div>
                   </div>
                   <div className="px-3 py-2 rounded-2xl border border-white/[0.08] bg-black/20">
-                    <div className="text-[9px] uppercase tracking-[0.18em] text-text-muted">Execution Branch</div>
-                    <div className="text-[12px] font-semibold text-text-primary mt-1">{inferAgentModeBadge(selectedAgent)}</div>
+                    <div className="text-[9px] uppercase tracking-[0.18em] text-text-muted">Mission Posture</div>
+                    <div className="text-[12px] font-semibold text-text-primary mt-1">{MISSION_MODE_OPTIONS.find((option) => option.value === form.missionMode)?.label || 'Do now'}</div>
                   </div>
                 </div>
               </div>
@@ -708,7 +754,7 @@ export function MissionCreatorPanel({
 
             <div className="flex-1 overflow-y-auto no-scrollbar px-6 py-5 space-y-6">
               <section className="rounded-[24px] border border-white/[0.08] bg-white/[0.02] px-4 py-4">
-                <SectionLabel>What do you want done?</SectionLabel>
+                <SectionLabel>Tell Commander what you want</SectionLabel>
                 <textarea
                   ref={textareaRef}
                   value={form.intent}
@@ -718,7 +764,7 @@ export function MissionCreatorPanel({
                   className="w-full rounded-2xl border border-white/[0.08] bg-black/20 px-4 py-4 text-sm text-text-primary placeholder:text-text-disabled focus:outline-none focus:border-aurora-teal/40 resize-none leading-relaxed"
                 />
                 <div className="flex justify-between items-center mt-2">
-                  <span className="text-[10px] text-text-disabled">Cmd+Enter to launch</span>
+                  <span className="text-[10px] text-text-disabled">Cmd+Enter to launch or stage the mission</span>
                   <span className="text-[10px] font-mono text-text-disabled">{form.intent.length} chars</span>
                 </div>
 
@@ -741,7 +787,12 @@ export function MissionCreatorPanel({
                     </div>
                     <div className="rounded-2xl border border-white/[0.08] bg-black/20 px-3 py-3">
                       <div className="text-[9px] uppercase tracking-[0.18em] text-text-muted">Execution path</div>
-                      <div className="text-[12px] font-semibold text-text-primary mt-1">{selectedAgent?.name || 'Auto-selecting'} • {inferAgentModeBadge(selectedAgent)}</div>
+                      <div className="text-[12px] font-semibold text-text-primary mt-1">{selectedAgent?.name || 'Auto-selecting'} • {selectedAgentIsPersistent ? 'Persistent lane' : inferAgentModeBadge(selectedAgent)}</div>
+                    </div>
+                    <div className="rounded-2xl border border-white/[0.08] bg-black/20 px-3 py-3 col-span-2">
+                      <div className="text-[9px] uppercase tracking-[0.18em] text-text-muted">Commander posture</div>
+                      <div className="text-[12px] font-semibold text-text-primary mt-1">{MISSION_MODE_OPTIONS.find((option) => option.value === form.missionMode)?.label || 'Do now'}</div>
+                      <div className="mt-1 text-[11px] leading-relaxed text-text-body">{missionModeRationale}</div>
                     </div>
                   </div>
 
@@ -798,6 +849,36 @@ export function MissionCreatorPanel({
 
                 <div className="space-y-4">
                   <div>
+                    <SectionLabel>Mission mode</SectionLabel>
+                    <div className="grid gap-2">
+                      {MISSION_MODE_OPTIONS.map((option) => {
+                        const selected = form.missionMode === option.value;
+                        return (
+                          <button
+                            key={option.value}
+                            type="button"
+                            onClick={() => updateField('missionMode', option.value)}
+                            className={cn(
+                              'w-full rounded-2xl border px-3 py-3 text-left transition-colors',
+                              selected
+                                ? 'border-aurora-teal/30 bg-aurora-teal/8'
+                                : 'border-border bg-surface hover:bg-surface-raised'
+                            )}
+                          >
+                            <div className="flex items-center justify-between gap-3">
+                              <div>
+                                <div className="text-[12px] font-semibold text-text-primary">{option.label}</div>
+                                <div className="mt-1 text-[11px] leading-relaxed text-text-muted">{option.hint}</div>
+                              </div>
+                              {selected && <div className="w-2 h-2 rounded-full bg-aurora-teal shrink-0" />}
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div>
                     <SectionLabel>Agent</SectionLabel>
                     <div className="rounded-2xl border border-white/[0.08] bg-black/20 overflow-hidden">
                       {agents.map(agent => {
@@ -822,7 +903,7 @@ export function MissionCreatorPanel({
                                   'px-2 py-0.5 rounded-full text-[9px] font-bold',
                                   selected ? 'bg-aurora-teal/15 text-aurora-teal' : 'bg-white/[0.04] text-text-muted'
                                 )}>
-                                  {inferAgentModeBadge(agent)}
+                                  {!agent.isEphemeral && !agent.isSyntheticCommander ? 'PERSIST' : inferAgentModeBadge(agent)}
                                 </span>
                               </div>
                               <p className="text-[11px] text-text-muted mt-1">{agent.model} • {agent.role}</p>
@@ -1045,6 +1126,16 @@ export function MissionCreatorPanel({
                                 <p className="text-sm font-semibold text-text-primary mt-1">{preview.estimatedCostRange}</p>
                               </div>
                             </div>
+                            <div className="grid grid-cols-2 gap-3">
+                              <div className="rounded-xl border border-border bg-canvas/50 px-3 py-2.5">
+                                <p className="text-[10px] uppercase tracking-[0.15em] text-text-muted">Launch mode</p>
+                                <p className="text-sm font-semibold text-text-primary mt-1">{MISSION_MODE_OPTIONS.find((option) => option.value === form.missionMode)?.label || 'Do now'}</p>
+                              </div>
+                              <div className="rounded-xl border border-border bg-canvas/50 px-3 py-2.5">
+                                <p className="text-[10px] uppercase tracking-[0.15em] text-text-muted">Likely systems</p>
+                                <p className="text-sm font-semibold text-text-primary mt-1">{systemsReadback.length ? systemsReadback.map((system) => system.label).join(', ') : 'Internal lane'}</p>
+                              </div>
+                            </div>
                             <div className="rounded-[20px] border border-white/[0.08] bg-black/20 p-3">
                               <div className="flex items-center justify-between mb-3">
                                 <div>
@@ -1130,7 +1221,7 @@ export function MissionCreatorPanel({
                   <div className="flex items-center gap-2">
                     <AlarmClock className="w-4 h-4 text-aurora-teal" />
                     <p className="text-[12px] text-text-body">
-                      Launching with <span className="text-text-primary font-semibold">{selectedAgent.name}</span> on the <span className="text-text-primary font-semibold">{inferAgentModeBadge(selectedAgent)}</span> branch.
+                      Launching with <span className="text-text-primary font-semibold">{selectedAgent.name}</span> on the <span className="text-text-primary font-semibold">{selectedAgentIsPersistent ? 'persistent specialist' : inferAgentModeBadge(selectedAgent)}</span> lane.
                     </p>
                   </div>
                   <div className="mt-3 grid grid-cols-1 gap-2">
@@ -1140,7 +1231,25 @@ export function MissionCreatorPanel({
                     </div>
                     <div className="rounded-2xl border border-white/[0.08] bg-black/15 px-3 py-2.5">
                       <div className="text-[9px] uppercase tracking-[0.18em] text-text-muted">Why these defaults</div>
-                      <div className="text-[12px] text-text-body mt-1">{modeRationale} {scheduleRationale}</div>
+                      <div className="text-[12px] text-text-body mt-1">{modeRationale} {missionModeRationale} {scheduleRationale}</div>
+                    </div>
+                    <div className="rounded-2xl border border-white/[0.08] bg-black/15 px-3 py-2.5">
+                      <div className="text-[9px] uppercase tracking-[0.18em] text-text-muted">Systems Commander expects to touch</div>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {(systemsReadback.length ? systemsReadback : [{ label: 'Internal lane', connected: true }]).map((system) => (
+                          <span
+                            key={system.label}
+                            className={cn(
+                              'px-2 py-1 rounded-full text-[10px] font-semibold border',
+                              system.connected
+                                ? 'border-aurora-teal/20 bg-aurora-teal/10 text-aurora-teal'
+                                : 'border-aurora-amber/20 bg-aurora-amber/10 text-aurora-amber'
+                            )}
+                          >
+                            {system.label}
+                          </span>
+                        ))}
+                      </div>
                     </div>
                   </div>
                 </section>
@@ -1161,7 +1270,11 @@ export function MissionCreatorPanel({
                 className="flex-1 h-11 rounded-xl bg-aurora-teal text-black text-sm font-semibold hover:bg-[#00ebd8] disabled:opacity-50 transition-colors flex items-center justify-center gap-2"
               >
                 {launching ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
-                Launch Mission
+                {form.missionMode === 'plan_first'
+                  ? 'Create planned mission'
+                  : form.missionMode === 'watch_and_approve'
+                    ? 'Launch with approval gate'
+                    : 'Launch mission'}
               </button>
               <button
                 type="button"

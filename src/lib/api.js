@@ -368,6 +368,16 @@ function buildRecurrenceRule(repeat) {
   };
 }
 
+function getMissionExecutionPosture(payload) {
+  const missionMode = payload.missionMode || 'do_now';
+  return {
+    missionMode,
+    shouldPlanOnly: missionMode === 'plan_first',
+    shouldWatchAndApprove: missionMode === 'watch_and_approve',
+    shouldAutoDispatch: payload.when === 'now' && missionMode === 'do_now',
+  };
+}
+
 function estimateMissionPlan(payload) {
   const lower = payload.intent.toLowerCase();
   const steps = [];
@@ -477,6 +487,10 @@ async function buildMissionSubtasks({
   for (const [index, branch] of branches.entries()) {
     const stepId = crypto.randomUUID();
     const first = index === 0;
+    const branchCanRunImmediately = first || branch.executionStrategy === 'parallel';
+    const executionPosture = getMissionExecutionPosture(payload);
+    const branchRequiresApproval = executionPosture.shouldWatchAndApprove && branchCanRunImmediately;
+    const branchShouldStayPlanned = executionPosture.shouldPlanOnly || (!branchCanRunImmediately && !branchRequiresApproval);
     branchIdByTitle.set(branch.title, stepId);
     const dependencies = Array.isArray(branch.dependsOn)
       ? branch.dependsOn.map((dependencyTitle) => branchIdByTitle.get(dependencyTitle)).filter(Boolean)
@@ -496,8 +510,8 @@ async function buildMissionSubtasks({
       title: `${title} · ${branch.title}`,
       name: branch.title,
       description: branch.description || branch.title,
-      status: first ? 'queued' : 'pending',
-      lane: first || branch.executionStrategy === 'parallel' ? 'active' : 'blocked',
+      status: branchRequiresApproval ? 'needs_approval' : branchShouldStayPlanned ? 'pending' : 'queued',
+      lane: branchRequiresApproval ? 'approvals' : branchCanRunImmediately && !branchShouldStayPlanned ? 'active' : 'blocked',
       priority: Math.max(1, (payload.priorityScore ?? 5) - (first ? 0 : 1)),
       schedule_type: scheduleType,
       run_at: runAt,
@@ -512,11 +526,15 @@ async function buildMissionSubtasks({
       created_by_commander_id: commanderId,
       estimated_cost_cents: Math.max(1, Math.round((estimatedCostCents || 0) / branches.length)),
       actual_cost_cents: 0,
-      progress_percent: first ? 5 : 0,
+      progress_percent: branchRequiresApproval || branchShouldStayPlanned ? 0 : 5,
       duration_ms: 0,
       cost_usd: 0,
       node_type: 'subtask',
-      workflow_status: first || branch.executionStrategy === 'parallel' ? WORKFLOW_STATUS.READY : WORKFLOW_STATUS.PLANNED,
+      workflow_status: branchRequiresApproval
+        ? WORKFLOW_STATUS.WAITING_ON_HUMAN
+        : branchCanRunImmediately && !branchShouldStayPlanned
+          ? WORKFLOW_STATUS.READY
+          : WORKFLOW_STATUS.PLANNED,
       root_mission_id: missionId,
       parent_id: missionId,
       routing_policy_id: routingPolicyId || null,
@@ -534,6 +552,7 @@ async function buildMissionSubtasks({
       branch_label: branch.branchLabel || branch.title,
       provider_override: assignment.providerOverride || null,
       model_override: assignment.modelOverride || null,
+      requires_approval: branchRequiresApproval,
     });
   }
 
@@ -555,7 +574,13 @@ async function resolveBranchAssignment({
   const modelOverride = branch.modelOverride || roleFallback?.model || routingPolicy?.preferredModel || null;
   const providerOverride = branch.providerOverride || roleFallback?.provider || routingPolicy?.preferredProvider || null;
 
-  const exactRoleMatches = liveAgents.filter((agent) => agent.role === branchRole);
+  const exactRoleMatches = liveAgents
+    .filter((agent) => agent.role === branchRole)
+    .sort((left, right) => {
+      const leftPersistent = Number(!left.isEphemeral);
+      const rightPersistent = Number(!right.isEphemeral);
+      return rightPersistent - leftPersistent;
+    });
   const roleCandidates = exactRoleMatches.length
     ? exactRoleMatches
     : branchRole === 'executor'
@@ -809,9 +834,14 @@ export async function createMission(payload, agents = []) {
   });
   const routingDecision = deriveRoutingDecision(payload, selectedAgent, routingPolicy);
   const hasDelegatedSteps = plannedBranches.length > 1;
+  const executionPosture = getMissionExecutionPosture(payload);
   const workflowStatus = hasDelegatedSteps
-    ? (payload.when === 'now' ? WORKFLOW_STATUS.RUNNING : WORKFLOW_STATUS.PLANNED)
-    : (payload.when === 'now' ? WORKFLOW_STATUS.READY : WORKFLOW_STATUS.PLANNED);
+    ? (executionPosture.shouldAutoDispatch ? WORKFLOW_STATUS.RUNNING : WORKFLOW_STATUS.PLANNED)
+    : executionPosture.shouldWatchAndApprove
+      ? WORKFLOW_STATUS.WAITING_ON_HUMAN
+      : executionPosture.shouldAutoDispatch
+        ? WORKFLOW_STATUS.READY
+        : WORKFLOW_STATUS.PLANNED;
 
   const row = {
     id: missionId,
@@ -819,8 +849,20 @@ export async function createMission(payload, agents = []) {
     title,
     name: title,
     description: payload.intent,
-    status: hasDelegatedSteps && payload.when === 'now' ? 'running' : (hasDelegatedSteps ? 'pending' : 'queued'),
-    lane: hasDelegatedSteps && payload.when === 'now' ? 'active' : lane,
+    status: hasDelegatedSteps
+      ? (executionPosture.shouldAutoDispatch ? 'running' : 'pending')
+      : executionPosture.shouldWatchAndApprove
+        ? 'needs_approval'
+        : executionPosture.shouldAutoDispatch
+          ? 'queued'
+          : 'pending',
+    lane: hasDelegatedSteps
+      ? (executionPosture.shouldAutoDispatch ? 'active' : 'blocked')
+      : executionPosture.shouldWatchAndApprove
+        ? 'approvals'
+        : executionPosture.shouldAutoDispatch
+          ? lane
+          : 'blocked',
     priority: priorityScore,
     schedule_type: scheduleType,
     run_at: runAt,
@@ -842,7 +884,7 @@ export async function createMission(payload, agents = []) {
     workflow_status: workflowStatus,
     root_mission_id: missionId,
     routing_policy_id: routingPolicy?.id || null,
-    routing_reason: routingDecision.routingReason,
+    routing_reason: `${routingDecision.routingReason} | mission mode ${executionPosture.missionMode.replaceAll('_', ' ')}`,
     domain: routingDecision.domain,
     intent_type: routingDecision.intentType,
     budget_class: routingDecision.budgetClass,
@@ -856,6 +898,7 @@ export async function createMission(payload, agents = []) {
     branch_label: 'Root Mission',
     provider_override: null,
     model_override: null,
+    requires_approval: !hasDelegatedSteps && executionPosture.shouldWatchAndApprove,
   };
 
   const subtaskRows = await buildMissionSubtasks({
@@ -938,7 +981,7 @@ export async function createMission(payload, agents = []) {
     }
   }
 
-  if (payload.when === 'now' && assignedAgentId && subtaskRows.length === 0) {
+  if (executionPosture.shouldAutoDispatch && assignedAgentId && subtaskRows.length === 0) {
     try {
       await dispatchMissionNow({
         taskId: missionId,
@@ -951,7 +994,7 @@ export async function createMission(payload, agents = []) {
     }
   }
 
-  if (payload.when === 'now' && subtaskRows.length > 0) {
+  if (executionPosture.shouldAutoDispatch && subtaskRows.length > 0) {
     try {
       const readySubtasks = subtaskRows.filter((subtask) => subtask.workflow_status === WORKFLOW_STATUS.READY && subtask.agent_id);
       await Promise.all(readySubtasks.map((subtask) => dispatchMissionNow({
@@ -967,7 +1010,11 @@ export async function createMission(payload, agents = []) {
 
   const activityMessage = scheduleType === 'recurring'
     ? `Mission queued: ${title} • recurring ${payload.repeat.frequency} at ${payload.repeat.time}`
-    : payload.when === 'now' && assignedAgentId
+    : executionPosture.shouldWatchAndApprove
+      ? `Mission staged for approval: ${title}`
+      : executionPosture.shouldPlanOnly
+        ? `Mission planned: ${title}`
+        : payload.when === 'now' && assignedAgentId
       ? `Mission dispatched: ${title}`
       : `Mission queued: ${title}`;
 

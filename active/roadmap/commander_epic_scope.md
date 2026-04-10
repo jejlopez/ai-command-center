@@ -102,6 +102,44 @@ The system should feel:
 - Strong explainability on why the system chose each lane.
 - Voice and richer interaction later if still justified.
 
+## Current Program State
+
+- `Phase 0` is substantially complete:
+  - commander canonicalization is in place
+  - routing policy foundation is live
+  - mission/task lifecycle normalization is live
+  - major page responsibilities are now much clearer
+- `Phase 1` is in progress:
+  - flagship command bridge exists
+  - readiness, autonomy posture, launch protocol, and truth audit are present
+  - true natural-language Commander intake still needs to become the default entrypoint
+- `Phase 2` is in progress:
+  - parent/child mission graph is live
+  - branch dependency editing is live
+  - routing overrides and intervention controls are live
+  - specialist spawning and retirement audit are live
+  - richer planner-driven branch decomposition still needs to deepen
+- `Phase 3` through `Phase 6` are mostly ahead:
+  - partial doctrine and shared directive groundwork exists
+  - the real memory, learning, domain-pack, and full Jarvis layers are still upcoming
+
+## Autodrive Rule
+
+Autodrive for this roadmap means:
+
+- keep shipping the highest-leverage slice from the progress board without waiting for approval on every small step
+- pause only for:
+  - destructive changes
+  - dependency changes
+  - schema changes with unclear impact
+  - major UX direction forks
+  - risky product decisions involving money, external messaging, or permissions
+- otherwise continue phase-by-phase with:
+  - roadmap update
+  - focused implementation
+  - targeted verification
+  - next-slice recommendation
+
 ## Top 20 Must-Have Release Checklist
 
 1. Natural-language Commander intake

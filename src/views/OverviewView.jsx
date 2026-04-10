@@ -32,6 +32,48 @@ function formatWaitLabel(ms) {
   return rem ? `${hours}h ${rem}m` : `${hours}h`;
 }
 
+function ExecutiveBriefingPanel({ briefing, onNavigate, onOpenDetail, onAddOperator }) {
+  const handlePrimary = () => {
+    if (briefing.primary.type === 'detail' && briefing.primary.target) {
+      onOpenDetail?.(briefing.primary.target);
+      return;
+    }
+    if (briefing.primary.type === 'operator') {
+      onAddOperator?.();
+      return;
+    }
+    onNavigate?.('missions');
+  };
+
+  return (
+    <div className="rounded-[28px] border border-white/8 bg-[linear-gradient(135deg,rgba(0,217,200,0.08),rgba(96,165,250,0.04),rgba(255,255,255,0.02))] p-5">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="max-w-2xl">
+          <div className="text-[10px] uppercase tracking-[0.18em] text-aurora-teal">Executive Briefing</div>
+          <div className="mt-2 text-xl font-semibold text-text-primary">{briefing.primary.title}</div>
+          <p className="mt-2 text-[13px] leading-6 text-text-body">{briefing.primary.detail}</p>
+        </div>
+        <button
+          type="button"
+          onClick={handlePrimary}
+          className="rounded-2xl border border-aurora-teal/20 bg-aurora-teal/10 px-4 py-3 text-[12px] font-semibold text-aurora-teal transition-colors hover:bg-aurora-teal/15"
+        >
+          {briefing.primary.cta}
+        </button>
+      </div>
+      <div className="mt-4 grid gap-3 md:grid-cols-3">
+        {briefing.secondary.map((item) => (
+          <div key={item.title} className="rounded-[20px] border border-white/8 bg-black/20 p-4">
+            <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">{item.eyebrow}</div>
+            <div className="mt-2 text-[14px] font-semibold text-text-primary">{item.title}</div>
+            <p className="mt-2 text-[12px] leading-5 text-text-muted">{item.detail}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function OverviewView({ agents, tasks, loading, addOptimistic, onOpenDetail, onNavigate }) {
   const { logs } = useActivityLog();
   const { reviews } = usePendingReviews();
@@ -338,6 +380,122 @@ export function OverviewView({ agents, tasks, loading, addOptimistic, onOpenDeta
     return actions.slice(0, 4);
   }, [reviews.length, flaggedAgents, lateSchedules, operatorAgents.length]);
 
+  const executiveBriefing = useMemo(() => {
+    if (reviews.length > 0) {
+      return {
+        primary: {
+          title: `Clear ${reviews.length} approval gate${reviews.length === 1 ? '' : 's'} first`,
+          detail: 'Human decisions are the fastest lever on the board right now. Clear the gates and Commander can resume the stalled branches immediately.',
+          cta: 'Open approvals',
+          type: 'navigate',
+          target: 'missions',
+        },
+        secondary: [
+          {
+            eyebrow: 'Next',
+            title: `${runningTasks.length} branch${runningTasks.length === 1 ? '' : 'es'} already moving`,
+            detail: 'Keep throughput up while you clear the human choke point.',
+          },
+          {
+            eyebrow: 'Watch',
+            title: avgApprovalWaitMs > 0 ? `${formatWaitLabel(avgApprovalWaitMs)} average approval lag` : 'Fresh approval queue',
+            detail: 'If this number climbs, Commander needs fewer human stops and better mission posture defaults.',
+          },
+          {
+            eyebrow: 'After that',
+            title: 'Launch the next mission wave',
+            detail: 'Once the queue is clear, the bridge is ready for another delegated run.',
+          },
+        ],
+      };
+    }
+
+    if (flaggedAgents[0]) {
+      return {
+        primary: {
+          title: `Inspect ${flaggedAgents[0].name} before scaling`,
+          detail: flaggedAgents[0].reason,
+          cta: 'Open operator',
+          type: 'detail',
+          target: flaggedAgents[0].id,
+        },
+        secondary: [
+          {
+            eyebrow: 'Risk',
+            title: `${failedTasks.length + stalledAgents.length} unstable branch${failedTasks.length + stalledAgents.length === 1 ? '' : 'es'}`,
+            detail: 'Stability is the current limiter, not demand.',
+          },
+          {
+            eyebrow: 'Command',
+            title: 'Reroute before adding volume',
+            detail: 'Use Mission Control to redirect weak branches to stronger lanes or specialists.',
+          },
+          {
+            eyebrow: 'After that',
+            title: 'Restore launch posture',
+            detail: 'Once the weak lane is stabilized, the bridge can resume normal throughput.',
+          },
+        ],
+      };
+    }
+
+    if (operatorAgents.length < 3) {
+      return {
+        primary: {
+          title: 'Add a persistent specialist lane',
+          detail: 'Commander is functional, but the machine will feel much more like Jarvis once planner, researcher, builder, and verifier coverage are more permanent.',
+          cta: 'Add operator',
+          type: 'operator',
+          target: null,
+        },
+        secondary: [
+          {
+            eyebrow: 'Opportunity',
+            title: 'Persistent lanes reduce spawn churn',
+            detail: 'Reusable specialists improve routing quality and keep more context alive between missions.',
+          },
+          {
+            eyebrow: 'Current state',
+            title: `${operatorAgents.length} specialist lane${operatorAgents.length === 1 ? '' : 's'} live`,
+            detail: 'The bridge still has room to become a true multi-lane operating system.',
+          },
+          {
+            eyebrow: 'After that',
+            title: 'Push more delegated work',
+            detail: 'Once the persistent fleet is deeper, Commander can scale more safely.',
+          },
+        ],
+      };
+    }
+
+    return {
+      primary: {
+        title: 'Tell Commander what you want next',
+        detail: 'The bridge is stable enough to hand Commander a new objective. This is the right moment to launch, plan, or stage the next mission with minimal friction.',
+        cta: 'Open Mission Control',
+        type: 'navigate',
+        target: 'missions',
+      },
+      secondary: [
+        {
+          eyebrow: 'Readiness',
+          title: readiness.label,
+          detail: readiness.readback,
+        },
+        {
+          eyebrow: 'Autonomy',
+          title: `${autonomyPosture.autonomousPercent}% self-driving`,
+          detail: autonomyPosture.primaryDrag,
+        },
+        {
+          eyebrow: 'Now',
+          title: 'Best next leverage is fresh work',
+          detail: 'No dominant choke point is visible, which means Commander is ready for the next sentence.',
+        },
+      ],
+    };
+  }, [reviews.length, flaggedAgents, failedTasks.length, stalledAgents.length, operatorAgents.length, runningTasks.length, avgApprovalWaitMs, readiness, autonomyPosture]);
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -369,6 +527,15 @@ export function OverviewView({ agents, tasks, loading, addOptimistic, onOpenDeta
 
         <Motion.div variants={item}>
           <CommandReadFirst items={readFirstItems} />
+        </Motion.div>
+
+        <Motion.div variants={item}>
+          <ExecutiveBriefingPanel
+            briefing={executiveBriefing}
+            onNavigate={onNavigate}
+            onOpenDetail={onOpenDetail}
+            onAddOperator={() => setCreateModalOpen(true)}
+          />
         </Motion.div>
 
         <Motion.div variants={item}>

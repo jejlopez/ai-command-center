@@ -1327,7 +1327,7 @@ export function MissionControlView() {
           ]}
           actions={
             <button onClick={() => setCreatorOpen(true)} className="flex items-center justify-center gap-2 rounded-2xl bg-aurora-teal px-4 py-3 text-sm font-semibold text-black transition-colors hover:bg-[#00ebd8] shadow-glow-teal">
-              <Plus className="w-4 h-4" /> Spin up a Mission
+              <Plus className="w-4 h-4" /> Tell Commander what you want
             </button>
           }
           sideContent={
