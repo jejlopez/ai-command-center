@@ -923,6 +923,24 @@ export function getPersistentPromotionGuidance({ lifecycleEvents = [], agents = 
       return right.count - left.count;
     })
     .slice(0, 4);
+  const recommendedActions = [
+    ...autoCreateRoles.slice(0, 3).map((role) => ({
+      key: `role-${role}`,
+      label: `Create ${role} lane`,
+      role,
+      domain: null,
+      count: rankedRoleDemand.find((entry) => entry.role === role)?.count || 0,
+      tone: 'blue',
+    })),
+    ...domainPackTargets.slice(0, 3).map((entry) => ({
+      key: `pack-${entry.domain}-${entry.role}`,
+      label: `${entry.domain}: ${entry.role}`,
+      role: entry.role,
+      domain: entry.domain,
+      count: entry.count,
+      tone: 'violet',
+    })),
+  ].slice(0, 4);
   const pressureScore = topGap
     ? (topGap.count * 8) + ((topGap.spawnedCount || 0) * 10)
       + (fleetPosture.posture === 'thin' ? 18 : 0)
@@ -955,6 +973,7 @@ export function getPersistentPromotionGuidance({ lifecycleEvents = [], agents = 
     autoCreateRoles,
     domainTargets,
     domainPackTargets,
+    recommendedActions,
   };
 }
 

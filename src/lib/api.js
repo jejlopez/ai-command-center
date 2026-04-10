@@ -1226,7 +1226,7 @@ async function selectOutcomeWinningLane(user, routingDecision) {
       console.error('[api] selectOutcomeWinningLane:', error.message);
       return [];
     }
-    return data || [];
+    return (data || []).map((row) => ({ ...row, __scope: scope }));
   };
 
   const exactRows = await queryOutcomeRows('exact');
@@ -1248,11 +1248,15 @@ async function selectOutcomeWinningLane(user, routingDecision) {
       executionStrategy: row.execution_strategy || 'sequential',
       approvalLevel: row.approval_level || 'risk_weighted',
       exactRuns: 0,
+      domainPackRuns: 0,
+      intentPackRuns: 0,
       runs: 0,
       totalScore: 0,
       totalCost: 0,
     };
     if (row.domain === routingDecision.domain && row.intent_type === routingDecision.intentType) current.exactRuns += 1;
+    else if (row.domain === routingDecision.domain) current.domainPackRuns += 1;
+    else if (row.intent_type === routingDecision.intentType) current.intentPackRuns += 1;
     current.runs += 1;
     current.totalScore += Number(row.score || 0);
     current.totalCost += Number(row.cost_usd || 0);
@@ -1260,17 +1264,38 @@ async function selectOutcomeWinningLane(user, routingDecision) {
   });
 
   return Array.from(grouped.values())
-    .map((entry) => ({
-      ...entry,
-      avgScore: entry.runs ? entry.totalScore / entry.runs : 0,
-      avgCost: entry.runs ? entry.totalCost / entry.runs : 0,
-      confidence: entry.exactRuns >= 6 || entry.runs >= 10 ? 'high' : entry.exactRuns >= 3 || entry.runs >= 5 ? 'medium' : 'low',
-      rank: (entry.runs ? entry.totalScore / entry.runs : 0)
-        + Math.min(24, entry.runs * 3)
-        - ((entry.runs ? entry.totalCost / entry.runs : 0) * 5.5)
-        + (entry.approvalLevel === 'auto_low_risk' ? 6 : entry.approvalLevel === 'risk_weighted' ? 2 : -6)
-        + (entry.executionStrategy === 'parallel' ? 3 : 0),
-    }))
+    .map((entry) => {
+      const avgScore = entry.runs ? entry.totalScore / entry.runs : 0;
+      const avgCost = entry.runs ? entry.totalCost / entry.runs : 0;
+      const generalizedSupport = (entry.domainPackRuns * 0.7) + (entry.intentPackRuns * 0.55);
+      const scopeSupport = entry.exactRuns + generalizedSupport;
+      const scopeLabel = entry.exactRuns >= 3
+        ? 'exact'
+        : entry.domainPackRuns >= entry.intentPackRuns && entry.domainPackRuns > 0
+          ? 'domain-pack'
+          : entry.intentPackRuns > 0
+            ? 'intent-pack'
+            : 'thin';
+      const confidence = entry.exactRuns >= 6 || scopeSupport >= 10
+        ? 'high'
+        : entry.exactRuns >= 2 || scopeSupport >= 5
+          ? 'medium'
+          : 'low';
+
+      return {
+        ...entry,
+        avgScore,
+        avgCost,
+        scopeLabel,
+        confidence,
+        rank: avgScore
+          + Math.min(24, (entry.exactRuns * 4) + generalizedSupport * 2)
+          - (avgCost * 5.5)
+          + (entry.approvalLevel === 'auto_low_risk' ? 6 : entry.approvalLevel === 'risk_weighted' ? 2 : -6)
+          + (entry.executionStrategy === 'parallel' ? 3 : 0)
+          + (scopeLabel === 'exact' ? 6 : scopeLabel === 'domain-pack' ? 2 : 0),
+      };
+    })
     .sort((left, right) => {
       if (right.rank !== left.rank) return right.rank - left.rank;
       return right.runs - left.runs;
@@ -1322,7 +1347,7 @@ function applyRuntimeConfidenceBias({ routingDecision, observedWinningLane }) {
     selectedProvider: observedWinningLane.provider || routingDecision.selectedProvider,
     selectedModel: observedWinningLane.model || routingDecision.selectedModel,
     selectedAgentRole: observedWinningLane.agentRole || routingDecision.selectedAgentRole,
-    routingReason: `${routingDecision.routingReason} | runtime winner ${observedWinningLane.provider || 'Adaptive'} ${observedWinningLane.model || 'lane'} @ ${Math.round(observedWinningLane.avgScore || 0)} score`,
+    routingReason: `${routingDecision.routingReason} | runtime winner ${observedWinningLane.provider || 'Adaptive'} ${observedWinningLane.model || 'lane'} @ ${Math.round(observedWinningLane.avgScore || 0)} score via ${observedWinningLane.scopeLabel || 'exact'} history`,
   };
 }
 

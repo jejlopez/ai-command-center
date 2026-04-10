@@ -43,7 +43,7 @@ import { TacticalInterventionConsole } from '../components/command/TacticalInter
 import { buildTimelineEntries } from '../utils/buildCommandTimeline';
 import { TaskDAG } from '../components/TaskDAG';
 import { getWorkflowMeta } from '../utils/missionLifecycle';
-import { getDoctrineDeltaSummary, getFleetPostureSummary, getMissionPatternDefaultSummary, getOutcomeMemorySummary, getPatternApprovalBiasSummary, getPostLaunchConfidenceSummary, parseDoctrineFeedbackLogs } from '../utils/commanderAnalytics';
+import { getDoctrineDeltaSummary, getFleetPostureSummary, getMissionPatternDefaultSummary, getOutcomeMemorySummary, getPatternApprovalBiasSummary, getPersistentPromotionGuidance, getPostLaunchConfidenceSummary, getRecurringAutonomyTuningSummary, parseDoctrineFeedbackLogs } from '../utils/commanderAnalytics';
 
 // ═══════════════════════════════════════════════════════════════
 // UI ATOMS
@@ -431,6 +431,31 @@ function MissionGraphPanel({ tasks, agents, logs, outcomes, interventions, lifec
     timestamp: entry.createdAt,
   }));
   const doctrineFeedback = parseDoctrineFeedbackLogs(logs).filter((entry) => !selectedRootMissionId || entry.cleanMessage.includes(selectedRootMissionId)).slice(0, 6);
+  const recurringTrustSignals = useMemo(() => {
+    if (!selectedTask?.scheduleType || selectedTask.scheduleType !== 'recurring') return null;
+    const domain = selectedTask.domain || 'general';
+    const intentType = selectedTask.intentType || 'general';
+    const matchingOutcomes = outcomes.filter((entry) => entry.domain === domain && entry.intentType === intentType);
+    const matchingInterventions = interventions.filter((entry) => entry.domain === domain && entry.intentType === intentType);
+    return {
+      domain,
+      intentType,
+      runs: Math.max(graphTaskSet.length, matchingOutcomes.length),
+      rescueCount: matchingInterventions.filter((entry) => ['retry', 'stop', 'cancel'].includes(entry.eventType)).length,
+      guardrailCount: matchingInterventions.filter((entry) => entry.eventType === 'guardrail').length,
+      tuningCount: matchingInterventions.filter((entry) => ['reroute', 'dependency_update', 'approve'].includes(entry.eventType)).length,
+      avgOutcome: matchingOutcomes.length
+        ? Math.round(matchingOutcomes.reduce((sum, entry) => sum + Number(entry.score || 0), 0) / matchingOutcomes.length)
+        : 0,
+      maturityScore: matchingOutcomes.length
+        ? Math.max(28, Math.min(100, Math.round((matchingOutcomes.reduce((sum, entry) => sum + Number(entry.score || 0), 0) / matchingOutcomes.length) - (matchingInterventions.length * 4))))
+        : 0,
+      trustLabel: matchingOutcomes.length
+        ? (matchingInterventions.filter((entry) => ['retry', 'stop', 'cancel', 'guardrail'].includes(entry.eventType)).length >= 4 ? 'Fragile' : matchingInterventions.length >= 2 ? 'Watch' : 'Stable')
+        : 'Watch',
+    };
+  }, [graphTaskSet.length, interventions, outcomes, selectedTask]);
+  const recurringTrustSummary = recurringTrustSignals ? getRecurringAutonomyTuningSummary(recurringTrustSignals) : null;
   const branchHistory = useMemo(() => (
     selectedRootMissionId
       ? rootInterventions
@@ -444,6 +469,7 @@ function MissionGraphPanel({ tasks, agents, logs, outcomes, interventions, lifec
       : []
   ), [rootInterventions, selectedRootMissionId]);
   const persistentSpecialists = agents.filter((agent) => !agent.isEphemeral && !['commander', 'executor'].includes(agent.role || ''));
+  const promotionGuidance = useMemo(() => getPersistentPromotionGuidance({ lifecycleEvents, agents, tasks: graphTaskSet }), [agents, graphTaskSet, lifecycleEvents]);
   const interventionRail = useMemo(() => (
     buildInterventionRailEntries({
       branchHistory,
@@ -560,6 +586,51 @@ function MissionGraphPanel({ tasks, agents, logs, outcomes, interventions, lifec
           </div>
         </div>
       </div>
+      {(recurringTrustSummary || promotionGuidance.recommendedActions?.length > 0) && (
+        <div className="mt-4 grid gap-3 xl:grid-cols-[0.95fr_1.05fr]">
+          {recurringTrustSummary && (
+            <div className="rounded-[20px] border border-aurora-amber/20 bg-aurora-amber/10 p-4">
+              <div className="text-[10px] uppercase tracking-[0.18em] text-aurora-amber">Recurring trust recovery</div>
+              <div className="mt-1 text-sm font-semibold text-text-primary">{recurringTrustSummary.actionLabel}</div>
+              <p className="mt-2 text-[12px] leading-relaxed text-text-body">{recurringTrustSummary.detail}</p>
+              <p className="mt-2 text-[11px] leading-relaxed text-aurora-amber">{recurringTrustSummary.recoveryLabel}</p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <span className="rounded-full border border-aurora-violet/20 bg-aurora-violet/10 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-aurora-violet">
+                  {recurringTrustSummary.posture}
+                </span>
+                <span className="rounded-full border border-aurora-blue/20 bg-aurora-blue/10 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-aurora-blue">
+                  cadence {recurringTrustSummary.recommendedFrequency}
+                </span>
+                <span className="rounded-full border border-white/10 bg-white/[0.03] px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-text-muted">
+                  {recurringTrustSummary.recommendedApprovalPosture.replaceAll('_', ' ')}
+                </span>
+              </div>
+            </div>
+          )}
+          {promotionGuidance.recommendedActions?.length > 0 && (
+            <div className="rounded-[20px] border border-aurora-blue/20 bg-aurora-blue/10 p-4">
+              <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Default fleet actions</div>
+              <div className="mt-1 text-sm font-semibold text-text-primary">Commander is seeing durable role pressure here</div>
+              <p className="mt-2 text-[12px] leading-relaxed text-text-body">{promotionGuidance.recommendation}</p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {promotionGuidance.recommendedActions.slice(0, 3).map((entry) => (
+                  <span
+                    key={entry.key}
+                    className={cn(
+                      'rounded-full border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em]',
+                      entry.tone === 'violet'
+                        ? 'border-aurora-violet/20 bg-aurora-violet/10 text-aurora-violet'
+                        : 'border-aurora-blue/20 bg-aurora-blue/10 text-aurora-blue'
+                    )}
+                  >
+                    {entry.label}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
       <div className="mt-4 grid gap-3 xl:grid-cols-[0.95fr_1.05fr]">
         <div className="rounded-[20px] border border-white/8 bg-[linear-gradient(180deg,rgba(45,212,191,0.08),rgba(255,255,255,0.02))] p-4">
           <div className="flex items-start justify-between gap-3">

@@ -1888,28 +1888,32 @@ function SpecialistFleetTab({ agents, lifecycleEvents, skills, tasks }) {
             )}
             {(promotionGuidance.autoCreateRoles?.length > 0 || promotionGuidance.domainPackTargets?.length > 0) && (
               <div className="mt-4 rounded-[18px] border border-white/8 bg-black/20 p-3">
-                <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Fleet-shaping actions</div>
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Fleet-shaping actions</div>
+                    <div className="mt-1 text-[11px] text-text-body">Recommended next coverage defaults from lifecycle pressure and recurring branch demand.</div>
+                  </div>
+                  {promotionGuidance.recommendedActions?.[0] && (
+                    <span className="rounded-full border border-aurora-amber/20 bg-aurora-amber/10 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-aurora-amber">
+                      next: {promotionGuidance.recommendedActions[0].label}
+                    </span>
+                  )}
+                </div>
                 <div className="mt-3 flex flex-wrap gap-2">
-                  {promotionGuidance.autoCreateRoles?.slice(0, 3).map((entryRole) => (
+                  {promotionGuidance.recommendedActions?.map((entry) => (
                     <button
-                      key={`role-${entryRole}`}
-                      type="button"
-                      disabled={busy || !model}
-                      onClick={() => handleCreateRecommendedPersistent({ role: entryRole })}
-                      className="rounded-full border border-aurora-blue/20 bg-aurora-blue/10 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-aurora-blue transition-colors hover:bg-aurora-blue/14 disabled:opacity-50"
-                    >
-                      {busy ? 'Working...' : `Create ${entryRole} lane`}
-                    </button>
-                  ))}
-                  {promotionGuidance.domainPackTargets?.slice(0, 2).map((entry) => (
-                    <button
-                      key={`pack-${entry.domain}-${entry.role}`}
+                      key={entry.key}
                       type="button"
                       disabled={busy || !model}
                       onClick={() => handleCreateRecommendedPersistent(entry)}
-                      className="rounded-full border border-aurora-violet/20 bg-aurora-violet/10 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-aurora-violet transition-colors hover:bg-aurora-violet/14 disabled:opacity-50"
+                      className={cn(
+                        'rounded-full border px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] transition-colors disabled:opacity-50',
+                        entry.tone === 'violet'
+                          ? 'border-aurora-violet/20 bg-aurora-violet/10 text-aurora-violet hover:bg-aurora-violet/14'
+                          : 'border-aurora-blue/20 bg-aurora-blue/10 text-aurora-blue hover:bg-aurora-blue/14'
+                      )}
                     >
-                      {busy ? 'Working...' : `${entry.domain}: ${entry.role}`}
+                      {busy ? 'Working...' : entry.label}
                     </button>
                   ))}
                 </div>

@@ -180,6 +180,8 @@ These are not separate feature IDs yet. They should be implemented as depth adde
 5. Keep widening trust and doctrine readback where operators make decisions
 6. Turn durable-fleet shaping guidance into stronger automatic coverage defaults
 7. Surface trust-recovery state and fleet-shaping actions directly in executive and operator surfaces
+8. Push generalized runtime winners deeper into provider/model defaults when exact history is thin
+9. Turn fleet-shaping actions into stronger default operator workflows across mission families and domain packs
 
 ## Autodrive Program Rule
 
