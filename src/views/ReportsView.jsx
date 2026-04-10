@@ -608,10 +608,15 @@ export function ReportsView() {
       const trustSignals = automationCandidateLookup.get(candidateKey) || null;
       return trustSignals ? getRecurringAutonomyTuningSummary(trustSignals) : null;
     }).filter(Boolean);
+    const averageProgress = signals.length
+      ? Math.round(signals.reduce((sum, entry) => sum + Number(entry.recoveryProgress || 0), 0) / signals.length)
+      : 0;
     return {
       pausedCount: signals.filter((entry) => entry.recommendedPaused).length,
       watchCount: signals.filter((entry) => entry.posture === 'watch').length,
       tighteningCount: signals.filter((entry) => entry.posture === 'tighten').length,
+      readyCount: signals.filter((entry) => entry.recoveryStage === 'ready').length,
+      averageProgress,
     };
   }, [automationCandidateLookup, managedRecurringFlows]);
 
@@ -838,9 +843,16 @@ export function ReportsView() {
                     {managedRecurringRecoverySummary.pausedCount > 0 && <TelemetryTag label="Paused" value={managedRecurringRecoverySummary.pausedCount} tone="amber" />}
                     {managedRecurringRecoverySummary.tighteningCount > 0 && <TelemetryTag label="Tighten" value={managedRecurringRecoverySummary.tighteningCount} tone="violet" />}
                     {managedRecurringRecoverySummary.watchCount > 0 && <TelemetryTag label="Watch" value={managedRecurringRecoverySummary.watchCount} tone="blue" />}
+                    {managedRecurringRecoverySummary.readyCount > 0 && <TelemetryTag label="Ready" value={managedRecurringRecoverySummary.readyCount} tone="teal" />}
+                  </div>
+                  <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/[0.08]">
+                    <div
+                      className="h-full rounded-full bg-gradient-to-r from-aurora-amber via-aurora-violet to-aurora-teal"
+                      style={{ width: `${Math.max(6, managedRecurringRecoverySummary.averageProgress || 0)}%` }}
+                    />
                   </div>
                   <div className="mt-2 text-[11px] text-text-body">
-                    Commander is now tracking which recurring products need recovery before they can earn autonomy back.
+                    Commander is now tracking which recurring products need recovery before they can earn autonomy back. Average recovery progress: {managedRecurringRecoverySummary.averageProgress}%.
                   </div>
                 </div>
               )}
@@ -895,6 +907,13 @@ export function ReportsView() {
                       <div>{trustSignals.trustDetail}</div>
                       <div className="mt-2 text-aurora-blue">{trustTuning.actionLabel}. {trustTuning.detail}</div>
                       <div className="mt-2 text-aurora-amber">{trustTuning.recoveryLabel}</div>
+                      <div className="mt-2 h-2 overflow-hidden rounded-full bg-white/[0.08]">
+                        <div
+                          className="h-full rounded-full bg-gradient-to-r from-aurora-amber via-aurora-violet to-aurora-teal"
+                          style={{ width: `${Math.max(8, trustTuning.recoveryProgress || 0)}%` }}
+                        />
+                      </div>
+                      <div className="mt-2 text-[10px] text-text-muted">{trustTuning.recoveryProgressLabel}</div>
                     </div>
                   )}
                   <div className="mt-3 flex flex-wrap justify-between gap-3 text-[11px] text-text-muted">

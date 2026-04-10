@@ -1062,6 +1062,9 @@ export function getRecurringAutonomyTuningSummary(candidate = null) {
       recommendedFrequency: 'weekly',
       recommendedPaused: false,
       recoveryLabel: 'No trust recovery signal yet',
+      recoveryProgress: 18,
+      recoveryStage: 'forming',
+      recoveryProgressLabel: 'Commander is still building enough runtime trust memory to judge recovery honestly.',
       actionLabel: 'Keep this in supervised automation',
       detail: 'Commander still needs enough runtime memory before it should loosen recurring autonomy safely.',
       reasons: [],
@@ -1083,6 +1086,9 @@ export function getRecurringAutonomyTuningSummary(candidate = null) {
   let recommendedFrequency = 'daily';
   let recommendedPaused = false;
   let recoveryLabel = 'Trust posture is still forming.';
+  let recoveryProgress = 24;
+  let recoveryStage = 'forming';
+  let recoveryProgressLabel = 'Commander is still gathering enough runtime evidence to score recovery cleanly.';
   let actionLabel = 'This recurring flow can carry more autonomy';
 
   if (lowTrust || rescuePressure >= 2 || guardrailPressure >= 2 || avgOutcome < 58) {
@@ -1091,20 +1097,31 @@ export function getRecurringAutonomyTuningSummary(candidate = null) {
     recommendedApprovalPosture = rescuePressure >= 3 || guardrailPressure >= 3 ? 'human_required' : 'risk_weighted';
     recommendedFrequency = 'weekly';
     recommendedPaused = rescuePressure >= 4 || guardrailPressure >= 4 || avgOutcome < 40;
+    recoveryProgress = recommendedPaused ? 12 : 36;
+    recoveryStage = recommendedPaused ? 'paused' : 'recovering';
     recoveryLabel = recommendedPaused
       ? 'Flow needs a clean recovery window before it should unpause.'
       : 'Flow needs cleaner runtime history before it can loosen posture again.';
+    recoveryProgressLabel = recommendedPaused
+      ? 'Recovery progress is still too weak for autonomous runs. Commander should keep this paused and wait for a clean restart window.'
+      : 'Recovery is underway, but the flow still needs cleaner outcomes before Commander should loosen posture.';
     actionLabel = recommendedPaused ? 'Pause this recurring flow until it is stable again' : 'Tighten autonomy posture before this scales';
   } else if (watchTrust || tuningPressure >= 2 || avgOutcome < 72) {
     posture = 'watch';
     recommendedMissionMode = 'plan_first';
     recommendedApprovalPosture = 'risk_weighted';
     recommendedFrequency = Number(candidate.runs || 0) >= 5 && avgOutcome >= 66 ? 'daily' : 'weekly';
+    recoveryProgress = 68;
+    recoveryStage = 'recovering';
     recoveryLabel = 'One or two clean runs should be enough to graduate this back toward fuller autonomy.';
+    recoveryProgressLabel = 'Recovery is moving in the right direction. Commander is close to letting this flow earn autonomy back.';
     actionLabel = 'Keep this in managed review posture';
   } else {
     recommendedFrequency = Number(candidate.runs || 0) >= 4 ? 'daily' : 'weekly';
+    recoveryProgress = 96;
+    recoveryStage = 'ready';
     recoveryLabel = 'Runtime history is clean enough that this flow can safely earn autonomy back.';
+    recoveryProgressLabel = 'This flow has recovered enough that Commander can trust it with a lighter posture again.';
   }
 
   const reasons = [
@@ -1127,6 +1144,9 @@ export function getRecurringAutonomyTuningSummary(candidate = null) {
     recommendedFrequency,
     recommendedPaused,
     recoveryLabel,
+    recoveryProgress,
+    recoveryStage,
+    recoveryProgressLabel,
     actionLabel,
     detail,
     reasons,

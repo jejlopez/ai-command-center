@@ -183,6 +183,7 @@ These are not separate feature IDs yet. They should be implemented as depth adde
 8. Push generalized runtime winners deeper into provider/model defaults when exact history is thin
 9. Turn fleet-shaping actions into stronger default operator workflows across mission families and domain packs
 10. Keep widening trust-recovery and fleet-shaping actions across bridge, recurring, and live intervention surfaces
+11. Show recurring recovery as progress back toward autonomy, not just restriction state
 
 ## Autodrive Program Rule
 

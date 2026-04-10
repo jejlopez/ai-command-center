@@ -104,6 +104,8 @@ This is the live build tracker for the Jarvis / Stark / Musk Commander program.
 - Trust-recovery state surfaced in the flagship bridge and recurring management board
 - Generalized runtime winners now steer branch assignment defaults more directly when only nearby history exists
 - Default persistent-lane actions are now available inside Mission Control for durable mission-family role gaps
+- Trust-recovery now shows explicit progress back toward autonomy across bridge, Reports, and Mission Control
+- Runtime-selected provider and model defaults now persist onto the mission root, not just delegated branches
 
 ## Epic Experience Layer
 

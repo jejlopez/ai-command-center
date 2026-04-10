@@ -184,6 +184,13 @@ export function CommanderHero({
                     {recoveryItems[0].recommendedPaused ? 'paused' : recoveryItems[0].posture}
                   </span>
                 </div>
+                <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/[0.06]">
+                  <div
+                    className="h-full rounded-full bg-gradient-to-r from-aurora-amber via-aurora-violet to-aurora-teal"
+                    style={{ width: `${Math.max(8, Math.min(100, recoveryItems[0].recoveryProgress || 0))}%` }}
+                  />
+                </div>
+                <div className="mt-2 text-[10px] text-text-muted">{recoveryItems[0].recoveryProgressLabel}</div>
               </div>
             )}
           </div>

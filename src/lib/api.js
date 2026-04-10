@@ -1493,8 +1493,8 @@ export async function createMission(payload, agents = []) {
     agent_role: 'commander',
     execution_strategy: hasDelegatedSteps ? 'graph_root' : 'sequential',
     branch_label: 'Root Mission',
-    provider_override: null,
-    model_override: null,
+    provider_override: routingDecision.selectedProvider || null,
+    model_override: routingDecision.selectedModel || null,
     requires_approval: !hasDelegatedSteps && executionPosture.shouldWatchAndApprove,
   };
 

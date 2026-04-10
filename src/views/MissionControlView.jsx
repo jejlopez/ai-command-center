@@ -625,6 +625,13 @@ function MissionGraphPanel({ tasks, agents, logs, outcomes, interventions, lifec
               <div className="mt-1 text-sm font-semibold text-text-primary">{recurringTrustSummary.actionLabel}</div>
               <p className="mt-2 text-[12px] leading-relaxed text-text-body">{recurringTrustSummary.detail}</p>
               <p className="mt-2 text-[11px] leading-relaxed text-aurora-amber">{recurringTrustSummary.recoveryLabel}</p>
+              <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/[0.08]">
+                <div
+                  className="h-full rounded-full bg-gradient-to-r from-aurora-amber via-aurora-violet to-aurora-teal"
+                  style={{ width: `${Math.max(8, recurringTrustSummary.recoveryProgress || 0)}%` }}
+                />
+              </div>
+              <div className="mt-2 text-[10px] text-text-muted">{recurringTrustSummary.recoveryProgressLabel}</div>
               <div className="mt-3 flex flex-wrap gap-2">
                 <span className="rounded-full border border-aurora-violet/20 bg-aurora-violet/10 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-aurora-violet">
                   {recurringTrustSummary.posture}
