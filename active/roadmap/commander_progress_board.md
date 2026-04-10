@@ -6,7 +6,7 @@ This is the live build tracker for the Jarvis / Stark / Musk Commander program.
 
 - Jarvis vision size: `100` scoped features
 - Shipped foundation: `15`
-- Active buildout: `21`
+- Active buildout: `23`
 - Immediate next targets: `0`
 - Deferred / later items: `64`
 
@@ -51,50 +51,52 @@ This is the live build tracker for the Jarvis / Stark / Musk Commander program.
 - Mission modes: do now / plan first / watch and approve
 - Persistent specialist lane preference
 - Executive “what should I do next?” briefing
+- Context-pack routing metadata
+- Skill-aware routing and specialist creation
+- Observed best-lane recommendations
+- Stronger persistent fleet management
 
 ## Next Program Targets
 
-### 1. Context Packs
+### 1. Model Benchmark Board
 
 Goal:
-- give each branch only the context it actually needs
+- rank model lanes from observed outcomes, not just static registry data
 
 Definition of done:
-- reusable context bundles exist for code, CRM, ops, docs, and founder memory
-- branches stop seeing broad default context
-- token spend drops while task quality holds or improves
+- show winners by quality, speed, and cost based on actual missions
+- make doctrine upgrades easier to justify
 
 Likely surfaces:
-- [`/Users/Jjarvis/ai-command-center/src/utils/routingPolicy.js`](/Users/Jjarvis/ai-command-center/src/utils/routingPolicy.js)
-- [`/Users/Jjarvis/ai-command-center/src/lib/api.js`](/Users/Jjarvis/ai-command-center/src/lib/api.js)
 - [`/Users/Jjarvis/ai-command-center/src/views/IntelligenceView.jsx`](/Users/Jjarvis/ai-command-center/src/views/IntelligenceView.jsx)
+- [`/Users/Jjarvis/ai-command-center/src/views/ReportsView.jsx`](/Users/Jjarvis/ai-command-center/src/views/ReportsView.jsx)
 
-### 2. Skill Loading On Demand
-
-Goal:
-- inject the right playbook into the right specialist lane at runtime
-
-Definition of done:
-- specialists receive domain-specific instructions without bloating every run
-- Intelligence can explain which skills were loaded and why
-
-### 3. Best-Lane Recommendations
+### 2. Outcome Quality Scoring
 
 Goal:
-- make routing advice evidence-based instead of heuristic-only
+- evaluate whether mission outcomes are actually good, not just completed
 
 Definition of done:
-- show which lane is actually winning for each task type
-- feed observed outcomes back into doctrine
+- each mission can be scored for quality and trust
+- doctrine can learn from quality, not only speed/cost/completion
 
-### 4. Stronger Persistent Specialist Fleet Management
+### 3. Automation ROI Board
 
 Goal:
-- move from persistent-lane preference into a true reusable specialist fleet
+- show where Commander is creating real leverage
 
 Definition of done:
-- Commander can maintain a more stable long-lived planner / researcher / builder / verifier rack
-- Intelligence can promote, demote, and inspect persistent lanes directly
+- connect task completion, time saved, and cost to visible operating value
+- make the founder-OS story measurable
+
+### 4. Stronger Persistent Fleet Controls And Promotion History
+
+Goal:
+- deepen the persistent specialist rack into a true managed fleet
+
+Definition of done:
+- track promotions, demotions, and lane history
+- let Commander and the operator manage persistent coverage more explicitly
 
 ## Later
 
@@ -126,7 +128,7 @@ When autodrive is enabled:
 
 Build next:
 
-1. context packs
-2. skill loading on demand
-3. observed best-lane recommendations
-4. stronger persistent specialist fleet management
+1. model benchmark board
+2. outcome quality scoring
+3. automation ROI board
+4. stronger persistent fleet controls and promotion history

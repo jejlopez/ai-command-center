@@ -1028,6 +1028,77 @@ export async function createTempAgent({ objective, role, model, commanderId }) {
   return mapAgentFromDb(data);
 }
 
+export async function createPersistentSpecialist({ name, objective, role, model, commanderId, skills = [] }) {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('Not authenticated');
+
+  const trimmedName = String(name || '').trim() || `${role || 'specialist'}-lane`;
+  const row = {
+    id: crypto.randomUUID(),
+    user_id: user.id,
+    name: trimmedName,
+    model,
+    status: 'idle',
+    role: role || 'researcher',
+    parent_id: commanderId,
+    can_spawn: false,
+    spawn_pattern: 'persistent',
+    is_ephemeral: false,
+    system_prompt: `You are a persistent ${role || 'specialist'} lane. Objective: ${objective || trimmedName}`,
+    role_description: objective?.trim() || `Persistent ${role || 'specialist'} lane for Commander.`,
+    color: '#60a5fa',
+    skills,
+  };
+
+  const { data, error } = await supabase.from('agents').insert([row]).select().single();
+  if (error) throw error;
+  await supabase.from('activity_log').insert([{
+    user_id: user.id,
+    agent_id: data.id,
+    type: 'SYS',
+    message: `[specialist-persistent] ${data.name} (${row.role}) promoted as a persistent lane on ${model}.`,
+  }]);
+  return mapAgentFromDb(data);
+}
+
+export async function promoteAgentToPersistent(agentId, patch = {}) {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('Not authenticated');
+
+  const { data: current, error: fetchError } = await supabase
+    .from('agents')
+    .select('*')
+    .eq('user_id', user.id)
+    .eq('id', agentId)
+    .single();
+
+  if (fetchError) throw fetchError;
+
+  const { data, error } = await supabase
+    .from('agents')
+    .update({
+      is_ephemeral: false,
+      spawn_pattern: 'persistent',
+      status: patch.status || current.status || 'idle',
+      role_description: patch.roleDescription || current.role_description || `Persistent ${current.role || 'specialist'} lane for Commander.`,
+      skills: Array.isArray(patch.skills) ? patch.skills : current.skills,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('user_id', user.id)
+    .eq('id', agentId)
+    .select()
+    .single();
+
+  if (error) throw error;
+  await supabase.from('activity_log').insert([{
+    user_id: user.id,
+    agent_id: data.id,
+    type: 'SYS',
+    message: `[specialist-persistent] ${data.name} (${data.role}) promoted from ephemeral to persistent coverage.`,
+  }]);
+  return mapAgentFromDb(data);
+}
+
 /**
  * Delete all ephemeral agents whose tasks are in a terminal state.
  */

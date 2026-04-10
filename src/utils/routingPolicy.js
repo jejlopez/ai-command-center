@@ -61,6 +61,39 @@ export function inferRequiredCapabilities(payload = {}) {
   return Array.from(capabilities);
 }
 
+export function inferContextPackIds(payload = {}) {
+  const packs = new Set();
+  const targetType = String(payload.targetType || '').toLowerCase();
+  const outputType = String(payload.outputType || '').toLowerCase();
+  const text = `${payload.intent || ''} ${targetType} ${outputType}`.toLowerCase();
+
+  packs.add('commander-core');
+
+  if (hasAnyNeedle(text, ['repo', 'code', 'build', 'bug', 'pr', 'test'])) packs.add('repo-workspace');
+  if (hasAnyNeedle(text, ['research', 'analyze', 'investigate', 'market', 'competitor'])) packs.add('research-dossier');
+  if (hasAnyNeedle(text, ['crm', 'deal', 'lead', 'pipeline', 'customer', 'pipedrive'])) packs.add('crm-accounts');
+  if (hasAnyNeedle(text, ['email', 'outreach', 'reply', 'message', 'draft'])) packs.add('comms-drafts');
+  if (hasAnyNeedle(text, ['ops', 'shipment', 'tracking', 'delay', 'schedule'])) packs.add('ops-telemetry');
+  if (hasAnyNeedle(text, ['report', 'brief', 'summary', 'doc', 'notes'])) packs.add('briefing-memory');
+  if (hasAnyNeedle(text, ['finance', 'invoice', 'budget', 'revenue', 'cash'])) packs.add('finance-ledger');
+
+  return Array.from(packs);
+}
+
+export function inferRecommendedSkillNames(payload = {}) {
+  const skills = new Set();
+  const text = `${payload.intent || ''} ${payload.targetType || ''} ${payload.outputType || ''}`.toLowerCase();
+
+  if (hasAnyNeedle(text, ['research', 'analyze', 'investigate', 'market'])) skills.add('research');
+  if (hasAnyNeedle(text, ['report', 'brief', 'summary', 'notes'])) skills.add('synthesis');
+  if (hasAnyNeedle(text, ['code', 'repo', 'build', 'bug', 'pr', 'test'])) skills.add('engineering');
+  if (hasAnyNeedle(text, ['crm', 'pipeline', 'deal', 'lead', 'customer'])) skills.add('crm');
+  if (hasAnyNeedle(text, ['email', 'outreach', 'reply', 'message'])) skills.add('outreach');
+  if (hasAnyNeedle(text, ['ops', 'shipment', 'tracking', 'schedule'])) skills.add('operations');
+
+  return Array.from(skills);
+}
+
 export function deriveRoutingDecision(payload = {}, agent = null, policy = null) {
   const commanderLane = getCommanderLane();
   const domain = inferMissionDomain(payload);
@@ -69,6 +102,8 @@ export function deriveRoutingDecision(payload = {}, agent = null, policy = null)
   const riskLevel = inferRiskLevel(payload);
   const approvalLevel = inferApprovalLevel(payload);
   const requiredCapabilities = inferRequiredCapabilities(payload);
+  const contextPackIds = inferContextPackIds(payload);
+  const recommendedSkillNames = inferRecommendedSkillNames(payload);
 
   const provider = normalizeModelProvider(
     policy?.preferredProvider || agent?.provider || commanderLane.provider
@@ -91,10 +126,12 @@ export function deriveRoutingDecision(payload = {}, agent = null, policy = null)
     riskLevel,
     approvalLevel,
     requiredCapabilities,
+    contextPackIds,
+    recommendedSkillNames,
     selectedProvider: provider,
     selectedModel: model,
     selectedAgentRole: agentRole,
-    routingReason: reasons.join(' | '),
+    routingReason: `${reasons.join(' | ')} | ${contextPackIds.join(', ')} context`,
   };
 }
 

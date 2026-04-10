@@ -36,8 +36,8 @@ Legend:
 | 21 | Connected systems dock | 0 | Now | In Progress |
 | 22 | Read-only vs write permissions per connector | 0 | Now | In Progress |
 | 23 | Domain packs: Build / Sell / Operate / Money / Personal | 5 | Later | Queued |
-| 24 | Skill loading on demand | 3 | Now | Queued |
-| 25 | Context-pack system | 3 | Now | Queued |
+| 24 | Skill loading on demand | 3 | Now | In Progress |
+| 25 | Context-pack system | 3 | Now | In Progress |
 | 26 | Long-context document bundle support | 3 | Later | Later |
 | 27 | Evidence-first reasoning with source grounding | 3 | Later | Later |
 | 28 | Shared directive layer | 0 | Now | Shipped |
@@ -129,17 +129,17 @@ Legend:
 ## Current Read
 
 - `Shipped`: 15
-- `In Progress`: 21
+- `In Progress`: 23
 - `Next`: 0
 - `Queued`: 16
 - `Later / Future`: 48
 
 ## Immediate Next Four
 
-1. Context packs
-2. Skill loading on demand
-3. Best-lane recommendations from observed mission outcomes
-4. Stronger persistent specialist fleet management
+1. Model benchmark board from observed runs
+2. Outcome quality scoring
+3. Automation ROI board
+4. Stronger persistent fleet controls and promotion history
 
 ## Future Summary
 

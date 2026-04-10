@@ -429,6 +429,7 @@ async function ensureBranchSpecialistAgent({
   commander,
   selectedAgent,
   objective,
+  recommendedSkillNames = [],
 }) {
   const chosenModel = modelOverride || selectedAgent?.model || commander?.model || getCommanderLane().model;
   const chosenProvider = providerOverride || normalizeModelProvider(selectedAgent?.provider || getCommanderLane().provider);
@@ -451,6 +452,7 @@ async function ensureBranchSpecialistAgent({
     response_length: selectedAgent?.responseLength || commander?.responseLength || 'medium',
     temperature: selectedAgent?.temperature ?? commander?.temperature ?? 0.4,
     color: '#6b7280',
+    skills: recommendedSkillNames,
   };
 
   const { data, error } = await supabase.from('agents').insert([row]).select('*').single();
@@ -496,7 +498,12 @@ async function buildMissionSubtasks({
       ? branch.dependsOn.map((dependencyTitle) => branchIdByTitle.get(dependencyTitle)).filter(Boolean)
       : [];
     const assignment = await resolveBranchAssignment({
-      branch,
+      branch: {
+        ...branch,
+        recommendedSkillNames: Array.isArray(branch.recommendedSkillNames) && branch.recommendedSkillNames.length
+          ? branch.recommendedSkillNames
+          : routingDecision.recommendedSkillNames,
+      },
       user,
       agents: payload.agents || [],
       routingPolicy: payload.routingPolicy || null,
@@ -538,12 +545,12 @@ async function buildMissionSubtasks({
       root_mission_id: missionId,
       parent_id: missionId,
       routing_policy_id: routingPolicyId || null,
-      routing_reason: `${routingDecision.routingReason} | ${assignment.agentRole || branch.agentRole || 'executor'} branch ${index + 1}/${branches.length}`,
+      routing_reason: `${routingDecision.routingReason} | skills ${(assignment.recommendedSkillNames || routingDecision.recommendedSkillNames || []).join(', ') || 'none'} | ${assignment.agentRole || branch.agentRole || 'executor'} branch ${index + 1}/${branches.length}`,
       domain: routingDecision.domain,
       intent_type: routingDecision.intentType,
       budget_class: routingDecision.budgetClass,
       risk_level: routingDecision.riskLevel,
-      context_pack_ids: [],
+      context_pack_ids: routingDecision.contextPackIds,
       required_capabilities: routingDecision.requiredCapabilities,
       approval_level: routingDecision.approvalLevel,
       depends_on: dependencies,
@@ -573,13 +580,20 @@ async function resolveBranchAssignment({
   const roleFallback = fallbackOrder.find((entry) => entry.role === branchRole) || null;
   const modelOverride = branch.modelOverride || roleFallback?.model || routingPolicy?.preferredModel || null;
   const providerOverride = branch.providerOverride || roleFallback?.provider || routingPolicy?.preferredProvider || null;
+  const recommendedSkillNames = Array.isArray(branch.recommendedSkillNames)
+    ? branch.recommendedSkillNames
+    : [];
 
   const exactRoleMatches = liveAgents
     .filter((agent) => agent.role === branchRole)
     .sort((left, right) => {
       const leftPersistent = Number(!left.isEphemeral);
       const rightPersistent = Number(!right.isEphemeral);
-      return rightPersistent - leftPersistent;
+      const persistenceDelta = rightPersistent - leftPersistent;
+      if (persistenceDelta !== 0) return persistenceDelta;
+      const leftSkillScore = (left.skills || []).filter((skill) => recommendedSkillNames.includes(skill)).length;
+      const rightSkillScore = (right.skills || []).filter((skill) => recommendedSkillNames.includes(skill)).length;
+      return rightSkillScore - leftSkillScore;
     });
   const roleCandidates = exactRoleMatches.length
     ? exactRoleMatches
@@ -602,6 +616,7 @@ async function resolveBranchAssignment({
       commander,
       selectedAgent,
       objective: branch.title || branch.description || `${branchRole} branch`,
+      recommendedSkillNames,
     }).catch((error) => {
       console.error('[api] ensureBranchSpecialistAgent:', error.message);
       return null;
@@ -616,6 +631,7 @@ async function resolveBranchAssignment({
     agentName: assignedAgent?.name || selectedAgent?.name || commander?.name || 'Unknown',
     providerOverride,
     modelOverride,
+    recommendedSkillNames,
   };
 }
 
@@ -884,12 +900,12 @@ export async function createMission(payload, agents = []) {
     workflow_status: workflowStatus,
     root_mission_id: missionId,
     routing_policy_id: routingPolicy?.id || null,
-    routing_reason: `${routingDecision.routingReason} | mission mode ${executionPosture.missionMode.replaceAll('_', ' ')}`,
+    routing_reason: `${routingDecision.routingReason} | skills ${(routingDecision.recommendedSkillNames || []).join(', ') || 'none'} | mission mode ${executionPosture.missionMode.replaceAll('_', ' ')}`,
     domain: routingDecision.domain,
     intent_type: routingDecision.intentType,
     budget_class: routingDecision.budgetClass,
     risk_level: routingDecision.riskLevel,
-    context_pack_ids: [],
+    context_pack_ids: routingDecision.contextPackIds,
     required_capabilities: routingDecision.requiredCapabilities,
     approval_level: routingDecision.approvalLevel,
     depends_on: [],

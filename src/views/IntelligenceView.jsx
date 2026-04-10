@@ -29,8 +29,7 @@ import {
   YAxis,
 } from 'recharts';
 import { container, item } from '../utils/variants';
-import { cleanupTempAgents, createTempAgent, useActivityLog, useAgents, useKnowledgeNamespaces, useModelBank, useRoutingPolicies, useSharedDirectives, useSystemRecommendations, useTasks } from '../utils/useSupabase';
-import { CommandDeckHero } from '../components/command/CommandDeckHero';
+import { cleanupTempAgents, createPersistentSpecialist, createTempAgent, promoteAgentToPersistent, useActivityLog, useAgents, useKnowledgeNamespaces, useModelBank, useRoutingPolicies, useSharedDirectives, useSkillBank, useSystemRecommendations, useTasks } from '../utils/useSupabase';
 import { AnimatedNumber } from '../components/command/AnimatedNumber';
 import { CommandSectionHeader } from '../components/command/CommandSectionHeader';
 import { useCommanderPreferences } from '../utils/useCommanderPreferences';
@@ -453,6 +452,94 @@ function SystemsOperatorTable({ models }) {
   );
 }
 
+function CollapsedPanel({ eyebrow, title, summary, children }) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div className="rounded-[24px] border border-white/8 bg-[#111827]/90 p-4">
+      <div className="flex items-center justify-between gap-4">
+        <div>
+          <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">{eyebrow}</div>
+          <div className="mt-1 text-base font-semibold text-text-primary">{title}</div>
+          <div className="mt-1 text-[11px] leading-5 text-text-muted">{summary}</div>
+        </div>
+        <button
+          type="button"
+          onClick={() => setOpen((value) => !value)}
+          className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-[11px] font-semibold text-text-primary transition-colors hover:bg-white/[0.06]"
+        >
+          {open ? 'Hide' : 'Open'}
+        </button>
+      </div>
+      {open ? <div className="mt-4">{children}</div> : null}
+    </div>
+  );
+}
+
+function IntelligenceHeaderChip({ label, value, tone = 'teal' }) {
+  const tones = {
+    teal: 'border-aurora-teal/20 bg-aurora-teal/10 text-aurora-teal',
+    amber: 'border-aurora-amber/20 bg-aurora-amber/10 text-aurora-amber',
+    blue: 'border-aurora-blue/20 bg-aurora-blue/10 text-aurora-blue',
+  };
+
+  return (
+    <div className={`rounded-full border px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] ${tones[tone]}`}>
+      {value} {label}
+    </div>
+  );
+}
+
+function IntelligenceHeader({ activeTab, setActiveTab, systemSummary, availableModels, truth }) {
+  return (
+    <div className="rounded-[24px] border border-white/8 bg-[#111827]/92 p-5">
+      <div className="grid gap-5 xl:grid-cols-[1.2fr_0.8fr] xl:items-start">
+        <div>
+          <div className="text-[10px] uppercase tracking-[0.22em] text-text-muted">Strategic Systems</div>
+          <h1 className="mt-2 text-[clamp(1.8rem,2.5vw,2.55rem)] font-semibold tracking-[-0.04em] text-text-primary">Strategic Systems</h1>
+          <p className="mt-2 max-w-xl text-[13px] leading-5 text-text-muted">A clean board for models, routing, and system efficiency.</p>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <IntelligenceHeaderChip label="models online" value={availableModels.length} tone="teal" />
+            <IntelligenceHeaderChip label="active agents" value={systemSummary.activeAgents} tone="blue" />
+            <IntelligenceHeaderChip label="routed missions" value={systemSummary.routedMissions} tone="amber" />
+          </div>
+        </div>
+        <div className="rounded-[20px] border border-white/8 bg-[#0d1420] p-4">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] uppercase tracking-[0.18em] text-text-muted">System Controls</span>
+            <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-aurora-teal">Live</span>
+          </div>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {tabs.map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`rounded-xl border px-3 py-2 text-[11px] font-semibold transition-colors ${
+                  activeTab === tab.id
+                    ? 'border-aurora-teal/25 bg-aurora-teal/10 text-aurora-teal'
+                    : 'border-white/8 bg-white/[0.03] text-text-muted hover:text-text-primary'
+                }`}
+              >
+                {tab.label.replace('Model Command Matrix', 'Models').replace('Routing Doctrine', 'Routing').replace('Knowledge Terrain', 'Knowledge').replace('Directive Pressure', 'Directives')}
+              </button>
+            ))}
+          </div>
+          <div className="mt-4 grid grid-cols-2 gap-3">
+            <div className="rounded-[18px] border border-white/8 bg-[#111827] p-3">
+              <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Recommendations</div>
+              <div className="mt-2 text-2xl font-semibold text-text-primary"><AnimatedNumber value={systemSummary.recommendationCount} /></div>
+            </div>
+            <div className="rounded-[18px] border border-white/8 bg-[#111827] p-3">
+              <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Connected systems</div>
+              <div className="mt-2 text-2xl font-semibold text-text-primary"><AnimatedNumber value={truth.connectedSystemsCount} /></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ModelRegistryTab({ availableModels, agents, tasks }) {
   const [detailView, setDetailView] = useState('constellation');
   const radarSelection = availableModels.slice(0, 4);
@@ -704,7 +791,7 @@ function ModelRegistryTab({ availableModels, agents, tasks }) {
   );
 }
 
-function RoutingDoctrineTab({ routingPolicies, tasks, agents, logs, upsertPolicy, ensureDefaultPolicy }) {
+function RoutingDoctrineTab({ routingPolicies, tasks, agents, logs, skills, upsertPolicy, ensureDefaultPolicy }) {
   const [selectedPolicyId, setSelectedPolicyId] = useState('');
   const [draft, setDraft] = useState(null);
   const [saving, setSaving] = useState(false);
@@ -753,6 +840,65 @@ function RoutingDoctrineTab({ routingPolicies, tasks, agents, logs, upsertPolicy
       .sort((a, b) => b.count - a.count)
       .slice(0, 6);
   }, [tasks]);
+
+  const contextDemand = useMemo(() => {
+    const counts = new Map();
+    tasks.forEach((task) => {
+      (task.contextPackIds || []).forEach((packId) => {
+        counts.set(packId, (counts.get(packId) || 0) + 1);
+      });
+    });
+
+    return Array.from(counts.entries())
+      .map(([packId, count]) => ({ packId, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 6);
+  }, [tasks]);
+
+  const observedBestLanes = useMemo(() => {
+    const grouped = new Map();
+    const completedTasks = tasks.filter((task) => ['completed', 'done'].includes(String(task.status || '').toLowerCase()) || task.workflowStatus === 'completed');
+
+    completedTasks.forEach((task) => {
+      const agent = agents.find((candidate) => candidate.id === task.agentId);
+      const key = `${task.domain || 'general'}::${task.intentType || 'general'}`;
+      const current = grouped.get(key) || [];
+      current.push({
+        task,
+        agent,
+        lane: `${agent?.name || task.agentRole || 'unassigned'} · ${agent?.model || task.modelOverride || 'adaptive'}`,
+        cost: Number(task.costUsd || 0),
+      });
+      grouped.set(key, current);
+    });
+
+    return Array.from(grouped.entries())
+      .map(([key, entries]) => {
+        const laneGroups = new Map();
+        entries.forEach((entry) => {
+          const laneKey = entry.lane;
+          const current = laneGroups.get(laneKey) || { lane: laneKey, count: 0, totalCost: 0, agentRole: entry.task.agentRole || entry.agent?.role || 'executor' };
+          current.count += 1;
+          current.totalCost += entry.cost;
+          laneGroups.set(laneKey, current);
+        });
+        const ranked = Array.from(laneGroups.values()).sort((left, right) => {
+          if (right.count !== left.count) return right.count - left.count;
+          return left.totalCost - right.totalCost;
+        });
+        const [domain, intentType] = key.split('::');
+        return {
+          domain,
+          intentType,
+          winner: ranked[0] || null,
+          runnersUp: ranked.slice(1, 3),
+          sampleCount: entries.length,
+        };
+      })
+      .filter((entry) => entry.winner)
+      .sort((left, right) => right.sampleCount - left.sampleCount)
+      .slice(0, 6);
+  }, [agents, tasks]);
 
   const routedTasks = tasks.filter((task) => task.routingReason);
   const premiumBranches = routedTasks.filter((task) => task.budgetClass === 'premium').length;
@@ -1305,12 +1451,91 @@ function RoutingDoctrineTab({ routingPolicies, tasks, agents, logs, upsertPolicy
         </div>
       </div>
 
-      <SpecialistFleetTab agents={agents} logs={logs} />
+      <div className="grid gap-5 xl:grid-cols-[1.05fr_0.95fr]">
+        <HudPanel
+          eyebrow="Observed Winners"
+          title="Best lane recommendations from real outcomes"
+          description="This is the first evidence-based layer for 'use the best model for the job' instead of relying only on policy intent."
+          accent="blue"
+        >
+          <div className="space-y-3">
+            {observedBestLanes.length === 0 && (
+              <div className="rounded-[22px] border border-white/8 bg-black/20 p-4 text-[12px] text-text-muted">
+                Not enough completed routed missions yet to name winner lanes with confidence.
+              </div>
+            )}
+            {observedBestLanes.map((entry) => (
+              <div key={`${entry.domain}-${entry.intentType}`} className="rounded-[20px] border border-white/8 bg-black/20 p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">{entry.domain} / {entry.intentType}</div>
+                    <div className="mt-1 text-sm font-semibold text-text-primary">{entry.winner?.lane}</div>
+                    <div className="mt-1 text-[11px] text-text-muted">{entry.sampleCount} successful mission sample{entry.sampleCount === 1 ? '' : 's'}</div>
+                  </div>
+                  <div className="rounded-full border border-aurora-teal/20 bg-aurora-teal/10 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-aurora-teal">
+                    {entry.winner?.agentRole || 'lane winner'}
+                  </div>
+                </div>
+                {entry.runnersUp.length > 0 && (
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {entry.runnersUp.map((runner) => (
+                      <span key={`${entry.domain}-${entry.intentType}-${runner.lane}`} className="rounded-full border border-white/8 bg-white/[0.03] px-2 py-1 text-[10px] font-semibold text-text-muted">
+                        fallback {runner.lane}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </HudPanel>
+
+        <HudPanel
+          eyebrow="Context Discipline"
+          title="Context packs and skill pressure"
+          description="The machine gets cheaper and cleaner when each branch sees only the right context and the right playbook."
+          accent="amber"
+        >
+          <div className="grid gap-4">
+            <div className="rounded-[20px] border border-white/8 bg-black/20 p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Top context packs</div>
+                <div className="text-[10px] font-mono text-aurora-amber">{contextDemand.length} active</div>
+              </div>
+              <div className="mt-3 space-y-2">
+                {contextDemand.length === 0 && <div className="text-[11px] text-text-muted">No context-pack usage yet.</div>}
+                {contextDemand.map((entry) => (
+                  <div key={entry.packId} className="flex items-center justify-between rounded-[16px] border border-white/8 bg-white/[0.02] px-3 py-2.5">
+                    <div className="text-[12px] font-semibold text-text-primary">{entry.packId}</div>
+                    <div className="text-[10px] font-mono text-aurora-amber">{entry.count}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="rounded-[20px] border border-white/8 bg-black/20 p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Skill bank coverage</div>
+                <div className="text-[10px] font-mono text-aurora-blue">{skills.length} skills</div>
+              </div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {skills.length === 0 && <div className="text-[11px] text-text-muted">No reusable skills stored yet.</div>}
+                {skills.slice(0, 8).map((skill) => (
+                  <span key={skill.id || skill.name} className="rounded-full border border-aurora-blue/20 bg-aurora-blue/10 px-2 py-1 text-[10px] font-semibold text-aurora-blue">
+                    {skill.name}
+                  </span>
+                ))}
+              </div>
+            </div>
+          </div>
+        </HudPanel>
+      </div>
+
+      <SpecialistFleetTab agents={agents} logs={logs} skills={skills} />
     </div>
   );
 }
 
-function SpecialistFleetTab({ agents, logs }) {
+function SpecialistFleetTab({ agents, logs, skills }) {
   const commander = agents.find((agent) => agent.role === 'commander' && !agent.isSyntheticCommander) || agents.find((agent) => agent.role === 'commander') || null;
   const modelOptions = [...new Set(agents.map((agent) => agent.model).filter(Boolean))];
   const persistentSpecialists = agents.filter((agent) => !agent.isEphemeral && !['commander', 'executor'].includes(agent.role || ''));
@@ -1318,13 +1543,16 @@ function SpecialistFleetTab({ agents, logs }) {
   const lifecycleEvents = logs
     .filter((entry) => {
       const message = String(entry.message || '');
-      return message.includes('[specialist-spawned]') || message.includes('[specialist-retired]');
+      return message.includes('[specialist-spawned]') || message.includes('[specialist-retired]') || message.includes('[specialist-persistent]');
     })
     .slice(-6)
     .reverse();
   const [objective, setObjective] = useState('');
+  const [persistentName, setPersistentName] = useState('');
+  const [persistentObjective, setPersistentObjective] = useState('');
   const [role, setRole] = useState('researcher');
   const [model, setModel] = useState(modelOptions[0] || '');
+  const [selectedSkills, setSelectedSkills] = useState([]);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
 
@@ -1356,6 +1584,51 @@ function SpecialistFleetTab({ agents, logs }) {
     }
   }
 
+  async function handleCreatePersistent() {
+    if (!model) return;
+    setBusy(true);
+    setMessage('');
+    try {
+      const agent = await createPersistentSpecialist({
+        name: persistentName.trim(),
+        objective: persistentObjective.trim() || objective.trim(),
+        role,
+        model,
+        commanderId: commander?.id || null,
+        skills: selectedSkills,
+      });
+      setPersistentName('');
+      setPersistentObjective('');
+      setSelectedSkills([]);
+      setMessage(`Persistent lane ${agent.name} is now live for Commander.`);
+    } catch (error) {
+      setMessage(error.message || 'Could not create persistent specialist.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handlePromote(agentId) {
+    setBusy(true);
+    setMessage('');
+    try {
+      const promoted = await promoteAgentToPersistent(agentId, { skills: selectedSkills.length ? selectedSkills : undefined });
+      setMessage(`${promoted.name} is now a persistent specialist lane.`);
+    } catch (error) {
+      setMessage(error.message || 'Could not promote specialist.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function toggleSkill(name) {
+    setSelectedSkills((current) => (
+      current.includes(name)
+        ? current.filter((entry) => entry !== name)
+        : [...current, name]
+    ));
+  }
+
   return (
     <HudPanel
       eyebrow="Specialist Fleet"
@@ -1378,12 +1651,24 @@ function SpecialistFleetTab({ agents, logs }) {
 
       <div className="mt-4 grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
         <div className="rounded-[22px] border border-white/8 bg-black/20 p-4">
-          <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Spawn specialist</div>
+          <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Create lane</div>
           <div className="mt-3 space-y-3">
             <input
               value={objective}
               onChange={(event) => setObjective(event.target.value)}
-              placeholder="Objective for the new specialist lane"
+              placeholder="Objective for the next specialist lane"
+              className="w-full rounded-xl border border-white/8 bg-black/20 px-3 py-2 text-[12px] text-text-primary outline-none placeholder:text-text-disabled"
+            />
+            <input
+              value={persistentName}
+              onChange={(event) => setPersistentName(event.target.value)}
+              placeholder="Optional persistent lane name"
+              className="w-full rounded-xl border border-white/8 bg-black/20 px-3 py-2 text-[12px] text-text-primary outline-none placeholder:text-text-disabled"
+            />
+            <input
+              value={persistentObjective}
+              onChange={(event) => setPersistentObjective(event.target.value)}
+              placeholder="Persistent lane mission focus"
               className="w-full rounded-xl border border-white/8 bg-black/20 px-3 py-2 text-[12px] text-text-primary outline-none placeholder:text-text-disabled"
             />
             <div className="grid gap-3 md:grid-cols-2">
@@ -1398,9 +1683,33 @@ function SpecialistFleetTab({ agents, logs }) {
                 ))}
               </select>
             </div>
+            <div>
+              <div className="text-[10px] uppercase tracking-[0.14em] text-text-muted">Attach skills</div>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {skills.length === 0 && <div className="text-[11px] text-text-muted">No skill bank entries yet.</div>}
+                {skills.slice(0, 8).map((skill) => (
+                  <button
+                    key={skill.id || skill.name}
+                    type="button"
+                    onClick={() => toggleSkill(skill.name)}
+                    className={cn(
+                      'rounded-full border px-2 py-1 text-[10px] font-semibold transition-colors',
+                      selectedSkills.includes(skill.name)
+                        ? 'border-aurora-blue/20 bg-aurora-blue/10 text-aurora-blue'
+                        : 'border-white/8 bg-black/20 text-text-muted hover:border-white/12'
+                    )}
+                  >
+                    {skill.name}
+                  </button>
+                ))}
+              </div>
+            </div>
             <div className="flex gap-2">
               <button type="button" disabled={busy || !objective.trim() || !model} onClick={handleSpawn} className="rounded-xl border border-aurora-violet/20 bg-aurora-violet/10 px-3 py-2 text-[11px] font-semibold text-aurora-violet transition-colors hover:bg-aurora-violet/14 disabled:opacity-50">
                 {busy ? 'Working...' : 'Spawn specialist'}
+              </button>
+              <button type="button" disabled={busy || !model} onClick={handleCreatePersistent} className="rounded-xl border border-aurora-blue/20 bg-aurora-blue/10 px-3 py-2 text-[11px] font-semibold text-aurora-blue transition-colors hover:bg-aurora-blue/14 disabled:opacity-50">
+                Create persistent lane
               </button>
               <button type="button" disabled={busy} onClick={handleCleanup} className="rounded-xl border border-aurora-teal/20 bg-aurora-teal/10 px-3 py-2 text-[11px] font-semibold text-aurora-teal transition-colors hover:bg-aurora-teal/14 disabled:opacity-50">
                 Cleanup idle spawned
@@ -1428,6 +1737,40 @@ function SpecialistFleetTab({ agents, logs }) {
                     </div>
                     <div className="text-[10px] font-mono text-text-disabled">{agent.model || 'Adaptive lane'}</div>
                   </div>
+                  {(agent.skills || []).length > 0 && (
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {agent.skills.slice(0, 4).map((skillName) => (
+                        <span key={`${agent.id}-${skillName}`} className="rounded-full border border-aurora-blue/20 bg-aurora-blue/10 px-2 py-0.5 text-[9px] font-semibold text-aurora-blue">
+                          {skillName}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="rounded-[22px] border border-white/8 bg-black/20 p-4">
+            <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Spawned lanes</div>
+            <div className="mt-3 space-y-2">
+              {spawnedSpecialists.length === 0 && <div className="text-[11px] text-text-muted">No spawned specialists are active right now.</div>}
+              {spawnedSpecialists.map((agent) => (
+                <div key={agent.id} className="rounded-[16px] border border-white/8 bg-white/[0.02] px-3 py-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <div className="text-[12px] font-semibold text-text-primary">{agent.name}</div>
+                      <div className="mt-1 text-[10px] font-mono uppercase text-aurora-violet">{agent.role || 'specialist'}</div>
+                    </div>
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => handlePromote(agent.id)}
+                      className="rounded-xl border border-aurora-blue/20 bg-aurora-blue/10 px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-aurora-blue transition-colors hover:bg-aurora-blue/14 disabled:opacity-50"
+                    >
+                      Promote
+                    </button>
+                  </div>
+                  <div className="mt-2 text-[10px] font-mono text-text-disabled">{agent.model || 'Adaptive lane'}</div>
                 </div>
               ))}
             </div>
@@ -1443,7 +1786,10 @@ function SpecialistFleetTab({ agents, logs }) {
                     <div className="text-[10px] font-mono text-text-disabled">{entry.timestamp ? new Date(entry.timestamp).toLocaleTimeString() : 'Live'}</div>
                   </div>
                   <div className="mt-2 text-[11px] leading-relaxed text-text-body">
-                    {String(entry.message || '').replace('[specialist-spawned] ', '').replace('[specialist-retired] ', '')}
+                    {String(entry.message || '')
+                      .replace('[specialist-spawned] ', '')
+                      .replace('[specialist-retired] ', '')
+                      .replace('[specialist-persistent] ', '')}
                   </div>
                 </div>
               ))}
@@ -1717,6 +2063,7 @@ export function IntelligenceView() {
   const [activeTab, setActiveTab] = useState('models');
   const { agents } = useAgents();
   const { models } = useModelBank();
+  const { skills } = useSkillBank();
   const { tasks } = useTasks();
   const { policies: routingPolicies, upsertPolicy, ensureDefaultPolicy } = useRoutingPolicies();
   const { logs } = useActivityLog();
@@ -1826,48 +2173,14 @@ export function IntelligenceView() {
 
   return (
     <div className="relative flex h-full flex-col overflow-y-auto pb-10">
-      <div className="pointer-events-none absolute inset-0 overflow-hidden">
-        <div className="absolute -top-16 left-[-8%] h-[360px] w-[360px] rounded-full bg-aurora-teal/10 blur-[120px]" />
-        <div className="absolute top-[10%] right-[-12%] h-[420px] w-[420px] rounded-full bg-aurora-violet/10 blur-[140px]" />
-        <div className="absolute bottom-[-22%] left-[18%] h-[420px] w-[420px] rounded-full bg-aurora-blue/10 blur-[160px]" />
-      </div>
-
       <Motion.div variants={container} initial="hidden" animate="show" className="relative space-y-5">
         <Motion.div variants={item}>
-          <CommandDeckHero
-            glow="teal"
-            eyebrow="Strategic Systems"
-            eyebrowIcon={BrainCircuit}
-            title="Strategic Systems"
-            description="Model power, doctrine drift, and execution efficiency in one clean command surface."
-            chrome="epic"
-            titleClassName="text-[clamp(1.8rem,3vw,2.7rem)] leading-[1.04] tracking-[-0.04em]"
-            descriptionClassName="max-w-xl text-[13px] leading-5 text-text-body"
-            badges={[
-              { label: 'models online', value: availableModels.length, tone: 'teal' },
-              { label: 'active agents', value: systemSummary.activeAgents, tone: 'blue' },
-              { label: 'routed missions', value: systemSummary.routedMissions, tone: 'amber' },
-            ]}
-            sideContent={
-              <div className="grid w-full grid-cols-2 gap-2.5 rounded-[22px] border border-white/10 bg-black/25 p-3.5 backdrop-blur-sm">
-                <div className="rounded-2xl border border-white/8 bg-white/[0.02] p-2.5">
-                  <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Recommendations</div>
-                  <div className="mt-2 text-2xl font-semibold text-text-primary"><AnimatedNumber value={systemSummary.recommendationCount} /></div>
-                </div>
-                <div className="rounded-2xl border border-white/8 bg-white/[0.02] p-2.5">
-                  <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Error agents</div>
-                  <div className="mt-2 text-2xl font-semibold text-text-primary"><AnimatedNumber value={systemSummary.errorAgents} /></div>
-                </div>
-                <div className="rounded-2xl border border-white/8 bg-white/[0.02] p-2.5">
-                  <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Routing policies</div>
-                  <div className="mt-2 text-2xl font-semibold text-text-primary"><AnimatedNumber value={routingPolicies.length} /></div>
-                </div>
-                <div className="rounded-2xl border border-white/8 bg-white/[0.02] p-2.5">
-                  <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Live telemetry</div>
-                  <div className="mt-2 text-2xl font-semibold text-text-primary"><AnimatedNumber value={systemSummary.liveTraffic} /></div>
-                </div>
-              </div>
-            }
+          <IntelligenceHeader
+            activeTab={activeTab}
+            setActiveTab={setActiveTab}
+            systemSummary={systemSummary}
+            availableModels={availableModels}
+            truth={truth}
           />
         </Motion.div>
 
@@ -1895,16 +2208,15 @@ export function IntelligenceView() {
           />
         </Motion.section>
 
-        <Motion.section variants={item} className="grid grid-cols-1 gap-5 xl:grid-cols-[1.42fr_0.58fr]">
+        <Motion.section variants={item} className="grid grid-cols-1 gap-5 xl:grid-cols-[1.65fr_0.35fr]">
           <div className="space-y-5">
-            <StrategicReadFirst items={readFirstItems.slice(0, 2)} />
-            <div className="rounded-[28px] border border-white/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.015))] p-2">
-              <div className="flex flex-wrap gap-2 rounded-[24px] bg-black/20 p-2">
+            <div className="rounded-[20px] border border-white/8 bg-[#111827]/90 p-2">
+              <div className="flex flex-wrap gap-2 rounded-[20px] bg-black/20 p-2">
                 {tabs.map((tab) => (
                   <button
                     key={tab.id}
                     onClick={() => setActiveTab(tab.id)}
-                    className={`flex flex-1 items-center justify-center gap-2 rounded-[18px] px-4 py-3 text-[13px] font-semibold transition-all ${
+                    className={`flex flex-1 items-center justify-center gap-2 rounded-[16px] px-3 py-2.5 text-[12px] font-semibold transition-all ${
                       activeTab === tab.id
                         ? 'border border-white/10 bg-white/[0.05] text-text-primary shadow-sm'
                         : 'text-text-muted hover:text-text-primary'
@@ -1917,25 +2229,58 @@ export function IntelligenceView() {
               </div>
             </div>
 
-            <div className="rounded-[28px] border border-white/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.015))] p-5">
+            <div className="rounded-[24px] border border-white/8 bg-[#111827]/90 p-4">
               {activeTab === 'models' && <ModelRegistryTab availableModels={availableModels} agents={agents} tasks={tasks} />}
-              {activeTab === 'routing' && <RoutingDoctrineTab routingPolicies={routingPolicies} tasks={tasks} agents={agents} logs={logs} upsertPolicy={upsertPolicy} ensureDefaultPolicy={ensureDefaultPolicy} />}
+              {activeTab === 'routing' && <RoutingDoctrineTab routingPolicies={routingPolicies} tasks={tasks} agents={agents} logs={logs} skills={skills} upsertPolicy={upsertPolicy} ensureDefaultPolicy={ensureDefaultPolicy} />}
               {activeTab === 'knowledge' && <KnowledgeMapTab namespaces={knowledgeNamespaces} />}
               {activeTab === 'directives' && <DirectivesTab directives={sharedDirectives} agents={agents} tasks={tasks} recommendations={persistedRecommendations} />}
             </div>
           </div>
 
-          <StrategyRail
-            derivedRecommendations={derivedRecommendations}
-            learningMemory={learningMemory}
-            humanHourlyRate={humanHourlyRate}
-            economics={economics}
-          />
+          <div className="space-y-3">
+            <div className="rounded-[24px] border border-white/8 bg-[#111827]/90 p-4">
+              <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Use first</div>
+              <div className="mt-2 text-[15px] font-semibold text-text-primary">{readFirstItems[0]?.title}</div>
+              <p className="mt-2 text-[11px] leading-5 text-text-muted">{readFirstItems[0]?.detail}</p>
+            </div>
+            <div className="rounded-[24px] border border-white/8 bg-[#111827]/90 p-4">
+              <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Economics snapshot</div>
+              <div className="mt-2 text-[15px] font-semibold text-text-primary">Human vs agent</div>
+              <div className="mt-3 grid gap-2">
+                <div className="rounded-[16px] border border-white/8 bg-[#0d1420] px-3 py-2.5">
+                  <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Human equivalent</div>
+                  <div className="mt-1 text-lg font-semibold text-text-primary"><AnimatedNumber value={economics.humanCost} prefix="$" decimals={2} /></div>
+                </div>
+                <div className="rounded-[16px] border border-white/8 bg-[#0d1420] px-3 py-2.5">
+                  <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Agent spend</div>
+                  <div className="mt-1 text-lg font-semibold text-text-primary"><AnimatedNumber value={economics.agentCost} prefix="$" decimals={2} /></div>
+                </div>
+                <div className="rounded-[16px] border border-white/8 bg-[#0d1420] px-3 py-2.5">
+                  <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Efficiency</div>
+                  <div className="mt-1 text-lg font-semibold text-text-primary"><AnimatedNumber value={economics.multiplier} decimals={1} suffix="x" /></div>
+                </div>
+              </div>
+            </div>
+          </div>
         </Motion.section>
 
         <Motion.section variants={item} className="grid grid-cols-1 gap-5 xl:grid-cols-[1.05fr_0.95fr]">
           <SystemsOperatorTable models={availableModels} />
-          <TruthAuditStrip truth={truth} />
+          <CollapsedPanel
+            eyebrow="Details"
+            title="Audit and system insights"
+            summary="Open only when you need doctrine, recommendations, and validation."
+          >
+            <div className="space-y-4">
+              <StrategyRail
+                derivedRecommendations={derivedRecommendations}
+                learningMemory={learningMemory}
+                humanHourlyRate={humanHourlyRate}
+                economics={economics}
+              />
+              <TruthAuditStrip truth={truth} />
+            </div>
+          </CollapsedPanel>
         </Motion.section>
       </Motion.div>
     </div>
