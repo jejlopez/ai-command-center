@@ -854,6 +854,11 @@ export function ReportsView() {
                   <div className="mt-2 text-[11px] text-text-body">
                     Commander is now tracking which recurring products need recovery before they can earn autonomy back. Average recovery progress: {managedRecurringRecoverySummary.averageProgress}%.
                   </div>
+                  {managedRecurringRecoverySummary.readyCount > 0 && (
+                    <div className="mt-2 text-[11px] text-aurora-teal">
+                      {managedRecurringRecoverySummary.readyCount} recurring flow{managedRecurringRecoverySummary.readyCount === 1 ? ' is' : 's are'} now clean enough to earn a lighter posture.
+                    </div>
+                  )}
                 </div>
               )}
               {managedRecurringFlows.length === 0 && (

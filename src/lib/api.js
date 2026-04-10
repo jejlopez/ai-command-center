@@ -551,6 +551,28 @@ function enforceRecurringMissionGuardrails(payload = {}) {
   return { payload: nextPayload, guardrails };
 }
 
+async function inferAgentLaneDefaults(agentId) {
+  if (!agentId || !isSupabaseConfigured) {
+    return { provider: null, model: null };
+  }
+
+  const { data, error } = await supabase
+    .from('agents')
+    .select('provider,model')
+    .eq('id', agentId)
+    .maybeSingle();
+
+  if (error) {
+    console.error('[api] inferAgentLaneDefaults:', error.message);
+    return { provider: null, model: null };
+  }
+
+  return {
+    provider: data?.provider || null,
+    model: data?.model || null,
+  };
+}
+
 function estimateMissionPlan(payload) {
   const lower = payload.intent.toLowerCase();
   const steps = [];
@@ -1825,6 +1847,7 @@ export async function retryTask(taskId) {
     .select('id,title,name,agent_id,root_mission_id,domain,intent_type,provider_override,model_override,schedule_type')
     .eq('id', taskId)
     .maybeSingle();
+  const laneDefaults = await inferAgentLaneDefaults(task?.agent_id || null);
 
   const { error } = await supabase
     .from('tasks')
@@ -1838,6 +1861,8 @@ export async function retryTask(taskId) {
       progress_percent: 0,
       failed_at: null,
       cancelled_at: null,
+      provider_override: task?.provider_override || laneDefaults.provider || null,
+      model_override: task?.model_override || laneDefaults.model || null,
     })
     .eq('id', taskId);
 
@@ -2081,6 +2106,7 @@ export async function approveMissionTask(taskId) {
     .select('id, agent_id, title, priority, root_mission_id, domain, intent_type, provider_override, model_override, schedule_type')
     .eq('id', taskId)
     .single();
+  const laneDefaults = await inferAgentLaneDefaults(task?.agent_id || null);
 
   if (fetchError) throw fetchError;
 
@@ -2091,6 +2117,8 @@ export async function approveMissionTask(taskId) {
       workflow_status: WORKFLOW_STATUS.READY,
       lane: inferLane(task.priority ?? 5, false, 'queued'),
       requires_approval: false,
+      provider_override: task.provider_override || laneDefaults.provider || null,
+      model_override: task.model_override || laneDefaults.model || null,
       updated_at: new Date().toISOString(),
     })
     .eq('id', taskId);
