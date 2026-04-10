@@ -45,7 +45,7 @@ Legend:
 | 30 | Budget guardrails per mission | 1 | Now | In Progress |
 | 31 | Token budget guardrails | 0 | Now | In Progress |
 | 32 | Latency target per task | 1 | Later | Queued |
-| 33 | Outcome quality scoring | 4 | Later | Later |
+| 33 | Outcome quality scoring | 4 | Later | In Progress |
 | 34 | Automatic retry policy | 2 | Later | Queued |
 | 35 | Failure triage mode | 4 | Now | In Progress |
 | 36 | Self-healing suggestions | 4 | Later | Later |
@@ -54,7 +54,7 @@ Legend:
 | 39 | Agent skill cards | 1 | Later | Queued |
 | 40 | Model registry with cost / latency / quality | 1 | Now | Shipped |
 | 41 | Best lane recommendations by task type | 4 | Now | In Progress |
-| 42 | Model benchmark board from observed runs | 4 | Later | Later |
+| 42 | Model benchmark board from observed runs | 4 | Later | In Progress |
 | 43 | Workload balancer across cloud and local models | 4 | Later | Later |
 | 44 | Local-first execution mode | 1 | Now | In Progress |
 | 45 | Premium-only mode | 1 | Later | Queued |
@@ -77,7 +77,7 @@ Legend:
 | 62 | Founder dashboard for priorities / risks / leverage | 6 | Later | Queued |
 | 63 | Revenue pulse | 5 | Later | Later |
 | 64 | Cost control board for AI spend and labor savings | 1 | Now | Shipped |
-| 65 | Automation ROI board | 4 | Later | Later |
+| 65 | Automation ROI board | 4 | Later | In Progress |
 | 66 | “What should I do next?” command briefing | 6 | Later | In Progress |
 | 67 | “What can I automate next?” recommendation engine | 4 | Later | Later |
 | 68 | Memory engine for successful mission patterns | 3 | Later | Later |
@@ -129,17 +129,17 @@ Legend:
 ## Current Read
 
 - `Shipped`: 15
-- `In Progress`: 23
+- `In Progress`: 26
 - `Next`: 0
 - `Queued`: 16
 - `Later / Future`: 48
 
 ## Immediate Next Four
 
-1. Model benchmark board from observed runs
-2. Outcome quality scoring
-3. Automation ROI board
-4. Stronger persistent fleet controls and promotion history
+1. Promotion and override history timelines
+2. Persisted outcome scoring and doctrine feedback
+3. Workload balancing across cloud and local lanes
+4. What can I automate next? recommendation engine
 
 ## Future Summary
 

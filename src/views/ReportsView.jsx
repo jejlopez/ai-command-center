@@ -26,14 +26,14 @@ import {
   YAxis,
 } from 'recharts';
 import { container, item } from '../utils/variants';
-import { useActivityLog, useCostData, usePendingReviews, useTasks } from '../utils/useSupabase';
-import { CommandDeckHero } from '../components/command/CommandDeckHero';
+import { useActivityLog, useAgents, useCostData, usePendingReviews, useTasks } from '../utils/useSupabase';
 import { AnimatedNumber } from '../components/command/AnimatedNumber';
 import { CommandSectionHeader } from '../components/command/CommandSectionHeader';
 import { useLearningMemory } from '../utils/useLearningMemory';
 import { DoctrineCards } from '../components/command/DoctrineCards';
 import { TruthAuditStrip } from '../components/command/TruthAuditStrip';
 import { useCommandCenterTruth } from '../utils/useCommandCenterTruth';
+import { getAutomationRoiSummary, getObservedModelBenchmarks, scoreTaskOutcome } from '../utils/commanderAnalytics';
 
 const PERIOD_OPTIONS = ['30d', '90d', 'QTD'];
 const STATUS_COLORS = {
@@ -113,11 +113,11 @@ function ExecutiveReadFirst({ items }) {
           initial={{ opacity: 0, y: 18 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.4, ease: 'easeOut' }}
-          className="rounded-[24px] border border-white/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.04),rgba(255,255,255,0.015))] p-4"
+          className="rounded-[22px] border border-white/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.04),rgba(255,255,255,0.015))] p-3.5"
         >
           <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">{entry.eyebrow}</div>
-          <div className="mt-2 text-base font-semibold text-text-primary">{entry.title}</div>
-          <p className="mt-2 text-[12px] leading-relaxed text-text-body">{entry.detail}</p>
+          <div className="mt-1.5 text-[15px] font-semibold text-text-primary">{entry.title}</div>
+          <p className="mt-1.5 text-[11px] leading-5 text-text-body">{entry.detail}</p>
         </Motion.div>
       ))}
     </Motion.section>
@@ -218,8 +218,8 @@ function ExecutiveSignalRail({ learningMemory, summary, burnByModel }) {
 
   return (
     <div className="space-y-5">
-      <div className="rounded-[28px] border border-white/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.015))] p-2">
-        <div className="flex flex-wrap gap-2 rounded-[24px] bg-black/20 p-2">
+      <div className="rounded-[24px] border border-white/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.015))] p-1.5">
+        <div className="flex flex-wrap gap-2 rounded-[20px] bg-black/20 p-1.5">
           {[
             { id: 'doctrine', label: 'Doctrine' },
             { id: 'orders', label: 'Orders' },
@@ -229,7 +229,7 @@ function ExecutiveSignalRail({ learningMemory, summary, burnByModel }) {
               key={tab.id}
               type="button"
               onClick={() => setFocus(tab.id)}
-              className={`flex-1 rounded-[18px] px-4 py-3 text-[12px] font-semibold transition-all ${
+              className={`flex-1 rounded-[16px] px-3 py-2.5 text-[11px] font-semibold transition-all ${
                 focus === tab.id ? 'border border-white/10 bg-white/[0.05] text-text-primary' : 'text-text-muted hover:text-text-primary'
               }`}
             >
@@ -240,7 +240,7 @@ function ExecutiveSignalRail({ learningMemory, summary, burnByModel }) {
       </div>
 
       {focus === 'doctrine' && (
-        <div className="rounded-[28px] border border-white/8 bg-[linear-gradient(180deg,rgba(167,139,250,0.06),rgba(255,255,255,0.02))] p-5">
+        <div className="rounded-[24px] border border-white/8 bg-[linear-gradient(180deg,rgba(167,139,250,0.06),rgba(255,255,255,0.02))] p-4">
           <CommandSectionHeader
             eyebrow="Boardroom Doctrine"
             title="What the system has learned this cycle"
@@ -253,7 +253,7 @@ function ExecutiveSignalRail({ learningMemory, summary, burnByModel }) {
       )}
 
       {focus === 'orders' && (
-        <div className="rounded-[28px] border border-white/8 bg-[linear-gradient(180deg,rgba(45,212,191,0.05),rgba(255,255,255,0.02))] p-5">
+        <div className="rounded-[24px] border border-white/8 bg-[linear-gradient(180deg,rgba(45,212,191,0.05),rgba(255,255,255,0.02))] p-4">
           <CommandSectionHeader
             eyebrow="Executive Orders"
             title="What Tony and Elon would do next"
@@ -263,11 +263,11 @@ function ExecutiveSignalRail({ learningMemory, summary, burnByModel }) {
           />
           <div className="mt-5 space-y-3">
             {orders.map((entry) => (
-              <div key={entry.title} className="rounded-[22px] border border-white/8 bg-black/20 p-4">
+              <div key={entry.title} className="rounded-[20px] border border-white/8 bg-black/20 p-3.5">
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <div className="text-sm font-semibold text-text-primary">{entry.title}</div>
-                    <p className="mt-2 text-[12px] leading-relaxed text-text-muted">{entry.detail}</p>
+                    <div className="text-[13px] font-semibold text-text-primary">{entry.title}</div>
+                    <p className="mt-1.5 text-[11px] leading-5 text-text-muted">{entry.detail}</p>
                   </div>
                   <ArrowUpRight className={`mt-0.5 h-4 w-4 ${
                     entry.tone === 'rose' ? 'text-aurora-rose' : entry.tone === 'amber' ? 'text-aurora-amber' : entry.tone === 'blue' ? 'text-aurora-blue' : 'text-aurora-teal'
@@ -286,9 +286,116 @@ function ExecutiveSignalRail({ learningMemory, summary, burnByModel }) {
 
 function PressureModeIntro({ title, description }) {
   return (
-    <div className="mb-4 rounded-[18px] border border-white/8 bg-white/[0.03] px-4 py-3">
-      <div className="text-sm font-semibold text-text-primary">{title}</div>
-      <p className="mt-1 text-[12px] leading-relaxed text-text-muted">{description}</p>
+    <div className="mb-3 rounded-[16px] border border-white/8 bg-white/[0.03] px-3.5 py-2.5">
+      <div className="text-[13px] font-semibold text-text-primary">{title}</div>
+      <p className="mt-1 text-[11px] leading-5 text-text-muted">{description}</p>
+    </div>
+  );
+}
+
+function TopOperatorTable({ agents }) {
+  return (
+    <div className="rounded-[24px] border border-white/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.015))] p-4">
+      <CommandSectionHeader
+        eyebrow="Top Operators"
+        title="Who is carrying the work"
+        description="A simple ranked table instead of another wall of cards."
+        icon={Layers3}
+        tone="blue"
+      />
+      <div className="mt-4 overflow-hidden rounded-[20px] border border-white/8 bg-black/20">
+        <div className="grid grid-cols-[1.3fr_0.8fr_0.8fr] border-b border-white/8 px-4 py-2.5 text-[10px] uppercase tracking-[0.16em] text-text-muted">
+          <div>Operator</div>
+          <div>Missions</div>
+          <div>Cost</div>
+        </div>
+        {agents.length === 0 ? (
+          <div className="px-4 py-6 text-sm text-text-muted">
+            No mission traffic yet. Once work lands, this table will rank the strongest branches.
+          </div>
+        ) : (
+          agents.map((agent, index) => (
+            <div
+              key={agent.name}
+              className={`grid grid-cols-[1.3fr_0.8fr_0.8fr] px-4 py-2.5 text-[13px] ${index !== agents.length - 1 ? 'border-b border-white/8' : ''}`}
+            >
+              <div className="font-semibold text-text-primary">{agent.name}</div>
+              <div className="text-text-body">{agent.tasks}</div>
+              <div className="text-text-body">{formatCurrency(agent.cost)}</div>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
+function CollapsedPanel({ eyebrow, title, summary, children }) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div className="rounded-[24px] border border-white/8 bg-[#111827]/90 p-4">
+      <div className="flex items-center justify-between gap-4">
+        <div>
+          <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">{eyebrow}</div>
+          <div className="mt-1 text-base font-semibold text-text-primary">{title}</div>
+          <div className="mt-1 text-[11px] leading-5 text-text-muted">{summary}</div>
+        </div>
+        <button
+          type="button"
+          onClick={() => setOpen((value) => !value)}
+          className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-[11px] font-semibold text-text-primary transition-colors hover:bg-white/[0.06]"
+        >
+          {open ? 'Hide' : 'Open'}
+        </button>
+      </div>
+      {open ? <div className="mt-4">{children}</div> : null}
+    </div>
+  );
+}
+
+function ReportsDashboardHeader({ period, setPeriod, summary }) {
+  return (
+    <div className="rounded-[24px] border border-white/8 bg-[#111827]/92 p-5">
+      <div className="grid gap-5 xl:grid-cols-[1.15fr_0.85fr] xl:items-start">
+        <div>
+          <div className="text-[10px] uppercase tracking-[0.22em] text-text-muted">Executive Debrief</div>
+          <h1 className="mt-2 text-[clamp(1.8rem,2.5vw,2.55rem)] font-semibold tracking-[-0.04em] text-text-primary">Executive Debrief</h1>
+          <p className="mt-2 max-w-xl text-[13px] leading-5 text-text-muted">One clean board for mission health, approval drag, and spend.</p>
+        </div>
+        <div className="rounded-[20px] border border-white/8 bg-[#0d1420] p-4">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Board controls</span>
+            <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-aurora-teal">Live</span>
+          </div>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {PERIOD_OPTIONS.map((option) => (
+              <button
+                key={option}
+                type="button"
+                onClick={() => setPeriod(option)}
+                className={`rounded-xl border px-3 py-2 text-[11px] font-semibold transition-colors ${
+                  period === option
+                    ? 'border-aurora-teal/25 bg-aurora-teal/10 text-aurora-teal'
+                    : 'border-white/8 bg-white/[0.03] text-text-muted hover:text-text-primary'
+                }`}
+              >
+                {option}
+              </button>
+            ))}
+          </div>
+          <div className="mt-4 grid grid-cols-2 gap-3">
+            <div className="rounded-[16px] border border-white/8 bg-[#111827] p-3">
+              <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Burn today</div>
+              <div className="mt-2 text-2xl font-semibold text-text-primary">{formatCurrency(summary.totalCost)}</div>
+            </div>
+            <div className="rounded-[16px] border border-white/8 bg-[#111827] p-3">
+              <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Cost / mission</div>
+              <div className="mt-2 text-2xl font-semibold text-text-primary">{formatCurrency(summary.avgCost)}</div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
@@ -297,10 +404,12 @@ export function ReportsView() {
   const [period, setPeriod] = useState('30d');
   const [pressureFocus, setPressureFocus] = useState('activity');
   const { data: costData } = useCostData();
+  const { agents } = useAgents();
   const { tasks } = useTasks();
   const { reviews } = usePendingReviews();
   const { logs } = useActivityLog();
   const truth = useCommandCenterTruth();
+  const humanHourlyRate = 150;
 
   const summary = useMemo(() => {
     const completed = tasks.filter((task) => ['completed', 'done'].includes(task.status));
@@ -378,6 +487,16 @@ export function ReportsView() {
   }, [logs]);
 
   const learningMemory = useLearningMemory({ tasks, approvals: reviews, logs, costData });
+  const qualitySummary = useMemo(() => {
+    const scored = tasks.map((task) => ({ task, outcome: scoreTaskOutcome(task) }));
+    const average = scored.length
+      ? Math.round(scored.reduce((sum, entry) => sum + entry.outcome.score, 0) / scored.length)
+      : 0;
+    const top = scored.slice().sort((left, right) => right.outcome.score - left.outcome.score).slice(0, 3);
+    return { average, top };
+  }, [tasks]);
+  const roiSummary = useMemo(() => getAutomationRoiSummary(tasks, humanHourlyRate), [tasks]);
+  const benchmarkBoard = useMemo(() => getObservedModelBenchmarks(tasks, agents).slice(0, 5), [tasks, agents]);
   const peakActivity = useMemo(
     () => activityWave.reduce((best, bucket) => (bucket.volume > best.volume ? bucket : best), activityWave[0] || { name: 'No activity yet', volume: 0 }),
     [activityWave]
@@ -409,71 +528,12 @@ export function ReportsView() {
 
   return (
     <div className="relative flex h-full flex-col overflow-y-auto pb-10">
-      <div className="pointer-events-none absolute inset-0 overflow-hidden">
-        <div className="absolute -top-16 left-[-8%] h-[360px] w-[360px] rounded-full bg-aurora-violet/10 blur-[120px]" />
-        <div className="absolute top-[12%] right-[-12%] h-[420px] w-[420px] rounded-full bg-aurora-teal/10 blur-[140px]" />
-        <div className="absolute bottom-[-20%] left-[22%] h-[420px] w-[420px] rounded-full bg-aurora-blue/10 blur-[160px]" />
-      </div>
-
       <Motion.div variants={container} initial="hidden" animate="show" className="relative space-y-5">
         <Motion.div variants={item}>
-          <CommandDeckHero
-            glow="violet"
-            eyebrow="Executive Debrief"
-            eyebrowIcon={BrainCircuit}
-            title="Executive Debrief"
-            description="Margin, execution drag, and compounding momentum in one readable board."
-            chrome="epic"
-            titleClassName="text-[clamp(2.25rem,4.2vw,3.5rem)] leading-[1] tracking-[-0.04em]"
-            descriptionClassName="max-w-2xl text-[15px] leading-7 text-text-body"
-            badges={[
-              { label: 'mission success', value: `${summary.successRate}%`, tone: 'teal' },
-              { label: 'live missions', value: summary.running, tone: 'blue' },
-              { label: 'approvals in queue', value: summary.approvalPressure, tone: 'amber' },
-            ]}
-            actions={
-              <button className="inline-flex items-center gap-2 rounded-xl bg-aurora-violet px-4 py-2 text-sm font-semibold text-black shadow-glow-violet transition-colors hover:bg-aurora-violet/90">
-                <FileText className="h-4 w-4" />
-                Generate Brief
-              </button>
-            }
-            sideContent={
-              <div className="flex w-full flex-col gap-3 rounded-[24px] border border-white/10 bg-black/25 p-4 backdrop-blur-sm">
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Board controls</span>
-                  <span className="text-[10px] font-mono text-aurora-violet">LIVE</span>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {PERIOD_OPTIONS.map((option) => (
-                    <button
-                      key={option}
-                      onClick={() => setPeriod(option)}
-                      className={`rounded-full border px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] transition-colors ${
-                        period === option
-                          ? 'border-aurora-teal/30 bg-aurora-teal/10 text-aurora-teal'
-                          : 'border-white/8 bg-white/[0.03] text-text-muted hover:text-text-primary'
-                      }`}
-                    >
-                      {option}
-                    </button>
-                  ))}
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="rounded-2xl border border-white/8 bg-white/[0.02] p-3">
-                    <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Burn today</div>
-                    <div className="mt-2 text-2xl font-semibold text-text-primary">{formatCurrency(summary.totalCost)}</div>
-                  </div>
-                  <div className="rounded-2xl border border-white/8 bg-white/[0.02] p-3">
-                    <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Cost / mission</div>
-                    <div className="mt-2 text-2xl font-semibold text-text-primary">{formatCurrency(summary.avgCost)}</div>
-                  </div>
-                </div>
-              </div>
-            }
-          />
+          <ReportsDashboardHeader period={period} setPeriod={setPeriod} summary={summary} />
         </Motion.div>
 
-        <Motion.section variants={item} className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+        <Motion.section variants={item} className="grid grid-cols-1 gap-3.5 xl:grid-cols-3">
           <ExecutiveKpi
             label="Mission Success"
             value={`${summary.successRate}%`}
@@ -500,18 +560,109 @@ export function ReportsView() {
           />
         </Motion.section>
 
-        <ExecutiveReadFirst items={readFirstItems.slice(0, 2)} />
-        <TruthAuditStrip truth={truth} />
+        <Motion.section variants={item} className="grid grid-cols-1 gap-5 xl:grid-cols-2">
+          <HudFrame
+            eyebrow="Outcome Quality"
+            title="Was the work actually good?"
+            detail="Completion is not enough. This board scores trust, context discipline, autonomy, and cost posture."
+            accent="violet"
+          >
+            <div className="grid gap-3 md:grid-cols-3">
+              <div className="rounded-[20px] border border-white/8 bg-[#111827] p-4">
+                <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Average quality</div>
+                <div className="mt-2 text-2xl font-semibold text-text-primary"><AnimatedNumber value={qualitySummary.average} /></div>
+              </div>
+              <div className="rounded-[20px] border border-white/8 bg-[#111827] p-4">
+                <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Autonomous wins</div>
+                <div className="mt-2 text-2xl font-semibold text-text-primary"><AnimatedNumber value={roiSummary.autonomousRuns} /></div>
+              </div>
+              <div className="rounded-[20px] border border-white/8 bg-[#111827] p-4">
+                <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Scored missions</div>
+                <div className="mt-2 text-2xl font-semibold text-text-primary"><AnimatedNumber value={tasks.length} /></div>
+              </div>
+            </div>
+            <div className="mt-4 space-y-2">
+              {qualitySummary.top.length === 0 && <div className="text-[12px] text-text-muted">No mission outcomes are scored yet.</div>}
+              {qualitySummary.top.map(({ task, outcome }) => (
+                <div key={task.id} className="rounded-[18px] border border-white/8 bg-black/20 px-3 py-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="text-[12px] font-semibold text-text-primary">{task.name || task.title || 'Mission'}</div>
+                    <div className="rounded-full border border-aurora-violet/20 bg-aurora-violet/10 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-aurora-violet">
+                      {outcome.score} {outcome.label}
+                    </div>
+                  </div>
+                  <div className="mt-1 text-[11px] text-text-muted">{task.domain} / {task.intentType} / {task.workflowStatus || task.status}</div>
+                </div>
+              ))}
+            </div>
+          </HudFrame>
 
-        <Motion.section variants={item} className="space-y-5">
-          <div className="rounded-[28px] border border-white/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.015))] p-5">
+          <HudFrame
+            eyebrow="Automation ROI"
+            title="Where Commander is creating leverage"
+            detail="This ties mission throughput to time saved and spend, so the founder-OS value is visible."
+            accent="teal"
+          >
+            <div className="grid gap-3 md:grid-cols-2">
+              <div className="rounded-[20px] border border-white/8 bg-[#111827] p-4">
+                <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Human equivalent</div>
+                <div className="mt-2 text-2xl font-semibold text-text-primary"><AnimatedNumber value={roiSummary.humanEquivalent} prefix="$" decimals={2} /></div>
+              </div>
+              <div className="rounded-[20px] border border-white/8 bg-[#111827] p-4">
+                <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Agent spend</div>
+                <div className="mt-2 text-2xl font-semibold text-text-primary"><AnimatedNumber value={roiSummary.totalAgentSpend} prefix="$" decimals={2} /></div>
+              </div>
+              <div className="rounded-[20px] border border-white/8 bg-[#111827] p-4">
+                <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Savings</div>
+                <div className={`mt-2 text-2xl font-semibold ${roiSummary.savings >= 0 ? 'text-aurora-teal' : 'text-aurora-rose'}`}>
+                  <AnimatedNumber value={Math.abs(roiSummary.savings)} prefix={roiSummary.savings >= 0 ? '$' : '-$'} decimals={2} />
+                </div>
+              </div>
+              <div className="rounded-[20px] border border-white/8 bg-[#111827] p-4">
+                <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">ROI multiple</div>
+                <div className="mt-2 text-2xl font-semibold text-text-primary"><AnimatedNumber value={roiSummary.roiMultiple} decimals={1} suffix="x" /></div>
+              </div>
+            </div>
+            <div className="mt-4 rounded-2xl border border-aurora-teal/15 bg-aurora-teal/[0.05] px-3 py-2 text-[11px] text-text-body">
+              Commander has an estimated <span className="font-semibold text-aurora-teal">{roiSummary.estimatedHoursSaved.toFixed(1)} hours</span> of leveraged throughput across <span className="font-semibold text-aurora-teal">{roiSummary.closedTasks}</span> closed missions.
+            </div>
+          </HudFrame>
+        </Motion.section>
+
+        <Motion.section variants={item}>
+          <HudFrame
+            eyebrow="Model Benchmark Board"
+            title="Observed winners by real mission outcomes"
+            detail="This ranks lanes by quality, success, speed, and cost so doctrine can move from opinion to evidence."
+            accent="amber"
+          >
+            <div className="grid gap-3 md:grid-cols-5">
+              {benchmarkBoard.length === 0 && <div className="text-[12px] text-text-muted">No benchmark data yet. Commander needs more routed mission history.</div>}
+              {benchmarkBoard.map((entry) => (
+                <div key={entry.key} className="rounded-[18px] border border-white/8 bg-[#111827] p-3">
+                  <div className="text-[12px] font-semibold text-text-primary">{entry.model}</div>
+                  <div className="mt-1 text-[10px] uppercase tracking-[0.16em] text-text-muted">{entry.provider}</div>
+                  <div className="mt-3 text-xl font-semibold text-text-primary">{entry.benchmarkScore}</div>
+                  <div className="mt-2 space-y-1 text-[10px] text-text-muted">
+                    <div>quality {entry.avgQuality}</div>
+                    <div>success {entry.successRate}%</div>
+                    <div>avg cost ${entry.avgCost.toFixed(2)}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </HudFrame>
+        </Motion.section>
+
+        <Motion.section variants={item} className="grid grid-cols-1 gap-5 xl:grid-cols-[1.65fr_0.35fr]">
+          <div className="rounded-[24px] border border-white/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.015))] p-4">
             <CommandSectionHeader
               eyebrow="Pressure Map"
-              title="Where the board is heating up"
-              description="A reactor-style readout of pace, burn, and operational pressure."
+              title="Main board trend"
+              description="One chart at a time so you can read the board without decoding it."
               icon={Gauge}
               tone="teal"
-              action={<span className="rounded-full border border-aurora-teal/20 bg-aurora-teal/10 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-aurora-teal">Live telemetry</span>}
+              action={<span className="rounded-full border border-aurora-teal/20 bg-aurora-teal/10 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-aurora-teal">Primary chart</span>}
             />
 
             <div className="mt-5">
@@ -709,48 +860,32 @@ export function ReportsView() {
               </div>
             </div>
           </div>
-        </Motion.section>
-
-        <Motion.section variants={item}>
-          <ExecutiveSignalRail learningMemory={learningMemory} summary={summary} burnByModel={burnByModel} />
-        </Motion.section>
-
-        <Motion.section variants={item}>
-          <div className="rounded-[28px] border border-white/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.015))] p-5">
-            <CommandSectionHeader
-              eyebrow="Top Operators"
-              title="Who is carrying the work"
-              description="The branches absorbing the most load, cost, and closures without turning this page into a spreadsheet."
-              icon={Layers3}
-              tone="blue"
-            />
-            <div className="mt-5 grid gap-3 lg:grid-cols-2">
-              {summary.topAgents.length === 0 && (
-                <div className="rounded-[22px] border border-white/8 bg-black/20 p-4 text-sm text-text-muted">
-                  No mission traffic yet. Once tasks land, this panel will rank agents by volume, cost, and closure rate.
-                </div>
-              )}
-              {summary.topAgents.map((agent, index) => (
-                <div key={agent.name} className="rounded-[22px] border border-white/8 bg-black/20 p-4">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.04] text-sm font-semibold text-text-primary">
-                        {String(index + 1).padStart(2, '0')}
-                      </div>
-                      <div>
-                        <div className="text-sm font-semibold text-text-primary">{agent.name}</div>
-                        <div className="mt-1 text-[11px] text-text-muted">{agent.tasks} missions routed through this branch</div>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <div className="text-sm font-semibold text-text-primary">{formatCurrency(agent.cost)}</div>
-                      <div className="mt-1 text-[11px] text-aurora-teal">{agent.completed} completed</div>
-                    </div>
-                  </div>
-                </div>
-              ))}
+          <div className="space-y-3">
+            <div className="rounded-[24px] border border-white/8 bg-[#111827]/90 p-4">
+              <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Read first</div>
+              <div className="mt-2 text-[15px] font-semibold text-text-primary">{readFirstItems[0]?.title}</div>
+              <p className="mt-2 text-[11px] leading-5 text-text-muted">{readFirstItems[0]?.detail}</p>
+            </div>
+            <div className="rounded-[24px] border border-white/8 bg-[#111827]/90 p-4">
+              <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Next action</div>
+              <div className="mt-2 text-[15px] font-semibold text-text-primary">{readFirstItems[1]?.title}</div>
+              <p className="mt-2 text-[11px] leading-5 text-text-muted">{readFirstItems[1]?.detail}</p>
             </div>
           </div>
+        </Motion.section>
+
+        <Motion.section variants={item} className="grid grid-cols-1 gap-5 xl:grid-cols-[1.05fr_0.95fr]">
+          <TopOperatorTable agents={summary.topAgents} />
+          <CollapsedPanel
+            eyebrow="Details"
+            title="Audit and doctrine"
+            summary="Open only when you want validation and deeper reasoning."
+          >
+            <div className="space-y-4">
+              <ExecutiveSignalRail learningMemory={learningMemory} summary={summary} burnByModel={burnByModel} />
+              <TruthAuditStrip truth={truth} />
+            </div>
+          </CollapsedPanel>
         </Motion.section>
       </Motion.div>
     </div>

@@ -6,7 +6,7 @@ This is the live build tracker for the Jarvis / Stark / Musk Commander program.
 
 - Jarvis vision size: `100` scoped features
 - Shipped foundation: `15`
-- Active buildout: `23`
+- Active buildout: `26`
 - Immediate next targets: `0`
 - Deferred / later items: `64`
 
@@ -55,48 +55,52 @@ This is the live build tracker for the Jarvis / Stark / Musk Commander program.
 - Skill-aware routing and specialist creation
 - Observed best-lane recommendations
 - Stronger persistent fleet management
+- Model benchmark board from observed runs
+- Outcome quality scoring
+- Automation ROI board
+- Promotion history in the specialist fleet
 
 ## Next Program Targets
 
-### 1. Model Benchmark Board
+### 1. Promotion And Override History Timelines
 
 Goal:
-- rank model lanes from observed outcomes, not just static registry data
+- make branch and specialist doctrine changes auditable over time
 
 Definition of done:
-- show winners by quality, speed, and cost based on actual missions
-- make doctrine upgrades easier to justify
+- show route changes, promotions, and operator overrides as clean time-based history
+- make intervention decisions reviewable after the fact
 
 Likely surfaces:
+- [`/Users/Jjarvis/ai-command-center/src/views/MissionControlView.jsx`](/Users/Jjarvis/ai-command-center/src/views/MissionControlView.jsx)
 - [`/Users/Jjarvis/ai-command-center/src/views/IntelligenceView.jsx`](/Users/Jjarvis/ai-command-center/src/views/IntelligenceView.jsx)
-- [`/Users/Jjarvis/ai-command-center/src/views/ReportsView.jsx`](/Users/Jjarvis/ai-command-center/src/views/ReportsView.jsx)
 
-### 2. Outcome Quality Scoring
-
-Goal:
-- evaluate whether mission outcomes are actually good, not just completed
-
-Definition of done:
-- each mission can be scored for quality and trust
-- doctrine can learn from quality, not only speed/cost/completion
-
-### 3. Automation ROI Board
+### 2. Persisted Outcome Scoring And Doctrine Feedback
 
 Goal:
-- show where Commander is creating real leverage
+- move outcome quality from derived view logic into reusable Commander memory
 
 Definition of done:
-- connect task completion, time saved, and cost to visible operating value
-- make the founder-OS story measurable
+- each mission stores a stable quality score or snapshot
+- doctrine can automatically react to quality drift over time
 
-### 4. Stronger Persistent Fleet Controls And Promotion History
+### 3. Workload Balancing Across Cloud And Local Lanes
 
 Goal:
-- deepen the persistent specialist rack into a true managed fleet
+- route more work to the cheapest reliable lane without sacrificing outcomes
 
 Definition of done:
-- track promotions, demotions, and lane history
-- let Commander and the operator manage persistent coverage more explicitly
+- balancing rules exist across local and cloud lanes
+- routing can explain when it escalated and when it stayed local
+
+### 4. “What Can I Automate Next?” Recommendation Engine
+
+Goal:
+- turn reports and mission history into the next best automation suggestions
+
+Definition of done:
+- recommend high-repeat, low-risk work for automation
+- connect those recommendations to ROI and bottleneck data
 
 ## Later
 
@@ -128,7 +132,7 @@ When autodrive is enabled:
 
 Build next:
 
-1. model benchmark board
-2. outcome quality scoring
-3. automation ROI board
-4. stronger persistent fleet controls and promotion history
+1. promotion and override history timelines
+2. persisted outcome scoring and doctrine feedback
+3. workload balancing across cloud and local lanes
+4. what can I automate next? recommendation engine

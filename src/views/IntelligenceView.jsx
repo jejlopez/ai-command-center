@@ -40,6 +40,7 @@ import { TruthAuditStrip } from '../components/command/TruthAuditStrip';
 import { useCommandCenterTruth } from '../utils/useCommandCenterTruth';
 import { normalizeModelProvider } from '../utils/commanderPolicy';
 import { getWorkflowMeta } from '../utils/missionLifecycle';
+import { getObservedModelBenchmarks, getPersistentFleetHistory, scoreTaskOutcome } from '../utils/commanderAnalytics';
 
 const tabs = [
   { id: 'models', label: 'Model Command Matrix', icon: Cpu },
@@ -543,6 +544,7 @@ function IntelligenceHeader({ activeTab, setActiveTab, systemSummary, availableM
 function ModelRegistryTab({ availableModels, agents, tasks }) {
   const [detailView, setDetailView] = useState('constellation');
   const radarSelection = availableModels.slice(0, 4);
+  const observedBenchmarks = useMemo(() => getObservedModelBenchmarks(tasks, agents).slice(0, 6), [tasks, agents]);
 
   const groupedComparisonData = useMemo(() => (
     capabilityMetrics.map((metric) => {
@@ -585,6 +587,7 @@ function ModelRegistryTab({ availableModels, agents, tasks }) {
             {[
               { id: 'constellation', label: 'Constellation' },
               { id: 'load', label: 'Load' },
+              { id: 'benchmarks', label: 'Benchmarks' },
               { id: 'registry', label: 'Registry' },
             ].map((tab) => (
               <button
@@ -734,6 +737,85 @@ function ModelRegistryTab({ availableModels, agents, tasks }) {
         </HudPanel>
         )}
 
+        {detailView === 'benchmarks' && (
+        <HudPanel
+          eyebrow="Observed Benchmarks"
+          title="Which model lanes are actually winning"
+          description="Benchmarks score real routed missions by quality, success, speed, and spend discipline."
+          accent="amber"
+        >
+          <CommandSectionHeader
+            eyebrow="Observed Winners"
+            title="Live model benchmark board"
+            description="Use real outcomes to steer doctrine instead of static assumptions."
+            icon={Gauge}
+            tone="amber"
+          />
+          <div className="mt-5 grid gap-3 md:grid-cols-3">
+            {[
+              { label: 'Top benchmark', value: observedBenchmarks[0]?.model || 'No benchmark data yet', detail: observedBenchmarks[0] ? `${observedBenchmarks[0].provider} is leading with score ${observedBenchmarks[0].benchmarkScore}.` : 'Run more routed missions to establish a clear winner.' },
+              { label: 'Highest quality', value: [...observedBenchmarks].sort((a, b) => b.avgQuality - a.avgQuality)[0]?.model || 'No benchmark data yet', detail: 'Quality favors completion quality, trust, and clean routing posture.' },
+              { label: 'Best value', value: [...observedBenchmarks].sort((a, b) => b.costScore - a.costScore)[0]?.model || 'No benchmark data yet', detail: 'Value favors low-cost lanes that still close work reliably.' },
+            ].map((card) => (
+              <div key={card.label} className="rounded-[20px] border border-white/8 bg-black/20 p-4">
+                <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">{card.label}</div>
+                <div className="mt-2 text-sm font-semibold text-text-primary">{card.value}</div>
+                <p className="mt-2 text-[12px] leading-relaxed text-text-muted">{card.detail}</p>
+              </div>
+            ))}
+          </div>
+          <div className="mt-5 space-y-3">
+            {observedBenchmarks.length === 0 ? (
+              <div className="rounded-[22px] border border-dashed border-white/10 bg-black/10 p-6 text-center">
+                <div className="text-sm font-semibold text-text-primary">No observed benchmark data yet.</div>
+                <p className="mt-2 text-[12px] leading-relaxed text-text-muted">This board fills in as Commander accumulates more routed mission outcomes.</p>
+              </div>
+            ) : (
+              observedBenchmarks.map((entry, index) => (
+                <div key={entry.key} className="rounded-[22px] border border-white/8 bg-black/20 p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="flex h-7 w-7 items-center justify-center rounded-full border border-white/10 bg-white/[0.03] text-[10px] font-semibold text-text-primary">
+                          {String(index + 1).padStart(2, '0')}
+                        </span>
+                        <span className="text-sm font-semibold text-text-primary">{entry.model}</span>
+                      </div>
+                      <div className="mt-1 text-[11px] text-text-muted">{entry.provider}</div>
+                    </div>
+                    <div className="rounded-full border border-aurora-amber/20 bg-aurora-amber/10 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-aurora-amber">
+                      Score {entry.benchmarkScore}
+                    </div>
+                  </div>
+                  <div className="mt-4 grid grid-cols-2 gap-3 text-[11px] md:grid-cols-5">
+                    <div>
+                      <div className="text-text-disabled">Runs</div>
+                      <div className="mt-1 font-mono text-text-primary">{entry.runs}</div>
+                    </div>
+                    <div>
+                      <div className="text-text-disabled">Quality</div>
+                      <div className="mt-1 font-mono text-text-primary">{entry.avgQuality}</div>
+                    </div>
+                    <div>
+                      <div className="text-text-disabled">Success</div>
+                      <div className="mt-1 font-mono text-text-primary">{entry.successRate}%</div>
+                    </div>
+                    <div>
+                      <div className="text-text-disabled">Avg cost</div>
+                      <div className="mt-1 font-mono text-text-primary">${entry.avgCost.toFixed(2)}</div>
+                    </div>
+                    <div>
+                      <div className="text-text-disabled">Speed</div>
+                      <div className="mt-1 font-mono text-text-primary">{entry.speedScore}</div>
+                    </div>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </HudPanel>
+        )}
+
         {detailView === 'registry' && (
         <div className="rounded-[28px] border border-white/8 bg-[linear-gradient(180deg,rgba(45,212,191,0.05),rgba(255,255,255,0.02))] p-5">
           <CommandSectionHeader
@@ -857,32 +939,34 @@ function RoutingDoctrineTab({ routingPolicies, tasks, agents, logs, skills, upse
 
   const observedBestLanes = useMemo(() => {
     const grouped = new Map();
-    const completedTasks = tasks.filter((task) => ['completed', 'done'].includes(String(task.status || '').toLowerCase()) || task.workflowStatus === 'completed');
-
-    completedTasks.forEach((task) => {
-      const agent = agents.find((candidate) => candidate.id === task.agentId);
-      const key = `${task.domain || 'general'}::${task.intentType || 'general'}`;
-      const current = grouped.get(key) || [];
-      current.push({
-        task,
-        agent,
-        lane: `${agent?.name || task.agentRole || 'unassigned'} · ${agent?.model || task.modelOverride || 'adaptive'}`,
-        cost: Number(task.costUsd || 0),
+    tasks
+      .filter((task) => ['completed', 'done'].includes(String(task.status || '').toLowerCase()) || task.workflowStatus === 'completed')
+      .forEach((task) => {
+        const agent = agents.find((candidate) => candidate.id === task.agentId);
+        const key = `${task.domain || 'general'}::${task.intentType || 'general'}`;
+        const current = grouped.get(key) || [];
+        current.push({
+          lane: `${agent?.name || task.agentRole || 'unassigned'} · ${agent?.model || task.modelOverride || 'adaptive'}`,
+          cost: Number(task.costUsd || 0),
+          quality: scoreTaskOutcome(task).score,
+        });
+        grouped.set(key, current);
       });
-      grouped.set(key, current);
-    });
 
     return Array.from(grouped.entries())
       .map(([key, entries]) => {
         const laneGroups = new Map();
         entries.forEach((entry) => {
-          const laneKey = entry.lane;
-          const current = laneGroups.get(laneKey) || { lane: laneKey, count: 0, totalCost: 0, agentRole: entry.task.agentRole || entry.agent?.role || 'executor' };
+          const current = laneGroups.get(entry.lane) || { lane: entry.lane, count: 0, totalCost: 0, totalQuality: 0 };
           current.count += 1;
           current.totalCost += entry.cost;
-          laneGroups.set(laneKey, current);
+          current.totalQuality += entry.quality;
+          laneGroups.set(entry.lane, current);
         });
         const ranked = Array.from(laneGroups.values()).sort((left, right) => {
+          const leftQuality = left.count ? left.totalQuality / left.count : 0;
+          const rightQuality = right.count ? right.totalQuality / right.count : 0;
+          if (rightQuality !== leftQuality) return rightQuality - leftQuality;
           if (right.count !== left.count) return right.count - left.count;
           return left.totalCost - right.totalCost;
         });
@@ -890,7 +974,7 @@ function RoutingDoctrineTab({ routingPolicies, tasks, agents, logs, skills, upse
         return {
           domain,
           intentType,
-          winner: ranked[0] || null,
+          winner: ranked[0] ? { ...ranked[0], avgQuality: Math.round(ranked[0].totalQuality / ranked[0].count) } : null,
           runnersUp: ranked.slice(1, 3),
           sampleCount: entries.length,
         };
@@ -1540,13 +1624,9 @@ function SpecialistFleetTab({ agents, logs, skills }) {
   const modelOptions = [...new Set(agents.map((agent) => agent.model).filter(Boolean))];
   const persistentSpecialists = agents.filter((agent) => !agent.isEphemeral && !['commander', 'executor'].includes(agent.role || ''));
   const spawnedSpecialists = agents.filter((agent) => agent.isEphemeral);
-  const lifecycleEvents = logs
-    .filter((entry) => {
-      const message = String(entry.message || '');
-      return message.includes('[specialist-spawned]') || message.includes('[specialist-retired]') || message.includes('[specialist-persistent]');
-    })
-    .slice(-6)
-    .reverse();
+  const fleetHistory = getPersistentFleetHistory(logs, agents);
+  const lifecycleEvents = fleetHistory.events.slice(0, 6);
+  const promotionHistory = fleetHistory.promotions.slice(0, 6);
   const [objective, setObjective] = useState('');
   const [persistentName, setPersistentName] = useState('');
   const [persistentObjective, setPersistentObjective] = useState('');
@@ -1640,7 +1720,7 @@ function SpecialistFleetTab({ agents, logs, skills }) {
         {[
           { label: 'Persistent', value: persistentSpecialists.length, tone: 'text-aurora-blue' },
           { label: 'Spawned', value: spawnedSpecialists.length, tone: 'text-aurora-violet' },
-          { label: 'Lifecycle events', value: lifecycleEvents.length, tone: 'text-aurora-teal' },
+          { label: 'Promotions', value: fleetHistory.promotions.length, tone: 'text-aurora-teal' },
         ].map((metric) => (
           <div key={metric.label} className="rounded-[20px] border border-white/8 bg-black/20 p-4">
             <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">{metric.label}</div>
@@ -1776,6 +1856,17 @@ function SpecialistFleetTab({ agents, logs, skills }) {
             </div>
           </div>
           <div className="rounded-[22px] border border-white/8 bg-black/20 p-4">
+            <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Coverage map</div>
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              {['planner', 'researcher', 'builder', 'verifier'].map((roleName) => (
+                <div key={roleName} className="rounded-[16px] border border-white/8 bg-white/[0.02] px-3 py-3">
+                  <div className="text-[10px] uppercase tracking-[0.14em] text-text-muted">{roleName}</div>
+                  <div className="mt-2 text-lg font-semibold text-text-primary">{fleetHistory.coverageByRole[roleName] || 0}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="rounded-[22px] border border-white/8 bg-black/20 p-4">
             <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Lifecycle rail</div>
             <div className="mt-3 space-y-2">
               {lifecycleEvents.length === 0 && <div className="text-[11px] text-text-muted">No specialist lifecycle events yet.</div>}
@@ -1786,10 +1877,24 @@ function SpecialistFleetTab({ agents, logs, skills }) {
                     <div className="text-[10px] font-mono text-text-disabled">{entry.timestamp ? new Date(entry.timestamp).toLocaleTimeString() : 'Live'}</div>
                   </div>
                   <div className="mt-2 text-[11px] leading-relaxed text-text-body">
-                    {String(entry.message || '')
-                      .replace('[specialist-spawned] ', '')
-                      .replace('[specialist-retired] ', '')
-                      .replace('[specialist-persistent] ', '')}
+                    {entry.cleanMessage}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="rounded-[22px] border border-white/8 bg-black/20 p-4">
+            <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Promotion history</div>
+            <div className="mt-3 space-y-2">
+              {promotionHistory.length === 0 && <div className="text-[11px] text-text-muted">No promotion events yet.</div>}
+              {promotionHistory.map((entry) => (
+                <div key={entry.id} className="rounded-[16px] border border-white/8 bg-white/[0.02] px-3 py-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="text-[10px] font-mono uppercase text-aurora-blue">PROMOTED</div>
+                    <div className="text-[10px] font-mono text-text-disabled">{entry.timestamp ? new Date(entry.timestamp).toLocaleString() : 'Live'}</div>
+                  </div>
+                  <div className="mt-2 text-[11px] leading-relaxed text-text-body">
+                    {entry.cleanMessage}
                   </div>
                 </div>
               ))}
