@@ -71,6 +71,28 @@ function isTaskFailed(task: TaskGraphRow): boolean {
     || ['failed', 'blocked', 'cancelled'].includes(String(task.workflow_status || '').toLowerCase());
 }
 
+function scoreOutcome(task: { approval_level?: string | null; execution_strategy?: string | null }, cost: number, latency: number, status: 'completed' | 'failed') {
+  let score = 52;
+  if (status === 'completed') score += 24;
+  if (status === 'failed') score -= 30;
+  if (String(task.approval_level || '') === 'human_required') score -= 6;
+  if (String(task.execution_strategy || '') === 'parallel') score += 4;
+  if (cost <= 0.75) score += 5;
+  if (latency > 0 && latency <= 12 * 60 * 1000) score += 4;
+  if (latency > 50 * 60 * 1000) score -= 4;
+  const finalScore = Math.min(100, Math.max(0, Math.round(score)));
+  const trust = finalScore >= 80 ? 'high' : finalScore >= 60 ? 'medium' : 'low';
+  return { finalScore, trust };
+}
+
+function buildDoctrineFeedback(task: { budget_class?: string | null; risk_level?: string | null; model_override?: string | null }, score: number, cost: number) {
+  if (score < 55) return 'This lane underperformed. Tighten context packs, review branch decomposition, or escalate to a stronger model.';
+  if (String(task.risk_level || '') === 'low' && String(task.budget_class || '') !== 'premium' && cost > 1.25) {
+    return 'Low-risk work cleared at a relatively high cost. Bias similar branches toward a local or cheaper lane first.';
+  }
+  return `This route is holding up well. Preserve the current lane${task.model_override ? ` around ${task.model_override}` : ''} as a preferred doctrine candidate.`;
+}
+
 async function updateMissionGraphProgress(db: ReturnType<typeof createClient>, task: TaskGraphRow) {
   if (!task.parent_id || !task.root_mission_id) return;
 
@@ -376,6 +398,9 @@ Deno.serve(async (req: Request) => {
         completed_at: completedAt,
       });
 
+    const outcome = scoreOutcome(taskRow || {}, cost, latency, 'completed');
+    const doctrineFeedback = buildDoctrineFeedback(taskRow || {}, outcome.finalScore, cost);
+
     await Promise.all([
       db.from('agents').update({
         status: 'idle',
@@ -394,6 +419,22 @@ Deno.serve(async (req: Request) => {
         agent_id: agent.id,
         tokens,
         duration_ms: latency,
+      }),
+      db.from('activity_log').insert({
+        user_id: user.id,
+        type: 'SYS',
+        message: `[outcome-score] root ${taskRow?.root_mission_id || taskId} score ${outcome.finalScore} trust ${outcome.trust} for ${task_description.substring(0, 80)}.`,
+        agent_id: agent.id,
+        tokens: 0,
+        duration_ms: latency,
+      }),
+      db.from('activity_log').insert({
+        user_id: user.id,
+        type: 'SYS',
+        message: `[doctrine-feedback] root ${taskRow?.root_mission_id || taskId} ${doctrineFeedback}`,
+        agent_id: agent.id,
+        tokens: 0,
+        duration_ms: 0,
       }),
 
       db.from('pending_reviews').insert({
@@ -440,19 +481,38 @@ Deno.serve(async (req: Request) => {
       }).eq('id', task_id).eq('user_id', user.id);
     }
 
+    const outcome = scoreOutcome(taskRow || {}, 0, latency, 'failed');
     if (taskRow) {
       await updateMissionGraphProgress(db, { ...taskRow, status: 'failed', workflow_status: 'failed' });
       await cleanupEphemeralSpecialists(db, user.id, taskRow.root_mission_id);
     }
 
-    await db.from('activity_log').insert({
-      user_id: user.id,
-      type: 'ERR',
-      message: error.message.substring(0, 200),
-      agent_id: agent_id,
-      tokens: 0,
-      duration_ms: latency,
-    });
+    await Promise.all([
+      db.from('activity_log').insert({
+        user_id: user.id,
+        type: 'ERR',
+        message: error.message.substring(0, 200),
+        agent_id: agent_id,
+        tokens: 0,
+        duration_ms: latency,
+      }),
+      db.from('activity_log').insert({
+        user_id: user.id,
+        type: 'SYS',
+        message: `[outcome-score] root ${taskRow?.root_mission_id || task_id || 'unknown'} score ${outcome.finalScore} trust ${outcome.trust} for failed branch.`,
+        agent_id: agent_id,
+        tokens: 0,
+        duration_ms: latency,
+      }),
+      db.from('activity_log').insert({
+        user_id: user.id,
+        type: 'SYS',
+        message: `[doctrine-feedback] root ${taskRow?.root_mission_id || task_id || 'unknown'} Failure path detected. Escalate similar branches or add stronger verifier coverage before scaling.`,
+        agent_id: agent_id,
+        tokens: 0,
+        duration_ms: 0,
+      }),
+    ]);
 
     return corsResponse({ error: error.message }, 500);
   }

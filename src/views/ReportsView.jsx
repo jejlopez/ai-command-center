@@ -33,7 +33,7 @@ import { useLearningMemory } from '../utils/useLearningMemory';
 import { DoctrineCards } from '../components/command/DoctrineCards';
 import { TruthAuditStrip } from '../components/command/TruthAuditStrip';
 import { useCommandCenterTruth } from '../utils/useCommandCenterTruth';
-import { getAutomationRoiSummary, getObservedModelBenchmarks, scoreTaskOutcome } from '../utils/commanderAnalytics';
+import { getAutomationCandidates, getAutomationRoiSummary, getObservedModelBenchmarks, parseDoctrineFeedbackLogs, parseOutcomeScoreLogs, scoreTaskOutcome } from '../utils/commanderAnalytics';
 
 const PERIOD_OPTIONS = ['30d', '90d', 'QTD'];
 const STATUS_COLORS = {
@@ -497,6 +497,9 @@ export function ReportsView() {
   }, [tasks]);
   const roiSummary = useMemo(() => getAutomationRoiSummary(tasks, humanHourlyRate), [tasks]);
   const benchmarkBoard = useMemo(() => getObservedModelBenchmarks(tasks, agents).slice(0, 5), [tasks, agents]);
+  const automationCandidates = useMemo(() => getAutomationCandidates(tasks, humanHourlyRate).slice(0, 4), [tasks]);
+  const persistedOutcomeScores = useMemo(() => parseOutcomeScoreLogs(logs).slice(0, 5), [logs]);
+  const persistedDoctrineFeedback = useMemo(() => parseDoctrineFeedbackLogs(logs).slice(0, 4), [logs]);
   const peakActivity = useMemo(
     () => activityWave.reduce((best, bucket) => (bucket.volume > best.volume ? bucket : best), activityWave[0] || { name: 'No activity yet', volume: 0 }),
     [activityWave]
@@ -650,6 +653,71 @@ export function ReportsView() {
                   </div>
                 </div>
               ))}
+            </div>
+          </HudFrame>
+        </Motion.section>
+
+        <Motion.section variants={item} className="grid grid-cols-1 gap-5 xl:grid-cols-2">
+          <HudFrame
+            eyebrow="Automate Next"
+            title="What Commander should automate next"
+            detail="This recommendation rack is tied to repetition and ROI, so the next automation targets are measurable."
+            accent="blue"
+          >
+            <div className="space-y-3">
+              {automationCandidates.length === 0 && <div className="text-[12px] text-text-muted">Commander needs at least a little repeated work history before it can recommend the next automation target.</div>}
+              {automationCandidates.map((entry) => (
+                <div key={entry.key} className="rounded-[18px] border border-white/8 bg-[#111827] p-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="text-[12px] font-semibold text-text-primary">{entry.title}</div>
+                    <div className="rounded-full border border-aurora-blue/20 bg-aurora-blue/10 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-aurora-blue">
+                      {entry.automationScore}
+                    </div>
+                  </div>
+                  <div className="mt-1 text-[11px] text-text-muted">{entry.domain} / {entry.intentType}</div>
+                  <div className="mt-3 grid grid-cols-3 gap-2 text-[10px] text-text-muted">
+                    <div>{entry.runs} runs</div>
+                    <div>{entry.estimatedHours.toFixed(1)}h</div>
+                    <div>{entry.roi.toFixed(1)}x ROI</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </HudFrame>
+
+          <HudFrame
+            eyebrow="Persisted Feedback"
+            title="Outcome memory and doctrine pressure"
+            detail="These entries are persisted in the runtime log so the system can learn from real outcomes instead of re-deriving everything each render."
+            accent="violet"
+          >
+            <div className="grid gap-3">
+              <div className="rounded-[18px] border border-white/8 bg-[#111827] p-3">
+                <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Latest outcome scores</div>
+                <div className="mt-3 space-y-2">
+                  {persistedOutcomeScores.length === 0 && <div className="text-[11px] text-text-muted">No persisted outcome-score logs yet.</div>}
+                  {persistedOutcomeScores.map((entry) => (
+                    <div key={entry.id} className="rounded-[14px] border border-white/8 bg-black/20 px-3 py-2.5">
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="text-[10px] font-mono uppercase text-aurora-teal">{entry.trust} trust</div>
+                        <div className="text-[10px] font-mono text-text-disabled">{entry.score ?? '—'}</div>
+                      </div>
+                      <div className="mt-1 text-[11px] text-text-body">{entry.cleanMessage}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div className="rounded-[18px] border border-white/8 bg-[#111827] p-3">
+                <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Latest doctrine feedback</div>
+                <div className="mt-3 space-y-2">
+                  {persistedDoctrineFeedback.length === 0 && <div className="text-[11px] text-text-muted">No persisted doctrine feedback yet.</div>}
+                  {persistedDoctrineFeedback.map((entry) => (
+                    <div key={entry.id} className="rounded-[14px] border border-white/8 bg-black/20 px-3 py-2.5 text-[11px] text-text-body">
+                      {entry.cleanMessage}
+                    </div>
+                  ))}
+                </div>
+              </div>
             </div>
           </HudFrame>
         </Motion.section>

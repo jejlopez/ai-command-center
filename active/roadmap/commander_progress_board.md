@@ -6,7 +6,7 @@ This is the live build tracker for the Jarvis / Stark / Musk Commander program.
 
 - Jarvis vision size: `100` scoped features
 - Shipped foundation: `15`
-- Active buildout: `26`
+- Active buildout: `28`
 - Immediate next targets: `0`
 - Deferred / later items: `64`
 
@@ -59,48 +59,53 @@ This is the live build tracker for the Jarvis / Stark / Musk Commander program.
 - Outcome quality scoring
 - Automation ROI board
 - Promotion history in the specialist fleet
+- Persisted outcome and doctrine log memory
+- Local-first workload balancing
+- Automation-next recommendation rack
+- Mission Control outcome and doctrine timelines
 
 ## Next Program Targets
 
-### 1. Promotion And Override History Timelines
+### 1. Persist Outcome Scoring Into First-Class Mission Memory
 
 Goal:
-- make branch and specialist doctrine changes auditable over time
+- promote derived outcome quality into a reusable mission memory layer
 
 Definition of done:
-- show route changes, promotions, and operator overrides as clean time-based history
-- make intervention decisions reviewable after the fact
+- quality snapshots survive outside activity logs
+- doctrine can learn from them directly without reparsing messages
 
 Likely surfaces:
-- [`/Users/Jjarvis/ai-command-center/src/views/MissionControlView.jsx`](/Users/Jjarvis/ai-command-center/src/views/MissionControlView.jsx)
-- [`/Users/Jjarvis/ai-command-center/src/views/IntelligenceView.jsx`](/Users/Jjarvis/ai-command-center/src/views/IntelligenceView.jsx)
+- [`/Users/Jjarvis/ai-command-center/src/lib/api.js`](/Users/Jjarvis/ai-command-center/src/lib/api.js)
+- [`/Users/Jjarvis/ai-command-center/supabase/functions/dispatch-task/index.ts`](/Users/Jjarvis/ai-command-center/supabase/functions/dispatch-task/index.ts)
+- [`/Users/Jjarvis/ai-command-center/supabase/functions/commander-heartbeat/index.ts`](/Users/Jjarvis/ai-command-center/supabase/functions/commander-heartbeat/index.ts)
 
-### 2. Persisted Outcome Scoring And Doctrine Feedback
-
-Goal:
-- move outcome quality from derived view logic into reusable Commander memory
-
-Definition of done:
-- each mission stores a stable quality score or snapshot
-- doctrine can automatically react to quality drift over time
-
-### 3. Workload Balancing Across Cloud And Local Lanes
+### 2. Branch-Level Override Timeline Polish In Mission Control
 
 Goal:
-- route more work to the cheapest reliable lane without sacrificing outcomes
+- make intervention and override history easier to scan during live operations
 
 Definition of done:
-- balancing rules exist across local and cloud lanes
-- routing can explain when it escalated and when it stayed local
+- route changes, promotions, dependencies, outcome scores, and feedback read as one coherent timeline
+- operator review becomes fast under pressure
 
-### 4. “What Can I Automate Next?” Recommendation Engine
+### 3. Local/Cloud Balancing Upgrades From Observed Benchmark Winners
 
 Goal:
-- turn reports and mission history into the next best automation suggestions
+- route more work to the cheapest reliable lane using observed winners, not just heuristics
 
 Definition of done:
-- recommend high-repeat, low-risk work for automation
-- connect those recommendations to ROI and bottleneck data
+- local-first and premium-escalation rules use benchmark evidence
+- Commander can explain why it stayed local or escalated
+
+### 4. Turn Automation Recommendations Into Launchable Recurring Flows
+
+Goal:
+- let the operator convert high-confidence automation candidates into real recurring workflows
+
+Definition of done:
+- recommendation cards can launch automation setup directly
+- ROI stays visible after automation is activated
 
 ## Later
 
@@ -132,7 +137,7 @@ When autodrive is enabled:
 
 Build next:
 
-1. promotion and override history timelines
-2. persisted outcome scoring and doctrine feedback
-3. workload balancing across cloud and local lanes
-4. what can I automate next? recommendation engine
+1. persist outcome scoring into first-class mission memory
+2. branch-level override timeline polish in Mission Control
+3. local/cloud balancing upgrades from observed benchmark winners
+4. turn automation recommendations into launchable recurring flows

@@ -26,6 +26,7 @@ import {
   deriveRoutingDecision,
   mapRoutingPolicyFromDb,
 } from '../utils/routingPolicy';
+import { inferAgentProvider } from '../utils/commanderAnalytics';
 
 // True when real Supabase env vars are set (not the placeholder)
 const isSupabaseConfigured = import.meta.env.VITE_SUPABASE_URL
@@ -61,6 +62,7 @@ function mapAgentRow(row) {
     id:               row.id,
     name:             row.name,
     model:            row.model,
+    provider:         normalizeModelProvider(row.provider),
     roleDescription:  row.role_description || '',
     status:           row.status,
     role:             row.role,
@@ -441,6 +443,7 @@ async function ensureBranchSpecialistAgent({
     user_id: user.id,
     name: `${branchRole}-${objective.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 24)}`,
     model: chosenModel,
+    provider: chosenProvider,
     status: 'idle',
     role: branchRole,
     role_description: `Ephemeral ${branchRole} specialist for mission branch execution.`,
@@ -509,6 +512,7 @@ async function buildMissionSubtasks({
       routingPolicy: payload.routingPolicy || null,
       selectedAgent: payload.selectedAgent || null,
       commander: payload.commander || null,
+      routingDecision,
     });
 
     rows.push({
@@ -573,6 +577,7 @@ async function resolveBranchAssignment({
   routingPolicy,
   selectedAgent,
   commander,
+  routingDecision,
 }) {
   const liveAgents = agents.filter((agent) => !agent.isSyntheticCommander);
   const branchRole = branch.agentRole || routingPolicy?.preferredAgentRole || selectedAgent?.role || 'executor';
@@ -583,14 +588,27 @@ async function resolveBranchAssignment({
   const recommendedSkillNames = Array.isArray(branch.recommendedSkillNames)
     ? branch.recommendedSkillNames
     : [];
+  const localPreferred = routingDecision.riskLevel === 'low' && routingDecision.budgetClass !== 'premium';
 
   const exactRoleMatches = liveAgents
     .filter((agent) => agent.role === branchRole)
     .sort((left, right) => {
+      const leftProvider = inferAgentProvider(left);
+      const rightProvider = inferAgentProvider(right);
       const leftPersistent = Number(!left.isEphemeral);
       const rightPersistent = Number(!right.isEphemeral);
       const persistenceDelta = rightPersistent - leftPersistent;
       if (persistenceDelta !== 0) return persistenceDelta;
+      if (providerOverride) {
+        const rightProviderMatch = Number(rightProvider === providerOverride);
+        const leftProviderMatch = Number(leftProvider === providerOverride);
+        if (rightProviderMatch !== leftProviderMatch) return rightProviderMatch - leftProviderMatch;
+      }
+      if (localPreferred) {
+        const rightLocal = Number(rightProvider === 'Ollama');
+        const leftLocal = Number(leftProvider === 'Ollama');
+        if (rightLocal !== leftLocal) return rightLocal - leftLocal;
+      }
       const leftSkillScore = (left.skills || []).filter((skill) => recommendedSkillNames.includes(skill)).length;
       const rightSkillScore = (right.skills || []).filter((skill) => recommendedSkillNames.includes(skill)).length;
       return rightSkillScore - leftSkillScore;

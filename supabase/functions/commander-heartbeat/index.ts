@@ -94,6 +94,28 @@ function isTaskFailed(task: TaskRow): boolean {
     || ['failed', 'blocked', 'cancelled'].includes(String(task.workflow_status || '').toLowerCase());
 }
 
+function scoreOutcome(task: { approval_level?: string | null; execution_strategy?: string | null }, cost: number, latency: number, status: 'completed' | 'failed') {
+  let score = 52;
+  if (status === 'completed') score += 24;
+  if (status === 'failed') score -= 30;
+  if (String(task.approval_level || '') === 'human_required') score -= 6;
+  if (String(task.execution_strategy || '') === 'parallel') score += 4;
+  if (cost <= 0.75) score += 5;
+  if (latency > 0 && latency <= 12 * 60 * 1000) score += 4;
+  if (latency > 50 * 60 * 1000) score -= 4;
+  const finalScore = Math.min(100, Math.max(0, Math.round(score)));
+  const trust = finalScore >= 80 ? 'high' : finalScore >= 60 ? 'medium' : 'low';
+  return { finalScore, trust };
+}
+
+function buildDoctrineFeedback(task: { budget_class?: string | null; risk_level?: string | null; model_override?: string | null }, score: number, cost: number) {
+  if (score < 55) return 'This lane underperformed. Tighten context packs, review branch decomposition, or escalate to a stronger model.';
+  if (String(task.risk_level || '') === 'low' && String(task.budget_class || '') !== 'premium' && cost > 1.25) {
+    return 'Low-risk work cleared at a relatively high cost. Bias similar branches toward a local or cheaper lane first.';
+  }
+  return `This route is holding up well. Preserve the current lane${task.model_override ? ` around ${task.model_override}` : ''} as a preferred doctrine candidate.`;
+}
+
 async function updateMissionGraphProgress(db: ReturnType<typeof createClient>, task: TaskRow) {
   if (!task.parent_id || !task.root_mission_id) return;
 
@@ -418,6 +440,9 @@ Deno.serve(async (req: Request) => {
       const completedAt = new Date().toISOString();
       const reviewId = crypto.randomUUID();
 
+      const outcome = scoreOutcome(task as unknown as { approval_level?: string | null; execution_strategy?: string | null }, cost, latency, 'completed');
+      const doctrineFeedback = buildDoctrineFeedback(task as unknown as { budget_class?: string | null; risk_level?: string | null; model_override?: string | null }, outcome.finalScore, cost);
+
       await Promise.all([
         db.from('agents').update({
           status: 'idle',
@@ -451,6 +476,22 @@ Deno.serve(async (req: Request) => {
           tokens,
           duration_ms: latency,
         }),
+        db.from('activity_log').insert({
+          user_id: task.user_id,
+          type: 'SYS',
+          message: `[outcome-score] root ${task.root_mission_id || task.id} score ${outcome.finalScore} trust ${outcome.trust} for ${(task.title || task.name || prompt).substring(0, 80)}.`,
+          agent_id: effectiveAgentId,
+          tokens: 0,
+          duration_ms: latency,
+        }),
+        db.from('activity_log').insert({
+          user_id: task.user_id,
+          type: 'SYS',
+          message: `[doctrine-feedback] root ${task.root_mission_id || task.id} ${doctrineFeedback}`,
+          agent_id: effectiveAgentId,
+          tokens: 0,
+          duration_ms: 0,
+        }),
 
         db.from('pending_reviews').insert({
           id: reviewId,
@@ -474,6 +515,7 @@ Deno.serve(async (req: Request) => {
       const message = error instanceof Error ? error.message : String(error);
       const failedAt = new Date().toISOString();
 
+      const outcome = scoreOutcome(task as unknown as { approval_level?: string | null; execution_strategy?: string | null }, 0, Date.now() - startTime, 'failed');
       await Promise.all([
         db.from('agents').update({ status: 'idle', last_heartbeat: failedAt }).eq('id', effectiveAgentId),
         db.from('tasks').update({
@@ -491,6 +533,22 @@ Deno.serve(async (req: Request) => {
           agent_id: effectiveAgentId,
           tokens: 0,
           duration_ms: Date.now() - startTime,
+        }),
+        db.from('activity_log').insert({
+          user_id: task.user_id,
+          type: 'SYS',
+          message: `[outcome-score] root ${task.root_mission_id || task.id} score ${outcome.finalScore} trust ${outcome.trust} for failed branch.`,
+          agent_id: effectiveAgentId,
+          tokens: 0,
+          duration_ms: Date.now() - startTime,
+        }),
+        db.from('activity_log').insert({
+          user_id: task.user_id,
+          type: 'SYS',
+          message: `[doctrine-feedback] root ${task.root_mission_id || task.id} Failure path detected. Escalate similar branches or add stronger verifier coverage before scaling.`,
+          agent_id: effectiveAgentId,
+          tokens: 0,
+          duration_ms: 0,
         }),
       ]);
 

@@ -43,6 +43,7 @@ import { TacticalInterventionConsole } from '../components/command/TacticalInter
 import { buildTimelineEntries } from '../utils/buildCommandTimeline';
 import { TaskDAG } from '../components/TaskDAG';
 import { getWorkflowMeta } from '../utils/missionLifecycle';
+import { parseDoctrineFeedbackLogs, parseOutcomeScoreLogs } from '../utils/commanderAnalytics';
 
 // ═══════════════════════════════════════════════════════════════
 // UI ATOMS
@@ -304,6 +305,8 @@ function MissionGraphPanel({ tasks, agents, logs, selectedId, onSelect, onRetry,
       .slice(-4)
       .reverse()
   );
+  const outcomeHistory = parseOutcomeScoreLogs(logs).filter((entry) => !selectedRootMissionId || entry.rootMissionId === selectedRootMissionId).slice(0, 6);
+  const doctrineFeedback = parseDoctrineFeedbackLogs(logs).filter((entry) => !selectedRootMissionId || entry.cleanMessage.includes(selectedRootMissionId)).slice(0, 6);
   const branchHistory = (
     logs
       .filter((entry) => {
@@ -311,7 +314,7 @@ function MissionGraphPanel({ tasks, agents, logs, selectedId, onSelect, onRetry,
         if (!selectedRootMissionId) return false;
         return (
           message.includes(selectedRootMissionId)
-          && (message.includes('[branch-routing]') || message.includes('[branch-dependency]') || message.includes('[specialist-spawned]') || message.includes('[specialist-retired]'))
+          && (message.includes('[branch-routing]') || message.includes('[branch-dependency]') || message.includes('[specialist-spawned]') || message.includes('[specialist-retired]') || message.includes('[specialist-persistent]') || message.includes('[outcome-score]') || message.includes('[doctrine-feedback]'))
         );
       })
       .slice(-8)
@@ -634,7 +637,7 @@ function MissionGraphPanel({ tasks, agents, logs, selectedId, onSelect, onRetry,
           <div className="mt-3 space-y-2">
             {retirementEvents.map((event) => (
               <div key={event.id} className="rounded-[16px] border border-white/8 bg-white/[0.02] px-3 py-3 text-[11px] leading-relaxed text-text-body">
-                {String(event.text).replace('[specialist-retired] ', '')}
+                {String(event.message || '').replace('[specialist-retired] ', '')}
               </div>
             ))}
           </div>
@@ -682,9 +685,9 @@ function MissionGraphPanel({ tasks, agents, logs, selectedId, onSelect, onRetry,
             )}
           </div>
         </div>
-        <div className="rounded-[20px] border border-white/8 bg-black/20 p-4">
-          <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Branch History</div>
-          <div className="mt-1 text-[12px] text-text-body">Routing overrides, dependency edits, and specialist lifecycle events for this mission root.</div>
+          <div className="rounded-[20px] border border-white/8 bg-black/20 p-4">
+            <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Branch History</div>
+            <div className="mt-1 text-[12px] text-text-body">Routing overrides, dependency edits, and specialist lifecycle events for this mission root.</div>
           <div className="mt-3 space-y-2">
             {branchHistory.length === 0 && (
               <div className="rounded-[16px] border border-white/8 bg-white/[0.02] px-3 py-3 text-[11px] text-text-muted">
@@ -702,8 +705,46 @@ function MissionGraphPanel({ tasks, agents, logs, selectedId, onSelect, onRetry,
                     .replace('[branch-routing] ', '')
                     .replace('[branch-dependency] ', '')
                     .replace('[specialist-spawned] ', '')
-                    .replace('[specialist-retired] ', '')}
+                    .replace('[specialist-retired] ', '')
+                    .replace('[specialist-persistent] ', '')
+                    .replace('[outcome-score] ', '')
+                    .replace('[doctrine-feedback] ', '')}
                 </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+      <div className="mt-4 grid gap-3 xl:grid-cols-2">
+        <div className="rounded-[20px] border border-white/8 bg-black/20 p-4">
+          <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Outcome Timeline</div>
+          <div className="mt-1 text-[12px] text-text-body">Persisted mission outcome scores for this root, so quality and trust survive beyond the current run.</div>
+          <div className="mt-3 space-y-2">
+            {outcomeHistory.length === 0 && <div className="rounded-[16px] border border-white/8 bg-white/[0.02] px-3 py-3 text-[11px] text-text-muted">No persisted outcome scores yet for this mission root.</div>}
+            {outcomeHistory.map((entry) => (
+              <div key={entry.id} className="rounded-[16px] border border-white/8 bg-white/[0.02] px-3 py-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="text-[10px] font-mono uppercase text-aurora-teal">{entry.trust} trust</div>
+                  <div className="text-[10px] font-mono text-text-disabled">{entry.timestamp ? new Date(entry.timestamp).toLocaleTimeString() : 'Live'}</div>
+                </div>
+                <div className="mt-2 text-[12px] font-semibold text-text-primary">Score {entry.score ?? '—'}</div>
+                <div className="mt-1 text-[11px] leading-relaxed text-text-body">{entry.cleanMessage}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="rounded-[20px] border border-white/8 bg-black/20 p-4">
+          <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Doctrine Feedback</div>
+          <div className="mt-1 text-[12px] text-text-body">Persisted route guidance created from mission outcomes, overrides, and failures.</div>
+          <div className="mt-3 space-y-2">
+            {doctrineFeedback.length === 0 && <div className="rounded-[16px] border border-white/8 bg-white/[0.02] px-3 py-3 text-[11px] text-text-muted">No doctrine feedback has been written yet for this mission root.</div>}
+            {doctrineFeedback.map((entry) => (
+              <div key={entry.id} className="rounded-[16px] border border-white/8 bg-white/[0.02] px-3 py-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="text-[10px] font-mono uppercase text-aurora-blue">Feedback</div>
+                  <div className="text-[10px] font-mono text-text-disabled">{entry.timestamp ? new Date(entry.timestamp).toLocaleString() : 'Live'}</div>
+                </div>
+                <div className="mt-2 text-[11px] leading-relaxed text-text-body">{entry.cleanMessage.replace(`root ${selectedRootMissionId} `, '')}</div>
               </div>
             ))}
           </div>

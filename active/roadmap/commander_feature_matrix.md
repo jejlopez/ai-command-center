@@ -55,7 +55,7 @@ Legend:
 | 40 | Model registry with cost / latency / quality | 1 | Now | Shipped |
 | 41 | Best lane recommendations by task type | 4 | Now | In Progress |
 | 42 | Model benchmark board from observed runs | 4 | Later | In Progress |
-| 43 | Workload balancer across cloud and local models | 4 | Later | Later |
+| 43 | Workload balancer across cloud and local models | 4 | Later | In Progress |
 | 44 | Local-first execution mode | 1 | Now | In Progress |
 | 45 | Premium-only mode | 1 | Later | Queued |
 | 46 | Stealth / privacy mode | 5 | Future | Future |
@@ -79,7 +79,7 @@ Legend:
 | 64 | Cost control board for AI spend and labor savings | 1 | Now | Shipped |
 | 65 | Automation ROI board | 4 | Later | In Progress |
 | 66 | “What should I do next?” command briefing | 6 | Later | In Progress |
-| 67 | “What can I automate next?” recommendation engine | 4 | Later | Later |
+| 67 | “What can I automate next?” recommendation engine | 4 | Later | In Progress |
 | 68 | Memory engine for successful mission patterns | 3 | Later | Later |
 | 69 | Memory recall by domain / project / person / task type | 3 | Later | Later |
 | 70 | Adaptive doctrine that updates preferred routes | 4 | Now | In Progress |
@@ -129,17 +129,17 @@ Legend:
 ## Current Read
 
 - `Shipped`: 15
-- `In Progress`: 26
+- `In Progress`: 28
 - `Next`: 0
 - `Queued`: 16
 - `Later / Future`: 48
 
 ## Immediate Next Four
 
-1. Promotion and override history timelines
-2. Persisted outcome scoring and doctrine feedback
-3. Workload balancing across cloud and local lanes
-4. What can I automate next? recommendation engine
+1. Persist outcome scoring into first-class mission memory
+2. Branch-level override timeline polish in Mission Control
+3. Local/cloud balancing upgrades from observed benchmark winners
+4. Turn automation recommendations into launchable recurring flows
 
 ## Future Summary
 

@@ -2,6 +2,17 @@ function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
 }
 
+export function inferAgentProvider(agent = {}) {
+  const explicit = String(agent.provider || agent.providerOverride || '').trim();
+  if (explicit) return explicit;
+  const model = String(agent.model || agent.modelOverride || '').toLowerCase();
+  if (model.includes('claude')) return 'Anthropic';
+  if (model.includes('gpt')) return 'OpenAI';
+  if (model.includes('gemini')) return 'Google';
+  if (model.includes('ollama') || model.includes('local') || model.includes('qwen') || model.includes('gemma') || model.includes('llama') || model.includes('deepseek')) return 'Ollama';
+  return 'Adaptive';
+}
+
 export function isTaskClosed(task = {}) {
   const status = String(task.status || '').toLowerCase();
   return ['completed', 'done'].includes(status) || task.workflowStatus === 'completed';
@@ -44,7 +55,7 @@ export function getObservedModelBenchmarks(tasks = [], agents = []) {
     .forEach((task) => {
       const agent = agents.find((candidate) => candidate.id === task.agentId);
       const model = agent?.model || task.modelOverride || 'Adaptive lane';
-      const provider = agent?.provider || task.providerOverride || 'Adaptive';
+      const provider = inferAgentProvider(agent || task);
       const key = `${provider}::${model}`;
       const quality = scoreTaskOutcome(task);
       const current = grouped.get(key) || {
@@ -91,6 +102,35 @@ export function getObservedModelBenchmarks(tasks = [], agents = []) {
       if (right.benchmarkScore !== left.benchmarkScore) return right.benchmarkScore - left.benchmarkScore;
       return right.runs - left.runs;
     });
+}
+
+export function parseOutcomeScoreLogs(logs = []) {
+  return logs
+    .filter((entry) => String(entry.message || '').includes('[outcome-score]'))
+    .map((entry) => {
+      const message = String(entry.message || '').replace('[outcome-score] ', '');
+      const scoreMatch = message.match(/score (\d+)/i);
+      const trustMatch = message.match(/trust ([a-z]+)/i);
+      const rootMatch = message.match(/root ([a-z0-9-]+)/i);
+      return {
+        ...entry,
+        score: scoreMatch ? Number(scoreMatch[1]) : null,
+        trust: trustMatch ? trustMatch[1] : 'unknown',
+        rootMissionId: rootMatch ? rootMatch[1] : null,
+        cleanMessage: message,
+      };
+    })
+    .sort((left, right) => new Date(right.timestamp || 0).getTime() - new Date(left.timestamp || 0).getTime());
+}
+
+export function parseDoctrineFeedbackLogs(logs = []) {
+  return logs
+    .filter((entry) => String(entry.message || '').includes('[doctrine-feedback]'))
+    .map((entry) => ({
+      ...entry,
+      cleanMessage: String(entry.message || '').replace('[doctrine-feedback] ', ''),
+    }))
+    .sort((left, right) => new Date(right.timestamp || 0).getTime() - new Date(left.timestamp || 0).getTime());
 }
 
 export function getAutomationRoiSummary(tasks = [], humanHourlyRate = 150) {
@@ -152,4 +192,51 @@ export function getPersistentFleetHistory(logs = [], agents = []) {
     events,
     coverageByRole,
   };
+}
+
+export function getAutomationCandidates(tasks = [], humanHourlyRate = 150) {
+  const grouped = new Map();
+
+  tasks.forEach((task) => {
+    const key = `${task.domain || 'general'}::${task.intentType || 'general'}::${task.name || task.title || 'mission'}`;
+    const current = grouped.get(key) || {
+      key,
+      title: task.name || task.title || 'Mission',
+      domain: task.domain || 'general',
+      intentType: task.intentType || 'general',
+      runs: 0,
+      totalCost: 0,
+      totalDurationMs: 0,
+      automatedRuns: 0,
+    };
+    current.runs += 1;
+    current.totalCost += Number(task.costUsd || 0);
+    current.totalDurationMs += Number(task.durationMs || 0);
+    if (task.intentType === 'automation' || task.scheduleType === 'recurring') current.automatedRuns += 1;
+    grouped.set(key, current);
+  });
+
+  return Array.from(grouped.values())
+    .filter((entry) => entry.runs >= 2)
+    .map((entry) => {
+      const avgCost = entry.totalCost / entry.runs;
+      const estimatedHours = entry.totalDurationMs > 0 ? entry.totalDurationMs / 3_600_000 : entry.runs * 0.25;
+      const humanEquivalent = estimatedHours * humanHourlyRate;
+      const roi = avgCost > 0 ? humanEquivalent / Math.max(entry.totalCost, 0.01) : humanEquivalent;
+      const repetitionScore = entry.runs * 12;
+      const automationScore = Math.round(clamp(repetitionScore + Math.min(35, roi * 8) + (entry.automatedRuns === 0 ? 10 : 0), 0, 100));
+      return {
+        ...entry,
+        avgCost,
+        estimatedHours,
+        humanEquivalent,
+        roi,
+        automationScore,
+      };
+    })
+    .sort((left, right) => {
+      if (right.automationScore !== left.automationScore) return right.automationScore - left.automationScore;
+      return right.runs - left.runs;
+    })
+    .slice(0, 6);
 }
