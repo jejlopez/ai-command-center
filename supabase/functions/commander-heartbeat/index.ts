@@ -13,231 +13,25 @@ function corsResponse(body: unknown, status = 200): Response {
   });
 }
 
-type Provider = 'anthropic' | 'openai' | 'google' | 'custom';
-
-async function nextSessionSequence(db: ReturnType<typeof createClient>, sessionId: string): Promise<number> {
-  const { data } = await db
-    .from('session_events')
-    .select('sequence')
-    .eq('session_id', sessionId)
-    .order('sequence', { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  return Number(data?.sequence ?? -1) + 1;
+function costPerToken(model: string): number {
+  if (model.startsWith('claude-opus-')) return 0.000075;
+  if (model.startsWith('claude-sonnet-')) return 0.000015;
+  return 0.000003;
 }
 
-async function writeSessionEvent(
-  db: ReturnType<typeof createClient>,
-  userId: string,
-  sessionId: string | null | undefined,
-  workerAgentId: string | null | undefined,
-  event: {
-    eventType: string;
-    title: string;
-    content?: string;
-    status?: string;
-    payload?: Record<string, unknown>;
-    durationMs?: number;
-    tokenDelta?: number;
-    costDelta?: number;
-  },
-) {
-  if (!sessionId) return;
-
-  const sequence = await nextSessionSequence(db, sessionId);
-  await db.from('session_events').insert({
-    user_id: userId,
-    session_id: sessionId,
-    worker_agent_id: workerAgentId ?? null,
-    event_type: event.eventType,
-    title: event.title,
-    content: event.content || '',
-    status: event.status || null,
-    payload: event.payload || {},
-    sequence,
-    duration_ms: event.durationMs || 0,
-    token_delta: event.tokenDelta || 0,
-    cost_delta: event.costDelta || 0,
-  });
-}
-
-function inferProvider(model: string): Provider {
-  const normalized = String(model || '').trim().toLowerCase();
-  if (!normalized) return 'custom';
-  if (normalized.includes('claude')) return 'anthropic';
-  if (normalized.includes('gpt') || normalized.includes('o1') || normalized.includes('o3') || normalized.includes('o4')) return 'openai';
-  if (normalized.includes('gemini')) return 'google';
-  return 'custom';
-}
-
-function providerLabel(provider: Provider): string {
-  if (provider === 'anthropic') return 'Anthropic';
-  if (provider === 'openai') return 'OpenAI';
-  if (provider === 'google') return 'Google';
-  return 'Custom';
-}
-
-function costPerToken(provider: Provider, model: string): number {
-  if (provider === 'anthropic') {
-    if (model.startsWith('claude-opus-')) return 0.000075;
-    if (model.startsWith('claude-sonnet-')) return 0.000015;
-    return 0.000003;
-  }
-  if (provider === 'openai') {
-    if (model.startsWith('gpt-5')) return 0.00002;
-    if (model.startsWith('o3') || model.startsWith('o4')) return 0.00003;
-    return 0.00001;
-  }
-  if (provider === 'google') {
-    if (model.startsWith('gemini-2.5-pro')) return 0.00001;
-    return 0.000005;
-  }
-  return 0.00001;
-}
-
-function normalizeExecutionModel(model: string, provider: Provider): string {
+function normalizeExecutionModel(model: string): string {
   const normalized = String(model || '').trim().toLowerCase();
 
   if (!normalized) return '';
-  if (provider === 'anthropic') {
-    if (normalized.startsWith('claude-')) return normalized;
-    const aliases: Record<string, string> = {
-      'claude opus 4.6': 'claude-opus-4-6',
-      'claude sonnet 4.6': 'claude-sonnet-4-6',
-      'claude sonnet 4.5': 'claude-sonnet-4-5',
-    };
-    return aliases[normalized] || normalized.replace(/\s+/g, '-');
-  }
-  if (provider === 'openai') {
-    return normalized
-      .replace(/\s+/g, '-')
-      .replace(/gpt[- ]?5\.4/g, 'gpt-5.4')
-      .replace(/gpt[- ]?5/g, 'gpt-5')
-      .replace(/o3[- ]?mini/g, 'o3-mini')
-      .replace(/o4[- ]?mini/g, 'o4-mini');
-  }
-  if (provider === 'google') {
-    return normalized.replace(/\s+/g, '-');
-  }
-  return normalized.replace(/\s+/g, '-');
-}
+  if (normalized.startsWith('claude-')) return normalized;
 
-function extractTextFromOpenAIResponse(payload: Record<string, unknown>): string {
-  const choices = Array.isArray(payload.choices) ? payload.choices as Array<Record<string, unknown>> : [];
-  const content = choices[0]?.message as Record<string, unknown> | undefined;
-  const raw = content?.content;
-  if (typeof raw === 'string') return raw;
-  if (Array.isArray(raw)) {
-    return raw
-      .map((item) => (typeof item === 'string' ? item : (item as Record<string, unknown>)?.text))
-      .filter(Boolean)
-      .join('\n');
-  }
-  return '';
-}
+  const aliases: Record<string, string> = {
+    'claude opus 4.6': 'claude-opus-4-6',
+    'claude sonnet 4.6': 'claude-sonnet-4-6',
+    'claude sonnet 4.5': 'claude-sonnet-4-5',
+  };
 
-function extractTextFromGoogleResponse(payload: Record<string, unknown>): string {
-  const candidates = Array.isArray(payload.candidates) ? payload.candidates as Array<Record<string, unknown>> : [];
-  const parts = (((candidates[0]?.content as Record<string, unknown> | undefined)?.parts) || []) as Array<Record<string, unknown>>;
-  return parts.map((part) => String(part.text || '')).join('\n').trim();
-}
-
-function getProviderCredential(userSettings: Record<string, string | null>, provider: Provider): string {
-  if (provider === 'anthropic') return userSettings.anthropic_api_key || '';
-  if (provider === 'openai') return userSettings.openai_api_key || '';
-  if (provider === 'google') return userSettings.google_api_key || '';
-  return '';
-}
-
-async function executeModel(params: {
-  provider: Provider;
-  apiKey: string;
-  model: string;
-  systemPrompt: string;
-  prompt: string;
-  temperature: number;
-  maxTokens: number;
-}): Promise<{ text: string; tokens: number }> {
-  const { provider, apiKey, model, systemPrompt, prompt, temperature, maxTokens } = params;
-
-  if (provider === 'anthropic') {
-    const anthropic = new Anthropic({ apiKey });
-    const aiResponse = await anthropic.messages.create({
-      model,
-      system: systemPrompt,
-      messages: [{ role: 'user', content: prompt }],
-      temperature,
-      max_tokens: maxTokens,
-    });
-    return {
-      text: (aiResponse.content[0] as { type: string; text: string }).text,
-      tokens: aiResponse.usage.input_tokens + aiResponse.usage.output_tokens,
-    };
-  }
-
-  if (provider === 'openai') {
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model,
-        messages: [
-          { role: 'system', content: systemPrompt || '' },
-          { role: 'user', content: prompt },
-        ],
-        temperature,
-        max_completion_tokens: maxTokens,
-      }),
-    });
-
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      throw new Error(String((payload as Record<string, unknown>)?.error?.message || `OpenAI HTTP ${response.status}`));
-    }
-
-    return {
-      text: extractTextFromOpenAIResponse(payload as Record<string, unknown>),
-      tokens: Number(((payload as Record<string, unknown>).usage as Record<string, unknown> | undefined)?.total_tokens || 0),
-    };
-  }
-
-  if (provider === 'google') {
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        systemInstruction: systemPrompt
-          ? { parts: [{ text: systemPrompt }] }
-          : undefined,
-        contents: [
-          {
-            role: 'user',
-            parts: [{ text: prompt }],
-          },
-        ],
-        generationConfig: {
-          temperature,
-          maxOutputTokens: maxTokens,
-        },
-      }),
-    });
-
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      throw new Error(String((payload as Record<string, unknown>)?.error?.message || `Google HTTP ${response.status}`));
-    }
-
-    return {
-      text: extractTextFromGoogleResponse(payload as Record<string, unknown>),
-      tokens: Number(((payload as Record<string, unknown>).usageMetadata as Record<string, unknown> | undefined)?.totalTokenCount || 0),
-    };
-  }
-
-  throw new Error(`Unsupported provider: ${provider}`);
+  return aliases[normalized] || normalized.replace(/\s+/g, '-');
 }
 
 const MAX_TOKENS_MAP: Record<string, number> = {
@@ -262,6 +56,7 @@ type AgentRow = {
   total_cost?: number | string | null;
   task_count?: number | null;
   latency_ms?: number | null;
+  is_ephemeral?: boolean | null;
 };
 
 type TaskRow = {
@@ -278,13 +73,267 @@ type TaskRow = {
   run_at?: string | null;
   started_at?: string | null;
   created_at?: string | null;
-  session_id?: string | null;
-  template_id?: string | null;
+  parent_id?: string | null;
+  root_mission_id?: string | null;
+  node_type?: string | null;
+  workflow_status?: string | null;
+  depends_on?: string[] | null;
+  domain?: string | null;
+  intent_type?: string | null;
+  budget_class?: string | null;
+  risk_level?: string | null;
+  approval_level?: string | null;
+  execution_strategy?: string | null;
+  schedule_type?: string | null;
+  recurrence_rule?: { frequency?: string | null; time?: string | null; endDate?: string | null } | null;
+  requires_approval?: boolean | null;
+  context_pack_ids?: unknown;
+  required_capabilities?: unknown;
+  model_override?: string | null;
+  provider_override?: string | null;
 };
 
 type ReviewRow = {
   agent_id?: string | null;
 };
+
+function isTaskComplete(task: TaskRow): boolean {
+  return ['completed', 'done'].includes(String(task.status || '').toLowerCase())
+    || String(task.workflow_status || '').toLowerCase() === 'completed';
+}
+
+function isTaskFailed(task: TaskRow): boolean {
+  return ['failed', 'error', 'blocked', 'cancelled'].includes(String(task.status || '').toLowerCase())
+    || ['failed', 'blocked', 'cancelled'].includes(String(task.workflow_status || '').toLowerCase());
+}
+
+function scoreOutcome(task: { approval_level?: string | null; execution_strategy?: string | null }, cost: number, latency: number, status: 'completed' | 'failed') {
+  let score = 52;
+  if (status === 'completed') score += 24;
+  if (status === 'failed') score -= 30;
+  if (String(task.approval_level || '') === 'human_required') score -= 6;
+  if (String(task.execution_strategy || '') === 'parallel') score += 4;
+  if (cost <= 0.75) score += 5;
+  if (latency > 0 && latency <= 12 * 60 * 1000) score += 4;
+  if (latency > 50 * 60 * 1000) score -= 4;
+  const finalScore = Math.min(100, Math.max(0, Math.round(score)));
+  const trust = finalScore >= 80 ? 'high' : finalScore >= 60 ? 'medium' : 'low';
+  return { finalScore, trust };
+}
+
+function buildDoctrineFeedback(task: { budget_class?: string | null; risk_level?: string | null; model_override?: string | null }, score: number, cost: number) {
+  if (score < 55) return 'This lane underperformed. Tighten context packs, review branch decomposition, or escalate to a stronger model.';
+  if (String(task.risk_level || '') === 'low' && String(task.budget_class || '') !== 'premium' && cost > 1.25) {
+    return 'Low-risk work cleared at a relatively high cost. Bias similar branches toward a local or cheaper lane first.';
+  }
+  return `This route is holding up well. Preserve the current lane${task.model_override ? ` around ${task.model_override}` : ''} as a preferred doctrine candidate.`;
+}
+
+async function recordTaskIntervention(
+  db: ReturnType<typeof createClient>,
+  task: TaskRow,
+  {
+    eventType,
+    eventSource = 'runtime',
+    tone = 'blue',
+    message,
+    metadata = {},
+  }: {
+    eventType: string;
+    eventSource?: string;
+    tone?: string;
+    message: string;
+    metadata?: Record<string, unknown>;
+  },
+) {
+  await db.from('task_interventions').insert({
+    user_id: task.user_id,
+    task_id: task.id,
+    root_mission_id: task.root_mission_id || task.id,
+    agent_id: task.agent_id || null,
+    event_type: eventType,
+    event_source: eventSource,
+    tone,
+    message,
+    domain: task.domain || 'general',
+    intent_type: task.intent_type || 'general',
+    provider: task.provider_override || null,
+    model: task.model_override || null,
+    schedule_type: task.schedule_type || 'once',
+    metadata,
+  });
+}
+
+async function recordSpecialistLifecycle(
+  db: ReturnType<typeof createClient>,
+  userId: string,
+  agent: { id: string; name?: string | null; role?: string | null; model?: string | null; is_ephemeral?: boolean | null },
+  rootMissionId: string | null | undefined,
+  eventType: string,
+  message: string,
+) {
+  await db.from('specialist_lifecycle').insert({
+    user_id: userId,
+    agent_id: agent.id,
+    root_mission_id: rootMissionId || null,
+    event_type: eventType,
+    event_source: 'runtime',
+    role: agent.role || 'specialist',
+    model: agent.model || null,
+    is_ephemeral: Boolean(agent.is_ephemeral ?? true),
+    message,
+    metadata: {
+      cleanupSource: 'commander-heartbeat',
+    },
+  });
+}
+
+async function updateMissionGraphProgress(db: ReturnType<typeof createClient>, task: TaskRow) {
+  if (!task.parent_id || !task.root_mission_id) return;
+
+  const { data: subtaskRows, error } = await db
+    .from('tasks')
+    .select('id,user_id,status,parent_id,root_mission_id,node_type,workflow_status,depends_on')
+    .eq('root_mission_id', task.root_mission_id)
+    .eq('parent_id', task.parent_id)
+    .order('created_at', { ascending: true });
+
+  if (error || !subtaskRows) return;
+
+  const subtasks = subtaskRows as TaskRow[];
+  const completedIds = new Set(subtasks.filter(isTaskComplete).map((row) => row.id));
+  const completedCount = subtasks.filter(isTaskComplete).length;
+  const failedCount = subtasks.filter(isTaskFailed).length;
+  const totalCount = subtasks.length || 1;
+
+  const nextTask = subtasks.find((row) => {
+    const workflow = String(row.workflow_status || '').toLowerCase();
+    if (!['planned', 'intake'].includes(workflow) && String(row.status || '').toLowerCase() !== 'pending') return false;
+    const dependencies = Array.isArray(row.depends_on) ? row.depends_on : [];
+    return dependencies.every((dependencyId) => completedIds.has(dependencyId));
+  });
+
+  if (nextTask) {
+    await db.from('tasks').update({
+      status: 'queued',
+      workflow_status: 'ready',
+      lane: 'active',
+      updated_at: new Date().toISOString(),
+    }).eq('id', nextTask.id).eq('user_id', task.user_id);
+  }
+
+  const rootUpdate = failedCount > 0
+    ? {
+      status: 'failed',
+      workflow_status: 'blocked',
+      lane: 'blocked',
+      progress_percent: Math.min(99, Math.round((completedCount / totalCount) * 100)),
+      updated_at: new Date().toISOString(),
+    }
+    : completedCount >= totalCount
+      ? {
+        status: 'completed',
+        workflow_status: 'completed',
+        lane: 'completed',
+        progress_percent: 100,
+        completed_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      }
+      : {
+        status: 'running',
+        workflow_status: 'running',
+        lane: 'active',
+        progress_percent: Math.max(10, Math.round((completedCount / totalCount) * 100)),
+        updated_at: new Date().toISOString(),
+      };
+
+  await db.from('tasks').update(rootUpdate).eq('id', task.parent_id).eq('user_id', task.user_id);
+}
+
+async function cleanupEphemeralSpecialists(
+  db: ReturnType<typeof createClient>,
+  userId: string,
+  rootMissionId: string | null | undefined,
+) {
+  if (!rootMissionId) return;
+
+  const { data: missionAgents, error: missionAgentsError } = await db
+    .from('tasks')
+    .select('agent_id')
+    .eq('user_id', userId)
+    .eq('root_mission_id', rootMissionId)
+    .not('agent_id', 'is', null);
+
+  if (missionAgentsError || !missionAgents?.length) return;
+
+  const candidateIds = [...new Set(missionAgents.map((row) => row.agent_id).filter(Boolean))];
+  if (!candidateIds.length) return;
+
+  const { data: ephemeralAgents, error: agentError } = await db
+    .from('agents')
+    .select('id,name,role,model,is_ephemeral')
+    .eq('user_id', userId)
+    .in('id', candidateIds)
+    .eq('is_ephemeral', true);
+
+  if (agentError || !ephemeralAgents?.length) return;
+
+  const ephemeralRows = ephemeralAgents as Array<{ id: string; name?: string | null; role?: string | null; model?: string | null }>;
+  const ephemeralIds = ephemeralRows.map((agent) => agent.id);
+  if (!ephemeralIds.length) return;
+
+  const { data: activeAssignments, error: activeError } = await db
+    .from('tasks')
+    .select('agent_id,status,workflow_status')
+    .eq('user_id', userId)
+    .in('agent_id', ephemeralIds);
+
+  if (activeError) return;
+
+  const activeStatuses = new Set(['queued', 'running', 'pending', 'needs_approval']);
+  const activeWorkflow = new Set(['intake', 'planned', 'ready', 'running', 'waiting_on_human']);
+  const agentsInUse = new Set(
+    (activeAssignments || [])
+      .filter((row) => (
+        activeStatuses.has(String(row.status || '').toLowerCase())
+        || activeWorkflow.has(String(row.workflow_status || '').toLowerCase())
+      ))
+      .map((row) => row.agent_id)
+      .filter(Boolean),
+  );
+
+  const staleEphemeralIds = ephemeralIds.filter((agentId) => !agentsInUse.has(agentId));
+  if (!staleEphemeralIds.length) return;
+
+  const staleAgents = ephemeralRows.filter((agent) => staleEphemeralIds.includes(agent.id));
+  if (staleAgents.length) {
+    await db.from('activity_log').insert(
+      staleAgents.map((agent) => ({
+        user_id: userId,
+        type: 'SYS',
+        message: `[specialist-retired] ${agent.name || agent.id} (${agent.role || 'specialist'}) retired after mission ${rootMissionId} on ${agent.model || 'adaptive lane'}.`,
+        agent_id: agent.id,
+        tokens: 0,
+        duration_ms: 0,
+      })),
+    );
+    await Promise.all(staleAgents.map((agent) => recordSpecialistLifecycle(
+      db,
+      userId,
+      agent,
+      rootMissionId,
+      'retired',
+      `[specialist-retired] ${agent.name || agent.id} (${agent.role || 'specialist'}) retired after mission ${rootMissionId} on ${agent.model || 'adaptive lane'}.`,
+    )));
+  }
+
+  await db
+    .from('agents')
+    .delete()
+    .eq('user_id', userId)
+    .eq('is_ephemeral', true)
+    .in('id', staleEphemeralIds);
+}
 
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') {
@@ -311,12 +360,12 @@ Deno.serve(async (req: Request) => {
 
   const [{ data: commanders, error: commanderError }, { data: queuedTasks, error: taskError }, { data: reviews, error: reviewsError }] = await Promise.all([
     db
-      .from('agents')
-      .select('id,user_id,name,model,status,system_prompt,temperature,response_length,last_heartbeat,total_tokens,total_cost,task_count,latency_ms,role')
-      .eq('role', 'commander'),
+        .from('agents')
+        .select('id,user_id,name,model,status,system_prompt,temperature,response_length,last_heartbeat,total_tokens,total_cost,task_count,latency_ms,role,is_ephemeral')
+        .eq('role', 'commander'),
     db
       .from('tasks')
-      .select('id,user_id,name,title,description,status,agent_id,created_by_commander_id,priority,progress_percent,run_at,started_at,created_at,session_id,template_id')
+      .select('id,user_id,name,title,description,status,agent_id,created_by_commander_id,priority,progress_percent,run_at,started_at,created_at,parent_id,root_mission_id,node_type,workflow_status,depends_on,domain,intent_type,budget_class,risk_level,approval_level,execution_strategy,schedule_type,recurrence_rule,requires_approval,context_pack_ids,required_capabilities,model_override,provider_override')
       .eq('status', 'queued')
       .order('priority', { ascending: false })
       .order('created_at', { ascending: true }),
@@ -358,7 +407,7 @@ Deno.serve(async (req: Request) => {
   });
 
   const blockedReviewAgentIds = new Set(reviewRows.map((review) => review.agent_id).filter(Boolean));
-  const userSettingsCache = new Map<string, { anthropic_api_key: string | null; openai_api_key: string | null; google_api_key: string | null }>();
+  const userSettingsCache = new Map<string, { anthropic_api_key: string | null }>();
   const agentCache = new Map<string, AgentRow>();
   commanderRows.forEach((agent) => agentCache.set(agent.id, agent));
 
@@ -368,6 +417,39 @@ Deno.serve(async (req: Request) => {
 
   for (const task of taskRows) {
     scanned += 1;
+
+    if (
+      String(task.schedule_type || '') === 'recurring'
+      && (task.requires_approval || String(task.approval_level || '') === 'human_required')
+    ) {
+      const message = `[automation-guardrail] ${(task.title || task.name || task.id)} on root ${task.root_mission_id || task.id} was held at runtime because recurring work still requires approval.`;
+      await db.from('tasks').update({
+        status: 'needs_approval',
+        workflow_status: 'waiting_on_human',
+        lane: 'approvals',
+        updated_at: new Date().toISOString(),
+      }).eq('id', task.id).eq('user_id', task.user_id);
+
+      await db.from('activity_log').insert({
+        user_id: task.user_id,
+        type: 'SYS',
+        message,
+        agent_id: task.agent_id || null,
+        tokens: 0,
+        duration_ms: 0,
+      });
+      await recordTaskIntervention(db, task, {
+        eventType: 'guardrail',
+        eventSource: 'runtime',
+        tone: 'amber',
+        message,
+        metadata: {
+          approvalLevel: task.approval_level || 'risk_weighted',
+          requiresApproval: Boolean(task.requires_approval),
+        },
+      });
+      continue;
+    }
 
     const dueAtMs = task.run_at ? new Date(task.run_at).getTime() : nowMs;
     if (Number.isNaN(dueAtMs) || dueAtMs > nowMs) continue;
@@ -384,7 +466,7 @@ Deno.serve(async (req: Request) => {
     if (!agent) {
       const { data: agentRow, error: agentError } = await db
         .from('agents')
-        .select('id,user_id,name,model,status,system_prompt,temperature,response_length,last_heartbeat,total_tokens,total_cost,task_count,latency_ms,role')
+        .select('id,user_id,name,model,status,system_prompt,temperature,response_length,last_heartbeat,total_tokens,total_cost,task_count,latency_ms,role,is_ephemeral')
         .eq('id', effectiveAgentId)
         .single();
 
@@ -402,23 +484,8 @@ Deno.serve(async (req: Request) => {
       continue;
     }
 
-    const provider = inferProvider(agent.model);
-    const executionModel = normalizeExecutionModel(agent.model, provider);
-    if (provider === 'custom') {
-      if (task.session_id) {
-        await db.from('agent_sessions').update({
-          status: 'failed',
-          summary: `Unsupported execution model: ${agent.model}`,
-          completed_at: new Date().toISOString(),
-        }).eq('id', task.session_id).eq('user_id', task.user_id);
-        await writeSessionEvent(db, task.user_id, task.session_id, effectiveAgentId, {
-          eventType: 'error',
-          title: 'Unsupported model',
-          content: `${agent.model} is not yet supported by the heartbeat runtime.`,
-          status: 'failed',
-          payload: { task_id: task.id, template_id: task.template_id, provider },
-        });
-      }
+    const executionModel = normalizeExecutionModel(agent.model);
+    if (!executionModel.startsWith('claude-')) {
       errors.push({ taskId: task.id, message: `Unsupported model ${agent.model}` });
       continue;
     }
@@ -427,32 +494,16 @@ Deno.serve(async (req: Request) => {
     if (!userSettings) {
       const { data: settingsRow, error: settingsError } = await db
         .from('user_settings')
-        .select('anthropic_api_key, openai_api_key, google_api_key')
+        .select('anthropic_api_key')
         .eq('user_id', task.user_id)
         .single();
 
-      const providerApiKey = settingsError ? '' : getProviderCredential(settingsRow as Record<string, string | null>, provider);
-      if (settingsError || !providerApiKey) {
-        const message = settingsError?.message || `Missing ${providerLabel(provider)} API key`;
-        if (task.session_id) {
-          await db.from('agent_sessions').update({
-            status: 'failed',
-            summary: message,
-            completed_at: new Date().toISOString(),
-          }).eq('id', task.session_id).eq('user_id', task.user_id);
-          await writeSessionEvent(db, task.user_id, task.session_id, effectiveAgentId, {
-            eventType: 'error',
-            title: 'Missing credentials',
-            content: `${providerLabel(provider)} is not connected. Add the API key in Settings -> Connected Systems.`,
-            status: 'failed',
-            payload: { provider, task_id: task.id },
-          });
-        }
-        errors.push({ taskId: task.id, message });
+      if (settingsError || !settingsRow?.anthropic_api_key) {
+        errors.push({ taskId: task.id, message: settingsError?.message || 'Missing Anthropic API key' });
         continue;
       }
 
-      userSettings = settingsRow as { anthropic_api_key: string | null; openai_api_key: string | null; google_api_key: string | null };
+      userSettings = settingsRow as { anthropic_api_key: string | null };
       userSettingsCache.set(task.user_id, userSettings);
     }
 
@@ -481,39 +532,29 @@ Deno.serve(async (req: Request) => {
 
     busyAgentIds.add(effectiveAgentId);
     await db.from('agents').update({ status: 'processing', last_heartbeat: claimAt }).eq('id', effectiveAgentId);
-    if (task.session_id) {
-      await db.from('agent_sessions').update({
-        status: 'running',
-        worker_agent_id: effectiveAgentId,
-        started_at: claimAt,
-        summary: 'Execution in progress',
-      }).eq('id', task.session_id).eq('user_id', task.user_id);
-      await writeSessionEvent(db, task.user_id, task.session_id, effectiveAgentId, {
-        eventType: 'tool_call',
-        title: 'commander-heartbeat',
-        content: 'Commander claimed and launched the queued session task.',
-        status: 'running',
-        payload: { task_id: task.id, model: executionModel, provider, template_id: task.template_id },
-      });
-    }
 
     const prompt = task.description || task.title || task.name || 'Execute queued mission';
     const startTime = Date.now();
 
     try {
-      const { text: responseText, tokens } = await executeModel({
-        provider,
-        apiKey: getProviderCredential(userSettings || {}, provider),
+      const anthropic = new Anthropic({ apiKey: userSettings.anthropic_api_key || '' });
+      const aiResponse = await anthropic.messages.create({
         model: executionModel,
-        systemPrompt: agent.system_prompt || '',
-        prompt,
+        system: agent.system_prompt || '',
+        messages: [{ role: 'user', content: prompt }],
         temperature: parseFloat(String(agent.temperature ?? 0.7)) || 0.7,
-        maxTokens: MAX_TOKENS_MAP[agent.response_length || 'medium'] ?? 2048,
+        max_tokens: MAX_TOKENS_MAP[agent.response_length || 'medium'] ?? 2048,
       });
+
       const latency = Date.now() - startTime;
-      const cost = tokens * costPerToken(provider, executionModel);
+      const responseText = (aiResponse.content[0] as { type: string; text: string }).text;
+      const tokens = aiResponse.usage.input_tokens + aiResponse.usage.output_tokens;
+      const cost = tokens * costPerToken(executionModel);
       const completedAt = new Date().toISOString();
       const reviewId = crypto.randomUUID();
+
+      const outcome = scoreOutcome(task as unknown as { approval_level?: string | null; execution_strategy?: string | null }, cost, latency, 'completed');
+      const doctrineFeedback = buildDoctrineFeedback(task as unknown as { budget_class?: string | null; risk_level?: string | null; model_override?: string | null }, outcome.finalScore, cost);
 
       await Promise.all([
         db.from('agents').update({
@@ -527,6 +568,7 @@ Deno.serve(async (req: Request) => {
 
         db.from('tasks').update({
           status: 'completed',
+          workflow_status: 'completed',
           lane: 'completed',
           duration_ms: latency,
           cost_usd: cost,
@@ -544,10 +586,48 @@ Deno.serve(async (req: Request) => {
           type: 'OK',
           message: (`Task completed: ${prompt}`).substring(0, 120),
           agent_id: effectiveAgentId,
-          session_id: task.session_id || null,
           tokens,
           duration_ms: latency,
         }),
+        db.from('activity_log').insert({
+          user_id: task.user_id,
+          type: 'SYS',
+          message: `[outcome-score] root ${task.root_mission_id || task.id} score ${outcome.finalScore} trust ${outcome.trust} for ${(task.title || task.name || prompt).substring(0, 80)}.`,
+          agent_id: effectiveAgentId,
+          tokens: 0,
+          duration_ms: latency,
+        }),
+        db.from('activity_log').insert({
+          user_id: task.user_id,
+          type: 'SYS',
+          message: `[doctrine-feedback] root ${task.root_mission_id || task.id} ${doctrineFeedback}`,
+          agent_id: effectiveAgentId,
+          tokens: 0,
+          duration_ms: 0,
+        }),
+        db.from('task_outcomes').upsert({
+          user_id: task.user_id,
+          task_id: task.id,
+          root_mission_id: task.root_mission_id || task.id,
+          agent_id: effectiveAgentId,
+          outcome_status: 'completed',
+          score: outcome.finalScore,
+          trust: outcome.trust,
+          doctrine_feedback: doctrineFeedback,
+          model: task.model_override || agent.model || null,
+          provider: task.provider_override || null,
+          domain: task.domain || 'general',
+          intent_type: task.intent_type || 'general',
+          budget_class: task.budget_class || 'balanced',
+          risk_level: task.risk_level || 'medium',
+          approval_level: task.approval_level || 'risk_weighted',
+          execution_strategy: task.execution_strategy || 'sequential',
+          cost_usd: cost,
+          duration_ms: latency,
+          context_pack_ids: Array.isArray(task.context_pack_ids) ? task.context_pack_ids : [],
+          required_capabilities: Array.isArray(task.required_capabilities) ? task.required_capabilities : [],
+          metadata: { source: 'commander-heartbeat' },
+        }, { onConflict: 'task_id,outcome_status' }),
 
         db.from('pending_reviews').insert({
           id: reviewId,
@@ -560,49 +640,23 @@ Deno.serve(async (req: Request) => {
           status: 'awaiting_approval',
           summary: responseText.substring(0, 200),
           payload: JSON.stringify({ content: responseText, task_id: task.id }),
-          session_id: task.session_id || null,
         }),
       ]);
 
-      if (task.session_id) {
-        await db.from('agent_sessions').update({
-          status: 'needs_review',
-          summary: responseText.substring(0, 240),
-          total_tokens: tokens,
-          total_cost: cost,
-          tool_call_count: 1,
-          completed_at: completedAt,
-        }).eq('id', task.session_id).eq('user_id', task.user_id);
-        await Promise.all([
-          writeSessionEvent(db, task.user_id, task.session_id, effectiveAgentId, {
-            eventType: 'tool_result',
-            title: 'Model response received',
-            content: responseText.substring(0, 400),
-            status: 'completed',
-            payload: { task_id: task.id, template_id: task.template_id, provider, model: executionModel },
-            durationMs: latency,
-            tokenDelta: tokens,
-            costDelta: cost,
-          }),
-          writeSessionEvent(db, task.user_id, task.session_id, effectiveAgentId, {
-            eventType: 'approval_requested',
-            title: 'Approval requested',
-            content: 'Output was written to the review queue and needs commander approval.',
-            status: 'needs_review',
-            payload: { review_id: reviewId },
-          }),
-        ]);
-      }
+      await updateMissionGraphProgress(db, { ...task, status: 'completed', workflow_status: 'completed' });
+      await cleanupEphemeralSpecialists(db, task.user_id, task.root_mission_id);
 
       dispatched += 1;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       const failedAt = new Date().toISOString();
 
+      const outcome = scoreOutcome(task as unknown as { approval_level?: string | null; execution_strategy?: string | null }, 0, Date.now() - startTime, 'failed');
       await Promise.all([
         db.from('agents').update({ status: 'idle', last_heartbeat: failedAt }).eq('id', effectiveAgentId),
         db.from('tasks').update({
           status: 'failed',
+          workflow_status: 'failed',
           lane: 'blocked',
           failed_at: failedAt,
           progress_percent: 0,
@@ -613,27 +667,52 @@ Deno.serve(async (req: Request) => {
           type: 'ERR',
           message: message.substring(0, 200),
           agent_id: effectiveAgentId,
-          session_id: task.session_id || null,
           tokens: 0,
           duration_ms: Date.now() - startTime,
         }),
+        db.from('activity_log').insert({
+          user_id: task.user_id,
+          type: 'SYS',
+          message: `[outcome-score] root ${task.root_mission_id || task.id} score ${outcome.finalScore} trust ${outcome.trust} for failed branch.`,
+          agent_id: effectiveAgentId,
+          tokens: 0,
+          duration_ms: Date.now() - startTime,
+        }),
+        db.from('activity_log').insert({
+          user_id: task.user_id,
+          type: 'SYS',
+          message: `[doctrine-feedback] root ${task.root_mission_id || task.id} Failure path detected. Escalate similar branches or add stronger verifier coverage before scaling.`,
+          agent_id: effectiveAgentId,
+          tokens: 0,
+          duration_ms: 0,
+        }),
+        db.from('task_outcomes').upsert({
+          user_id: task.user_id,
+          task_id: task.id,
+          root_mission_id: task.root_mission_id || task.id,
+          agent_id: effectiveAgentId,
+          outcome_status: 'failed',
+          score: outcome.finalScore,
+          trust: outcome.trust,
+          doctrine_feedback: 'Failure path detected. Escalate similar branches or add stronger verifier coverage before scaling.',
+          model: task.model_override || agent.model || null,
+          provider: task.provider_override || null,
+          domain: task.domain || 'general',
+          intent_type: task.intent_type || 'general',
+          budget_class: task.budget_class || 'balanced',
+          risk_level: task.risk_level || 'medium',
+          approval_level: task.approval_level || 'risk_weighted',
+          execution_strategy: task.execution_strategy || 'sequential',
+          cost_usd: 0,
+          duration_ms: Date.now() - startTime,
+          context_pack_ids: Array.isArray(task.context_pack_ids) ? task.context_pack_ids : [],
+          required_capabilities: Array.isArray(task.required_capabilities) ? task.required_capabilities : [],
+          metadata: { source: 'commander-heartbeat' },
+        }, { onConflict: 'task_id,outcome_status' }),
       ]);
 
-      if (task.session_id) {
-        await db.from('agent_sessions').update({
-          status: 'failed',
-          summary: message.substring(0, 240),
-          completed_at: failedAt,
-        }).eq('id', task.session_id).eq('user_id', task.user_id);
-        await writeSessionEvent(db, task.user_id, task.session_id, effectiveAgentId, {
-          eventType: 'error',
-          title: 'Execution failed',
-          content: message.substring(0, 400),
-          status: 'failed',
-          payload: { task_id: task.id, template_id: task.template_id },
-          durationMs: Date.now() - startTime,
-        });
-      }
+      await updateMissionGraphProgress(db, { ...task, status: 'failed', workflow_status: 'failed' });
+      await cleanupEphemeralSpecialists(db, task.user_id, task.root_mission_id);
 
       errors.push({ taskId: task.id, message });
     } finally {

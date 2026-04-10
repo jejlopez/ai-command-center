@@ -13,6 +13,20 @@
  */
 
 import { supabase } from './supabaseClient';
+import {
+  DEFAULT_MODEL_PROVIDER,
+  SYNTHETIC_COMMANDER_ID,
+  getCommanderDisplayName,
+  getCommanderLane,
+  normalizeModelProvider,
+} from '../utils/commanderPolicy';
+import { WORKFLOW_STATUS, getTaskGraphShape } from '../utils/missionLifecycle';
+import {
+  buildDefaultRoutingPolicy,
+  deriveRoutingDecision,
+  mapRoutingPolicyFromDb,
+} from '../utils/routingPolicy';
+import { getPatternApprovalBiasSummary, getPersistentPromotionGuidance, getRecurringAutonomyTuningSummary, inferAgentProvider } from '../utils/commanderAnalytics';
 
 // True when real Supabase env vars are set (not the placeholder)
 const isSupabaseConfigured = import.meta.env.VITE_SUPABASE_URL
@@ -48,6 +62,8 @@ function mapAgentRow(row) {
     id:               row.id,
     name:             row.name,
     model:            row.model,
+    provider:         normalizeModelProvider(row.provider),
+    roleDescription:  row.role_description || '',
     status:           row.status,
     role:             row.role,
     parentId:         row.parent_id,
@@ -75,22 +91,17 @@ function mapAgentRow(row) {
     tokenHistory24h:  row.token_history_24h || [],
     latencyHistory24h: row.latency_history_24h || [],
     isEphemeral:      row.is_ephemeral ?? false,
-    templateId:       row.template_id || null,
-    sessionId:        row.session_id || null,
-    expiresAt:        row.expires_at || null,
-    archivedAt:       row.archived_at || null,
   };
 }
 
 function buildSyntheticCommander(user) {
-  const commanderName = user?.user_metadata?.full_name?.trim()
-    ? `${user.user_metadata.full_name.trim()} Command`
-    : 'Jarvis Commander';
+  const commanderName = getCommanderDisplayName(user);
+  const commanderLane = getCommanderLane();
 
   return {
-    id: 'synthetic-commander',
+    id: SYNTHETIC_COMMANDER_ID,
     name: commanderName,
-    model: 'Claude Opus 4.6',
+    model: commanderLane.model,
     status: 'idle',
     role: 'commander',
     parentId: null,
@@ -121,14 +132,14 @@ function buildSyntheticCommander(user) {
   };
 }
 
-async function ensureModelBankEntry(user, modelKey, provider = 'Custom') {
+async function ensureModelBankEntry(user, modelKey, provider = DEFAULT_MODEL_PROVIDER) {
   if (!user?.id || !modelKey) return null;
 
   const row = {
     user_id: user.id,
     model_key: modelKey,
     label: modelKey,
-    provider,
+    provider: normalizeModelProvider(provider),
   };
 
   const { data, error } = await supabase
@@ -150,10 +161,8 @@ async function ensureCommanderAgentRow() {
   if (authError || !authData?.user) return null;
 
   const user = authData.user;
-  const commanderName = user.user_metadata?.full_name?.trim()
-    ? `${user.user_metadata.full_name.trim()} Command`
-    : 'Jarvis Commander';
-  const commanderModel = 'Claude Opus 4.6';
+  const commanderName = getCommanderDisplayName(user);
+  const commanderLane = getCommanderLane();
 
   const { data: existingCommander, error: existingError } = await supabase
     .from('agents')
@@ -168,13 +177,13 @@ async function ensureCommanderAgentRow() {
     return existingCommander;
   }
 
-  await ensureModelBankEntry(user, commanderModel, 'Anthropic');
+  await ensureModelBankEntry(user, commanderLane.model, commanderLane.provider);
 
   const row = {
     id: crypto.randomUUID(),
     user_id: user.id,
     name: commanderName,
-    model: commanderModel,
+    model: commanderLane.model,
     status: 'idle',
     role: 'commander',
     color: '#00D9C8',
@@ -197,13 +206,18 @@ async function ensureCommanderAgentRow() {
 }
 
 function mapTaskRow(row) {
+  const taskGraph = getTaskGraphShape(row);
   return {
     id:         row.id,
     name:       row.name || row.title,
     title:      row.title || row.name,
     description: row.description || row.prompt_text || '',
     status:     row.status,
+    workflowStatus: taskGraph.workflowStatus,
+    nodeType: taskGraph.nodeType,
+    rootMissionId: taskGraph.rootMissionId,
     parentId:   row.parent_id,
+    dependsOn: taskGraph.dependsOn,
     agentId:    row.agent_id,
     agentName:  row.agent_name,
     mode:       row.mode || 'balanced',
@@ -217,6 +231,20 @@ function mapTaskRow(row) {
     targetType: row.target_type || 'internal',
     targetIdentifier: row.target_identifier || '',
     createdByCommanderId: row.created_by_commander_id,
+    routingPolicyId: row.routing_policy_id || null,
+    routingReason: row.routing_reason || '',
+    domain: row.domain || 'general',
+    intentType: row.intent_type || 'general',
+    budgetClass: row.budget_class || 'balanced',
+    riskLevel: row.risk_level || 'medium',
+    contextPackIds: Array.isArray(row.context_pack_ids) ? row.context_pack_ids : [],
+    requiredCapabilities: Array.isArray(row.required_capabilities) ? row.required_capabilities : [],
+    approvalLevel: row.approval_level || 'risk_weighted',
+    agentRole: row.agent_role || 'executor',
+    executionStrategy: row.execution_strategy || 'sequential',
+    branchLabel: row.branch_label || '',
+    providerOverride: row.provider_override || null,
+    modelOverride: row.model_override || null,
     lastRunAt:  row.last_run_at,
     nextRunAt:  row.next_run_at,
     estimatedCostCents: row.estimated_cost_cents,
@@ -226,8 +254,6 @@ function mapTaskRow(row) {
     startedAt:  row.started_at,
     cancelledAt: row.cancelled_at,
     failedAt:   row.failed_at,
-    sessionId:  row.session_id || null,
-    templateId: row.template_id || null,
     createdAt:  row.created_at,
     updatedAt:  row.updated_at,
     durationMs: row.duration_ms || 0,
@@ -243,7 +269,6 @@ function mapLogRow(row) {
     type:        row.type,
     message:     row.message,
     agentId:     row.agent_id,
-    sessionId:   row.session_id || null,
     parentLogId: row.parent_log_id,
     tokens:      row.tokens || 0,
     durationMs:  row.duration_ms || 0,
@@ -258,7 +283,6 @@ export async function fetchAgents() {
   let { data, error } = await supabase
     .from('agents')
     .select('*')
-    .is('archived_at', null)
     .order('created_at', { ascending: true });
 
   if (error) {
@@ -273,7 +297,6 @@ export async function fetchAgents() {
     ({ data, error } = await supabase
       .from('agents')
       .select('*')
-      .is('archived_at', null)
       .order('created_at', { ascending: true }));
 
     if (error) {
@@ -344,6 +367,209 @@ function buildRecurrenceRule(repeat) {
     frequency: repeat.frequency,
     time: repeat.time,
     endDate: repeat.endDate || null,
+    missionMode: repeat.missionMode || null,
+    approvalPosture: repeat.approvalPosture || null,
+    paused: repeat.paused ?? false,
+  };
+}
+
+function computeNextRecurringRunAt(repeat) {
+  if (!repeat?.time) return null;
+
+  const [hourText, minuteText] = String(repeat.time || '09:00').split(':');
+  const hour = Number(hourText);
+  const minute = Number(minuteText);
+  if (Number.isNaN(hour) || Number.isNaN(minute)) return null;
+
+  const now = new Date();
+  const next = new Date(now);
+  next.setSeconds(0, 0);
+  next.setHours(hour, minute, 0, 0);
+
+  const frequency = String(repeat.frequency || 'weekly').toLowerCase();
+  if (next.getTime() <= now.getTime()) {
+    next.setDate(next.getDate() + (frequency === 'daily' ? 1 : 7));
+  }
+
+  return next.toISOString();
+}
+
+function deriveRecurringFlowState({ missionMode = 'watch_and_approve', approvalPosture = 'risk_weighted', paused = false, priority = 5 }) {
+  if (paused) {
+    return {
+      status: 'paused',
+      workflowStatus: WORKFLOW_STATUS.PLANNED,
+      lane: 'blocked',
+      requiresApproval: false,
+      approvalLevel: approvalPosture,
+    };
+  }
+
+  if (missionMode === 'plan_first') {
+    return {
+      status: 'pending',
+      workflowStatus: WORKFLOW_STATUS.PLANNED,
+      lane: 'blocked',
+      requiresApproval: false,
+      approvalLevel: approvalPosture,
+    };
+  }
+
+  if (missionMode === 'watch_and_approve' || approvalPosture === 'human_required') {
+    return {
+      status: 'needs_approval',
+      workflowStatus: WORKFLOW_STATUS.WAITING_ON_HUMAN,
+      lane: 'approvals',
+      requiresApproval: true,
+      approvalLevel: 'human_required',
+    };
+  }
+
+  return {
+    status: 'queued',
+    workflowStatus: WORKFLOW_STATUS.READY,
+    lane: inferLane(priority, false, 'queued'),
+    requiresApproval: false,
+    approvalLevel: approvalPosture,
+  };
+}
+
+function getMissionExecutionPosture(payload) {
+  const missionMode = payload.missionMode || 'do_now';
+  return {
+    missionMode,
+    shouldPlanOnly: missionMode === 'plan_first',
+    shouldWatchAndApprove: missionMode === 'watch_and_approve',
+    shouldAutoDispatch: payload.when === 'now' && missionMode === 'do_now',
+  };
+}
+
+function enforceRecurringMissionGuardrails(payload = {}) {
+  if (!payload.repeat) return { payload, guardrails: [] };
+
+  const nextPayload = {
+    ...payload,
+    repeat: {
+      frequency: payload.repeat.frequency || 'weekly',
+      time: payload.repeat.time || '09:00',
+      endDate: payload.repeat.endDate || null,
+    },
+  };
+  const guardrails = [];
+  const candidate = payload.automationCandidate || {};
+  const domain = String(payload.targetType || candidate.domain || '').toLowerCase();
+  const lowRoi = Number(candidate.roi || 0) > 0 && Number(candidate.roi || 0) < 1.5;
+  const lightHistory = Number(candidate.runs || 0) > 0 && Number(candidate.runs || 0) < 3;
+  const financeSensitive = ['finance', 'money', 'billing', 'banking'].includes(domain);
+  const externalDraft = ['email_drafts', 'crm_notes'].includes(String(payload.outputType || '').toLowerCase());
+  const trustTuning = getRecurringAutonomyTuningSummary(candidate);
+
+  if (lowRoi || lightHistory || financeSensitive || externalDraft) {
+    if (nextPayload.missionMode !== 'watch_and_approve') {
+      nextPayload.missionMode = 'watch_and_approve';
+      guardrails.push('Raised recurring mission to watch-and-approve.');
+    }
+  }
+
+  if (nextPayload.repeat.frequency === 'daily' && lightHistory) {
+    nextPayload.repeat = { ...nextPayload.repeat, frequency: 'weekly' };
+    guardrails.push('Reduced cadence from daily to weekly until repetition history is stronger.');
+  }
+
+  if (financeSensitive) {
+    guardrails.push('Finance-adjacent recurring work stays human-gated by default.');
+  }
+
+  if (lowRoi) {
+    guardrails.push('Low ROI automation remains gated until the economics improve.');
+  }
+
+  if (trustTuning.posture === 'tighten') {
+    if (nextPayload.missionMode !== trustTuning.recommendedMissionMode) {
+      nextPayload.missionMode = trustTuning.recommendedMissionMode;
+      guardrails.push('Tightened recurring mission mode from runtime trust memory.');
+    }
+    if (nextPayload.repeat.approvalPosture !== trustTuning.recommendedApprovalPosture) {
+      nextPayload.repeat = {
+        ...nextPayload.repeat,
+        approvalPosture: trustTuning.recommendedApprovalPosture,
+      };
+      guardrails.push('Raised recurring approval posture because runtime trust is still fragile.');
+    }
+    if (nextPayload.repeat.frequency !== trustTuning.recommendedFrequency) {
+      nextPayload.repeat = {
+        ...nextPayload.repeat,
+        frequency: trustTuning.recommendedFrequency,
+      };
+      guardrails.push('Reduced recurring cadence because runtime trust is still fragile.');
+    }
+    if (trustTuning.recommendedPaused && !nextPayload.repeat.paused) {
+      nextPayload.repeat = {
+        ...nextPayload.repeat,
+        paused: true,
+      };
+      guardrails.push('Paused recurring flow because live trust memory is too brittle for continued autonomous runs.');
+    }
+  } else if (trustTuning.posture === 'watch' && nextPayload.missionMode === 'do_now') {
+    nextPayload.missionMode = trustTuning.recommendedMissionMode;
+    guardrails.push('Shifted recurring mission into plan-first while runtime trust is still forming.');
+    if (nextPayload.repeat.frequency !== trustTuning.recommendedFrequency) {
+      nextPayload.repeat = {
+        ...nextPayload.repeat,
+        frequency: trustTuning.recommendedFrequency,
+      };
+      guardrails.push('Kept recurring cadence conservative while runtime trust is still forming.');
+    }
+  } else if (trustTuning.earnedAutonomy) {
+    if (nextPayload.missionMode !== trustTuning.recommendedMissionMode) {
+      nextPayload.missionMode = trustTuning.recommendedMissionMode;
+      guardrails.push('Recurring flow earned a lighter mission posture from clean runtime history.');
+    }
+    if (nextPayload.repeat.approvalPosture !== trustTuning.recommendedApprovalPosture) {
+      nextPayload.repeat = {
+        ...nextPayload.repeat,
+        approvalPosture: trustTuning.recommendedApprovalPosture,
+      };
+      guardrails.push('Recurring approval posture relaxed because runtime trust has recovered.');
+    }
+    if (nextPayload.repeat.frequency !== trustTuning.recommendedFrequency) {
+      nextPayload.repeat = {
+        ...nextPayload.repeat,
+        frequency: trustTuning.recommendedFrequency,
+      };
+      guardrails.push('Recurring cadence increased because runtime trust has recovered.');
+    }
+    if (nextPayload.repeat.paused) {
+      nextPayload.repeat = {
+        ...nextPayload.repeat,
+        paused: false,
+      };
+      guardrails.push('Recurring flow automatically unpaused after earning trust back.');
+    }
+  }
+
+  return { payload: nextPayload, guardrails };
+}
+
+async function inferAgentLaneDefaults(agentId) {
+  if (!agentId || !isSupabaseConfigured) {
+    return { provider: null, model: null };
+  }
+
+  const { data, error } = await supabase
+    .from('agents')
+    .select('provider,model')
+    .eq('id', agentId)
+    .maybeSingle();
+
+  if (error) {
+    console.error('[api] inferAgentLaneDefaults:', error.message);
+    return { provider: null, model: null };
+  }
+
+  return {
+    provider: data?.provider || null,
+    model: data?.model || null,
   };
 }
 
@@ -376,9 +602,432 @@ function estimateMissionPlan(payload) {
 
   return {
     steps,
+    branches: steps.map((step, index) => ({
+      title: step.title,
+      description: step.description,
+      agentRole: index === 0 ? 'planner' : index === steps.length - 1 ? 'verifier' : 'executor',
+      executionStrategy: index === 0 ? 'sequential' : 'parallel',
+      branchLabel: index === 0 ? 'Command' : `Branch ${index}`,
+      dependsOn: index === 0 ? [] : [steps[0].title],
+    })),
     estimatedDuration: duration,
     estimatedCostRange: costRange,
     estimatedCostCents: centsBase * complexity,
+  };
+}
+
+async function ensureBranchSpecialistAgent({
+  user,
+  branchRole,
+  modelOverride,
+  providerOverride,
+  commander,
+  selectedAgent,
+  rootMissionId = null,
+  objective,
+  recommendedSkillNames = [],
+}) {
+  const chosenModel = modelOverride || selectedAgent?.model || commander?.model || getCommanderLane().model;
+  const chosenProvider = providerOverride || normalizeModelProvider(selectedAgent?.provider || getCommanderLane().provider);
+
+  await ensureModelBankEntry(user, chosenModel, chosenProvider);
+
+  const row = {
+    id: crypto.randomUUID(),
+    user_id: user.id,
+    name: `${branchRole}-${objective.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 24)}`,
+    model: chosenModel,
+    provider: chosenProvider,
+    status: 'idle',
+    role: branchRole,
+    role_description: `Ephemeral ${branchRole} specialist for mission branch execution.`,
+    parent_id: commander?.isSyntheticCommander ? null : commander?.id || null,
+    can_spawn: false,
+    spawn_pattern: 'sequential',
+    is_ephemeral: true,
+    system_prompt: `You are a temporary ${branchRole} specialist. Objective: ${objective}`,
+    response_length: selectedAgent?.responseLength || commander?.responseLength || 'medium',
+    temperature: selectedAgent?.temperature ?? commander?.temperature ?? 0.4,
+    color: '#6b7280',
+    skills: recommendedSkillNames,
+  };
+
+  const { data, error } = await supabase.from('agents').insert([row]).select('*').single();
+  if (error) throw error;
+  const message = `[specialist-spawned] ${data.name} (${branchRole}) materialized for "${objective}" on ${chosenModel}.`;
+  await logBranchEvent({
+    userId: user.id,
+    agentId: data.id,
+    message,
+  });
+  await persistSpecialistLifecycleEvent({
+    userId: user.id,
+    agentId: data.id,
+    rootMissionId,
+    eventType: 'spawned',
+    eventSource: 'mission_routing',
+    role: branchRole,
+    provider: chosenProvider,
+    model: chosenModel,
+    isEphemeral: true,
+    message,
+    metadata: {
+      objective,
+      skills: recommendedSkillNames,
+    },
+  });
+  return mapAgentRow(data);
+}
+
+async function createPersistentBranchSpecialist({
+  user,
+  branchRole,
+  modelOverride,
+  providerOverride,
+  commander,
+  selectedAgent,
+  rootMissionId = null,
+  objective,
+  recommendedSkillNames = [],
+}) {
+  const chosenModel = modelOverride || selectedAgent?.model || commander?.model || getCommanderLane().model;
+  const chosenProvider = providerOverride || normalizeModelProvider(selectedAgent?.provider || getCommanderLane().provider);
+
+  await ensureModelBankEntry(user, chosenModel, chosenProvider);
+
+  const row = {
+    id: crypto.randomUUID(),
+    user_id: user.id,
+    name: `${branchRole}-lane-${objective.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 20)}`,
+    model: chosenModel,
+    provider: chosenProvider,
+    status: 'idle',
+    role: branchRole,
+    role_description: `Persistent ${branchRole} lane created automatically from lifecycle pressure.`,
+    parent_id: commander?.isSyntheticCommander ? null : commander?.id || null,
+    can_spawn: false,
+    spawn_pattern: 'persistent',
+    is_ephemeral: false,
+    system_prompt: `You are a persistent ${branchRole} lane. Objective focus: ${objective}`,
+    response_length: selectedAgent?.responseLength || commander?.responseLength || 'medium',
+    temperature: selectedAgent?.temperature ?? commander?.temperature ?? 0.4,
+    color: '#60a5fa',
+    skills: recommendedSkillNames,
+  };
+
+  const { data, error } = await supabase.from('agents').insert([row]).select('*').single();
+  if (error) throw error;
+  const message = `[specialist-persistent] ${data.name} (${branchRole}) created automatically from lifecycle pressure for "${objective}" on ${chosenModel}.`;
+  await logBranchEvent({
+    userId: user.id,
+    agentId: data.id,
+    message,
+  });
+  await persistSpecialistLifecycleEvent({
+    userId: user.id,
+    agentId: data.id,
+    rootMissionId,
+    eventType: 'persistent_created',
+    eventSource: 'mission_routing',
+    role: branchRole,
+    provider: chosenProvider,
+    model: chosenModel,
+    isEphemeral: false,
+    message,
+    metadata: {
+      objective,
+      skills: recommendedSkillNames,
+      autoCreated: true,
+    },
+  });
+  return mapAgentRow(data);
+}
+
+async function fetchPersistentLaneSignals(userId) {
+  if (!userId) return { tasks: [], lifecycleEvents: [] };
+
+  const [{ data: taskRows, error: taskError }, { data: lifecycleRows, error: lifecycleError }] = await Promise.all([
+    supabase
+      .from('tasks')
+      .select('id,root_mission_id,agent_role,domain,intent_type')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+      .limit(160),
+    supabase
+      .from('specialist_lifecycle')
+      .select('id,root_mission_id,event_type,role,is_ephemeral,message,created_at')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+      .limit(160),
+  ]);
+
+  if (taskError) {
+    console.error('[api] fetchPersistentLaneSignals tasks:', taskError.message);
+  }
+  if (lifecycleError) {
+    console.error('[api] fetchPersistentLaneSignals lifecycle:', lifecycleError.message);
+  }
+
+  return {
+    tasks: (taskRows || []).map((row) => ({
+      id: row.id,
+      rootMissionId: row.root_mission_id || row.id,
+      agentRole: row.agent_role || 'executor',
+      domain: row.domain || 'general',
+      intentType: row.intent_type || 'general',
+    })),
+    lifecycleEvents: (lifecycleRows || []).map((row) => ({
+      id: row.id,
+      rootMissionId: row.root_mission_id || null,
+      eventType: row.event_type || 'spawned',
+      role: row.role || 'specialist',
+      isEphemeral: row.is_ephemeral ?? false,
+      message: row.message || '',
+      createdAt: row.created_at,
+    })),
+  };
+}
+
+async function buildMissionSubtasks({
+  missionId,
+  userId,
+  user,
+  title,
+  payload,
+  branches,
+  assignedAgentId,
+  agentName,
+  commanderId,
+  estimatedCostCents,
+  routingPolicyId,
+  routingDecision,
+  observedWinningLane,
+  persistentLaneSignals,
+  runAt,
+  scheduleType,
+}) {
+  if (!Array.isArray(branches) || branches.length <= 1) return [];
+
+  const branchIdByTitle = new Map();
+  const rows = [];
+
+  for (const [index, branch] of branches.entries()) {
+    const stepId = crypto.randomUUID();
+    const first = index === 0;
+    const branchCanRunImmediately = first || branch.executionStrategy === 'parallel';
+    const executionPosture = getMissionExecutionPosture(payload);
+    const branchRequiresApproval = executionPosture.shouldWatchAndApprove && branchCanRunImmediately;
+    const branchShouldStayPlanned = executionPosture.shouldPlanOnly || (!branchCanRunImmediately && !branchRequiresApproval);
+    branchIdByTitle.set(branch.title, stepId);
+    const dependencies = Array.isArray(branch.dependsOn)
+      ? branch.dependsOn.map((dependencyTitle) => branchIdByTitle.get(dependencyTitle)).filter(Boolean)
+      : [];
+    const assignment = await resolveBranchAssignment({
+      missionId,
+      branch: {
+        ...branch,
+        recommendedSkillNames: Array.isArray(branch.recommendedSkillNames) && branch.recommendedSkillNames.length
+          ? branch.recommendedSkillNames
+          : routingDecision.recommendedSkillNames,
+      },
+      user,
+      agents: payload.agents || [],
+      routingPolicy: payload.routingPolicy || null,
+      selectedAgent: payload.selectedAgent || null,
+      commander: payload.commander || null,
+      routingDecision,
+      observedWinningLane,
+      persistentLaneSignals,
+    });
+
+    rows.push({
+      id: stepId,
+      user_id: userId,
+      title: `${title} · ${branch.title}`,
+      name: branch.title,
+      description: branch.description || branch.title,
+      status: branchRequiresApproval ? 'needs_approval' : branchShouldStayPlanned ? 'pending' : 'queued',
+      lane: branchRequiresApproval ? 'approvals' : branchCanRunImmediately && !branchShouldStayPlanned ? 'active' : 'blocked',
+      priority: Math.max(1, (payload.priorityScore ?? 5) - (first ? 0 : 1)),
+      schedule_type: scheduleType,
+      run_at: runAt,
+      recurrence_rule: buildRecurrenceRule(payload.repeat),
+      agent_id: assignment.assignedAgentId || assignedAgentId,
+      agent_name: assignment.agentName || agentName,
+      mode: payload.mode,
+      output_type: payload.outputType,
+      output_spec: payload.outputSpec || null,
+      target_type: payload.targetType,
+      target_identifier: payload.targetIdentifier || null,
+      created_by_commander_id: commanderId,
+      estimated_cost_cents: Math.max(1, Math.round((estimatedCostCents || 0) / branches.length)),
+      actual_cost_cents: 0,
+      progress_percent: branchRequiresApproval || branchShouldStayPlanned ? 0 : 5,
+      duration_ms: 0,
+      cost_usd: 0,
+      node_type: 'subtask',
+      workflow_status: branchRequiresApproval
+        ? WORKFLOW_STATUS.WAITING_ON_HUMAN
+        : branchCanRunImmediately && !branchShouldStayPlanned
+          ? WORKFLOW_STATUS.READY
+          : WORKFLOW_STATUS.PLANNED,
+      root_mission_id: missionId,
+      parent_id: missionId,
+      routing_policy_id: routingPolicyId || null,
+      routing_reason: `${routingDecision.routingReason} | skills ${(assignment.recommendedSkillNames || routingDecision.recommendedSkillNames || []).join(', ') || 'none'} | ${assignment.agentRole || branch.agentRole || 'executor'} branch ${index + 1}/${branches.length}`,
+      domain: routingDecision.domain,
+      intent_type: routingDecision.intentType,
+      budget_class: routingDecision.budgetClass,
+      risk_level: routingDecision.riskLevel,
+      context_pack_ids: routingDecision.contextPackIds,
+      required_capabilities: routingDecision.requiredCapabilities,
+      approval_level: routingDecision.approvalLevel,
+      depends_on: dependencies,
+      agent_role: assignment.agentRole || branch.agentRole || 'executor',
+      execution_strategy: branch.executionStrategy || 'sequential',
+      branch_label: branch.branchLabel || branch.title,
+      provider_override: assignment.providerOverride || null,
+      model_override: assignment.modelOverride || null,
+      requires_approval: branchRequiresApproval,
+    });
+  }
+
+  return rows;
+}
+
+async function resolveBranchAssignment({
+  missionId,
+  branch,
+  user,
+  agents,
+  routingPolicy,
+  routingDecision,
+  selectedAgent,
+  commander,
+  observedWinningLane,
+  persistentLaneSignals,
+}) {
+  const liveAgents = agents.filter((agent) => !agent.isSyntheticCommander);
+  const branchRole = branch.agentRole
+    || (observedWinningLane?.confidence === 'high' && observedWinningLane?.agentRole && !['commander', 'executor'].includes(observedWinningLane.agentRole)
+      ? observedWinningLane.agentRole
+      : null)
+    || routingDecision?.selectedAgentRole
+    || routingPolicy?.preferredAgentRole
+    || selectedAgent?.role
+    || 'executor';
+  const fallbackOrder = Array.isArray(routingPolicy?.fallbackOrder) ? routingPolicy.fallbackOrder : [];
+  const roleFallback = fallbackOrder.find((entry) => entry.role === branchRole) || null;
+  const shouldLeanOnWinningLane = Boolean(
+    observedWinningLane
+    && (
+      observedWinningLane.confidence === 'high'
+      || (
+        observedWinningLane.confidence === 'medium'
+        && Number(observedWinningLane.avgScore || 0) >= (
+          observedWinningLane.scopeLabel === 'exact'
+            ? 82
+            : observedWinningLane.scopeLabel === 'domain-pack'
+              ? 85
+              : 88
+        )
+      )
+    )
+  );
+  const modelOverride = branch.modelOverride
+    || (shouldLeanOnWinningLane ? observedWinningLane?.model : null)
+    || routingDecision?.selectedModel
+    || roleFallback?.model
+    || routingPolicy?.preferredModel
+    || null;
+  const providerOverride = branch.providerOverride
+    || (shouldLeanOnWinningLane ? observedWinningLane?.provider : null)
+    || routingDecision?.selectedProvider
+    || roleFallback?.provider
+    || routingPolicy?.preferredProvider
+    || null;
+  const recommendedSkillNames = Array.isArray(branch.recommendedSkillNames)
+    ? branch.recommendedSkillNames
+    : [];
+
+  const exactRoleMatches = liveAgents
+    .filter((agent) => agent.role === branchRole)
+    .sort((left, right) => {
+      const leftProvider = inferAgentProvider(left);
+      const rightProvider = inferAgentProvider(right);
+      const leftPersistent = Number(!left.isEphemeral);
+      const rightPersistent = Number(!right.isEphemeral);
+      const persistenceDelta = rightPersistent - leftPersistent;
+      if (persistenceDelta !== 0) return persistenceDelta;
+      if (providerOverride) {
+        const rightProviderMatch = Number(rightProvider === providerOverride);
+        const leftProviderMatch = Number(leftProvider === providerOverride);
+        if (rightProviderMatch !== leftProviderMatch) return rightProviderMatch - leftProviderMatch;
+      }
+      const leftSkillScore = (left.skills || []).filter((skill) => recommendedSkillNames.includes(skill)).length;
+      const rightSkillScore = (right.skills || []).filter((skill) => recommendedSkillNames.includes(skill)).length;
+      return rightSkillScore - leftSkillScore;
+    });
+  const roleCandidates = exactRoleMatches.length
+    ? exactRoleMatches
+    : branchRole === 'executor'
+      ? liveAgents.filter((agent) => agent.id === selectedAgent?.id || agent.role === 'researcher' || agent.role === 'commander')
+      : liveAgents;
+
+  const modelMatch = modelOverride
+    ? roleCandidates.find((agent) => agent.model === modelOverride)
+    : null;
+
+  let assignedAgent = modelMatch || roleCandidates[0] || null;
+
+  if (!assignedAgent && !['executor', 'commander'].includes(branchRole)) {
+    const promotionGuidance = getPersistentPromotionGuidance({
+      lifecycleEvents: persistentLaneSignals?.lifecycleEvents || [],
+      agents: liveAgents,
+      tasks: persistentLaneSignals?.tasks || [],
+    });
+    const domainScopedGap = (promotionGuidance.domainTargets || []).find((entry) => (
+      entry.role === branchRole
+      && entry.domain === routingDecision.domain
+      && entry.intentType === routingDecision.intentType
+    ));
+    const domainPackGap = (promotionGuidance.domainPackTargets || []).find((entry) => (
+      entry.role === branchRole
+      && entry.domain === routingDecision.domain
+    ));
+    const durableGap = Boolean(
+      (Array.isArray(promotionGuidance.autoCreateRoles)
+        && promotionGuidance.autoCreateRoles.includes(branchRole))
+      || domainScopedGap
+      || domainPackGap
+      || ((promotionGuidance.domainPackTargets || []).filter((entry) => entry.role === branchRole).length >= 2)
+    );
+
+    assignedAgent = await (durableGap ? createPersistentBranchSpecialist : ensureBranchSpecialistAgent)({
+      user,
+      branchRole,
+      modelOverride,
+      providerOverride,
+      commander,
+      selectedAgent,
+      rootMissionId: missionId,
+      objective: branch.title || branch.description || `${branchRole} branch`,
+      recommendedSkillNames,
+    }).catch((error) => {
+      console.error(`[api] ${durableGap ? 'createPersistentBranchSpecialist' : 'ensureBranchSpecialistAgent'}:`, error.message);
+      return null;
+    });
+  }
+
+  assignedAgent = assignedAgent || selectedAgent || commander || null;
+
+  return {
+    agentRole: branchRole,
+    assignedAgentId: assignedAgent?.isSyntheticCommander ? null : assignedAgent?.id || null,
+    agentName: assignedAgent?.name || selectedAgent?.name || commander?.name || 'Unknown',
+    providerOverride,
+    modelOverride,
+    recommendedSkillNames,
   };
 }
 
@@ -411,6 +1060,7 @@ export async function previewMissionPlan(payload) {
     const data = await res.json();
     return {
       steps: Array.isArray(data.steps) ? data.steps : estimateMissionPlan(payload).steps,
+      branches: Array.isArray(data.branches) ? data.branches : estimateMissionPlan(payload).branches,
       estimatedDuration: data.estimatedDuration || estimateMissionPlan(payload).estimatedDuration,
       estimatedCostRange: data.estimatedCostRange || estimateMissionPlan(payload).estimatedCostRange,
       estimatedCostCents: data.estimatedCostCents ?? estimateMissionPlan(payload).estimatedCostCents,
@@ -466,32 +1116,328 @@ async function touchAgentHeartbeat(agentId, status) {
   }
 }
 
+async function logBranchEvent({ userId, agentId = null, type = 'SYS', message }) {
+  if (!userId || !message) return;
+
+  const { error } = await supabase.from('activity_log').insert({
+    user_id: userId,
+    type,
+    message,
+    agent_id: agentId,
+    duration_ms: 0,
+    tokens: 0,
+  });
+
+  if (error) {
+    console.error('[api] logBranchEvent:', error.message);
+  }
+}
+
+async function persistTaskIntervention({
+  userId,
+  taskId = null,
+  rootMissionId = null,
+  agentId = null,
+  eventType = 'override',
+  eventSource = 'runtime',
+  tone = 'blue',
+  message = '',
+  domain = 'general',
+  intentType = 'general',
+  provider = null,
+  model = null,
+  scheduleType = 'once',
+  metadata = {},
+}) {
+  if (!userId || !message) return;
+
+  const { error } = await supabase.from('task_interventions').insert({
+    user_id: userId,
+    task_id: taskId,
+    root_mission_id: rootMissionId,
+    agent_id: agentId,
+    event_type: eventType,
+    event_source: eventSource,
+    tone,
+    message,
+    domain,
+    intent_type: intentType,
+    provider,
+    model,
+    schedule_type: scheduleType,
+    metadata,
+  });
+
+  if (error) {
+    console.error('[api] persistTaskIntervention:', error.message);
+  }
+}
+
+async function persistSpecialistLifecycleEvent({
+  userId,
+  agentId = null,
+  rootMissionId = null,
+  eventType = 'spawned',
+  eventSource = 'runtime',
+  role = 'specialist',
+  provider = null,
+  model = null,
+  isEphemeral = true,
+  message = '',
+  metadata = {},
+}) {
+  if (!userId || !message) return;
+
+  const { error } = await supabase.from('specialist_lifecycle').insert({
+    user_id: userId,
+    agent_id: agentId,
+    root_mission_id: rootMissionId,
+    event_type: eventType,
+    event_source: eventSource,
+    role,
+    provider,
+    model,
+    is_ephemeral: isEphemeral,
+    message,
+    metadata,
+  });
+
+  if (error) {
+    console.error('[api] persistSpecialistLifecycleEvent:', error.message);
+  }
+}
+
+async function ensureDefaultRoutingPolicyRow(user) {
+  if (!user?.id) return null;
+
+  const { data: existing, error: existingError } = await supabase
+    .from('routing_policies')
+    .select('*')
+    .eq('user_id', user.id)
+    .eq('is_default', true)
+    .order('created_at', { ascending: true })
+    .limit(1)
+    .maybeSingle();
+
+  if (existingError) throw existingError;
+  if (existing) return existing;
+
+  const row = buildDefaultRoutingPolicy(user.id);
+  const { data, error } = await supabase
+    .from('routing_policies')
+    .insert(row)
+    .select('*')
+    .single();
+
+  if (error) throw error;
+  return data;
+}
+
+async function selectRoutingPolicyRow(user, routingDecision) {
+  if (!user?.id) return null;
+
+  const { data, error } = await supabase
+    .from('routing_policies')
+    .select('*')
+    .eq('user_id', user.id)
+    .eq('active', true)
+    .order('is_default', { ascending: false })
+    .order('updated_at', { ascending: false });
+
+  if (error) throw error;
+
+  const policies = (data || []).map(mapRoutingPolicyFromDb);
+  if (!policies.length) return ensureDefaultRoutingPolicyRow(user);
+
+  return (
+    policies.find((policy) => policy.taskDomain === routingDecision.domain && policy.intentType === routingDecision.intentType)
+    || policies.find((policy) => policy.taskDomain === routingDecision.domain && policy.intentType === 'general')
+    || policies.find((policy) => policy.isDefault)
+    || policies[0]
+  );
+}
+
+async function selectOutcomeWinningLane(user, routingDecision) {
+  if (!user?.id) return null;
+
+  const selectColumns = 'provider,model,score,cost_usd,agent_role,execution_strategy,approval_level,domain,intent_type';
+  const queryOutcomeRows = async (scope = 'exact') => {
+    let query = supabase
+      .from('task_outcomes')
+      .select(selectColumns)
+      .eq('user_id', user.id)
+      .eq('outcome_status', 'completed')
+      .order('created_at', { ascending: false })
+      .limit(32);
+
+    if (scope === 'exact') {
+      query = query.eq('domain', routingDecision.domain).eq('intent_type', routingDecision.intentType);
+    } else if (scope === 'domain-pack') {
+      query = query.eq('domain', routingDecision.domain);
+    } else if (scope === 'intent-pack') {
+      query = query.eq('intent_type', routingDecision.intentType);
+    }
+
+    const { data, error } = await query;
+    if (error) {
+      console.error('[api] selectOutcomeWinningLane:', error.message);
+      return [];
+    }
+    return (data || []).map((row) => ({ ...row, __scope: scope }));
+  };
+
+  const exactRows = await queryOutcomeRows('exact');
+  const data = exactRows.length >= 3
+    ? exactRows
+    : [
+        ...exactRows,
+        ...(await queryOutcomeRows('domain-pack')).filter((row) => !(row.domain === routingDecision.domain && row.intent_type === routingDecision.intentType)),
+        ...(await queryOutcomeRows('intent-pack')).filter((row) => !(row.domain === routingDecision.domain && row.intent_type === routingDecision.intentType)),
+      ].slice(0, 32);
+
+  const grouped = new Map();
+  (data || []).forEach((row) => {
+    const key = `${row.provider || 'Adaptive'}::${row.model || 'Adaptive lane'}`;
+    const current = grouped.get(key) || {
+      provider: row.provider || 'Adaptive',
+      model: row.model || 'Adaptive lane',
+      agentRole: row.agent_role || 'executor',
+      executionStrategy: row.execution_strategy || 'sequential',
+      approvalLevel: row.approval_level || 'risk_weighted',
+      exactRuns: 0,
+      domainPackRuns: 0,
+      intentPackRuns: 0,
+      runs: 0,
+      totalScore: 0,
+      totalCost: 0,
+    };
+    if (row.domain === routingDecision.domain && row.intent_type === routingDecision.intentType) current.exactRuns += 1;
+    else if (row.domain === routingDecision.domain) current.domainPackRuns += 1;
+    else if (row.intent_type === routingDecision.intentType) current.intentPackRuns += 1;
+    current.runs += 1;
+    current.totalScore += Number(row.score || 0);
+    current.totalCost += Number(row.cost_usd || 0);
+    grouped.set(key, current);
+  });
+
+  return Array.from(grouped.values())
+    .map((entry) => {
+      const avgScore = entry.runs ? entry.totalScore / entry.runs : 0;
+      const avgCost = entry.runs ? entry.totalCost / entry.runs : 0;
+      const generalizedSupport = (entry.domainPackRuns * 0.7) + (entry.intentPackRuns * 0.55);
+      const scopeSupport = entry.exactRuns + generalizedSupport;
+      const scopeLabel = entry.exactRuns >= 3
+        ? 'exact'
+        : entry.domainPackRuns >= entry.intentPackRuns && entry.domainPackRuns > 0
+          ? 'domain-pack'
+          : entry.intentPackRuns > 0
+            ? 'intent-pack'
+            : 'thin';
+      const confidence = entry.exactRuns >= 6 || scopeSupport >= 10
+        ? 'high'
+        : entry.exactRuns >= 2 || scopeSupport >= 5
+          ? 'medium'
+          : 'low';
+
+      return {
+        ...entry,
+        avgScore,
+        avgCost,
+        scopeLabel,
+        confidence,
+        rank: avgScore
+          + Math.min(24, (entry.exactRuns * 4) + generalizedSupport * 2)
+          - (avgCost * 5.5)
+          + (entry.approvalLevel === 'auto_low_risk' ? 6 : entry.approvalLevel === 'risk_weighted' ? 2 : -6)
+          + (entry.executionStrategy === 'parallel' ? 3 : 0)
+          + (scopeLabel === 'exact' ? 6 : scopeLabel === 'domain-pack' ? 2 : 0),
+      };
+    })
+    .sort((left, right) => {
+      if (right.rank !== left.rank) return right.rank - left.rank;
+      return right.runs - left.runs;
+    })[0] || null;
+}
+
+function applyPatternApprovalBias({ routingDecision, observedWinningLane }) {
+  const patternBias = getPatternApprovalBiasSummary({
+    winningPattern: observedWinningLane
+      ? {
+          domain: routingDecision.domain,
+          intentType: routingDecision.intentType,
+          executionStrategy: observedWinningLane.executionStrategy,
+          approvalLevel: observedWinningLane.approvalLevel,
+          runs: observedWinningLane.runs,
+          confidence: observedWinningLane.confidence === 'high' ? 84 : observedWinningLane.confidence === 'medium' ? 68 : 52,
+        }
+      : null,
+    routingDecision,
+    observedWinningLane,
+  });
+
+  if (!patternBias.available || routingDecision.riskLevel === 'high') {
+    return {
+      ...routingDecision,
+      approvalBiasDetail: patternBias.detail,
+    };
+  }
+
+  return {
+    ...routingDecision,
+    approvalLevel: patternBias.recommendedApprovalLevel || routingDecision.approvalLevel,
+    approvalBiasDetail: patternBias.detail,
+  };
+}
+
+function applyRuntimeConfidenceBias({ routingDecision, observedWinningLane }) {
+  if (!observedWinningLane) return routingDecision;
+
+  const shouldPromoteWinningLane = observedWinningLane.confidence === 'high'
+    || (observedWinningLane.confidence === 'medium' && Number(observedWinningLane.avgScore || 0) >= 78);
+
+  if (!shouldPromoteWinningLane) {
+    return routingDecision;
+  }
+
+  return {
+    ...routingDecision,
+    selectedProvider: observedWinningLane.provider || routingDecision.selectedProvider,
+    selectedModel: observedWinningLane.model || routingDecision.selectedModel,
+    selectedAgentRole: observedWinningLane.agentRole || routingDecision.selectedAgentRole,
+    routingReason: `${routingDecision.routingReason} | runtime winner ${observedWinningLane.provider || 'Adaptive'} ${observedWinningLane.model || 'lane'} @ ${Math.round(observedWinningLane.avgScore || 0)} score via ${observedWinningLane.scopeLabel || 'exact'} history`,
+  };
+}
+
 export async function createMission(payload, agents = []) {
+  const guardedMission = enforceRecurringMissionGuardrails(payload);
+  const effectivePayload = guardedMission.payload;
+
   if (!isSupabaseConfigured) {
     return {
       success: true,
       mission: {
         id: crypto.randomUUID(),
-        title: deriveMissionTitle(payload.intent),
-        name: deriveMissionTitle(payload.intent),
-        description: payload.intent,
-        agentId: payload.agentId,
-        agentName: payload.agentName || '',
+        title: deriveMissionTitle(effectivePayload.intent),
+        name: deriveMissionTitle(effectivePayload.intent),
+        description: effectivePayload.intent,
+        agentId: effectivePayload.agentId,
+        agentName: effectivePayload.agentName || '',
         status: 'queued',
-        lane: inferLane(payload.priorityScore || 5, false, 'queued'),
-        mode: payload.mode,
+        lane: inferLane(effectivePayload.priorityScore || 5, false, 'queued'),
+        mode: effectivePayload.mode,
         progressPercent: 0,
         createdAt: new Date().toISOString(),
       },
+      guardrails: guardedMission.guardrails,
     };
   }
 
   const user = (await supabase.auth.getUser()).data?.user;
   if (!user) throw new Error('Not authenticated');
 
-  const title = deriveMissionTitle(payload.intent);
-  const requestedSyntheticCommander = !payload.agentId || payload.agentId === 'synthetic-commander';
-  let selectedAgent = agents.find(agent => agent.id === payload.agentId) || null;
+  const title = deriveMissionTitle(effectivePayload.intent);
+  const requestedSyntheticCommander = !effectivePayload.agentId || effectivePayload.agentId === SYNTHETIC_COMMANDER_ID;
+  let selectedAgent = agents.find(agent => agent.id === effectivePayload.agentId) || null;
   let commander = agents.find(agent => agent.role === 'commander' && !agent.isSyntheticCommander) || null;
 
   if (requestedSyntheticCommander) {
@@ -514,40 +1460,110 @@ export async function createMission(payload, agents = []) {
 
   const assignedAgentId = selectedAgent?.isSyntheticCommander ? null : selectedAgent?.id || null;
   const commanderId = commander?.isSyntheticCommander ? null : commander?.id || null;
-  const estimated = estimateMissionPlan(payload);
-  const priorityScore = payload.priorityScore ?? 5;
-  const scheduleType = payload.repeat ? 'recurring' : 'once';
-  const runAt = payload.when === 'now' ? new Date().toISOString() : payload.runAt || null;
-  const recurrenceRule = buildRecurrenceRule(payload.repeat);
+  const estimated = estimateMissionPlan(effectivePayload);
+  const plannedBranches = Array.isArray(effectivePayload.planBranches) && effectivePayload.planBranches.length ? effectivePayload.planBranches : estimated.branches;
+  const priorityScore = effectivePayload.priorityScore ?? 5;
+  const scheduleType = effectivePayload.repeat ? 'recurring' : 'once';
+  const runAt = effectivePayload.when === 'now' ? new Date().toISOString() : effectivePayload.runAt || null;
+  const recurrenceRule = buildRecurrenceRule(effectivePayload.repeat);
   const lane = inferLane(priorityScore, false, 'queued');
   const missionId = crypto.randomUUID();
+  const preliminaryRoutingDecision = deriveRoutingDecision(effectivePayload, selectedAgent, null);
+  const routingPolicy = await selectRoutingPolicyRow(user, preliminaryRoutingDecision).catch((error) => {
+    console.error('[api] selectRoutingPolicyRow:', error.message);
+    return null;
+  });
+  let routingDecision = deriveRoutingDecision(effectivePayload, selectedAgent, routingPolicy);
+  const observedWinningLane = await selectOutcomeWinningLane(user, routingDecision);
+  routingDecision = applyPatternApprovalBias({ routingDecision, observedWinningLane });
+  routingDecision = applyRuntimeConfidenceBias({ routingDecision, observedWinningLane });
+  const persistentLaneSignals = await fetchPersistentLaneSignals(user.id);
+  const hasDelegatedSteps = plannedBranches.length > 1;
+  const executionPosture = getMissionExecutionPosture(effectivePayload);
+  const workflowStatus = hasDelegatedSteps
+    ? (executionPosture.shouldAutoDispatch ? WORKFLOW_STATUS.RUNNING : WORKFLOW_STATUS.PLANNED)
+    : executionPosture.shouldWatchAndApprove
+      ? WORKFLOW_STATUS.WAITING_ON_HUMAN
+      : executionPosture.shouldAutoDispatch
+        ? WORKFLOW_STATUS.READY
+        : WORKFLOW_STATUS.PLANNED;
 
   const row = {
     id: missionId,
     user_id: user.id,
     title,
     name: title,
-    description: payload.intent,
-    status: 'queued',
-    lane,
+    description: effectivePayload.intent,
+    status: hasDelegatedSteps
+      ? (executionPosture.shouldAutoDispatch ? 'running' : 'pending')
+      : executionPosture.shouldWatchAndApprove
+        ? 'needs_approval'
+        : executionPosture.shouldAutoDispatch
+          ? 'queued'
+          : 'pending',
+    lane: hasDelegatedSteps
+      ? (executionPosture.shouldAutoDispatch ? 'active' : 'blocked')
+      : executionPosture.shouldWatchAndApprove
+        ? 'approvals'
+        : executionPosture.shouldAutoDispatch
+          ? lane
+          : 'blocked',
     priority: priorityScore,
     schedule_type: scheduleType,
     run_at: runAt,
     recurrence_rule: recurrenceRule,
     agent_id: assignedAgentId,
-    agent_name: payload.agentName || selectedAgent?.name || 'Unknown',
-    mode: payload.mode,
-    output_type: payload.outputType,
-    output_spec: payload.outputSpec || null,
-    target_type: payload.targetType,
-    target_identifier: payload.targetIdentifier || null,
+    agent_name: effectivePayload.agentName || selectedAgent?.name || 'Unknown',
+    mode: effectivePayload.mode,
+    output_type: effectivePayload.outputType,
+    output_spec: effectivePayload.outputSpec || null,
+    target_type: effectivePayload.targetType,
+    target_identifier: effectivePayload.targetIdentifier || null,
     created_by_commander_id: commanderId,
     estimated_cost_cents: estimated.estimatedCostCents,
     actual_cost_cents: 0,
-    progress_percent: 0,
+    progress_percent: hasDelegatedSteps ? 5 : 0,
     duration_ms: 0,
     cost_usd: 0,
+    node_type: 'mission',
+    workflow_status: workflowStatus,
+    root_mission_id: missionId,
+    routing_policy_id: routingPolicy?.id || null,
+    routing_reason: `${routingDecision.routingReason} | skills ${(routingDecision.recommendedSkillNames || []).join(', ') || 'none'} | mission mode ${executionPosture.missionMode.replaceAll('_', ' ')}${routingDecision.approvalBiasDetail ? ` | ${routingDecision.approvalBiasDetail}` : ''}`,
+    domain: routingDecision.domain,
+    intent_type: routingDecision.intentType,
+    budget_class: routingDecision.budgetClass,
+    risk_level: routingDecision.riskLevel,
+    context_pack_ids: routingDecision.contextPackIds,
+    required_capabilities: routingDecision.requiredCapabilities,
+    approval_level: routingDecision.approvalLevel,
+    depends_on: [],
+    agent_role: 'commander',
+    execution_strategy: hasDelegatedSteps ? 'graph_root' : 'sequential',
+    branch_label: 'Root Mission',
+    provider_override: routingDecision.selectedProvider || null,
+    model_override: routingDecision.selectedModel || null,
+    requires_approval: !hasDelegatedSteps && executionPosture.shouldWatchAndApprove,
   };
+
+  const subtaskRows = await buildMissionSubtasks({
+    missionId,
+    userId: user.id,
+    user,
+    title,
+    payload: { ...effectivePayload, priorityScore, agents, routingPolicy, selectedAgent, commander },
+    branches: plannedBranches.map((branch) => ({ ...branch })),
+    assignedAgentId,
+    agentName: effectivePayload.agentName || selectedAgent?.name || 'Unknown',
+    commanderId,
+    estimatedCostCents: estimated.estimatedCostCents,
+    routingPolicyId: routingPolicy?.id || null,
+    routingDecision,
+    observedWinningLane,
+    persistentLaneSignals,
+    runAt,
+    scheduleType,
+  });
 
   const { error } = await supabase.from('tasks').insert(row);
   if (error) {
@@ -564,10 +1580,10 @@ export async function createMission(payload, agents = []) {
       name: title,
       status: 'pending',
       agent_id: assignedAgentId,
-      agent_name: payload.agentName || selectedAgent?.name || 'Unknown',
+      agent_name: effectivePayload.agentName || selectedAgent?.name || 'Unknown',
       duration_ms: 0,
       cost_usd: 0,
-      prompt_text: payload.intent,
+      prompt_text: effectivePayload.intent,
     };
 
     const { error: legacyError } = await supabase.from('tasks').insert(legacyRow);
@@ -581,22 +1597,43 @@ export async function createMission(payload, agents = []) {
       mission: mapTaskRow({
         ...legacyRow,
         title,
-        description: payload.intent,
-        mode: payload.mode,
+        description: effectivePayload.intent,
+        mode: effectivePayload.mode,
         lane,
         priority: priorityScore,
+        workflow_status: workflowStatus,
+        node_type: 'mission',
+        root_mission_id: missionId,
+        routing_policy_id: routingPolicy?.id || null,
+        routing_reason: routingDecision.routingReason,
+        domain: routingDecision.domain,
+        intent_type: routingDecision.intentType,
+        budget_class: routingDecision.budgetClass,
+        risk_level: routingDecision.riskLevel,
+        context_pack_ids: [],
+        required_capabilities: routingDecision.requiredCapabilities,
+        approval_level: routingDecision.approvalLevel,
+        depends_on: [],
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       }),
     };
   }
 
-  if (payload.when === 'now' && assignedAgentId) {
+  if (subtaskRows.length > 0) {
+    const { error: subtaskError } = await supabase.from('tasks').insert(subtaskRows);
+    if (subtaskError) {
+      console.error('[api] createMission subtasks:', subtaskError.message);
+      throw subtaskError;
+    }
+  }
+
+  if (executionPosture.shouldAutoDispatch && assignedAgentId && subtaskRows.length === 0) {
     try {
       await dispatchMissionNow({
         taskId: missionId,
         agentId: assignedAgentId,
-        taskDescription: payload.intent,
+        taskDescription: effectivePayload.intent,
       });
     } catch (dispatchError) {
       console.error('[api] createMission dispatch:', dispatchError.message);
@@ -604,9 +1641,27 @@ export async function createMission(payload, agents = []) {
     }
   }
 
+  if (executionPosture.shouldAutoDispatch && subtaskRows.length > 0) {
+    try {
+      const readySubtasks = subtaskRows.filter((subtask) => subtask.workflow_status === WORKFLOW_STATUS.READY && subtask.agent_id);
+      await Promise.all(readySubtasks.map((subtask) => dispatchMissionNow({
+        taskId: subtask.id,
+        agentId: subtask.agent_id,
+        taskDescription: subtask.description || subtask.title || subtask.name || effectivePayload.intent,
+      })));
+    } catch (dispatchError) {
+      console.error('[api] createMission subtask dispatch:', dispatchError.message);
+      throw dispatchError;
+    }
+  }
+
   const activityMessage = scheduleType === 'recurring'
-    ? `Mission queued: ${title} • recurring ${payload.repeat.frequency} at ${payload.repeat.time}`
-    : payload.when === 'now' && assignedAgentId
+    ? `Mission queued: ${title} • recurring ${effectivePayload.repeat.frequency} at ${effectivePayload.repeat.time}`
+    : executionPosture.shouldWatchAndApprove
+      ? `Mission staged for approval: ${title}`
+      : executionPosture.shouldPlanOnly
+        ? `Mission planned: ${title}`
+        : effectivePayload.when === 'now' && assignedAgentId
       ? `Mission dispatched: ${title}`
       : `Mission queued: ${title}`;
 
@@ -623,9 +1678,39 @@ export async function createMission(payload, agents = []) {
     console.error('[api] createMission activity_log:', activityError.message);
   }
 
+  if (guardedMission.guardrails.length) {
+    const guardrailMessage = `[automation-guardrail] ${title} on root ${missionId} -> ${guardedMission.guardrails.join(' ')}`;
+    await logBranchEvent({
+      userId: user.id,
+      agentId: assignedAgentId,
+      message: guardrailMessage,
+    });
+    await persistTaskIntervention({
+      userId: user.id,
+      taskId: missionId,
+      rootMissionId: missionId,
+      agentId: assignedAgentId,
+      eventType: 'guardrail',
+      eventSource: 'mission_create',
+      tone: 'amber',
+      message: guardrailMessage,
+      domain: routingDecision.domain,
+      intentType: routingDecision.intentType,
+      scheduleType,
+      metadata: {
+        missionMode: executionPosture.missionMode,
+        guardrails: guardedMission.guardrails,
+        budgetClass: routingDecision.budgetClass,
+        riskLevel: routingDecision.riskLevel,
+      },
+    });
+  }
+
   return {
     success: true,
     mission: mapTaskRow({ ...row, created_at: new Date().toISOString(), updated_at: new Date().toISOString() }),
+    subtasks: subtaskRows.map((subtask) => mapTaskRow({ ...subtask, created_at: new Date().toISOString(), updated_at: new Date().toISOString() })),
+    guardrails: guardedMission.guardrails,
   };
 }
 
@@ -680,6 +1765,7 @@ export async function runCommanderHeartbeat(agents = [], tasks = [], reviews = [
         agent_id: effectiveAgentId,
         created_by_commander_id: task.createdByCommanderId || commander.id,
         status: 'running',
+        workflow_status: WORKFLOW_STATUS.RUNNING,
         lane: 'active',
         started_at: task.startedAt || claimTimestamp,
         progress_percent: Math.max(10, Number(task.progressPercent || 0)),
@@ -712,6 +1798,7 @@ export async function runCommanderHeartbeat(agents = [], tasks = [], reviews = [
         .from('tasks')
         .update({
           status: 'failed',
+          workflow_status: WORKFLOW_STATUS.FAILED,
           lane: 'blocked',
           failed_at: new Date().toISOString(),
           progress_percent: 0,
@@ -753,10 +1840,20 @@ export async function fetchActivityLog(agentId = null) {
 export async function retryTask(taskId) {
   if (!isSupabaseConfigured) return { success: true };
 
+  const user = (await supabase.auth.getUser()).data?.user;
+  if (!user) throw new Error('Not authenticated');
+  const { data: task } = await supabase
+    .from('tasks')
+    .select('id,title,name,agent_id,root_mission_id,domain,intent_type,provider_override,model_override,schedule_type')
+    .eq('id', taskId)
+    .maybeSingle();
+  const laneDefaults = await inferAgentLaneDefaults(task?.agent_id || null);
+
   const { error } = await supabase
     .from('tasks')
     .update({
       status: 'queued',
+      workflow_status: WORKFLOW_STATUS.READY,
       lane: 'active',
       duration_ms: 0,
       cost_usd: 0,
@@ -764,6 +1861,8 @@ export async function retryTask(taskId) {
       progress_percent: 0,
       failed_at: null,
       cancelled_at: null,
+      provider_override: task?.provider_override || laneDefaults.provider || null,
+      model_override: task?.model_override || laneDefaults.model || null,
     })
     .eq('id', taskId);
 
@@ -771,21 +1870,228 @@ export async function retryTask(taskId) {
     console.error('[api] retryTask:', error.message);
     throw error;
   }
+  const message = `[intervention-retry] ${(task?.title || task?.name || taskId)} (${taskId}) on root ${task?.root_mission_id || taskId} was manually rerun.`;
+  await logBranchEvent({
+    userId: user.id,
+    agentId: task?.agent_id || null,
+    message,
+  });
+  await persistTaskIntervention({
+    userId: user.id,
+    taskId,
+    rootMissionId: task?.root_mission_id || taskId,
+    agentId: task?.agent_id || null,
+    eventType: 'retry',
+    eventSource: 'manual',
+    tone: 'amber',
+    message,
+    domain: task?.domain || 'general',
+    intentType: task?.intent_type || 'general',
+    provider: task?.provider_override || null,
+    model: task?.model_override || null,
+    scheduleType: task?.schedule_type || 'once',
+  });
   return { success: true, taskId };
 }
 
 export async function stopTask(taskId) {
   if (!isSupabaseConfigured) return { success: true };
 
+  const user = (await supabase.auth.getUser()).data?.user;
+  if (!user) throw new Error('Not authenticated');
+  const { data: task } = await supabase
+    .from('tasks')
+    .select('id,title,name,agent_id,root_mission_id,domain,intent_type,provider_override,model_override,schedule_type')
+    .eq('id', taskId)
+    .maybeSingle();
+
   const { error } = await supabase
     .from('tasks')
-    .update({ status: 'failed', lane: 'blocked', failed_at: new Date().toISOString() })
+    .update({
+      status: 'failed',
+      workflow_status: WORKFLOW_STATUS.FAILED,
+      lane: 'blocked',
+      failed_at: new Date().toISOString(),
+    })
     .eq('id', taskId);
 
   if (error) {
     console.error('[api] stopTask:', error.message);
     throw error;
   }
+  const message = `[intervention-stop] ${(task?.title || task?.name || taskId)} (${taskId}) on root ${task?.root_mission_id || taskId} was manually stopped.`;
+  await logBranchEvent({
+    userId: user.id,
+    agentId: task?.agent_id || null,
+    type: 'ERR',
+    message,
+  });
+  await persistTaskIntervention({
+    userId: user.id,
+    taskId,
+    rootMissionId: task?.root_mission_id || taskId,
+    agentId: task?.agent_id || null,
+    eventType: 'stop',
+    eventSource: 'manual',
+    tone: 'rose',
+    message,
+    domain: task?.domain || 'general',
+    intentType: task?.intent_type || 'general',
+    provider: task?.provider_override || null,
+    model: task?.model_override || null,
+    scheduleType: task?.schedule_type || 'once',
+  });
+  return { success: true, taskId };
+}
+
+export async function updateMissionBranchRouting(taskId, updates = {}, agents = []) {
+  if (!isSupabaseConfigured) return { success: true, taskId };
+
+  const user = (await supabase.auth.getUser()).data?.user;
+  if (!user) throw new Error('Not authenticated');
+
+  const { data: currentTask, error: taskError } = await supabase
+    .from('tasks')
+    .select('id,title,name,agent_id,agent_name,root_mission_id,provider_override,model_override,domain,intent_type,schedule_type')
+    .eq('id', taskId)
+    .single();
+
+  if (taskError) {
+    console.error('[api] updateMissionBranchRouting fetch:', taskError.message);
+    throw taskError;
+  }
+
+  const patch = {
+    updated_at: new Date().toISOString(),
+  };
+  const requestedAgent = Object.prototype.hasOwnProperty.call(updates, 'agentId')
+    ? agents.find((agent) => agent.id === updates.agentId) || null
+    : null;
+
+  if (Object.prototype.hasOwnProperty.call(updates, 'agentId')) {
+    patch.agent_id = updates.agentId || null;
+    patch.agent_name = requestedAgent?.name || 'Unassigned';
+    if (!Object.prototype.hasOwnProperty.call(updates, 'providerOverride') && requestedAgent) {
+      patch.provider_override = inferAgentProvider(requestedAgent) || null;
+    }
+    if (!Object.prototype.hasOwnProperty.call(updates, 'modelOverride') && requestedAgent?.model) {
+      patch.model_override = requestedAgent.model || null;
+    }
+  }
+
+  if (Object.prototype.hasOwnProperty.call(updates, 'providerOverride')) {
+    patch.provider_override = updates.providerOverride || null;
+  }
+
+  if (Object.prototype.hasOwnProperty.call(updates, 'modelOverride')) {
+    patch.model_override = updates.modelOverride || null;
+  }
+
+  if (Object.keys(patch).length === 1) {
+    return { success: true, taskId };
+  }
+
+  const { error } = await supabase
+    .from('tasks')
+    .update(patch)
+    .eq('id', taskId);
+
+  if (error) {
+    console.error('[api] updateMissionBranchRouting:', error.message);
+    throw error;
+  }
+
+  const nextAgent = requestedAgent || agents.find((agent) => agent.id === (patch.agent_id || currentTask.agent_id)) || null;
+  const message = `[branch-routing] ${currentTask.title || currentTask.name || taskId} (${taskId}) on root ${currentTask.root_mission_id || taskId} -> agent ${nextAgent?.name || patch.agent_name || currentTask.agent_name || 'Unassigned'}, provider ${patch.provider_override ?? currentTask.provider_override ?? 'default'}, model ${patch.model_override ?? currentTask.model_override ?? 'default'}.`;
+  await logBranchEvent({
+    userId: user.id,
+    agentId: patch.agent_id || currentTask.agent_id || null,
+    message,
+  });
+  await persistTaskIntervention({
+    userId: user.id,
+    taskId,
+    rootMissionId: currentTask.root_mission_id || taskId,
+    agentId: patch.agent_id || currentTask.agent_id || null,
+    eventType: 'reroute',
+    eventSource: 'manual',
+    tone: 'teal',
+    message,
+    domain: currentTask.domain || 'general',
+    intentType: currentTask.intent_type || 'general',
+    provider: patch.provider_override ?? currentTask.provider_override ?? null,
+    model: patch.model_override ?? currentTask.model_override ?? null,
+    scheduleType: currentTask.schedule_type || 'once',
+    metadata: {
+      previousAgentId: currentTask.agent_id || null,
+      nextAgentId: patch.agent_id || currentTask.agent_id || null,
+      inheritedProvider: patch.provider_override ?? currentTask.provider_override ?? inferAgentProvider(nextAgent) ?? null,
+      inheritedModel: patch.model_override ?? currentTask.model_override ?? nextAgent?.model ?? null,
+    },
+  });
+
+  return { success: true, taskId };
+}
+
+export async function updateMissionBranchDependencies(taskId, dependsOn = []) {
+  if (!isSupabaseConfigured) return { success: true, taskId };
+
+  const user = (await supabase.auth.getUser()).data?.user;
+  if (!user) throw new Error('Not authenticated');
+
+  const { data: currentTask, error: taskError } = await supabase
+    .from('tasks')
+    .select('id,title,name,agent_id,root_mission_id,domain,intent_type,provider_override,model_override,schedule_type')
+    .eq('id', taskId)
+    .single();
+
+  if (taskError) {
+    console.error('[api] updateMissionBranchDependencies fetch:', taskError.message);
+    throw taskError;
+  }
+
+  const normalizedDependencies = Array.isArray(dependsOn)
+    ? [...new Set(dependsOn.filter(Boolean).filter((dependencyId) => dependencyId !== taskId))]
+    : [];
+
+  const { error } = await supabase
+    .from('tasks')
+    .update({
+      depends_on: normalizedDependencies,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', taskId);
+
+  if (error) {
+    console.error('[api] updateMissionBranchDependencies:', error.message);
+    throw error;
+  }
+
+  const message = `[branch-dependency] ${currentTask.title || currentTask.name || taskId} (${taskId}) on root ${currentTask.root_mission_id || taskId} now depends on ${normalizedDependencies.length ? normalizedDependencies.join(', ') : 'no branches'}.`;
+  await logBranchEvent({
+    userId: user.id,
+    agentId: currentTask.agent_id || null,
+    message,
+  });
+  await persistTaskIntervention({
+    userId: user.id,
+    taskId,
+    rootMissionId: currentTask.root_mission_id || taskId,
+    agentId: currentTask.agent_id || null,
+    eventType: 'dependency',
+    eventSource: 'manual',
+    tone: 'amber',
+    message,
+    domain: currentTask.domain || 'general',
+    intentType: currentTask.intent_type || 'general',
+    provider: currentTask.provider_override || null,
+    model: currentTask.model_override || null,
+    scheduleType: currentTask.schedule_type || 'once',
+    metadata: {
+      dependsOn: normalizedDependencies,
+    },
+  });
+
   return { success: true, taskId };
 }
 
@@ -797,9 +2103,10 @@ export async function approveMissionTask(taskId) {
 
   const { data: task, error: fetchError } = await supabase
     .from('tasks')
-    .select('id, agent_id, title, priority')
+    .select('id, agent_id, title, priority, root_mission_id, domain, intent_type, provider_override, model_override, schedule_type')
     .eq('id', taskId)
     .single();
+  const laneDefaults = await inferAgentLaneDefaults(task?.agent_id || null);
 
   if (fetchError) throw fetchError;
 
@@ -807,8 +2114,11 @@ export async function approveMissionTask(taskId) {
     .from('tasks')
     .update({
       status: 'queued',
+      workflow_status: WORKFLOW_STATUS.READY,
       lane: inferLane(task.priority ?? 5, false, 'queued'),
       requires_approval: false,
+      provider_override: task.provider_override || laneDefaults.provider || null,
+      model_override: task.model_override || laneDefaults.model || null,
       updated_at: new Date().toISOString(),
     })
     .eq('id', taskId);
@@ -823,6 +2133,28 @@ export async function approveMissionTask(taskId) {
     tokens: 0,
     duration_ms: 0,
   });
+  const message = `[intervention-approve] ${task.title || task.id} (${taskId}) on root ${task.root_mission_id || taskId} was approved to continue.`;
+  await logBranchEvent({
+    userId: user.id,
+    agentId: task.agent_id,
+    type: 'OK',
+    message,
+  });
+  await persistTaskIntervention({
+    userId: user.id,
+    taskId,
+    rootMissionId: task.root_mission_id || taskId,
+    agentId: task.agent_id,
+    eventType: 'approve',
+    eventSource: 'manual',
+    tone: 'amber',
+    message,
+    domain: task.domain || 'general',
+    intentType: task.intent_type || 'general',
+    provider: task.provider_override || null,
+    model: task.model_override || null,
+    scheduleType: task.schedule_type || 'once',
+  });
 
   return { success: true, taskId };
 }
@@ -835,7 +2167,7 @@ export async function cancelMissionTask(taskId) {
 
   const { data: task, error: fetchError } = await supabase
     .from('tasks')
-    .select('id, agent_id, title')
+    .select('id, agent_id, title, root_mission_id, domain, intent_type, provider_override, model_override, schedule_type')
     .eq('id', taskId)
     .single();
 
@@ -845,6 +2177,7 @@ export async function cancelMissionTask(taskId) {
     .from('tasks')
     .update({
       status: 'cancelled',
+      workflow_status: WORKFLOW_STATUS.CANCELLED,
       lane: 'blocked',
       cancelled_at: new Date().toISOString(),
       requires_approval: false,
@@ -862,8 +2195,172 @@ export async function cancelMissionTask(taskId) {
     tokens: 0,
     duration_ms: 0,
   });
+  const message = `[intervention-cancel] ${task.title || task.id} (${taskId}) on root ${task.root_mission_id || taskId} was cancelled by a human gate.`;
+  await logBranchEvent({
+    userId: user.id,
+    agentId: task.agent_id,
+    type: 'ERR',
+    message,
+  });
+  await persistTaskIntervention({
+    userId: user.id,
+    taskId,
+    rootMissionId: task.root_mission_id || taskId,
+    agentId: task.agent_id,
+    eventType: 'cancel',
+    eventSource: 'manual',
+    tone: 'rose',
+    message,
+    domain: task.domain || 'general',
+    intentType: task.intent_type || 'general',
+    provider: task.provider_override || null,
+    model: task.model_override || null,
+    scheduleType: task.schedule_type || 'once',
+  });
 
   return { success: true, taskId };
+}
+
+export async function updateRecurringMissionFlow(taskId, updates = {}) {
+  if (!isSupabaseConfigured) return { success: true, taskId, guardrails: [] };
+
+  const user = (await supabase.auth.getUser()).data?.user;
+  if (!user) throw new Error('Not authenticated');
+
+  const { data: currentTask, error: fetchError } = await supabase
+    .from('tasks')
+    .select('id,title,name,priority,root_mission_id,agent_id,domain,intent_type,provider_override,model_override,schedule_type,recurrence_rule,approval_level,requires_approval')
+    .eq('id', taskId)
+    .single();
+
+  if (fetchError) throw fetchError;
+
+  const existingRepeat = currentTask.recurrence_rule || {};
+  const requestedRepeat = {
+    frequency: updates.frequency || existingRepeat.frequency || 'weekly',
+    time: updates.time || existingRepeat.time || '09:00',
+    endDate: updates.endDate ?? existingRepeat.endDate ?? null,
+    missionMode: updates.missionMode || existingRepeat.missionMode || 'watch_and_approve',
+    approvalPosture: updates.approvalPosture || existingRepeat.approvalPosture || currentTask.approval_level || 'risk_weighted',
+    paused: updates.paused ?? existingRepeat.paused ?? false,
+  };
+
+  const { payload: guardedPayload, guardrails } = enforceRecurringMissionGuardrails({
+    repeat: requestedRepeat,
+    missionMode: requestedRepeat.missionMode,
+    targetType: currentTask.domain || 'general',
+    outputType: updates.outputType || 'summary',
+    automationCandidate: updates.automationCandidate || {
+      domain: currentTask.domain || 'general',
+      roi: updates.roi || 0,
+      runs: updates.runs || 0,
+    },
+  });
+
+  const effectiveRepeat = {
+    ...requestedRepeat,
+    frequency: guardedPayload.repeat?.frequency || requestedRepeat.frequency,
+    time: guardedPayload.repeat?.time || requestedRepeat.time,
+    endDate: guardedPayload.repeat?.endDate ?? requestedRepeat.endDate,
+    missionMode: guardedPayload.missionMode || requestedRepeat.missionMode,
+    approvalPosture: requestedRepeat.approvalPosture,
+    paused: requestedRepeat.paused,
+  };
+  const nextState = deriveRecurringFlowState({
+    missionMode: effectiveRepeat.missionMode,
+    approvalPosture: effectiveRepeat.approvalPosture,
+    paused: effectiveRepeat.paused,
+    priority: currentTask.priority ?? 5,
+  });
+  const nextRunAt = effectiveRepeat.paused || nextState.status !== 'queued'
+    ? null
+    : computeNextRecurringRunAt(effectiveRepeat);
+
+  const patch = {
+    schedule_type: 'recurring',
+    recurrence_rule: buildRecurrenceRule(effectiveRepeat),
+    run_at: nextRunAt,
+    status: nextState.status,
+    workflow_status: nextState.workflowStatus,
+    lane: nextState.lane,
+    requires_approval: nextState.requiresApproval,
+    approval_level: nextState.approvalLevel,
+    updated_at: new Date().toISOString(),
+  };
+
+  const { error } = await supabase
+    .from('tasks')
+    .update(patch)
+    .eq('id', taskId);
+
+  if (error) throw error;
+
+  const message = `[automation-tuning] ${(currentTask.title || currentTask.name || taskId)} (${taskId}) on root ${currentTask.root_mission_id || taskId} -> ${effectiveRepeat.frequency} at ${effectiveRepeat.time}, mission mode ${effectiveRepeat.missionMode.replaceAll('_', ' ')}, approval ${effectiveRepeat.approvalPosture}, ${effectiveRepeat.paused ? 'paused' : 'active'}.`;
+  await logBranchEvent({
+    userId: user.id,
+    agentId: currentTask.agent_id || null,
+    message,
+  });
+  await persistTaskIntervention({
+    userId: user.id,
+    taskId,
+    rootMissionId: currentTask.root_mission_id || taskId,
+    agentId: currentTask.agent_id || null,
+    eventType: 'tuning',
+    eventSource: 'manual',
+    tone: 'blue',
+    message,
+    domain: currentTask.domain || 'general',
+    intentType: currentTask.intent_type || 'general',
+    provider: currentTask.provider_override || null,
+    model: currentTask.model_override || null,
+    scheduleType: 'recurring',
+    metadata: {
+      frequency: effectiveRepeat.frequency,
+      time: effectiveRepeat.time,
+      missionMode: effectiveRepeat.missionMode,
+      approvalPosture: effectiveRepeat.approvalPosture,
+      paused: effectiveRepeat.paused,
+      nextRunAt,
+      guardrails,
+    },
+  });
+
+  if (guardrails.length) {
+    const guardrailMessage = `[automation-guardrail] ${(currentTask.title || currentTask.name || taskId)} on root ${currentTask.root_mission_id || taskId} -> ${guardrails.join(' ')}`;
+    await logBranchEvent({
+      userId: user.id,
+      agentId: currentTask.agent_id || null,
+      message: guardrailMessage,
+    });
+    await persistTaskIntervention({
+      userId: user.id,
+      taskId,
+      rootMissionId: currentTask.root_mission_id || taskId,
+      agentId: currentTask.agent_id || null,
+      eventType: 'guardrail',
+      eventSource: 'manual',
+      tone: 'amber',
+      message: guardrailMessage,
+      domain: currentTask.domain || 'general',
+      intentType: currentTask.intent_type || 'general',
+      provider: currentTask.provider_override || null,
+      model: currentTask.model_override || null,
+      scheduleType: 'recurring',
+      metadata: {
+        guardrails,
+      },
+    });
+  }
+
+  return {
+    success: true,
+    taskId,
+    guardrails,
+    nextRunAt,
+    recurrenceRule: patch.recurrence_rule,
+    status: patch.status,
+  };
 }
 
 // ── Task Notes ──────────────────────────────────────────────────
@@ -1049,15 +2546,22 @@ export async function dispatchFromSchedule(schedule, agents) {
   if (!user) throw new Error('Not authenticated');
 
   const agent = agents.find(a => a.id === schedule.agentId);
+  const taskId = crypto.randomUUID();
+  const laneDefaults = await inferAgentLaneDefaults(schedule.agentId);
   const { error } = await supabase
     .from('tasks')
     .insert({
-      id: crypto.randomUUID(),
+      id: taskId,
       user_id: user.id,
       name: schedule.name,
       status: 'pending',
+      workflow_status: WORKFLOW_STATUS.READY,
+      node_type: 'mission',
+      root_mission_id: taskId,
       agent_id: schedule.agentId,
       agent_name: agent?.name || 'Unknown',
+      provider_override: laneDefaults.provider || inferAgentProvider(agent) || null,
+      model_override: laneDefaults.model || agent?.model || null,
       duration_ms: 0,
       cost_usd: 0,
     });
@@ -1398,6 +2902,27 @@ export async function fetchKnowledgeNamespaces() {
   }));
 }
 
+export async function fetchRoutingPolicies() {
+  if (!isSupabaseConfigured) return [];
+
+  const userId = await getCurrentUserId();
+  if (!userId) return [];
+
+  const { data, error } = await supabase
+    .from('routing_policies')
+    .select('*')
+    .eq('user_id', userId)
+    .order('is_default', { ascending: false })
+    .order('updated_at', { ascending: false });
+
+  if (error) {
+    console.error('[api] fetchRoutingPolicies:', error.message);
+    return [];
+  }
+
+  return (data || []).map(mapRoutingPolicyFromDb);
+}
+
 export async function fetchDirectives() {
   if (!isSupabaseConfigured) return [];
 
@@ -1457,7 +2982,7 @@ export async function fetchModelBenchmarks() {
   return (models || []).map((row) => ({
     id: row.id,
     name: row.label,
-    provider: row.provider || 'Custom',
+    provider: normalizeModelProvider(row.provider),
     load: usageByModel[row.label] || usageByModel[row.model_key] || 0,
     costPer1k: Number(row.cost_per_1k || 0),
   }));
