@@ -44,6 +44,73 @@ function buildHistorySummary(history = []) {
   return 'Confidence is holding steady against the previous snapshot.';
 }
 
+function getMissionPatternSummary(tasks = []) {
+  const grouped = tasks.reduce((acc, task) => {
+    const key = `${task.domain || 'general'}::${task.intentType || 'general'}::${task.executionStrategy || 'sequential'}::${task.approvalLevel || 'risk_weighted'}`;
+    if (!acc[key]) {
+      acc[key] = {
+        key,
+        domain: task.domain || 'general',
+        intentType: task.intentType || 'general',
+        executionStrategy: task.executionStrategy || 'sequential',
+        approvalLevel: task.approvalLevel || 'risk_weighted',
+        runs: 0,
+        completed: 0,
+        cost: 0,
+      };
+    }
+    acc[key].runs += 1;
+    acc[key].cost += Number(task.costUsd || 0);
+    if (['completed', 'done'].includes(task.status)) acc[key].completed += 1;
+    return acc;
+  }, {});
+
+  const ranked = Object.values(grouped)
+    .map((entry) => ({
+      ...entry,
+      completionRate: entry.runs ? entry.completed / entry.runs : 0,
+      avgCost: entry.runs ? entry.cost / entry.runs : 0,
+    }))
+    .sort((left, right) => {
+      if (right.completionRate !== left.completionRate) return right.completionRate - left.completionRate;
+      if (right.runs !== left.runs) return right.runs - left.runs;
+      return left.avgCost - right.avgCost;
+    });
+
+  return {
+    winner: ranked[0] || null,
+    ranked,
+  };
+}
+
+function getRescueLoadSummary(tasks = [], logs = []) {
+  const rescueLogs = logs.filter((log) => {
+    const message = String(log.message || '');
+    return (
+      message.includes('[intervention-stop]')
+      || message.includes('[intervention-cancel]')
+      || message.includes('[intervention-retry]')
+      || message.includes('[branch-routing]')
+      || message.includes('[branch-dependency]')
+    );
+  });
+  const rescueCount = rescueLogs.length;
+  const rescueHours = rescueCount * 0.12;
+  const rescueTouchedRoots = new Set();
+  rescueLogs.forEach((entry) => {
+    const match = String(entry.message || '').match(/root ([a-z0-9-]+)/i);
+    if (match?.[1]) rescueTouchedRoots.add(match[1]);
+  });
+  const missionCount = Math.max(new Set(tasks.map((task) => task.rootMissionId || task.id).filter(Boolean)).size, 1);
+
+  return {
+    rescueCount,
+    rescueHours,
+    rescueTouchedRoots: rescueTouchedRoots.size,
+    rescueRate: Math.round((rescueTouchedRoots.size / missionCount) * 100),
+  };
+}
+
 async function fetchRecentOutcomeRows(userId) {
   const { data, error } = await supabase
     .from('task_outcomes')
@@ -129,6 +196,39 @@ async function syncOutcomeDoctrineArtifacts(userId) {
   }, {});
   const interventionLoad = Object.values(interventionCounts).reduce((sum, count) => sum + Number(count || 0), 0);
   const reroutePressure = Number(interventionCounts.reroute || 0) + Number(interventionCounts.dependency || 0);
+  const outcomePatterns = outcomes.reduce((acc, row) => {
+    const key = `${row.domain || 'general'}::${row.intent_type || 'general'}::${row.execution_strategy || 'sequential'}::${row.approval_level || 'risk_weighted'}`;
+    if (!acc[key]) {
+      acc[key] = {
+        key,
+        domain: row.domain || 'general',
+        intentType: row.intent_type || 'general',
+        executionStrategy: row.execution_strategy || 'sequential',
+        approvalLevel: row.approval_level || 'risk_weighted',
+        runs: 0,
+        totalScore: 0,
+        totalCost: 0,
+      };
+    }
+    acc[key].runs += 1;
+    acc[key].totalScore += Number(row.score || 0);
+    acc[key].totalCost += Number(row.cost_usd || 0);
+    return acc;
+  }, {});
+  const winningPattern = Object.values(outcomePatterns)
+    .map((entry) => ({
+      ...entry,
+      avgScore: entry.runs ? Math.round(entry.totalScore / entry.runs) : 0,
+      avgCost: entry.runs ? entry.totalCost / entry.runs : 0,
+    }))
+    .sort((left, right) => {
+      if (right.avgScore !== left.avgScore) return right.avgScore - left.avgScore;
+      if (right.runs !== left.runs) return right.runs - left.runs;
+      return left.avgCost - right.avgCost;
+    })[0] || null;
+  const rescueWeightedCost = interventionLoad > 0
+    ? Number((outcomes.reduce((sum, row) => sum + Number(row.cost_usd || 0), 0) / Math.max(interventionLoad, 1)).toFixed(2))
+    : 0;
 
   const doctrine = [
     buildDoctrineItem({
@@ -210,6 +310,49 @@ async function syncOutcomeDoctrineArtifacts(userId) {
         interventionCounts,
       },
     }),
+    buildDoctrineItem({
+      id: 'mission-pattern-memory',
+      owner: 'Pattern Memory',
+      tone: winningPattern && winningPattern.avgScore >= 70 ? 'teal' : 'amber',
+      title: winningPattern
+        ? `${winningPattern.domain} / ${winningPattern.intentType} is becoming a repeatable mission shape`
+        : 'Commander still needs stronger mission-shape repetition',
+      detail: winningPattern
+        ? `${winningPattern.executionStrategy} with ${winningPattern.approvalLevel} approval is the strongest repeating pattern at score ${winningPattern.avgScore} across ${winningPattern.runs} runs.`
+        : 'Structured outcomes are landing, but there is not yet enough repeated shape data to harden mission defaults.',
+      confidence: winningPattern ? Math.min(94, 54 + (winningPattern.runs * 6)) : 46,
+      evidence: [
+        winningPattern
+          ? `${winningPattern.runs} outcome rows match the strongest repeating mission shape.`
+          : 'No repeated mission-shape winner has separated yet.',
+        winningPattern
+          ? `Average score for that pattern is ${winningPattern.avgScore} at $${winningPattern.avgCost.toFixed(2)} average cost.`
+          : 'Commander needs more repeated domain/intent pairs before it should lean on a pattern.',
+      ],
+      metrics: {
+        winningPattern,
+      },
+    }),
+    buildDoctrineItem({
+      id: 'rescue-cost-memory',
+      owner: 'Rescue Memory',
+      tone: interventionLoad <= 4 ? 'teal' : interventionLoad <= 10 ? 'amber' : 'rose',
+      title: interventionLoad <= 4 ? 'Human rescue cost is still contained' : 'Human rescue is becoming an economic drag',
+      detail: interventionLoad <= 4
+        ? 'Manual rescue pressure is low enough that it is not yet distorting the economics of the stack.'
+        : `Each cluster of rescue pressure is now carrying about $${rescueWeightedCost.toFixed(2)} of outcome-linked spend, so intervention-heavy routes should fall in rank faster.`,
+      confidence: interventionLoad <= 4 ? 70 : Math.min(92, 55 + interventionLoad),
+      evidence: [
+        `${interventionLoad} structured intervention events are tied to recent outcome memory.`,
+        interventionLoad > 0
+          ? `Outcome-linked spend per intervention is about $${rescueWeightedCost.toFixed(2)}.`
+          : 'No outcome-linked rescue cost has accumulated yet.',
+      ],
+      metrics: {
+        interventionLoad,
+        rescueWeightedCost,
+      },
+    }),
   ];
 
   await syncLearningMemoryRows(userId, doctrine);
@@ -259,6 +402,28 @@ async function syncOutcomeDoctrineArtifacts(userId) {
         impact: interventionLoad > 10 ? 'critical' : interventionLoad > 4 ? 'high' : 'medium',
         savings_label: `${interventionLoad} interventions`,
       },
+      {
+        id: 'mission-pattern-memory',
+        user_id: userId,
+        rec_type: 'doctrine',
+        title: winningPattern ? 'Promote the strongest mission shape into defaults' : 'Collect more repeated mission shapes before changing defaults',
+        description: winningPattern
+          ? `${winningPattern.domain} / ${winningPattern.intentType} using ${winningPattern.executionStrategy} with ${winningPattern.approvalLevel} approval is the strongest repeating pattern so far.`
+          : 'Commander needs more repeated domain and intent combinations before it should start hardening mission-shape defaults.',
+        impact: winningPattern && winningPattern.avgScore >= 75 ? 'high' : 'medium',
+        savings_label: winningPattern ? `${winningPattern.runs} pattern runs` : `${outcomes.length} outcomes`,
+      },
+      {
+        id: 'rescue-cost-memory',
+        user_id: userId,
+        rec_type: 'optimization',
+        title: interventionLoad > 4 ? 'Rescue-heavy lanes should lose recommendation rank faster' : 'Rescue cost is low enough to keep current ranking stable',
+        description: interventionLoad > 4
+          ? 'Recent intervention pressure is now expensive enough that Commander should demote routes needing repeated rescue, even when raw completion looks acceptable.'
+          : 'Human rescue cost is currently contained, so Commander can keep current recommendation ranking relatively stable.',
+        impact: interventionLoad > 10 ? 'critical' : interventionLoad > 4 ? 'high' : 'medium',
+        savings_label: interventionLoad > 0 ? `$${rescueWeightedCost.toFixed(2)} per rescue cluster` : 'low rescue load',
+      },
     ], { onConflict: 'id' });
 
   return { available: true };
@@ -294,6 +459,8 @@ export function deriveLearningMemory({ tasks = [], approvals = [], logs = [], co
   const byModel = (costData?.models || []).slice().sort((a, b) => Number(b.cost || 0) - Number(a.cost || 0));
   const spendLeader = byModel[0] || null;
   const recentErrors = logs.filter((log) => log.type === 'ERR').length;
+  const missionPatternSummary = getMissionPatternSummary(tasks);
+  const rescueLoad = getRescueLoadSummary(tasks, logs);
 
   const doctrine = [
     buildDoctrineItem({
@@ -430,6 +597,45 @@ export function deriveLearningMemory({ tasks = [], approvals = [], logs = [], co
         recentErrors,
       },
     }),
+    buildDoctrineItem({
+      id: 'doctrine-mission-patterns',
+      owner: 'Tony',
+      tone: missionPatternSummary.winner && missionPatternSummary.winner.completionRate >= 0.75 ? 'teal' : 'amber',
+      title: missionPatternSummary.winner
+        ? `${missionPatternSummary.winner.domain} / ${missionPatternSummary.winner.intentType} is the cleanest reusable mission pattern`
+        : 'Commander still needs repeated mission shapes before it can lean on pattern memory',
+      detail: missionPatternSummary.winner
+        ? `${missionPatternSummary.winner.executionStrategy} with ${missionPatternSummary.winner.approvalLevel} approval is closing ${(missionPatternSummary.winner.completionRate * 100).toFixed(0)}% of its ${missionPatternSummary.winner.runs} runs.`
+        : 'Mission traffic is still too diffuse to harden one reusable mission shape into doctrine.',
+      confidence: missionPatternSummary.winner ? Math.min(92, 52 + (missionPatternSummary.winner.runs * 5)) : 45,
+      evidence: [
+        missionPatternSummary.winner
+          ? `${missionPatternSummary.winner.runs} tasks fit the top repeated mission pattern.`
+          : 'No mission pattern has enough repeated volume yet.',
+        missionPatternSummary.winner
+          ? `Average cost for that shape is $${missionPatternSummary.winner.avgCost.toFixed(2)}.`
+          : 'Commander needs more repeated shapes before it should bias defaults around them.',
+      ],
+      metrics: {
+        winningPattern: missionPatternSummary.winner,
+      },
+    }),
+    buildDoctrineItem({
+      id: 'doctrine-rescue-learning',
+      owner: 'Elon',
+      tone: rescueLoad.rescueRate <= 15 ? 'teal' : rescueLoad.rescueRate <= 35 ? 'amber' : 'rose',
+      title: rescueLoad.rescueRate <= 15 ? 'Human rescue cost is still low enough to scale' : 'Human rescue is expensive enough to change route confidence',
+      detail: rescueLoad.rescueRate <= 15
+        ? `${rescueLoad.rescueTouchedRoots} mission roots needed rescue, which is still low enough to keep scaling current routes.`
+        : `${rescueLoad.rescueTouchedRoots} mission roots needed rescue, costing roughly ${rescueLoad.rescueHours.toFixed(1)} human hours in operator attention.`,
+      confidence: rescueLoad.rescueRate <= 15 ? 76 : Math.min(92, 54 + rescueLoad.rescueRate),
+      evidence: [
+        `${rescueLoad.rescueCount} rescue-class interventions are visible in the activity log.`,
+        `${rescueLoad.rescueTouchedRoots} mission roots were touched by rescue pressure.`,
+        `Estimated operator rescue load is ${rescueLoad.rescueHours.toFixed(1)} hours.`,
+      ],
+      metrics: rescueLoad,
+    }),
   ];
 
   const doctrineById = doctrine.reduce((acc, item) => {
@@ -441,8 +647,8 @@ export function deriveLearningMemory({ tasks = [], approvals = [], logs = [], co
     doctrine,
     doctrineById,
     topThree: doctrine.slice(0, 3),
-    executiveThree: [doctrine[2], doctrine[3], doctrine[5]].filter(Boolean),
-    missionThree: [doctrine[0], doctrine[1], doctrine[4]].filter(Boolean),
+    executiveThree: [doctrine[2], doctrine[3], doctrine[5], doctrine[8]].filter(Boolean).slice(0, 3),
+    missionThree: [doctrine[0], doctrine[1], doctrine[4], doctrine[7]].filter(Boolean).slice(0, 3),
   };
 }
 

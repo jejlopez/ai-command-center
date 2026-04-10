@@ -129,17 +129,17 @@ Legend:
 ## Current Read
 
 - `Shipped`: 15
-- `In Progress`: 35
+- `In Progress`: 36
 - `Next`: 0
 - `Queued`: 16
 - `Later / Future`: 48
 
 ## Immediate Next Four
 
-1. Mission-pattern memory and rescue-aware learning
-2. Recurring tuning feedback into recommendations
-3. Preflight-to-runtime alignment checks
-4. Fleet lifecycle visibility consistency
+1. Recurring tuning feedback into recommendations
+2. Preflight-to-runtime alignment checks
+3. Fleet lifecycle visibility consistency
+4. Recommendation-rank shifts from pattern and rescue memory
 
 ## Epic Experience Layer Additions
 
@@ -173,12 +173,12 @@ These are not separate feature IDs yet. They should be implemented as depth adde
 
 ## Updated Immediate Next Order
 
-1. Add mission-pattern memory and rescue-aware learning
-2. Keep specialist lifecycle memory unified across fleet surfaces
-3. Push trend-aware doctrine scoring deeper into recommendations
-4. Feed recurring tuning outcomes back into recommendation rank
-5. Keep preflight readback aligned with actual routing behavior
-6. Turn autonomy and rescue signals into recommendation pressure
+1. Keep specialist lifecycle memory unified across fleet surfaces
+2. Push trend-aware doctrine scoring deeper into recommendations
+3. Feed recurring tuning outcomes back into recommendation rank
+4. Keep preflight readback aligned with actual routing behavior
+5. Turn autonomy and rescue signals into recommendation pressure
+6. Promote mission-pattern winners into stronger recommendation rank shifts
 
 ## Autodrive Program Rule
 
