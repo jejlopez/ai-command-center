@@ -445,6 +445,11 @@ async function ensureBranchSpecialistAgent({
 
   const { data, error } = await supabase.from('agents').insert([row]).select('*').single();
   if (error) throw error;
+  await logBranchEvent({
+    userId: user.id,
+    agentId: data.id,
+    message: `[specialist-spawned] ${data.name} (${branchRole}) materialized for "${objective}" on ${chosenModel}.`,
+  });
   return mapAgentRow(data);
 }
 
@@ -671,6 +676,23 @@ async function touchAgentHeartbeat(agentId, status) {
 
   if (error) {
     console.error('[api] touchAgentHeartbeat:', error.message);
+  }
+}
+
+async function logBranchEvent({ userId, agentId = null, type = 'SYS', message }) {
+  if (!userId || !message) return;
+
+  const { error } = await supabase.from('activity_log').insert({
+    user_id: userId,
+    type,
+    message,
+    agent_id: agentId,
+    duration_ms: 0,
+    tokens: 0,
+  });
+
+  if (error) {
+    console.error('[api] logBranchEvent:', error.message);
   }
 }
 
@@ -1140,6 +1162,20 @@ export async function stopTask(taskId) {
 export async function updateMissionBranchRouting(taskId, updates = {}, agents = []) {
   if (!isSupabaseConfigured) return { success: true, taskId };
 
+  const user = (await supabase.auth.getUser()).data?.user;
+  if (!user) throw new Error('Not authenticated');
+
+  const { data: currentTask, error: taskError } = await supabase
+    .from('tasks')
+    .select('id,title,name,agent_id,agent_name,root_mission_id,provider_override,model_override')
+    .eq('id', taskId)
+    .single();
+
+  if (taskError) {
+    console.error('[api] updateMissionBranchRouting fetch:', taskError.message);
+    throw taskError;
+  }
+
   const patch = {
     updated_at: new Date().toISOString(),
   };
@@ -1171,6 +1207,56 @@ export async function updateMissionBranchRouting(taskId, updates = {}, agents = 
     console.error('[api] updateMissionBranchRouting:', error.message);
     throw error;
   }
+
+  const nextAgent = agents.find((agent) => agent.id === (patch.agent_id || currentTask.agent_id)) || null;
+  await logBranchEvent({
+    userId: user.id,
+    agentId: patch.agent_id || currentTask.agent_id || null,
+    message: `[branch-routing] ${currentTask.title || currentTask.name || taskId} (${taskId}) on root ${currentTask.root_mission_id || taskId} -> agent ${nextAgent?.name || patch.agent_name || currentTask.agent_name || 'Unassigned'}, provider ${patch.provider_override ?? currentTask.provider_override ?? 'default'}, model ${patch.model_override ?? currentTask.model_override ?? 'default'}.`,
+  });
+
+  return { success: true, taskId };
+}
+
+export async function updateMissionBranchDependencies(taskId, dependsOn = []) {
+  if (!isSupabaseConfigured) return { success: true, taskId };
+
+  const user = (await supabase.auth.getUser()).data?.user;
+  if (!user) throw new Error('Not authenticated');
+
+  const { data: currentTask, error: taskError } = await supabase
+    .from('tasks')
+    .select('id,title,name,agent_id,root_mission_id')
+    .eq('id', taskId)
+    .single();
+
+  if (taskError) {
+    console.error('[api] updateMissionBranchDependencies fetch:', taskError.message);
+    throw taskError;
+  }
+
+  const normalizedDependencies = Array.isArray(dependsOn)
+    ? [...new Set(dependsOn.filter(Boolean).filter((dependencyId) => dependencyId !== taskId))]
+    : [];
+
+  const { error } = await supabase
+    .from('tasks')
+    .update({
+      depends_on: normalizedDependencies,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', taskId);
+
+  if (error) {
+    console.error('[api] updateMissionBranchDependencies:', error.message);
+    throw error;
+  }
+
+  await logBranchEvent({
+    userId: user.id,
+    agentId: currentTask.agent_id || null,
+    message: `[branch-dependency] ${currentTask.title || currentTask.name || taskId} (${taskId}) on root ${currentTask.root_mission_id || taskId} now depends on ${normalizedDependencies.length ? normalizedDependencies.join(', ') : 'no branches'}.`,
+  });
 
   return { success: true, taskId };
 }

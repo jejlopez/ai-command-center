@@ -25,7 +25,7 @@ import {
   fetchTaskNotes, createTaskNote,
   acknowledgeItem, reopenReview, snoozeReview,
   fetchSchedules, toggleSchedule, dispatchFromSchedule,
-  previewMissionPlan, createMission, updateMissionBranchRouting,
+  previewMissionPlan, createMission, updateMissionBranchRouting, updateMissionBranchDependencies,
 } from '../lib/api';
 import { useSystemState } from '../context/SystemStateContext';
 import { MissionCreatorPanel } from '../components/mission/MissionCreatorPanel';
@@ -249,7 +249,7 @@ function ApprovalCard({ item, agents, onClick, onApprove, onReject }) {
   );
 }
 
-function MissionGraphPanel({ tasks, agents, logs, selectedId, onSelect, onRetry, onStop, onApprove, onCancel, onUpdateBranchRouting }) {
+function MissionGraphPanel({ tasks, agents, logs, selectedId, onSelect, onRetry, onStop, onApprove, onCancel, onUpdateBranchRouting, onUpdateBranchDependencies }) {
   const graphTaskSet = useMemo(() => {
     if (!tasks.length) return [];
     const selectedTask = tasks.find((task) => task.id === selectedId) || tasks[0];
@@ -272,6 +272,9 @@ function MissionGraphPanel({ tasks, agents, logs, selectedId, onSelect, onRetry,
   const [routingDraft, setRoutingDraft] = useState({ agentId: '', providerOverride: '', modelOverride: '' });
   const [routingSaving, setRoutingSaving] = useState(false);
   const [routingMessage, setRoutingMessage] = useState('');
+  const [dependencyDraft, setDependencyDraft] = useState([]);
+  const [dependencySaving, setDependencySaving] = useState(false);
+  const [dependencyMessage, setDependencyMessage] = useState('');
   const selectedRootMissionId = selectedTask?.rootMissionId || selectedTask?.id || null;
   const selectedDependencySummary = selectedTask ? getDependencySummary(selectedTask, graphTaskSet) : { dependencies: [], unlocks: [] };
   const retirementEvents = (
@@ -284,6 +287,20 @@ function MissionGraphPanel({ tasks, agents, logs, selectedId, onSelect, onRetry,
       .slice(-4)
       .reverse()
   );
+  const branchHistory = (
+    logs
+      .filter((entry) => {
+        const message = String(entry.message || '');
+        if (!selectedRootMissionId) return false;
+        return (
+          message.includes(selectedRootMissionId)
+          && (message.includes('[branch-routing]') || message.includes('[branch-dependency]') || message.includes('[specialist-spawned]') || message.includes('[specialist-retired]'))
+        );
+      })
+      .slice(-8)
+      .reverse()
+  );
+  const persistentSpecialists = agents.filter((agent) => !agent.isEphemeral && !['commander', 'executor'].includes(agent.role || ''));
 
   const branchSummary = useMemo(() => {
     const running = graphTaskSet.filter((task) => task.workflowStatus === 'running').length;
@@ -300,6 +317,8 @@ function MissionGraphPanel({ tasks, agents, logs, selectedId, onSelect, onRetry,
       modelOverride: selectedTask.modelOverride || '',
     });
     setRoutingMessage('');
+    setDependencyDraft(selectedTask.dependsOn || []);
+    setDependencyMessage('');
   }, [selectedTask]);
 
   if (!graphTaskSet.length) {
@@ -481,6 +500,62 @@ function MissionGraphPanel({ tasks, agents, logs, selectedId, onSelect, onRetry,
                 </div>
               )}
             </div>
+            <div className="mt-4 rounded-[16px] border border-white/8 bg-white/[0.02] p-3">
+              <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Edit branch dependencies</div>
+              <div className="mt-2 text-[11px] text-text-muted">Choose which branches must complete before this branch becomes runnable.</div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {graphTaskSet.filter((task) => task.id !== selectedTask.id).map((task) => {
+                  const active = dependencyDraft.includes(task.id);
+                  return (
+                    <button
+                      key={task.id}
+                      type="button"
+                      onClick={() => setDependencyDraft((current) => (
+                        active ? current.filter((id) => id !== task.id) : [...current, task.id]
+                      ))}
+                      className={cn(
+                        'rounded-full border px-3 py-1.5 text-[10px] font-semibold transition-colors',
+                        active
+                          ? 'border-aurora-blue/20 bg-aurora-blue/10 text-aurora-blue'
+                          : 'border-white/8 bg-black/20 text-text-muted hover:border-white/12'
+                      )}
+                    >
+                      {task.branchLabel || task.name || task.title}
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="mt-3 flex items-center justify-between gap-3">
+                <div className="text-[11px] text-text-muted">
+                  {dependencyDraft.length === 0 ? 'This branch can launch as soon as policy and scheduling allow.' : `${dependencyDraft.length} dependency gate${dependencyDraft.length === 1 ? '' : 's'} selected.`}
+                </div>
+                <button
+                  type="button"
+                  disabled={dependencySaving}
+                  onClick={async () => {
+                    if (!selectedTask) return;
+                    setDependencySaving(true);
+                    setDependencyMessage('');
+                    try {
+                      await onUpdateBranchDependencies(selectedTask.id, dependencyDraft);
+                      setDependencyMessage('Branch dependencies updated.');
+                    } catch (error) {
+                      setDependencyMessage(error.message || 'Could not update branch dependencies.');
+                    } finally {
+                      setDependencySaving(false);
+                    }
+                  }}
+                  className="rounded-xl border border-aurora-blue/20 bg-aurora-blue/10 px-3 py-2 text-[11px] font-semibold text-aurora-blue transition-colors hover:bg-aurora-blue/14 disabled:opacity-50"
+                >
+                  {dependencySaving ? 'Saving...' : 'Save dependencies'}
+                </button>
+              </div>
+              {dependencyMessage && (
+                <div className="mt-3 rounded-xl border border-white/8 bg-black/20 px-3 py-2 text-[11px] text-text-body">
+                  {dependencyMessage}
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}
@@ -528,6 +603,75 @@ function MissionGraphPanel({ tasks, agents, logs, selectedId, onSelect, onRetry,
           </div>
         </div>
       )}
+      <div className="mt-4 grid gap-3 xl:grid-cols-[0.95fr_1.05fr]">
+        <div className="rounded-[20px] border border-white/8 bg-black/20 p-4">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Specialist Fleet</div>
+              <div className="mt-1 text-[12px] text-text-body">Persistent lanes, spawned lanes, and retirement posture for this mission graph.</div>
+            </div>
+            <div className="rounded-full border border-white/8 bg-white/[0.03] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-text-muted">
+              {persistentSpecialists.length + spawnedSpecialists.length} lanes
+            </div>
+          </div>
+          <div className="mt-3 grid grid-cols-3 gap-2">
+            {[
+              { label: 'Persistent', value: persistentSpecialists.length, tone: 'text-aurora-blue' },
+              { label: 'Spawned', value: spawnedSpecialists.length, tone: 'text-aurora-violet' },
+              { label: 'Retired', value: retirementEvents.length, tone: 'text-aurora-teal' },
+            ].map((metric) => (
+              <div key={metric.label} className="rounded-[16px] border border-white/8 bg-white/[0.02] px-3 py-3">
+                <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">{metric.label}</div>
+                <div className={cn('mt-2 text-lg font-semibold', metric.tone)}>{metric.value}</div>
+              </div>
+            ))}
+          </div>
+          <div className="mt-3 space-y-2">
+            {persistentSpecialists.slice(0, 4).map((agent) => (
+              <div key={agent.id} className="rounded-[16px] border border-white/8 bg-white/[0.02] px-3 py-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <div className="text-[12px] font-semibold text-text-primary">{agent.name}</div>
+                    <div className="mt-1 text-[10px] font-mono uppercase text-aurora-blue">{agent.role}</div>
+                  </div>
+                  <div className="text-[10px] font-mono text-text-disabled">{agent.model || 'Adaptive lane'}</div>
+                </div>
+              </div>
+            ))}
+            {persistentSpecialists.length === 0 && (
+              <div className="rounded-[16px] border border-white/8 bg-white/[0.02] px-3 py-3 text-[11px] text-text-muted">
+                No persistent specialist lanes are live beyond Commander yet.
+              </div>
+            )}
+          </div>
+        </div>
+        <div className="rounded-[20px] border border-white/8 bg-black/20 p-4">
+          <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Branch History</div>
+          <div className="mt-1 text-[12px] text-text-body">Routing overrides, dependency edits, and specialist lifecycle events for this mission root.</div>
+          <div className="mt-3 space-y-2">
+            {branchHistory.length === 0 && (
+              <div className="rounded-[16px] border border-white/8 bg-white/[0.02] px-3 py-3 text-[11px] text-text-muted">
+                No branch override history yet for this mission root.
+              </div>
+            )}
+            {branchHistory.map((entry) => (
+              <div key={entry.id} className="rounded-[16px] border border-white/8 bg-white/[0.02] px-3 py-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="text-[10px] font-mono uppercase text-text-muted">{entry.type}</div>
+                  <div className="text-[10px] font-mono text-text-disabled">{entry.timestamp ? new Date(entry.timestamp).toLocaleTimeString() : 'Live'}</div>
+                </div>
+                <div className="mt-2 text-[11px] leading-relaxed text-text-body">
+                  {String(entry.message || '')
+                    .replace('[branch-routing] ', '')
+                    .replace('[branch-dependency] ', '')
+                    .replace('[specialist-spawned] ', '')
+                    .replace('[specialist-retired] ', '')}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
       <div className="mt-4 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
         {graphTaskSet.map((task) => {
           const workflow = getWorkflowMeta(task.workflowStatus);
@@ -1076,6 +1220,10 @@ export function MissionControlView() {
     await updateMissionBranchRouting(taskId, updates, agents);
     await reload();
   }
+  async function handleUpdateBranchDependencies(taskId, dependsOn) {
+    await updateMissionBranchDependencies(taskId, dependsOn);
+    await reload();
+  }
   function handleCopy(item) { navigator.clipboard?.writeText(`${item.name || item.title}\nStatus: ${item.status}\nAgent: ${item.agentName || ''}\nCost: ${item.actualCostCents != null ? `$${(item.actualCostCents / 100).toFixed(2)}` : `$${item.costUsd?.toFixed(3) || '0.000'}`}`); }
 
   const selectedItem = sel ? [...tasks, ...approvalItems, ...completedItems].find(i => i.id === sel) : null;
@@ -1245,6 +1393,7 @@ export function MissionControlView() {
                 onApprove={handleApprove}
                 onCancel={(id) => handleReject(id, 'Cancelled from branch controls')}
                 onUpdateBranchRouting={handleUpdateBranchRouting}
+                onUpdateBranchDependencies={handleUpdateBranchDependencies}
               />
               <AnimatePresence mode="popLayout">
                 {operationalTasks.map(t => (
