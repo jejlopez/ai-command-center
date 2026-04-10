@@ -714,6 +714,7 @@ function getRecommendationClass(recommendation, signals, keywordBoost) {
 export function rankCommanderRecommendations({
   recommendations = [],
   tasks = [],
+  outcomes = [],
   interventions = [],
   logs = [],
   lifecycleEvents = [],
@@ -734,6 +735,7 @@ export function rankCommanderRecommendations({
     if (!recommendation?.taskDomain && !recommendation?.intentType) return sum;
     return sum + buildPolicyDemotionSummary(recommendation, tasks, interventions, logs).score;
   }, 0);
+  const confidenceClosure = getPostLaunchConfidenceSummary({ outcomes, interventions: normalizedInterventions });
   const signals = {
     failedTasks: tasks.filter((task) => ['failed', 'error', 'blocked'].includes(String(task.status || '').toLowerCase()) || task.workflowStatus === 'failed').length,
     runningTasks: tasks.filter((task) => String(task.status || '').toLowerCase() === 'running' || task.workflowStatus === 'running').length,
@@ -749,6 +751,7 @@ export function rankCommanderRecommendations({
     patternStrength,
     policyDemotionPressure,
     fleetPosture,
+    confidenceClosure,
   };
 
   return recommendations
@@ -765,7 +768,13 @@ export function rankCommanderRecommendations({
       const id = String(recommendation.id || '');
       if (id.includes('mission-pattern')) score += Math.round(signals.patternStrength / 3);
       if (id.includes('rescue') || id.includes('intervention')) score += Math.round((signals.rescueRate + (signals.rescuePressure * 6)) / 3);
+      if (signals.confidenceClosure.posture === 'drifting' && /(routing|lane|provider|model|automation|rescue|intervention|guardrail|confidence)/.test(`${recommendation.title || ''} ${recommendation.description || ''}`.toLowerCase())) {
+        score += 16;
+      } else if (signals.confidenceClosure.posture === 'cautious' && /(routing|automation|rescue|confidence)/.test(`${recommendation.title || ''} ${recommendation.description || ''}`.toLowerCase())) {
+        score += 8;
+      }
       const whyNow = keywordBoost.reasons[0]
+        || (signals.confidenceClosure.posture === 'drifting' ? signals.confidenceClosure.detail : null)
         || (signals.failedTasks > 0 ? `${signals.failedTasks} failed branches are still active and keeping pressure on execution quality.` : 'This recommendation is persistent because Commander keeps seeing the same leverage point.');
       const recommendationClass = getRecommendationClass(recommendation, signals, keywordBoost);
 
@@ -940,8 +949,9 @@ export function getPreflightAlignmentSummary({
   };
 }
 
-export function getAutomationCandidates(tasks = [], humanHourlyRate = 150) {
+export function getAutomationCandidates(tasks = [], humanHourlyRate = 150, interventions = [], outcomes = []) {
   const grouped = new Map();
+  const normalizedInterventions = normalizeInterventionEvents(interventions, []);
 
   tasks.forEach((task) => {
     const key = `${task.domain || 'general'}::${task.intentType || 'general'}::${task.name || task.title || 'mission'}`;
@@ -954,23 +964,47 @@ export function getAutomationCandidates(tasks = [], humanHourlyRate = 150) {
       totalCost: 0,
       totalDurationMs: 0,
       automatedRuns: 0,
+      rootMissionIds: new Set(),
     };
     current.runs += 1;
     current.totalCost += Number(task.costUsd || 0);
     current.totalDurationMs += Number(task.durationMs || 0);
     if (task.intentType === 'automation' || task.scheduleType === 'recurring') current.automatedRuns += 1;
+    if (task.rootMissionId || task.id) current.rootMissionIds.add(task.rootMissionId || task.id);
     grouped.set(key, current);
   });
 
   return Array.from(grouped.values())
     .filter((entry) => entry.runs >= 2)
     .map((entry) => {
+      const rootMissionIds = [...entry.rootMissionIds];
+      const relatedInterventions = normalizedInterventions.filter((item) => rootMissionIds.includes(item.rootMissionId || item.taskId));
+      const relatedOutcomes = outcomes.filter((item) => rootMissionIds.includes(item.rootMissionId || item.taskId));
+      const rescueCount = relatedInterventions.filter((item) => ['stop', 'cancel', 'retry'].includes(item.eventType)).length;
+      const guardrailCount = relatedInterventions.filter((item) => item.eventType === 'guardrail').length;
+      const tuningCount = relatedInterventions.filter((item) => item.scheduleType === 'recurring' && item.eventType === 'tuning').length;
+      const avgOutcome = relatedOutcomes.length
+        ? Math.round(relatedOutcomes.reduce((sum, item) => sum + Number(item.score || 0), 0) / relatedOutcomes.length)
+        : 0;
       const avgCost = entry.totalCost / entry.runs;
       const estimatedHours = entry.totalDurationMs > 0 ? entry.totalDurationMs / 3_600_000 : entry.runs * 0.25;
       const humanEquivalent = estimatedHours * humanHourlyRate;
       const roi = avgCost > 0 ? humanEquivalent / Math.max(entry.totalCost, 0.01) : humanEquivalent;
       const repetitionScore = entry.runs * 12;
-      const automationScore = Math.round(clamp(repetitionScore + Math.min(35, roi * 8) + (entry.automatedRuns === 0 ? 10 : 0), 0, 100));
+      const trustPenalty = (rescueCount * 12) + (guardrailCount * 8) + (tuningCount * 4);
+      const outcomeBoost = avgOutcome > 0 ? Math.round((avgOutcome - 50) / 2) : 0;
+      const automationScore = Math.round(clamp(repetitionScore + Math.min(35, roi * 8) + (entry.automatedRuns === 0 ? 10 : 0) + outcomeBoost - trustPenalty, 0, 100));
+      const maturityScore = Math.round(clamp((entry.runs * 10) + (avgOutcome > 0 ? (avgOutcome - 40) : 0) - (guardrailCount * 10) - (rescueCount * 14), 0, 100));
+      const trustLabel = maturityScore >= 72
+        ? 'Stable'
+        : maturityScore >= 50
+          ? 'Watch'
+          : 'Fragile';
+      const trustDetail = maturityScore >= 72
+        ? 'This recurring pattern is proving itself with enough clean runtime history to scale more confidently.'
+        : maturityScore >= 50
+          ? 'The economics are promising, but guardrails or rescue pressure still justify a tighter posture.'
+          : 'Runtime memory is still noisy here, so keep cadence and approval posture conservative until the flow hardens.';
       return {
         ...entry,
         avgCost,
@@ -978,6 +1012,13 @@ export function getAutomationCandidates(tasks = [], humanHourlyRate = 150) {
         humanEquivalent,
         roi,
         automationScore,
+        maturityScore,
+        avgOutcome,
+        rescueCount,
+        guardrailCount,
+        tuningCount,
+        trustLabel,
+        trustDetail,
       };
     })
     .sort((left, right) => {

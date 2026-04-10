@@ -26,7 +26,7 @@ import {
   deriveRoutingDecision,
   mapRoutingPolicyFromDb,
 } from '../utils/routingPolicy';
-import { inferAgentProvider } from '../utils/commanderAnalytics';
+import { getPersistentPromotionGuidance, inferAgentProvider } from '../utils/commanderAnalytics';
 
 // True when real Supabase env vars are set (not the placeholder)
 const isSupabaseConfigured = import.meta.env.VITE_SUPABASE_URL
@@ -592,6 +592,115 @@ async function ensureBranchSpecialistAgent({
   return mapAgentRow(data);
 }
 
+async function createPersistentBranchSpecialist({
+  user,
+  branchRole,
+  modelOverride,
+  providerOverride,
+  commander,
+  selectedAgent,
+  rootMissionId = null,
+  objective,
+  recommendedSkillNames = [],
+}) {
+  const chosenModel = modelOverride || selectedAgent?.model || commander?.model || getCommanderLane().model;
+  const chosenProvider = providerOverride || normalizeModelProvider(selectedAgent?.provider || getCommanderLane().provider);
+
+  await ensureModelBankEntry(user, chosenModel, chosenProvider);
+
+  const row = {
+    id: crypto.randomUUID(),
+    user_id: user.id,
+    name: `${branchRole}-lane-${objective.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 20)}`,
+    model: chosenModel,
+    provider: chosenProvider,
+    status: 'idle',
+    role: branchRole,
+    role_description: `Persistent ${branchRole} lane created automatically from lifecycle pressure.`,
+    parent_id: commander?.isSyntheticCommander ? null : commander?.id || null,
+    can_spawn: false,
+    spawn_pattern: 'persistent',
+    is_ephemeral: false,
+    system_prompt: `You are a persistent ${branchRole} lane. Objective focus: ${objective}`,
+    response_length: selectedAgent?.responseLength || commander?.responseLength || 'medium',
+    temperature: selectedAgent?.temperature ?? commander?.temperature ?? 0.4,
+    color: '#60a5fa',
+    skills: recommendedSkillNames,
+  };
+
+  const { data, error } = await supabase.from('agents').insert([row]).select('*').single();
+  if (error) throw error;
+  const message = `[specialist-persistent] ${data.name} (${branchRole}) created automatically from lifecycle pressure for "${objective}" on ${chosenModel}.`;
+  await logBranchEvent({
+    userId: user.id,
+    agentId: data.id,
+    message,
+  });
+  await persistSpecialistLifecycleEvent({
+    userId: user.id,
+    agentId: data.id,
+    rootMissionId,
+    eventType: 'persistent_created',
+    eventSource: 'mission_routing',
+    role: branchRole,
+    provider: chosenProvider,
+    model: chosenModel,
+    isEphemeral: false,
+    message,
+    metadata: {
+      objective,
+      skills: recommendedSkillNames,
+      autoCreated: true,
+    },
+  });
+  return mapAgentRow(data);
+}
+
+async function fetchPersistentLaneSignals(userId) {
+  if (!userId) return { tasks: [], lifecycleEvents: [] };
+
+  const [{ data: taskRows, error: taskError }, { data: lifecycleRows, error: lifecycleError }] = await Promise.all([
+    supabase
+      .from('tasks')
+      .select('id,root_mission_id,agent_role,domain,intent_type')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+      .limit(160),
+    supabase
+      .from('specialist_lifecycle')
+      .select('id,root_mission_id,event_type,role,is_ephemeral,message,created_at')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+      .limit(160),
+  ]);
+
+  if (taskError) {
+    console.error('[api] fetchPersistentLaneSignals tasks:', taskError.message);
+  }
+  if (lifecycleError) {
+    console.error('[api] fetchPersistentLaneSignals lifecycle:', lifecycleError.message);
+  }
+
+  return {
+    tasks: (taskRows || []).map((row) => ({
+      id: row.id,
+      rootMissionId: row.root_mission_id || row.id,
+      agentRole: row.agent_role || 'executor',
+      domain: row.domain || 'general',
+      intentType: row.intent_type || 'general',
+    })),
+    lifecycleEvents: (lifecycleRows || []).map((row) => ({
+      id: row.id,
+      rootMissionId: row.root_mission_id || null,
+      eventType: row.event_type || 'spawned',
+      role: row.role || 'specialist',
+      isEphemeral: row.is_ephemeral ?? false,
+      message: row.message || '',
+      createdAt: row.created_at,
+    })),
+  };
+}
+
 async function buildMissionSubtasks({
   missionId,
   userId,
@@ -606,6 +715,7 @@ async function buildMissionSubtasks({
   routingPolicyId,
   routingDecision,
   observedWinningLane,
+  persistentLaneSignals,
   runAt,
   scheduleType,
 }) {
@@ -640,6 +750,7 @@ async function buildMissionSubtasks({
       commander: payload.commander || null,
       routingDecision,
       observedWinningLane,
+      persistentLaneSignals,
     });
 
     rows.push({
@@ -706,6 +817,7 @@ async function resolveBranchAssignment({
   selectedAgent,
   commander,
   observedWinningLane,
+  persistentLaneSignals,
 }) {
   const liveAgents = agents.filter((agent) => !agent.isSyntheticCommander);
   const branchRole = branch.agentRole || routingPolicy?.preferredAgentRole || selectedAgent?.role || 'executor';
@@ -748,7 +860,20 @@ async function resolveBranchAssignment({
   let assignedAgent = modelMatch || roleCandidates[0] || null;
 
   if (!assignedAgent && !['executor', 'commander'].includes(branchRole)) {
-    assignedAgent = await ensureBranchSpecialistAgent({
+    const promotionGuidance = getPersistentPromotionGuidance({
+      lifecycleEvents: persistentLaneSignals?.lifecycleEvents || [],
+      agents: liveAgents,
+      tasks: persistentLaneSignals?.tasks || [],
+    });
+    const durableGap = promotionGuidance.topGap
+      && promotionGuidance.topGap.role === branchRole
+      && !promotionGuidance.topGap.covered
+      && (
+        promotionGuidance.topGap.count >= 3
+        || ['thin', 'churn-heavy'].includes(promotionGuidance.posture)
+      );
+
+    assignedAgent = await (durableGap ? createPersistentBranchSpecialist : ensureBranchSpecialistAgent)({
       user,
       branchRole,
       modelOverride,
@@ -759,7 +884,7 @@ async function resolveBranchAssignment({
       objective: branch.title || branch.description || `${branchRole} branch`,
       recommendedSkillNames,
     }).catch((error) => {
-      console.error('[api] ensureBranchSpecialistAgent:', error.message);
+      console.error(`[api] ${durableGap ? 'createPersistentBranchSpecialist' : 'ensureBranchSpecialistAgent'}:`, error.message);
       return null;
     });
   }
@@ -1116,6 +1241,7 @@ export async function createMission(payload, agents = []) {
   });
   const routingDecision = deriveRoutingDecision(effectivePayload, selectedAgent, routingPolicy);
   const observedWinningLane = await selectOutcomeWinningLane(user, routingDecision);
+  const persistentLaneSignals = await fetchPersistentLaneSignals(user.id);
   const hasDelegatedSteps = plannedBranches.length > 1;
   const executionPosture = getMissionExecutionPosture(effectivePayload);
   const workflowStatus = hasDelegatedSteps
@@ -1198,6 +1324,7 @@ export async function createMission(payload, agents = []) {
     routingPolicyId: routingPolicy?.id || null,
     routingDecision,
     observedWinningLane,
+    persistentLaneSignals,
     runAt,
     scheduleType,
   });

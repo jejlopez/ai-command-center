@@ -29,7 +29,7 @@ import {
   YAxis,
 } from 'recharts';
 import { container, item } from '../utils/variants';
-import { cleanupTempAgents, createPersistentSpecialist, createTempAgent, promoteAgentToPersistent, useActivityLog, useAgents, useKnowledgeNamespaces, useModelBank, useRoutingPolicies, useSharedDirectives, useSkillBank, useSpecialistLifecycle, useSystemRecommendations, useTaskInterventions, useTasks } from '../utils/useSupabase';
+import { cleanupTempAgents, createPersistentSpecialist, createTempAgent, promoteAgentToPersistent, useActivityLog, useAgents, useKnowledgeNamespaces, useModelBank, useRoutingPolicies, useSharedDirectives, useSkillBank, useSpecialistLifecycle, useSystemRecommendations, useTaskInterventions, useTaskOutcomes, useTasks } from '../utils/useSupabase';
 import { AnimatedNumber } from '../components/command/AnimatedNumber';
 import { CommandSectionHeader } from '../components/command/CommandSectionHeader';
 import { useCommanderPreferences } from '../utils/useCommanderPreferences';
@@ -2301,6 +2301,7 @@ export function IntelligenceView() {
   const { policies: routingPolicies, upsertPolicy, ensureDefaultPolicy } = useRoutingPolicies();
   const { logs } = useActivityLog();
   const { interventions } = useTaskInterventions();
+  const { outcomes } = useTaskOutcomes();
   const { events: lifecycleEvents } = useSpecialistLifecycle();
   const { namespaces: knowledgeNamespaces } = useKnowledgeNamespaces();
   const { directives: sharedDirectives } = useSharedDirectives();
@@ -2378,13 +2379,14 @@ export function IntelligenceView() {
     return rankCommanderRecommendations({
       recommendations,
       tasks,
+      outcomes,
       interventions,
       logs,
       lifecycleEvents,
       agents,
       learningMemory,
     }).slice(0, 5);
-  }, [agents, interventions, learningMemory, lifecycleEvents, logs, persistedRecommendations, tasks]);
+  }, [agents, interventions, learningMemory, lifecycleEvents, logs, outcomes, persistedRecommendations, tasks]);
   const readFirstItems = useMemo(() => {
     const bestReasoner = availableModels.slice().sort((a, b) => b.reliability - a.reliability)[0];
     const fastest = availableModels.slice().sort((a, b) => b.speed - a.speed)[0];

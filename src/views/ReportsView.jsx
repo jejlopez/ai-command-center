@@ -509,7 +509,11 @@ export function ReportsView() {
   const benchmarkBoard = useMemo(() => getObservedModelBenchmarks(outcomes.length ? outcomes : tasks, agents, logs, interventions).slice(0, 5), [outcomes, tasks, agents, logs, interventions]);
   const providerEscalation = useMemo(() => buildProviderEscalationExplanation(benchmarkBoard), [benchmarkBoard]);
   const postLaunchConfidence = useMemo(() => getPostLaunchConfidenceSummary({ outcomes, interventions }), [outcomes, interventions]);
-  const automationCandidates = useMemo(() => getAutomationCandidates(tasks, humanHourlyRate).slice(0, 4), [tasks]);
+  const automationCandidates = useMemo(() => getAutomationCandidates(tasks, humanHourlyRate, interventions, outcomes).slice(0, 4), [tasks, humanHourlyRate, interventions, outcomes]);
+  const automationCandidateLookup = useMemo(() => {
+    const allCandidates = getAutomationCandidates(tasks, humanHourlyRate, interventions, outcomes);
+    return new Map(allCandidates.map((entry) => [entry.key, entry]));
+  }, [tasks, humanHourlyRate, interventions, outcomes]);
   const autonomyMetrics = useMemo(() => getAutonomyMetrics(tasks, interventions, logs), [tasks, interventions, logs]);
   const primaryBottleneck = useMemo(() => getPrimaryBottleneck({ tasks, reviews, schedules: [], agents, interventions, logs, costData }), [tasks, reviews, agents, interventions, logs, costData]);
   const automationGuardrailEvents = useMemo(() => parseAutomationGuardrailEvents(interventions, logs).slice(0, 4), [interventions, logs]);
@@ -541,13 +545,14 @@ export function ReportsView() {
     rankCommanderRecommendations({
       recommendations: persistedRecommendations,
       tasks,
+      outcomes,
       interventions,
       logs,
       lifecycleEvents,
       agents,
       learningMemory,
     }).slice(0, 4)
-  ), [agents, interventions, learningMemory, lifecycleEvents, logs, persistedRecommendations, tasks]);
+  ), [agents, interventions, learningMemory, lifecycleEvents, logs, outcomes, persistedRecommendations, tasks]);
 
   const managedRecurringFlows = useMemo(() => {
     const recurringRoots = tasks.filter((task) => task.scheduleType === 'recurring' && (task.rootMissionId || task.id) === task.id);
@@ -603,6 +608,8 @@ export function ReportsView() {
   }
 
   function openManagedFlowDraft(flow) {
+    const candidateKey = `${flow.domain || 'general'}::${flow.intentType || 'general'}::${flow.title}`;
+    const candidateMetrics = automationCandidateLookup.get(candidateKey);
     setAutomationMessage('');
     setAutomationDraft({
       mode: 'manage',
@@ -612,7 +619,10 @@ export function ReportsView() {
         domain: flow.domain,
         intentType: flow.intentType,
         runs: tasks.filter((task) => task.domain === flow.domain && task.intentType === flow.intentType).length,
-        roi: getAutomationCandidates(tasks, humanHourlyRate).find((entry) => entry.domain === flow.domain && entry.intentType === flow.intentType && entry.title === flow.title)?.roi || 0,
+        roi: candidateMetrics?.roi || 0,
+        maturityScore: candidateMetrics?.maturityScore || 0,
+        trustLabel: candidateMetrics?.trustLabel || 'Watch',
+        trustDetail: candidateMetrics?.trustDetail || 'Commander is still learning how much autonomy this recurring flow can safely carry.',
       },
       frequency: flow.frequency,
       time: flow.time,
@@ -793,6 +803,11 @@ export function ReportsView() {
               )}
               {managedRecurringFlows.map((flow) => (
                 <div key={flow.id} className="rounded-[18px] border border-white/8 bg-[#111827] p-3">
+                  {(() => {
+                    const candidateKey = `${flow.domain || 'general'}::${flow.intentType || 'general'}::${flow.title}`;
+                    const trustSignals = automationCandidateLookup.get(candidateKey) || null;
+                    return (
+                      <>
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
                       <div className="text-[12px] font-semibold text-text-primary">{flow.title}</div>
@@ -802,6 +817,7 @@ export function ReportsView() {
                       <TelemetryTag label="Cadence" value={`${flow.frequency} ${flow.time}`} tone="blue" />
                       <TelemetryTag label="Mode" value={flow.missionMode.replaceAll('_', ' ')} tone="teal" />
                       <TelemetryTag label="Approval" value={flow.approvalPosture.replaceAll('_', ' ')} tone={flow.approvalPosture === 'human_required' ? 'amber' : 'violet'} />
+                      {trustSignals && <TelemetryTag label="Trust" value={trustSignals.trustLabel} tone={trustSignals.trustLabel === 'Stable' ? 'teal' : trustSignals.trustLabel === 'Watch' ? 'amber' : 'violet'} />}
                       {flow.paused && <TelemetryTag label="State" value="Paused" tone="amber" />}
                     </div>
                   </div>
@@ -819,6 +835,11 @@ export function ReportsView() {
                       <div className="mt-1 font-semibold text-text-primary">{flow.latestGuardrail ? 'Triggered' : 'Quiet'}</div>
                     </div>
                   </div>
+                  {trustSignals && (
+                    <div className="mt-3 rounded-[14px] border border-white/8 bg-black/20 px-3 py-2 text-[11px] text-text-body">
+                      {trustSignals.trustDetail}
+                    </div>
+                  )}
                   <div className="mt-3 flex flex-wrap justify-between gap-3 text-[11px] text-text-muted">
                     <div>{flow.nextRunAt ? `Next run ${new Date(flow.nextRunAt).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}` : 'No next run scheduled yet'}</div>
                     <button
@@ -829,6 +850,9 @@ export function ReportsView() {
                       Tune recurring flow
                     </button>
                   </div>
+                      </>
+                    );
+                  })()}
                 </div>
               ))}
             </div>
@@ -848,8 +872,20 @@ export function ReportsView() {
                 <div key={entry.key} className="rounded-[18px] border border-white/8 bg-[#111827] p-3">
                   <div className="flex items-center justify-between gap-3">
                     <div className="text-[12px] font-semibold text-text-primary">{entry.title}</div>
-                    <div className="rounded-full border border-aurora-blue/20 bg-aurora-blue/10 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-aurora-blue">
-                      {entry.automationScore}
+                    <div className="flex flex-wrap gap-2">
+                      <div className={cn(
+                        'rounded-full border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.16em]',
+                        entry.trustLabel === 'Stable'
+                          ? 'border-aurora-teal/20 bg-aurora-teal/10 text-aurora-teal'
+                          : entry.trustLabel === 'Watch'
+                            ? 'border-aurora-amber/20 bg-aurora-amber/10 text-aurora-amber'
+                            : 'border-aurora-violet/20 bg-aurora-violet/10 text-aurora-violet'
+                      )}>
+                        {entry.trustLabel}
+                      </div>
+                      <div className="rounded-full border border-aurora-blue/20 bg-aurora-blue/10 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-aurora-blue">
+                        {entry.automationScore}
+                      </div>
                     </div>
                   </div>
                   <div className="mt-1 text-[11px] text-text-muted">{entry.domain} / {entry.intentType}</div>
@@ -857,6 +893,9 @@ export function ReportsView() {
                     <div>{entry.runs} runs</div>
                     <div>{entry.estimatedHours.toFixed(1)}h</div>
                     <div>{entry.roi.toFixed(1)}x ROI</div>
+                  </div>
+                  <div className="mt-3 rounded-[14px] border border-white/8 bg-black/20 px-3 py-2 text-[11px] text-text-body">
+                    {entry.trustDetail}
                   </div>
                   <div className="mt-3 flex justify-end">
                     <button

@@ -6,7 +6,7 @@ This is the live build tracker for the Jarvis / Stark / Musk Commander program.
 
 - Jarvis vision size: `100` scoped features
 - Shipped foundation: `15`
-- Active buildout: `40`
+- Active buildout: `43`
 - Immediate next targets: `4`
 - Deferred / later items: `64`
 
@@ -89,6 +89,9 @@ This is the live build tracker for the Jarvis / Stark / Musk Commander program.
 - Recommendation classes driven by rescue and mission-pattern pressure
 - One-click promotion actions in more operator surfaces
 - Doctrine-delta visibility in Mission Control and executive briefing surfaces
+- Persistent-lane creation defaults when no spawned match exists
+- Runtime recommendation weighting from post-launch confidence closure
+- Recurring automation trust tuning from runtime memory
 
 ## Epic Experience Layer
 
@@ -206,7 +209,7 @@ Default posture:
 
 Build next:
 
-1. push confidence-to-runtime closure into post-launch outcome rails too
-2. start turning promotion guidance into persistent-lane creation defaults when no good spawned lane exists
-3. deepen post-launch confidence closure into broader runtime recommendation logic
-4. keep widening doctrine-delta visibility as a cross-surface trust rail
+1. keep widening doctrine-delta visibility as a cross-surface trust rail
+2. turn promotion defaults into stronger durable-fleet shaping rules
+3. deepen recurring automation trust tuning into stricter autonomy posture changes
+4. push mission-pattern winners harder into provider and lane defaults
