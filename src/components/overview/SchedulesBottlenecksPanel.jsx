@@ -1,3 +1,4 @@
+import { motion as Motion } from 'framer-motion';
 import { Clock3, GitBranch, PauseCircle } from 'lucide-react';
 import { cn } from "../../utils/cn";
 import { CommandSectionHeader } from '../command/CommandSectionHeader';
@@ -181,4 +182,3 @@ export function SchedulesBottlenecksPanel({ summary, schedules, loading, referen
     </div>
   );
 }
-

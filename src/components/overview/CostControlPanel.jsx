@@ -1,3 +1,4 @@
+import { motion as Motion } from 'framer-motion';
 import { BarChart3, DollarSign, Wallet } from 'lucide-react';
 import { CommandSectionHeader } from '../command/CommandSectionHeader';
 
