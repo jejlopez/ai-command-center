@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '../lib/supabaseClient';
 import { useAuth } from '../context/AuthContext';
-import { getBatchCommandSignals } from './commanderAnalytics';
+import { getAutomationCandidates, getBatchCommandSignals, getExecutionAuditReadback, getFailureTriageSummary, getHybridApprovalSummary, getMissionCreateBrief, getRecurringAdaptiveControlSummary, getRecurringChangePayback } from './commanderAnalytics';
 
 function formatOutputLabel(value) {
   return (value || 'summary').replaceAll('_', ' ');
@@ -189,18 +189,76 @@ async function fetchRecentBatchAuditLogs(userId) {
   };
 }
 
-async function syncOutcomeDoctrineArtifacts(userId) {
+async function fetchRecentApprovalAuditRows(userId) {
+  const { data, error } = await supabase
+    .from('approval_audit')
+    .select('*')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false })
+    .limit(120);
+
+  if (error) {
+    if (isMissingTableError(error)) return { available: false, rows: [] };
+    throw error;
+  }
+
+  return {
+    available: true,
+    rows: (data || []).map((row) => ({
+      id: row.id,
+      reviewId: row.review_id || null,
+      decision: row.decision || 'approved',
+      feedback: row.feedback || '',
+      createdAt: row.created_at,
+    })),
+  };
+}
+
+async function fetchPendingReviewRows(userId) {
+  const { data, error } = await supabase
+    .from('pending_reviews')
+    .select('id,status')
+    .eq('user_id', userId)
+    .in('status', ['awaiting_approval', 'needs_intervention'])
+    .order('created_at', { ascending: false })
+    .limit(120);
+
+  if (error) {
+    if (isMissingTableError(error)) return { available: false, rows: [] };
+    throw error;
+  }
+
+  return {
+    available: true,
+    rows: (data || []).map((row) => ({
+      id: row.id,
+      status: row.status || 'awaiting_approval',
+    })),
+  };
+}
+
+async function syncOutcomeDoctrineArtifacts(userId, tasks = []) {
   const outcomeResponse = await fetchRecentOutcomeRows(userId);
   if (!outcomeResponse.available) return { available: false };
   const interventionResponse = await fetchRecentInterventionRows(userId);
   if (!interventionResponse.available) return { available: false };
   const batchAuditResponse = await fetchRecentBatchAuditLogs(userId);
   if (!batchAuditResponse.available) return { available: false };
+  const approvalAuditResponse = await fetchRecentApprovalAuditRows(userId);
+  if (!approvalAuditResponse.available) return { available: false };
+  const pendingReviewResponse = await fetchPendingReviewRows(userId);
+  if (!pendingReviewResponse.available) return { available: false };
 
   const outcomes = outcomeResponse.rows;
   const interventions = interventionResponse.rows;
   const batchAuditLogs = batchAuditResponse.rows;
+  const approvalAudit = approvalAuditResponse.rows;
+  const pendingReviews = pendingReviewResponse.rows;
   if (!outcomes.length) return { available: true };
+  const recurringCandidates = getAutomationCandidates(tasks, 150, interventions, outcomes);
+  const topRecurringPaybackCandidate = recurringCandidates.find((candidate) => getRecurringChangePayback(candidate).available) || null;
+  const recurringPayback = getRecurringChangePayback(topRecurringPaybackCandidate);
+  const recurringAdaptiveControl = getRecurringAdaptiveControlSummary(recurringCandidates, interventions, outcomes);
 
   const averageScore = Math.round(outcomes.reduce((sum, row) => sum + Number(row.score || 0), 0) / outcomes.length);
   const lowTrustCount = outcomes.filter((row) => String(row.trust || '') === 'low').length;
@@ -264,6 +322,28 @@ async function syncOutcomeDoctrineArtifacts(userId) {
   const batchRetryPressure = Number(batchSignals.actionCounts.retry || 0);
   const batchRedirectPressure = Number(batchSignals.actionCounts.redirect || 0);
   const batchApprovePressure = Number(batchSignals.actionCounts.approve || 0);
+  const launchBrief = getMissionCreateBrief(interventions);
+  const hybridApproval = getHybridApprovalSummary({
+    tasks,
+    reviews: pendingReviews,
+    interventions,
+    approvalAudit,
+  });
+  const failureTriage = getFailureTriageSummary({
+    tasks,
+    interventions,
+    logs: batchAuditLogs,
+  });
+  const executionAudit = getExecutionAuditReadback({
+    interventions,
+    approvalAudit,
+    logs: batchAuditLogs,
+    limit: 8,
+  });
+  const launchBriefVerification = String(launchBrief?.verificationRequirement || 'lightweight');
+  const launchBriefOutcomeScore = averageScore;
+  const launchBriefNeedsTighterVerification = launchBriefVerification === 'lightweight' && averageScore < 70;
+  const launchBriefHeld = Boolean(launchBrief) && averageScore >= 70 && lowTrustCount <= Math.max(1, Math.round(outcomes.length * 0.2));
 
   const doctrine = [
     buildDoctrineItem({
@@ -423,6 +503,179 @@ async function syncOutcomeDoctrineArtifacts(userId) {
         batchSignals,
       },
     }),
+    buildDoctrineItem({
+      id: 'mission-brief-memory',
+      owner: 'Launch Memory',
+      tone: !launchBrief
+        ? 'blue'
+        : launchBriefHeld
+          ? 'teal'
+          : launchBriefNeedsTighterVerification
+            ? 'amber'
+            : 'rose',
+      title: !launchBrief
+        ? 'Commander has not persisted enough launch-brief memory yet'
+        : launchBriefHeld
+          ? 'Launch brief is holding against real outcomes'
+          : launchBriefNeedsTighterVerification
+            ? 'Launch brief is under-verified for the outcome quality it is seeing'
+            : 'Launch brief needs a tighter objective-to-outcome loop',
+      detail: !launchBrief
+        ? 'Mission creation is now writing normalized launch briefs, but Commander still needs more persisted runs before launch-to-outcome postmortems become meaningful.'
+        : launchBriefHeld
+          ? `${launchBrief.objective} is landing at average outcome ${launchBriefOutcomeScore} with ${lowTrustCount} low-trust branch${lowTrustCount === 1 ? '' : 'es'} still worth watching, so Commander can trust this brief and verification posture more.`
+          : launchBriefNeedsTighterVerification
+            ? `${launchBrief.objective} is still using ${launchBriefVerification.replaceAll('_', ' ')} verification while average outcome is ${launchBriefOutcomeScore}. Commander should tighten the verification brief before scaling matching runs.`
+            : `${launchBrief.objective} is landing at average outcome ${launchBriefOutcomeScore}, which means the saved success definition and verification posture still need refinement.`,
+      confidence: !launchBrief ? 45 : Math.min(93, 52 + outcomes.length),
+      evidence: [
+        launchBrief
+          ? `Latest persisted launch brief is ${launchBrief.domain}/${launchBrief.intentType} with ${launchBriefVerification.replaceAll('_', ' ')} verification.`
+          : 'No persisted mission-create brief is available yet.',
+        `Average structured outcome score is ${averageScore}.`,
+        `${lowTrustCount} low-trust outcome${lowTrustCount === 1 ? '' : 's'} are still visible against the current launch brief memory.`,
+      ],
+      metrics: {
+        objective: launchBrief?.objective || null,
+        successDefinition: launchBrief?.successDefinition || null,
+        verificationRequirement: launchBriefVerification,
+        averageScore,
+        lowTrustCount,
+      },
+    }),
+    buildDoctrineItem({
+      id: 'recurring-payback-memory',
+      owner: 'Recurring Payback',
+      tone: !recurringPayback.available
+        ? 'blue'
+        : recurringPayback.tone === 'teal'
+          ? 'teal'
+          : recurringPayback.tone === 'amber'
+            ? 'amber'
+            : 'blue',
+      title: !recurringPayback.available
+        ? 'Recurring posture payback is still forming'
+        : recurringPayback.title,
+      detail: !recurringPayback.available
+        ? 'Commander needs saved recurring posture changes plus enough follow-on outcomes before it should promote or demote recurring defaults automatically.'
+        : recurringPayback.detail,
+      confidence: !recurringPayback.available ? 44 : Math.min(93, 54 + Number(topRecurringPaybackCandidate?.runs || 0) + Number(topRecurringPaybackCandidate?.tuningCount || 0)),
+      evidence: !recurringPayback.available
+        ? ['No saved recurring posture change has enough follow-on outcome history yet.']
+        : [
+            topRecurringPaybackCandidate
+              ? `${topRecurringPaybackCandidate.title} is the strongest recurring payback candidate in current outcome memory.`
+              : 'Commander is still assembling recurring payback evidence.',
+            recurringPayback.detail,
+            ...recurringPayback.metrics.map((metric) => `${metric.label}: ${metric.value}`),
+          ],
+      metrics: {
+        candidateTitle: topRecurringPaybackCandidate?.title || null,
+        outcomeLabel: recurringPayback.outcomeLabel || 'Forming',
+        metrics: recurringPayback.metrics || [],
+      },
+    }),
+    buildDoctrineItem({
+      id: 'recurring-adaptive-control',
+      owner: 'Recurring Control',
+      tone: recurringAdaptiveControl.tone,
+      title: recurringAdaptiveControl.title,
+      detail: recurringAdaptiveControl.detail,
+      confidence: !recurringAdaptiveControl.available
+        ? 46
+        : recurringAdaptiveControl.tone === 'teal'
+          ? 84
+          : recurringAdaptiveControl.tone === 'amber'
+            ? 74
+            : 66,
+      evidence: [
+        recurringAdaptiveControl.available
+          ? `${recurringAdaptiveControl.candidate?.title || 'Recurring posture memory'} is the strongest adaptive-control signal right now.`
+          : 'Commander still needs more recurring posture history before launch defaults should adapt.',
+        recurringAdaptiveControl.payback?.detail || 'Recurring payback is still forming.',
+        recurringAdaptiveControl.trustSummary?.detail || 'Recurring trust memory is still forming.',
+      ].filter(Boolean),
+      metrics: {
+        actionLabel: recurringAdaptiveControl.actionLabel,
+        missionMode: recurringAdaptiveControl.recommendedMissionMode,
+        approvalPosture: recurringAdaptiveControl.recommendedApprovalPosture,
+        frequency: recurringAdaptiveControl.recommendedFrequency,
+        candidateTitle: recurringAdaptiveControl.candidate?.title || null,
+        paybackTone: recurringAdaptiveControl.payback?.tone || 'blue',
+      },
+    }),
+    buildDoctrineItem({
+      id: 'hybrid-approval-memory',
+      owner: 'Approval Control',
+      tone: hybridApproval.tone,
+      title: hybridApproval.title,
+      detail: hybridApproval.detail,
+      confidence: !hybridApproval.available
+        ? 46
+        : hybridApproval.totalQueue === 0
+          ? 84
+          : Math.max(56, 84 - (hybridApproval.totalQueue * 4)),
+      evidence: [
+        hybridApproval.available
+          ? `${hybridApproval.missionApprovalCount} mission approval gates and ${hybridApproval.reviewApprovalCount} review gates are now read through one approval summary.`
+          : 'Commander still needs more approval activity before hybrid approval memory can separate signal from noise.',
+        hybridApproval.latestDecision
+          ? `Latest decision: ${hybridApproval.latestDecision.label}.`
+          : 'No recent approval decision has been captured yet.',
+        `${hybridApproval.releasedCount} release decisions and ${hybridApproval.rejectedCount} held decisions are visible in recent control memory.`,
+      ].filter(Boolean),
+      metrics: {
+        totalQueue: hybridApproval.totalQueue || 0,
+        missionApprovalCount: hybridApproval.missionApprovalCount || 0,
+        reviewApprovalCount: hybridApproval.reviewApprovalCount || 0,
+        releasedCount: hybridApproval.releasedCount || 0,
+        rejectedCount: hybridApproval.rejectedCount || 0,
+        batchedCount: hybridApproval.batchedCount || 0,
+      },
+    }),
+    buildDoctrineItem({
+      id: 'failure-triage-memory',
+      owner: 'Recovery Control',
+      tone: failureTriage.tone,
+      title: failureTriage.title,
+      detail: `${failureTriage.detail}${failureTriage.available ? ` Verdict: ${failureTriage.verdict}. Do next: ${failureTriage.nextMove}.` : ''}`,
+      confidence: !failureTriage.available
+        ? 48
+        : failureTriage.failedCount === 0
+          ? 82
+          : Math.max(58, 86 - (failureTriage.failedCount * 4)),
+      evidence: [
+        failureTriage.available
+          ? `${failureTriage.failedCount} failed, blocked, or cancelled branches are being summarized through one triage model.`
+          : 'No dominant failure cluster is visible yet.',
+        failureTriage.topFailure
+          ? `${failureTriage.topFailure.title || failureTriage.topFailure.name} is the strongest recovery drag right now.`
+          : 'No top failure branch is separated right now.',
+        failureTriage.latestEvent?.message || 'No explicit triage verdict has been written yet.',
+      ].filter(Boolean),
+      metrics: {
+        failedCount: failureTriage.failedCount || 0,
+        verdict: failureTriage.verdict || 'stable',
+        nextMove: failureTriage.nextMove || 'keep flowing',
+        topFailureId: failureTriage.topFailure?.id || null,
+      },
+    }),
+    buildDoctrineItem({
+      id: 'execution-audit-memory',
+      owner: 'Control Audit',
+      tone: executionAudit.available ? 'blue' : 'teal',
+      title: executionAudit.title,
+      detail: executionAudit.detail,
+      confidence: !executionAudit.available ? 45 : Math.min(90, 52 + (executionAudit.entries.length * 6)),
+      evidence: executionAudit.available
+        ? executionAudit.entries.slice(0, 3).map((entry) => `${entry.label}: ${entry.detail}`)
+        : ['Commander needs more control events before the unified audit trail becomes informative.'],
+      metrics: {
+        entryCount: executionAudit.entries?.length || 0,
+        latestCategory: executionAudit.entries?.[0]?.category || null,
+        latestNextMove: executionAudit.entries?.[0]?.nextMove || null,
+      },
+    }),
   ];
 
   await syncLearningMemoryRows(userId, doctrine);
@@ -512,6 +765,100 @@ async function syncOutcomeDoctrineArtifacts(userId) {
             ? 'medium'
             : 'low',
         savings_label: batchPressure > 0 ? `${batchPressure} batch actions` : 'awaiting history',
+      },
+      {
+        id: 'mission-brief-postmortem',
+        user_id: userId,
+        rec_type: 'doctrine',
+        title: !launchBrief
+          ? 'Collect more persisted launch briefs before hardening postmortems'
+          : launchBriefNeedsTighterVerification
+            ? 'Tighten launch verification on the current mission brief'
+            : launchBriefHeld
+              ? 'Promote this launch brief into a cleaner default pattern'
+              : 'Refine the saved mission objective before scaling matching work',
+        description: !launchBrief
+          ? 'Commander now persists normalized mission-create briefs, but it still needs more finished runs before launch-intent postmortems should rewrite defaults.'
+          : launchBriefNeedsTighterVerification
+            ? `The current launch brief for ${launchBrief.domain}/${launchBrief.intentType} is still under-verified relative to outcome quality. Raise verification before scaling.`
+            : launchBriefHeld
+              ? `The saved launch brief for ${launchBrief.domain}/${launchBrief.intentType} is holding against recent outcomes. Use that objective and success definition as the next default shape.`
+              : `The saved launch brief for ${launchBrief.domain}/${launchBrief.intentType} is not yet paying back cleanly. Refine the objective, success definition, or verification posture before scaling.`,
+        impact: !launchBrief ? 'low' : launchBriefNeedsTighterVerification ? 'high' : launchBriefHeld ? 'medium' : 'high',
+        savings_label: launchBrief ? `${averageScore} avg outcome` : 'awaiting runs',
+      },
+      {
+        id: 'recurring-adaptive-control',
+        user_id: userId,
+        rec_type: 'optimization',
+        title: !recurringAdaptiveControl.available
+          ? 'Collect more recurring posture history before adapting launch defaults'
+          : recurringAdaptiveControl.title,
+        description: !recurringAdaptiveControl.available
+          ? 'Commander still needs more saved recurring posture changes with follow-on outcomes before similar recurring launches should inherit those defaults automatically.'
+          : recurringAdaptiveControl.detail,
+        impact: !recurringAdaptiveControl.available
+          ? 'low'
+          : recurringAdaptiveControl.tone === 'amber'
+            ? 'high'
+            : recurringAdaptiveControl.tone === 'teal'
+              ? 'medium'
+              : 'medium',
+        savings_label: recurringAdaptiveControl.actionLabel || 'forming',
+      },
+      {
+        id: 'recurring-payback-defaults',
+        user_id: userId,
+        rec_type: 'optimization',
+        title: !recurringPayback.available
+          ? 'Collect more saved recurring changes before changing defaults'
+          : recurringPayback.tone === 'teal'
+            ? 'Promote winning recurring posture changes into stronger defaults'
+            : recurringPayback.tone === 'amber'
+              ? 'Demote underperforming recurring posture changes faster'
+              : 'Keep recurring defaults cautious until payback is clearer',
+        description: !recurringPayback.available
+          ? 'Commander needs more saved recurring posture changes with follow-on outcomes before recurring defaults should adapt automatically.'
+          : recurringPayback.tone === 'teal'
+            ? `${topRecurringPaybackCandidate?.title || 'This recurring flow'} is paying back cleanly. Let its saved cadence and approval posture influence stronger recurring defaults.`
+            : recurringPayback.tone === 'amber'
+              ? `${topRecurringPaybackCandidate?.title || 'This recurring flow'} is not paying back yet. Demote its recurring defaults and keep stricter posture until the outcomes improve.`
+              : `${topRecurringPaybackCandidate?.title || 'This recurring flow'} is still settling. Keep recurring defaults measured until the payback signal separates.`,
+        impact: !recurringPayback.available ? 'low' : recurringPayback.tone === 'teal' ? 'medium' : recurringPayback.tone === 'amber' ? 'high' : 'medium',
+        savings_label: recurringPayback.outcomeLabel || 'forming',
+      },
+      {
+        id: 'hybrid-approval-control',
+        user_id: userId,
+        rec_type: 'optimization',
+        title: hybridApproval.totalQueue > 0 ? 'Hybrid approval friction is still slowing execution' : 'Hybrid approval is clean enough to bundle decisions',
+        description: hybridApproval.totalQueue > 0
+          ? `${hybridApproval.detail} Use the latest control trail to clear or bundle low-risk decisions faster.`
+          : `${hybridApproval.detail} That means Commander can safely bias more low-risk work away from unnecessary human drag.`,
+        impact: hybridApproval.totalQueue > 3 ? 'high' : hybridApproval.totalQueue > 0 ? 'medium' : 'low',
+        savings_label: `${hybridApproval.totalQueue || 0} open gates`,
+      },
+      {
+        id: 'failure-triage-control',
+        user_id: userId,
+        rec_type: 'optimization',
+        title: failureTriage.available ? failureTriage.title : 'Failure pressure is currently contained',
+        description: failureTriage.available
+          ? `${failureTriage.detail} Verdict: ${failureTriage.verdict}. Do next: ${failureTriage.nextMove}.`
+          : 'Commander does not have a dominant recovery drag right now, so execution can stay focused on throughput and quality.',
+        impact: failureTriage.failedCount > 2 ? 'critical' : failureTriage.available ? 'high' : 'low',
+        savings_label: `${failureTriage.failedCount || 0} active failures`,
+      },
+      {
+        id: 'execution-audit-orders',
+        user_id: userId,
+        rec_type: 'optimization',
+        title: executionAudit.available ? 'Use the unified control audit as the next-action source' : 'Wait for more control events before leaning on audit orders',
+        description: executionAudit.available
+          ? `${executionAudit.detail} Current top order: ${executionAudit.entries[0]?.label || 'none'}${executionAudit.entries[0]?.nextMove ? ` -> ${executionAudit.entries[0].nextMove}.` : '.'}`
+          : executionAudit.detail,
+        impact: executionAudit.available ? 'medium' : 'low',
+        savings_label: `${executionAudit.entries?.length || 0} audit events`,
       },
     ], { onConflict: 'id' });
 
@@ -725,6 +1072,61 @@ export function deriveLearningMemory({ tasks = [], approvals = [], logs = [], co
       ],
       metrics: rescueLoad,
     }),
+    buildDoctrineItem({
+      id: 'hybrid-approval-memory',
+      owner: 'Approval Control',
+      tone: approvalCount > 0 ? 'amber' : 'teal',
+      title: approvalCount > 0 ? 'Hybrid approval friction is still visible' : 'Hybrid approval is currently flowing cleanly',
+      detail: approvalCount > 0
+        ? `${approvalCount} items are still waiting on human judgment across mission and review paths, so Commander should bundle or clear low-risk decisions faster.`
+        : 'Approval drag is light enough that Commander can keep leaning into autonomous flow without a new gate becoming the main bottleneck.',
+      confidence: approvalCount > 0 ? Math.max(58, 84 - (approvalCount * 3)) : 84,
+      evidence: [
+        approvalCount > 0 ? `${approvalCount} approval-dependent items are still open.` : 'No meaningful approval queue is visible right now.',
+        'This doctrine item is meant to align mission approvals and review-room approvals under one operating signal.',
+      ],
+      metrics: {
+        approvalCount,
+      },
+    }),
+    buildDoctrineItem({
+      id: 'failure-triage-memory',
+      owner: 'Recovery Control',
+      tone: failed.length + recentErrors > 0 ? 'rose' : 'teal',
+      title: failed.length + recentErrors > 0 ? 'Recovery pressure still needs explicit triage' : 'Failure pressure is currently contained',
+      detail: failed.length + recentErrors > 0
+        ? `${failed.length} failed branches and ${recentErrors} recent error events mean Commander should keep a clear triage verdict and next move at the top of the operator loop.`
+        : 'No dominant recovery drag is visible right now, so the machine can keep biasing toward throughput and quality instead of rescue.',
+      confidence: failed.length + recentErrors > 0 ? Math.max(60, 86 - ((failed.length + recentErrors) * 2)) : 80,
+      evidence: [
+        `${failed.length} failed, blocked, or cancelled tasks are in the current task ledger.`,
+        `${recentErrors} ERR events are visible in the recent activity log.`,
+        `Estimated rescue load is ${rescueLoad.rescueHours.toFixed(1)} operator hours.`,
+      ],
+      metrics: {
+        failedCount: failed.length,
+        recentErrors,
+        rescueHours: rescueLoad.rescueHours,
+      },
+    }),
+    buildDoctrineItem({
+      id: 'execution-audit-memory',
+      owner: 'Control Audit',
+      tone: recentErrors > 0 || approvalCount > 0 ? 'blue' : 'teal',
+      title: recentErrors > 0 || approvalCount > 0 ? 'The control audit should drive the next operator move' : 'The control audit is quiet enough to stay in the background',
+      detail: recentErrors > 0 || approvalCount > 0
+        ? `Commander now has enough approval and recovery pressure that the next move should come from the control audit, not just from top-line mission counts.`
+        : 'There is not enough approval or recovery churn right now to make the control audit the dominant decision surface.',
+      confidence: recentErrors > 0 || approvalCount > 0 ? 76 : 64,
+      evidence: [
+        approvalCount > 0 ? `${approvalCount} approval-dependent items are adding control pressure.` : 'Approval pressure is light.',
+        recentErrors > 0 ? `${recentErrors} recent error events are adding recovery pressure.` : 'Error pressure is light.',
+      ],
+      metrics: {
+        approvalCount,
+        recentErrors,
+      },
+    }),
   ];
 
   const doctrineById = doctrine.reduce((acc, item) => {
@@ -736,8 +1138,8 @@ export function deriveLearningMemory({ tasks = [], approvals = [], logs = [], co
     doctrine,
     doctrineById,
     topThree: doctrine.slice(0, 3),
-    executiveThree: [doctrine[2], doctrine[3], doctrine[5], doctrine[8]].filter(Boolean).slice(0, 3),
-    missionThree: [doctrine[0], doctrine[1], doctrine[4], doctrine[7]].filter(Boolean).slice(0, 3),
+    executiveThree: [doctrine[2], doctrine[3], doctrine[5], doctrine[8], doctrine[9]].filter(Boolean).slice(0, 3),
+    missionThree: [doctrine[0], doctrine[1], doctrine[4], doctrine[7], doctrine[10]].filter(Boolean).slice(0, 3),
   };
 }
 
@@ -979,7 +1381,7 @@ export function useLearningMemory(input) {
 
       try {
         const syncResult = await syncLearningMemoryRows(user.id, derived.doctrine);
-        const outcomeSync = await syncOutcomeDoctrineArtifacts(user.id);
+        const outcomeSync = await syncOutcomeDoctrineArtifacts(user.id, tasks);
         const persisted = await fetchPersistedLearningMemory(user.id);
 
         if (!cancelled) {
@@ -1001,7 +1403,7 @@ export function useLearningMemory(input) {
     return () => {
       cancelled = true;
     };
-  }, [derived.doctrine, doctrineSignature, user?.id]);
+  }, [derived.doctrine, doctrineSignature, tasks, user?.id]);
 
   return useMemo(
     () => mergeDoctrineWithPersistence(derived, persistedCurrent, persistedHistory, persistenceEnabled),

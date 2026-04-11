@@ -91,8 +91,46 @@ export function LiveOpsTable({ tasks, loading, onOpenDetail, onNavigate }) {
                       human gate
                     </div>
                   )}
+                  {task.connectorCorrectiveAction?.actionLabel && (
+                    <div className="inline-flex items-center gap-1 rounded-full border border-aurora-blue/20 bg-aurora-blue/10 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-aurora-blue">
+                      {task.connectorCorrectiveAction.actionLabel}
+                    </div>
+                  )}
+                  {task.fallbackLabel && task.fallbackLabel !== 'No fallback plan' && (
+                    <div className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-text-body">
+                      {task.fallbackLabel}
+                    </div>
+                  )}
+                  {task.transition?.label && !['Running', 'Completed'].includes(task.transition.label) && (
+                    <div className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-text-body">
+                      {task.transition.label}
+                    </div>
+                  )}
+                  {task.dispatchReadback?.available && !['Held upstream'].includes(task.dispatchReadback.label) && (
+                    <div className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-text-body">
+                      {task.dispatchReadback.label}
+                    </div>
+                  )}
                 </div>
                 <p className="mt-2 text-[12px] leading-relaxed text-text-muted">{task.blocker}</p>
+                {task.graphSummary?.available && (
+                  <p className="mt-2 text-[11px] leading-relaxed text-text-body">
+                    <span className="font-semibold text-text-primary">Mission graph:</span> {task.graphSummary.detail}
+                  </p>
+                )}
+                {task.dispatchReadback?.available && (
+                  <p className="mt-2 text-[11px] leading-relaxed text-text-body">
+                    <span className="font-semibold text-text-primary">Dispatch:</span> {task.dispatchReadback.detail}
+                  </p>
+                )}
+                {task.connectorCorrectiveAction?.detail && (
+                  <p className="mt-2 text-[11px] leading-relaxed text-text-body">
+                    <span className="font-semibold text-text-primary">Fastest safe move:</span> {task.connectorCorrectiveAction.detail}
+                    {(task.connectorCorrectiveAction.targetRole || task.connectorCorrectiveAction.targetApprovalPosture)
+                      ? ` Target lane: ${task.connectorCorrectiveAction.targetRole || 'ops'}. Approval: ${String(task.connectorCorrectiveAction.targetApprovalPosture || 'risk_weighted').replaceAll('_', ' ')}.`
+                      : ''}
+                  </p>
+                )}
               </div>
 
               <button
@@ -121,7 +159,7 @@ export function LiveOpsTable({ tasks, loading, onOpenDetail, onNavigate }) {
               <div className="ui-stat px-3 py-3">
                 <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Posture</div>
                 <div className="mt-2 text-sm font-semibold text-text-primary">
-                  {task.status === 'error' ? 'Recovery needed' : task.needsReview ? 'Waiting on commander' : task.status === 'pending' ? 'Queued for launch' : 'Advancing'}
+                  {task.postureLabel || (task.status === 'error' ? 'Recovery needed' : task.needsReview ? 'Waiting on commander' : task.status === 'pending' ? 'Queued for launch' : 'Advancing')}
                 </div>
               </div>
             </div>

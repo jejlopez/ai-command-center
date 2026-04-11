@@ -28,18 +28,21 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
+import { approveMissionTask, interruptAndRedirectTask, stopTask } from '../lib/api';
 import { container, item } from '../utils/variants';
 import { cleanupTempAgents, createPersistentSpecialist, createTempAgent, promoteAgentToPersistent, useActivityLog, useAgents, useKnowledgeNamespaces, useModelBank, useRoutingPolicies, useSharedDirectives, useSkillBank, useSpecialistLifecycle, useSystemRecommendations, useTaskInterventions, useTaskOutcomes, useTasks } from '../utils/useSupabase';
 import { AnimatedNumber } from '../components/command/AnimatedNumber';
 import { CommandSectionHeader } from '../components/command/CommandSectionHeader';
 import { useCommanderPreferences } from '../utils/useCommanderPreferences';
+import { buildFailureTriageActionDraft, getCommanderNextMove, getFailureTriageSummary, getRecurringBriefFitReadback } from '../utils/commanderAnalytics';
 import { useLearningMemory } from '../utils/useLearningMemory';
+import { buildConnectorActionDraft, buildDispatchActionDraft, formatFallbackStrategyLabel, getBranchConnectorPressureSummary, getFallbackStrategyDetail, getGraphContractPressureSummary, getGraphReasoningSummary, getGroupedConnectorBlockers, getLaunchReadinessPressure, getMissionDispatchPressureSummary } from '../utils/executionReadiness';
 import { DoctrineCards } from '../components/command/DoctrineCards';
 import { cn } from '../utils/cn';
 import { TruthAuditStrip } from '../components/command/TruthAuditStrip';
 import { useCommandCenterTruth } from '../utils/useCommandCenterTruth';
 import { normalizeModelProvider } from '../utils/commanderPolicy';
-import { getWorkflowMeta } from '../utils/missionLifecycle';
+import { getApprovalTransitionState, getDecisionNarrativeSummary, getLiveControlNarrativeSummary, getTaskControlActionMode, getTaskExecutableControlAction, getWorkflowMeta } from '../utils/missionLifecycle';
 import { buildPolicyDemotionSummary, getBatchRoutingTrustSummary, getDoctrineDeltaSummary, getFleetPostureSummary, getLatestBatchCommandAudit, getObservedModelBenchmarks, getPersistentPromotionGuidance, getPolicyActionGuidance, getPolicyDeltaReadback, getSpecialistLifecycleSummary, getTradeoffCorrectiveAction, getTradeoffOutcomeSummary, rankCommanderRecommendations, scoreTaskOutcome } from '../utils/commanderAnalytics';
 
 const tabs = [
@@ -198,12 +201,13 @@ function StrategicReadFirst({ items }) {
   );
 }
 
-function OptimizationCard({ recommendation, onStageCorrectiveAction = null }) {
+function OptimizationCard({ recommendation, onStageCorrectiveAction = null, onExecuteCorrectiveAction = null, actionLoading = false }) {
   const toneClass = recommendation.impact === 'critical'
     ? 'border-l-aurora-rose'
     : recommendation.impact === 'high'
       ? 'border-l-aurora-amber'
       : 'border-l-aurora-teal';
+  const controlActionMode = recommendation.correctiveAction?.controlActionMode || null;
 
   return (
     <div className={`ui-card-row border-l-[3px] ${toneClass} p-4`}>
@@ -229,15 +233,37 @@ function OptimizationCard({ recommendation, onStageCorrectiveAction = null }) {
           {recommendation.correctiveAction?.label && (
             <div className="mt-3 ui-panel-soft px-3 py-2 text-[11px] leading-relaxed text-text-body">
               <span className="font-semibold text-text-primary">Corrective action:</span> {recommendation.correctiveAction.label}. {recommendation.correctiveAction.detail}
-              {recommendation.correctiveAction.routeState && onStageCorrectiveAction ? (
-                <div className="mt-3">
-                  <button
-                    type="button"
-                    onClick={() => onStageCorrectiveAction(recommendation.correctiveAction)}
-                    className="rounded-2xl border border-aurora-blue/20 bg-aurora-blue/10 px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-aurora-blue transition-colors hover:bg-aurora-blue/15"
-                  >
-                    Stage corrective action
-                  </button>
+              {(recommendation.correctiveAction.targetRole || recommendation.correctiveAction.targetApprovalPosture) ? (
+                <div className="mt-2 text-[11px] leading-relaxed text-text-muted">
+                  Target lane: {recommendation.correctiveAction.targetRole || 'ops'}. Approval: {String(recommendation.correctiveAction.targetApprovalPosture || 'risk_weighted').replaceAll('_', ' ')}.
+                </div>
+              ) : null}
+              {(recommendation.correctiveAction.executableAction || recommendation.correctiveAction.routeState || recommendation.correctiveAction.opsPrompt) ? (
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {controlActionMode?.helperText ? (
+                    <div className="w-full text-[10px] leading-relaxed text-text-muted">
+                      {controlActionMode.helperText}
+                    </div>
+                  ) : null}
+                  {recommendation.correctiveAction.executableAction && onExecuteCorrectiveAction ? (
+                    <button
+                      type="button"
+                      onClick={() => onExecuteCorrectiveAction(recommendation)}
+                      disabled={actionLoading}
+                      className="rounded-2xl border border-aurora-teal/20 bg-aurora-teal/10 px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-aurora-teal transition-colors hover:bg-aurora-teal/15 disabled:opacity-50"
+                    >
+                      {actionLoading ? 'Running action...' : recommendation.correctiveAction.executableAction.label}
+                    </button>
+                  ) : null}
+                  {(recommendation.correctiveAction.routeState || recommendation.correctiveAction.opsPrompt) && onStageCorrectiveAction ? (
+                    <button
+                      type="button"
+                      onClick={() => onStageCorrectiveAction(recommendation.correctiveAction)}
+                      className="rounded-2xl border border-aurora-blue/20 bg-aurora-blue/10 px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-aurora-blue transition-colors hover:bg-aurora-blue/15"
+                    >
+                      {controlActionMode?.stageLabel || 'Stage corrective action'}
+                    </button>
+                  ) : null}
                 </div>
               ) : null}
             </div>
@@ -323,7 +349,7 @@ function DoctrineSignalRail({ learningMemory, logs = [] }) {
   );
 }
 
-function StrategyRail({ derivedRecommendations, learningMemory, humanHourlyRate, economics, logs = [], onStageCorrectiveAction = null }) {
+function StrategyRail({ derivedRecommendations, learningMemory, humanHourlyRate, economics, logs = [], onStageCorrectiveAction = null, onExecuteCorrectiveAction = null, executingRecommendationId = null }) {
   const [focus, setFocus] = useState('economics');
 
   return (
@@ -434,7 +460,13 @@ function StrategyRail({ derivedRecommendations, learningMemory, humanHourlyRate,
           />
           <div className="mt-5 space-y-3">
             {derivedRecommendations.slice(0, 2).map((recommendation) => (
-              <OptimizationCard key={recommendation.id} recommendation={recommendation} onStageCorrectiveAction={onStageCorrectiveAction} />
+              <OptimizationCard
+                key={recommendation.id}
+                recommendation={recommendation}
+                onStageCorrectiveAction={onStageCorrectiveAction}
+                onExecuteCorrectiveAction={onExecuteCorrectiveAction}
+                actionLoading={executingRecommendationId === recommendation.id}
+              />
             ))}
           </div>
         </HudPanel>
@@ -1024,6 +1056,10 @@ function RoutingDoctrineTab({ routingPolicies, tasks, agents, logs, intervention
       .sort((a, b) => b.count - a.count)
       .slice(0, 6);
   }, [tasks]);
+  const launchReadinessPressure = useMemo(
+    () => getLaunchReadinessPressure(interventions),
+    [interventions]
+  );
 
   const contextDemand = useMemo(() => {
     const counts = new Map();
@@ -1862,6 +1898,39 @@ function RoutingDoctrineTab({ routingPolicies, tasks, agents, logs, intervention
             accent="amber"
           >
             <div className="space-y-3">
+              {launchReadinessPressure.available && launchReadinessPressure.score > 0 && (
+                <div className="ui-panel p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <div className="text-sm font-semibold text-text-primary">{launchReadinessPressure.title}</div>
+                      <div className="mt-1 text-[11px] text-text-muted">{launchReadinessPressure.detail}</div>
+                    </div>
+                    <div className={`rounded-full border px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] ${
+                      launchReadinessPressure.tone === 'rose'
+                        ? 'border-aurora-rose/20 bg-aurora-rose/10 text-aurora-rose'
+                        : 'border-aurora-amber/20 bg-aurora-amber/10 text-aurora-amber'
+                    }`}>
+                      {launchReadinessPressure.affectedMissionCount} missions
+                    </div>
+                  </div>
+                  {launchReadinessPressure.topSystems.length > 0 && (
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {launchReadinessPressure.topSystems.map((system) => (
+                        <span
+                          key={`${system.key}-${system.status}`}
+                          className={`rounded-full border px-2 py-1 text-[10px] font-semibold ${
+                            system.status === 'degraded'
+                              ? 'border-aurora-amber/20 bg-aurora-amber/10 text-aurora-amber'
+                              : 'border-aurora-rose/20 bg-aurora-rose/10 text-aurora-rose'
+                          }`}
+                        >
+                          {system.label}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
               {capabilityDemand.length === 0 && (
                 <div className="ui-panel p-4 text-[12px] text-text-muted">
                   No required capabilities have been inferred yet.
@@ -2520,7 +2589,7 @@ function DirectivesTab({ directives, agents, tasks, recommendations }) {
     }));
   }, [agents, directives]);
 
-  const approvalSensitiveTasks = tasks.filter((task) => task.status === 'needs_approval').length;
+  const approvalSensitiveTasks = tasks.filter((task) => task.status === 'needs_approval' || task.requiresApproval).length;
 
   return (
     <div className="grid gap-5 xl:grid-cols-[1.05fr_0.95fr]">
@@ -2638,9 +2707,11 @@ function DirectivesTab({ directives, agents, tasks, recommendations }) {
   );
 }
 
-export function IntelligenceView({ routeState = null, onConsumeRouteState = null }) {
+export function IntelligenceView({ routeState = null, onConsumeRouteState = null, onNavigate = null }) {
   const [activeTab, setActiveTab] = useState(routeState?.tab || 'models');
   const [localRouteState, setLocalRouteState] = useState(null);
+  const [executingRecommendationId, setExecutingRecommendationId] = useState(null);
+  const [actionError, setActionError] = useState('');
   const { agents } = useAgents();
   const { models } = useModelBank();
   const { skills } = useSkillBank();
@@ -2697,7 +2768,65 @@ export function IntelligenceView({ routeState = null, onConsumeRouteState = null
   }, [humanHourlyRate, tasks]);
 
   const learningMemory = useLearningMemory({ agents, tasks, logs, approvals: [], costData: { total: economics.agentCost, models: [] }, humanHourlyRate });
+  const branchConnectorPressure = useMemo(
+    () => getBranchConnectorPressureSummary(tasks, interventions),
+    [tasks, interventions]
+  );
+  const groupedConnectorBlockers = useMemo(
+    () => getGroupedConnectorBlockers(tasks, interventions),
+    [tasks, interventions]
+  );
+  const missionDispatchPressure = useMemo(
+    () => getMissionDispatchPressureSummary(tasks),
+    [tasks]
+  );
+  const graphContractPressure = useMemo(
+    () => getGraphContractPressureSummary(tasks, interventions),
+    [tasks, interventions]
+  );
+  const graphReasoning = useMemo(
+    () => getGraphReasoningSummary(tasks, interventions),
+    [tasks, interventions]
+  );
+  const liveControlNarrative = useMemo(
+    () => getLiveControlNarrativeSummary(tasks, interventions),
+    [tasks, interventions]
+  );
+  const liveControlRedirectAgent = useMemo(() => {
+    const topBranch = liveControlNarrative.topBranch;
+    if (!topBranch?.id) return null;
+    const currentAgentId = topBranch.agentId || topBranch.agent_id || null;
+    return agents.find((agent) => (
+      !agent.isSyntheticCommander
+      && agent.role !== 'commander'
+      && agent.status !== 'error'
+      && agent.id !== currentAgentId
+    )) || null;
+  }, [agents, liveControlNarrative.topBranch]);
+  const liveControlExecutableAction = useMemo(() => {
+    const topBranch = liveControlNarrative.topBranch;
+    const topControlState = liveControlNarrative.topControlState;
+    if (!topBranch?.id || !topControlState?.available) return null;
+    return getTaskExecutableControlAction({
+      task: topBranch,
+      controlState: topControlState,
+      approvalTransition: getApprovalTransitionState(topBranch, interventions),
+      redirectAgent: liveControlRedirectAgent,
+    });
+  }, [interventions, liveControlNarrative.topBranch, liveControlNarrative.topControlState, liveControlRedirectAgent]);
+  const decisionNarrative = useMemo(
+    () => getDecisionNarrativeSummary(tasks, interventions),
+    [tasks, interventions]
+  );
+  const commanderNextMove = useMemo(
+    () => getCommanderNextMove({ tasks, reviews: [], schedules: [], agents, interventions, logs, approvalAudit: [], learningMemory }),
+    [tasks, agents, interventions, logs, learningMemory]
+  );
   const doctrineDeltas = useMemo(() => getDoctrineDeltaSummary(learningMemory.doctrine).slice(0, 3), [learningMemory.doctrine]);
+  const failureTriage = useMemo(
+    () => getFailureTriageSummary({ tasks, interventions, logs }),
+    [tasks, interventions, logs]
+  );
   const topPolicy = useMemo(
     () => routingPolicies.find((policy) => policy.isDefault) || routingPolicies[0] || null,
     [routingPolicies]
@@ -2719,6 +2848,12 @@ export function IntelligenceView({ routeState = null, onConsumeRouteState = null
     const runningTasks = tasks.filter((task) => task.status === 'running').length;
     const failedTasks = tasks.filter((task) => ['failed', 'error', 'blocked'].includes(task.status)).length;
     const recommendations = [...persistedRecommendations];
+    const recurringBriefReadback = getRecurringBriefFitReadback(tasks, interventions, outcomes);
+    const recurringPaybackDoctrine = learningMemory?.doctrineById?.['recurring-payback-memory'] || null;
+    const recurringAdaptiveDoctrine = learningMemory?.doctrineById?.['recurring-adaptive-control'] || null;
+    const hybridApprovalDoctrine = learningMemory?.doctrineById?.['hybrid-approval-memory'] || null;
+    const failureTriageDoctrine = learningMemory?.doctrineById?.['failure-triage-memory'] || null;
+    const executionAuditDoctrine = learningMemory?.doctrineById?.['execution-audit-memory'] || null;
 
     if (failedTasks > 0) {
       recommendations.unshift({
@@ -2740,6 +2875,231 @@ export function IntelligenceView({ routeState = null, onConsumeRouteState = null
       });
     }
 
+    if (recurringBriefReadback.available && recurringBriefReadback.tone !== 'teal') {
+      recommendations.unshift({
+        id: 'derived-recurring-brief-fit',
+        type: 'optimization',
+        title: recurringBriefReadback.title,
+        description: recurringBriefReadback.detail,
+        impact: recurringBriefReadback.tone === 'amber' ? 'high' : 'medium',
+      });
+    }
+
+    if (recurringPaybackDoctrine && recurringPaybackDoctrine.tone !== 'teal') {
+      recommendations.unshift({
+        id: 'derived-recurring-payback',
+        type: 'optimization',
+        title: recurringPaybackDoctrine.title,
+        description: recurringPaybackDoctrine.detail,
+        impact: recurringPaybackDoctrine.tone === 'amber' ? 'high' : 'medium',
+      });
+    }
+
+    if (recurringAdaptiveDoctrine) {
+      recommendations.unshift({
+        id: 'derived-recurring-adaptive-control',
+        type: 'optimization',
+        title: recurringAdaptiveDoctrine.title,
+        description: recurringAdaptiveDoctrine.detail,
+        impact: recurringAdaptiveDoctrine.tone === 'amber' ? 'high' : recurringAdaptiveDoctrine.tone === 'teal' ? 'medium' : 'medium',
+      });
+    }
+
+    if (hybridApprovalDoctrine && hybridApprovalDoctrine.tone !== 'teal') {
+      recommendations.unshift({
+        id: 'derived-hybrid-approval-control',
+        type: 'optimization',
+        title: hybridApprovalDoctrine.title,
+        description: hybridApprovalDoctrine.detail,
+        impact: hybridApprovalDoctrine.tone === 'amber' ? 'high' : 'medium',
+        whyNow: hybridApprovalDoctrine.evidence?.[0] || null,
+        correctiveAction: {
+          label: 'Bundle or clear low-risk approvals',
+          detail: 'Use the approval trail to move the lightest gates together so human drag stops compounding.',
+          opsPrompt: `Review the live approval queue and clear or bundle the lowest-risk decisions first. Use this control context: ${hybridApprovalDoctrine.detail}`,
+        },
+      });
+    }
+
+    if (failureTriageDoctrine) {
+      recommendations.unshift({
+        id: 'derived-failure-triage-control',
+        type: 'optimization',
+        title: failureTriageDoctrine.title,
+        description: failureTriageDoctrine.detail,
+        impact: failureTriageDoctrine.tone === 'rose' ? 'critical' : failureTriageDoctrine.tone === 'amber' ? 'high' : 'medium',
+        whyNow: failureTriageDoctrine.evidence?.[1] || failureTriageDoctrine.evidence?.[0] || null,
+        correctiveAction: {
+          label: 'Run the top triage order first',
+          detail: 'Keep the highest-pressure failed branch on the shortest safe recovery path before scaling adjacent work.',
+          opsPrompt: `Stabilize the highest-pressure failed branch first. Follow the current triage doctrine and decide whether to retry, reroute, or hold for approval. Context: ${failureTriageDoctrine.detail}`,
+        },
+      });
+    }
+
+    if (failureTriage.available) {
+      recommendations.unshift({
+        id: 'derived-live-failure-triage',
+        type: 'optimization',
+        title: failureTriage.title,
+        description: `${failureTriage.detail} ${failureTriage.resolutionLabel}. Do next: ${failureTriage.nextMove}.${failureTriage.graphContract?.label ? ` Graph contract: ${failureTriage.graphContract.label}.` : ''}`,
+        impact: failureTriage.tone === 'rose' ? 'critical' : failureTriage.tone === 'amber' ? 'high' : 'medium',
+        whyNow: String(failureTriage.recoveryMode || '').replaceAll('_', ' '),
+        correctiveAction: failureTriage.opsPrompt
+          ? {
+              label: failureTriage.actionLabel || 'Run top triage order',
+              detail: failureTriage.resolutionLabel || failureTriage.nextMove,
+              opsPrompt: failureTriage.opsPrompt,
+              controlActionBrief: {
+                title: failureTriage.title,
+                actionLabel: failureTriage.actionLabel || 'Run top triage order',
+                currentState: failureTriage.verdict,
+                expectedImprovement: 'Recovery pressure should drop because Commander is following the graph-aware recovery path instead of retrying blindly.',
+                verificationTarget: 'Verify that the next control event reduces rescue churn and moves the branch into a clearer release, reroute, or held posture.',
+                successCriteria: 'The branch takes one cleaner recovery path and stops bouncing between blocked, retry, and hold.',
+                rollbackCriteria: 'Back this recovery move out if it adds rescue noise, widens risk, or fails to change the branch control state on the next pass.',
+                nextMove: failureTriage.nextMove,
+              },
+            }
+          : null,
+      });
+    }
+
+    if (executionAuditDoctrine && executionAuditDoctrine.tone !== 'teal') {
+      recommendations.unshift({
+        id: 'derived-execution-audit-order',
+        type: 'optimization',
+        title: executionAuditDoctrine.title,
+        description: executionAuditDoctrine.detail,
+        impact: 'medium',
+        whyNow: executionAuditDoctrine.evidence?.[0] || null,
+        correctiveAction: {
+          label: 'Follow the audit-derived next move',
+          detail: executionAuditDoctrine.metrics?.latestNextMove
+            ? `Current top order is ${String(executionAuditDoctrine.metrics.latestNextMove).replaceAll('_', ' ')}.`
+            : 'Use the latest control event as the next operator order instead of relying on broad mission counts alone.',
+          opsPrompt: executionAuditDoctrine.metrics?.latestNextMove
+            ? `Follow the latest execution-control order: ${String(executionAuditDoctrine.metrics.latestNextMove).replaceAll('_', ' ')}. Use the current audit trail to decide the shortest safe next move. Context: ${executionAuditDoctrine.detail}`
+            : `Review the latest execution-control trail and stage the next operator move from it. Context: ${executionAuditDoctrine.detail}`,
+        },
+      });
+    }
+
+    if (liveControlNarrative.available) {
+      recommendations.unshift({
+        id: 'derived-live-control-narrative',
+        type: 'optimization',
+        title: liveControlNarrative.title,
+        description: `${liveControlNarrative.detail} Resume posture: ${liveControlNarrative.topControlState?.canAutoResume ? 'safe to auto-resume' : liveControlNarrative.topControlState?.shouldStayHeld ? 'keep held until review' : 'active commander decision required'}.`,
+        impact: liveControlNarrative.tone === 'rose' ? 'critical' : liveControlNarrative.tone === 'amber' ? 'high' : 'medium',
+        whyNow: liveControlNarrative.nextMove,
+        correctiveAction: liveControlNarrative.controlActionDraft
+          ? {
+              label: liveControlNarrative.actionLabel || 'Stage live control review',
+              detail: liveControlNarrative.topControlState?.resolutionLabel || 'Stage the safest next recovery move for the top controlled branch.',
+              opsPrompt: liveControlNarrative.controlActionDraft.quickstartPrompt,
+              controlActionBrief: liveControlNarrative.controlActionDraft.controlActionBrief,
+              executableAction: liveControlExecutableAction?.available
+                ? {
+                    kind: liveControlExecutableAction.kind,
+                    label: liveControlExecutableAction.label,
+                    detail: liveControlExecutableAction.detail,
+                    taskId: liveControlNarrative.topBranch?.id,
+                    redirectAgentId: liveControlRedirectAgent?.id || null,
+                    redirectProvider: liveControlRedirectAgent?.provider || null,
+                    redirectModel: liveControlRedirectAgent?.model || null,
+                  }
+                : null,
+              controlActionMode: getTaskControlActionMode({
+                controlState: liveControlNarrative.topControlState,
+                executableAction: liveControlExecutableAction,
+                controlActionDraft: liveControlNarrative.controlActionDraft,
+              }),
+            }
+          : null,
+      });
+    }
+
+    if (decisionNarrative.available) {
+      recommendations.unshift({
+        id: 'derived-decision-narrative',
+        type: 'optimization',
+        title: decisionNarrative.title,
+        description: `${decisionNarrative.detail} Do next: ${String(decisionNarrative.nextMove || 'keep_flowing').replaceAll('_', ' ')}.`,
+        impact: decisionNarrative.tone === 'rose' ? 'critical' : decisionNarrative.tone === 'amber' ? 'high' : 'medium',
+        whyNow: decisionNarrative.topNarrative?.approvalLabel || decisionNarrative.topNarrative?.transitionLabel || decisionNarrative.topNarrative?.stateLabel || null,
+      });
+    }
+
+    if (graphContractPressure.available) {
+      recommendations.unshift({
+        id: 'derived-graph-contract',
+        type: 'optimization',
+        title: graphContractPressure.title,
+        description: `${graphContractPressure.detail} Do next: ${String(graphContractPressure.nextMove || 'keep_flowing').replaceAll('_', ' ')}.`,
+        impact: graphContractPressure.tone === 'rose' ? 'critical' : graphContractPressure.tone === 'amber' ? 'high' : 'medium',
+        whyNow: String(graphContractPressure.orderMode || '').replaceAll('_', ' '),
+        correctiveAction: {
+          label: 'Follow graph contract',
+          detail: graphContractPressure.nextMove,
+          opsPrompt: `Use the persisted mission graph contract to follow the safest runtime order. ${graphContractPressure.detail} Next move: ${graphContractPressure.nextMove}.`,
+          dispatchActionBrief: buildDispatchActionDraft({
+            available: graphContractPressure.available,
+            title: graphContractPressure.title,
+            detail: graphContractPressure.detail,
+            nextMove: graphContractPressure.nextMove,
+            tone: graphContractPressure.tone,
+            topTask: graphContractPressure.topEntry,
+            safeParallelCount: graphContractPressure.safeParallelCount,
+            serializedCount: graphContractPressure.serializedCount,
+            heldUpstreamCount: graphContractPressure.releaseChainCount,
+          })?.dispatchActionBrief || null,
+        },
+      });
+    }
+
+    if (graphReasoning.available) {
+      recommendations.unshift({
+        id: 'derived-graph-reasoning',
+        type: 'optimization',
+        title: graphReasoning.title,
+        description: `${graphReasoning.detail} Do next: ${String(graphReasoning.nextMove || 'keep_flowing').replaceAll('_', ' ')}.`,
+        impact: graphReasoning.tone === 'rose' ? 'high' : graphReasoning.tone === 'amber' ? 'high' : 'medium',
+        whyNow: graphReasoning.topReasoning?.state || null,
+      });
+    }
+
+    if (branchConnectorPressure.available && branchConnectorPressure.score > 0) {
+      const groupedFix = groupedConnectorBlockers.topGroup;
+      recommendations.unshift({
+        id: groupedFix?.affectedCount > 1 ? 'derived-grouped-connector-branch-pressure' : 'derived-connector-branch-pressure',
+        type: 'optimization',
+        title: groupedFix?.affectedCount > 1 ? groupedFix.title : branchConnectorPressure.title,
+        description: groupedFix?.affectedCount > 1
+          ? `${groupedFix.detail} Do next: ${groupedFix.order} Affected branches: ${groupedFix.affectedBranches.map((branch) => branch.title).join(', ')}.`
+          : `${branchConnectorPressure.detail}${branchConnectorPressure.topBranches[0]?.fallbackStrategy ? ` Fallback: ${formatFallbackStrategyLabel(branchConnectorPressure.topBranches[0].fallbackStrategy)}. ${getFallbackStrategyDetail(branchConnectorPressure.topBranches[0].fallbackStrategy)}` : ''}`,
+        impact: (groupedFix?.tone || branchConnectorPressure.tone) === 'rose' ? 'critical' : 'high',
+        correctiveAction: groupedFix?.correctiveAction || branchConnectorPressure.topCorrectiveAction || null,
+      });
+    }
+
+    if (missionDispatchPressure.available) {
+      recommendations.unshift({
+        id: 'derived-dispatch-pressure',
+        type: 'optimization',
+        title: missionDispatchPressure.title,
+        description: missionDispatchPressure.detail,
+        impact: missionDispatchPressure.tone === 'rose' ? 'high' : missionDispatchPressure.tone === 'amber' ? 'medium' : 'low',
+        whyNow: missionDispatchPressure.nextMove,
+        correctiveAction: {
+          label: 'Follow the dispatch order',
+          detail: missionDispatchPressure.nextMove,
+          opsPrompt: `Use the live mission graph to follow the safest dispatch order. ${missionDispatchPressure.detail} Next move: ${missionDispatchPressure.nextMove}`,
+          dispatchActionBrief: buildDispatchActionDraft(missionDispatchPressure)?.dispatchActionBrief || null,
+        },
+      });
+    }
+
     return rankCommanderRecommendations({
       recommendations,
       tasks,
@@ -2752,12 +3112,47 @@ export function IntelligenceView({ routeState = null, onConsumeRouteState = null
       tradeoffOutcome: topTradeoffOutcome,
       tradeoffCorrectiveAction: topTradeoffCorrectiveAction,
     }).slice(0, 5);
-  }, [agents, interventions, learningMemory, lifecycleEvents, logs, outcomes, persistedRecommendations, tasks, topTradeoffOutcome, topTradeoffCorrectiveAction]);
+  }, [agents, branchConnectorPressure, decisionNarrative, failureTriage, graphContractPressure, graphReasoning, groupedConnectorBlockers, interventions, learningMemory, lifecycleEvents, liveControlExecutableAction, liveControlNarrative, liveControlRedirectAgent, logs, missionDispatchPressure, outcomes, persistedRecommendations, tasks, topTradeoffOutcome, topTradeoffCorrectiveAction]);
+
+  async function handleExecuteCorrectiveAction(recommendation) {
+    const executableAction = recommendation?.correctiveAction?.executableAction;
+    if (!executableAction?.taskId) return;
+    setExecutingRecommendationId(recommendation.id);
+    setActionError('');
+    try {
+      if (executableAction.kind === 'release') {
+        await approveMissionTask(executableAction.taskId);
+      } else if (executableAction.kind === 'hold') {
+        await stopTask(executableAction.taskId);
+      } else if (executableAction.kind === 'reroute') {
+        await interruptAndRedirectTask(executableAction.taskId, {
+          agentId: executableAction.redirectAgentId || null,
+          providerOverride: executableAction.redirectProvider || null,
+          modelOverride: executableAction.redirectModel || null,
+        }, agents);
+      }
+    } catch (error) {
+      setActionError(error?.message || 'Direct action failed.');
+    } finally {
+      setExecutingRecommendationId(null);
+    }
+  }
+
   const readFirstItems = useMemo(() => {
     const bestReasoner = availableModels.slice().sort((a, b) => b.reliability - a.reliability)[0];
     const fastest = availableModels.slice().sort((a, b) => b.speed - a.speed)[0];
     const cheapest = availableModels.slice().sort((a, b) => b.costDiscipline - a.costDiscipline)[0];
     return [
+      ...(commanderNextMove?.available ? [{
+        eyebrow: 'Do Next',
+        title: commanderNextMove.title,
+        detail: `${commanderNextMove.detail} Do next: ${commanderNextMove.nextMove}`,
+      }] : []),
+      ...(failureTriage.available ? [{
+        eyebrow: 'Recovery Signal',
+        title: failureTriage.title,
+        detail: `${failureTriage.detail} ${failureTriage.resolutionLabel}. Do next: ${failureTriage.nextMove}.${failureTriage.graphContract?.label ? ` Graph contract: ${failureTriage.graphContract.label}.` : ''}`,
+      }] : []),
       {
         eyebrow: 'Use First',
         title: bestReasoner ? `${bestReasoner.model} is the most reliable lane` : 'No clear reliable lane yet',
@@ -2779,8 +3174,40 @@ export function IntelligenceView({ routeState = null, onConsumeRouteState = null
           ? `This is the best current lane for keeping spend disciplined before a mission truly needs premium depth.`
           : 'Cost signals are still too weak to make a hard routing doctrine call.',
       },
+      ...(branchConnectorPressure.available && branchConnectorPressure.score > 0 ? [{
+        eyebrow: 'Connector Pressure',
+        title: groupedConnectorBlockers.topGroup?.affectedCount > 1 ? groupedConnectorBlockers.topGroup.title : branchConnectorPressure.title,
+        detail: groupedConnectorBlockers.topGroup?.affectedCount > 1
+          ? `${groupedConnectorBlockers.topGroup.detail} Do next: ${groupedConnectorBlockers.topGroup.order} Top branches: ${groupedConnectorBlockers.topGroup.affectedBranches.map((branch) => branch.title).join(', ')}.`
+          : `${branchConnectorPressure.detail} Top branches: ${branchConnectorPressure.topBranches.map((branch) => branch.title).join(', ')}.${branchConnectorPressure.topBranches[0]?.fallbackStrategy ? ` Fallback: ${formatFallbackStrategyLabel(branchConnectorPressure.topBranches[0].fallbackStrategy)}.` : ''}`,
+      }] : []),
+      ...(missionDispatchPressure.available ? [{
+        eyebrow: 'Dispatch Order',
+        title: missionDispatchPressure.title,
+        detail: `${missionDispatchPressure.detail} Do next: ${missionDispatchPressure.nextMove}`,
+      }] : []),
+      ...(graphContractPressure.available ? [{
+        eyebrow: 'Graph Contract',
+        title: graphContractPressure.title,
+        detail: `${graphContractPressure.detail} Do next: ${String(graphContractPressure.nextMove || 'keep_flowing').replaceAll('_', ' ')}.`,
+      }] : []),
+      ...(liveControlNarrative.available ? [{
+        eyebrow: 'Control Narrative',
+        title: liveControlNarrative.title,
+        detail: `${liveControlNarrative.detail} Resume posture: ${liveControlNarrative.topControlState?.canAutoResume ? 'safe to auto-resume' : liveControlNarrative.topControlState?.shouldStayHeld ? 'keep held until review' : 'active commander decision required'}.`,
+      }] : []),
+      ...(decisionNarrative.available ? [{
+        eyebrow: 'Decision Narrative',
+        title: decisionNarrative.title,
+        detail: `${decisionNarrative.detail} Do next: ${String(decisionNarrative.nextMove || 'keep_flowing').replaceAll('_', ' ')}.`,
+      }] : []),
+      ...(graphReasoning.available ? [{
+        eyebrow: 'Graph Narrative',
+        title: graphReasoning.title,
+        detail: `${graphReasoning.detail} Do next: ${String(graphReasoning.nextMove || 'keep_flowing').replaceAll('_', ' ')}.`,
+      }] : []),
     ];
-  }, [availableModels]);
+  }, [availableModels, branchConnectorPressure, commanderNextMove, decisionNarrative, failureTriage, graphContractPressure, graphReasoning, groupedConnectorBlockers, liveControlNarrative, missionDispatchPressure]);
 
   return (
     <div className="relative flex h-full flex-col overflow-y-auto pb-10">
@@ -2895,8 +3322,13 @@ export function IntelligenceView({ routeState = null, onConsumeRouteState = null
           >
             <div className="space-y-5">
               <div className="grid grid-cols-1 gap-5 xl:grid-cols-[0.55fr_1.45fr]">
-                <div className="space-y-3">
-                  <div className="ui-panel p-4">
+              <div className="space-y-3">
+                {actionError ? (
+                  <div className="ui-panel border border-aurora-rose/20 bg-aurora-rose/10 p-4 text-[11px] leading-relaxed text-aurora-rose">
+                    {actionError}
+                  </div>
+                ) : null}
+                <div className="ui-panel p-4">
                     <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Use first</div>
                     <div className="mt-2 text-[15px] font-semibold text-text-primary">{readFirstItems[0]?.title}</div>
                     <p className="mt-2 text-[11px] leading-5 text-text-muted">{readFirstItems[0]?.detail}</p>
@@ -2926,15 +3358,62 @@ export function IntelligenceView({ routeState = null, onConsumeRouteState = null
                   humanHourlyRate={humanHourlyRate}
                   economics={economics}
                   logs={logs}
+                  executingRecommendationId={executingRecommendationId}
+                  onExecuteCorrectiveAction={handleExecuteCorrectiveAction}
                   onStageCorrectiveAction={(correctiveAction) => {
-                    if (!topPolicy?.id || !correctiveAction?.routeState) return;
-                    setActiveTab('routing');
-                    setLocalRouteState({
-                      tab: 'routing',
-                      selectedPolicyId: topPolicy.id,
-                      actionContext: correctiveAction,
-                      ...correctiveAction.routeState,
-                    });
+                    if (correctiveAction?.routeState && topPolicy?.id) {
+                      setActiveTab('routing');
+                      setLocalRouteState({
+                        tab: 'routing',
+                        selectedPolicyId: topPolicy.id,
+                        actionContext: correctiveAction,
+                        ...correctiveAction.routeState,
+                      });
+                      return;
+                    }
+                    if (correctiveAction?.opsPrompt) {
+                      const groupedFix = groupedConnectorBlockers.topGroup;
+                      const failureDraft = correctiveAction?.controlActionBrief && correctiveAction?.label === (failureTriage.actionLabel || 'Run top triage order')
+                        ? buildFailureTriageActionDraft(failureTriage)
+                        : null;
+                      if (failureDraft) {
+                        onNavigate?.('managedOps', {
+                          managedOpsRouteState: failureDraft,
+                        });
+                        return;
+                      }
+                      const dispatchDraft = correctiveAction?.dispatchActionBrief
+                        ? buildDispatchActionDraft(missionDispatchPressure)
+                        : null;
+                      if (dispatchDraft) {
+                        onNavigate?.('managedOps', {
+                          managedOpsRouteState: dispatchDraft,
+                        });
+                        return;
+                      }
+                      const connectorDraft = groupedFix?.correctiveAction?.opsPrompt ? buildConnectorActionDraft(correctiveAction, {
+                        title: groupedFix?.affectedCount > 1 ? groupedFix.title : correctiveAction.label,
+                        connectorLabel: groupedFix?.connectorLabel,
+                        affectedBranches: groupedFix?.affectedBranches?.map((branch) => branch.title) || [],
+                      }) : null;
+                      if (!connectorDraft) {
+                        onNavigate?.('managedOps', {
+                          managedOpsRouteState: {
+                            tab: 'create',
+                            quickstartPrompt: correctiveAction.opsPrompt,
+                            notice: `Commander staged the next control move from Intelligence: ${correctiveAction.label}.`,
+                            controlActionBrief: correctiveAction.controlActionBrief || null,
+                          },
+                        });
+                        return;
+                      }
+                      onNavigate?.('managedOps', {
+                        managedOpsRouteState: {
+                          tab: 'create',
+                          ...connectorDraft,
+                        },
+                      });
+                    }
                   }}
                 />
               </div>

@@ -82,6 +82,7 @@ function Dashboard() {
   const [activeRoute, setActiveRoute] = useState('overview');
   const [missionComposerDraft, setMissionComposerDraft] = useState(null);
   const [intelligenceRouteState, setIntelligenceRouteState] = useState(null);
+  const [managedOpsRouteState, setManagedOpsRouteState] = useState(null);
   const [cmdOpen, setCmdOpen] = useState(false);
   const [detailState, setDetailState] = useState(null);
   const { notificationsOpen, setNotificationsOpen, settingsOpen, setSettingsOpen, profileOpen, setProfileOpen, setPendingCount } = useSystemState();
@@ -139,6 +140,9 @@ function Dashboard() {
     }
     if (options?.intelligenceRouteState) {
       setIntelligenceRouteState(options.intelligenceRouteState);
+    }
+    if (options?.managedOpsRouteState) {
+      setManagedOpsRouteState(options.managedOpsRouteState);
     }
   }
 
@@ -273,13 +277,19 @@ function Dashboard() {
                 onNavigate={navigateTo}
               />
             )}
-            {activeRoute === 'managedOps' && <ManagedOpsView />}
+            {activeRoute === 'managedOps' && (
+              <ManagedOpsView
+                routeState={managedOpsRouteState}
+                onConsumeRouteState={() => setManagedOpsRouteState(null)}
+              />
+            )}
             {activeRoute === 'reports' && <ReportsView />}
             {activeRoute === 'intelligence' && (
               <IntelligenceView
                 key={intelligenceRouteState ? `intelligence-${intelligenceRouteState.tab || 'models'}-${intelligenceRouteState.selectedPolicyId || 'none'}-${intelligenceRouteState.adjustment || 'none'}` : 'intelligence'}
                 routeState={intelligenceRouteState}
                 onConsumeRouteState={() => setIntelligenceRouteState(null)}
+                onNavigate={navigateTo}
               />
             )}
             {activeRoute === 'review' && <ReviewRoomView />}

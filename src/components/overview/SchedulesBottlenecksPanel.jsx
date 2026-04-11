@@ -21,8 +21,8 @@ function badgeClasses(kind) {
 export function SchedulesBottlenecksPanel({ summary, schedules, loading, referenceNow }) {
   const blockers = [
     { label: 'Awaiting approval', value: summary.pendingApprovals, tone: 'text-aurora-amber' },
-    { label: 'Failed tasks', value: summary.failedTasks, tone: 'text-aurora-rose' },
-    { label: 'Stalled agents', value: summary.stalledAgents, tone: 'text-aurora-blue' },
+    { label: 'Held upstream', value: summary.graphHeldBranches || 0, tone: 'text-aurora-blue' },
+    { label: 'Blocked branches', value: summary.graphBlockedBranches || 0, tone: 'text-aurora-rose' },
   ];
   const sortedSchedules = [...schedules].sort((a, b) => {
     const aLate = a.status === 'active' && a.nextRunAt && new Date(a.nextRunAt).getTime() < referenceNow;
@@ -117,7 +117,7 @@ export function SchedulesBottlenecksPanel({ summary, schedules, loading, referen
           </div>
           {blockersTotal === 0 && (
             <div className="mt-4 ui-card-row border-aurora-green/15 bg-aurora-green/5 px-4 py-4 text-base font-medium leading-8 text-aurora-green">
-              All clear right now. No active approval, failure, or stalled-agent bottlenecks detected.
+              All clear right now. No active approval, upstream, or blocked-branch bottlenecks detected.
             </div>
           )}
           <div className="mt-4 space-y-3">
@@ -153,6 +153,10 @@ export function SchedulesBottlenecksPanel({ summary, schedules, loading, referen
             <div className="ui-stat flex items-center justify-between px-3 py-2 text-sm">
               <span className="flex items-center gap-2 text-text-muted"><Clock3 className="h-4 w-4 text-aurora-rose" /> Longest approval wait</span>
               <span className="font-mono text-text-primary">{summary.longestApprovalWaitLabel}</span>
+            </div>
+            <div className="ui-stat flex items-center justify-between px-3 py-2 text-sm">
+              <span className="flex items-center gap-2 text-text-muted"><GitBranch className="h-4 w-4 text-aurora-violet" /> Graph progress</span>
+              <span className="font-mono text-text-primary">{summary.graphProgressLabel || '0%'}</span>
             </div>
           </div>
         </div>

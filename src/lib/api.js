@@ -26,11 +26,16 @@ import {
   deriveRoutingDecision,
   mapRoutingPolicyFromDb,
 } from '../utils/routingPolicy';
-import { getBatchCommandSignals, getPatternApprovalBiasSummary, getPersistentPromotionGuidance, getRecurringAutonomyTuningSummary, inferAgentProvider } from '../utils/commanderAnalytics';
+import { getAutomationCandidates, getBatchCommandSignals, getCommanderNextMove, getExecutionAuditReadback, getFailureTriageSummary, getHybridApprovalSummary, getMissionCreateBrief, getPatternApprovalBiasSummary, getPersistentPromotionGuidance, getRecurringAdaptiveControlSummary, getRecurringAutonomyTuningSummary, inferAgentProvider } from '../utils/commanderAnalytics';
+import { buildExecutionReadiness, deriveBranchExecutionPosture, getTaskDispatchContract, getTaskDispatchSafety, hardenApprovalLevel, prioritizeMissionBranches } from '../utils/executionReadiness';
 
 // True when real Supabase env vars are set (not the placeholder)
 const isSupabaseConfigured = import.meta.env.VITE_SUPABASE_URL
   && !import.meta.env.VITE_SUPABASE_URL.includes('placeholder');
+
+function isMissingTableError(error) {
+  return ['42P01', 'PGRST205'].includes(error?.code || '') || /does not exist/i.test(String(error?.message || ''));
+}
 
 // ── Row mapper: snake_case DB → camelCase UI ────────────────────
 
@@ -259,6 +264,8 @@ function mapTaskRow(row) {
     durationMs: row.duration_ms || 0,
     costUsd:    parseFloat(row.cost_usd) || 0,
     resultText: row.result_text || '',
+    planBrief: row.plan_brief || row.planBrief || null,
+    planSummary: row.plan_summary || row.planSummary || null,
   };
 }
 
@@ -444,6 +451,56 @@ function getMissionExecutionPosture(payload) {
   };
 }
 
+function applyLaunchReadinessToExecutionPosture(posture, launchReadiness = null) {
+  if (!launchReadiness?.requiresHumanGate || posture.shouldPlanOnly) {
+    return posture;
+  }
+
+  return {
+    missionMode: 'watch_and_approve',
+    shouldPlanOnly: false,
+    shouldWatchAndApprove: true,
+    shouldAutoDispatch: false,
+  };
+}
+
+function deriveMissionApprovalLevel(payload = {}, fallbackApprovalLevel = 'risk_weighted') {
+  if (payload.repeat?.approvalPosture) return payload.repeat.approvalPosture;
+  if (payload.missionMode === 'watch_and_approve') return 'human_required';
+  if (payload.missionMode === 'plan_first') return 'risk_weighted';
+  return fallbackApprovalLevel;
+}
+
+async function fetchConnectedSystemsForUser(userId) {
+  if (!userId) return [];
+
+  const { data, error } = await supabase
+    .from('connected_systems')
+    .select('*')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    console.error('[api] fetchConnectedSystemsForUser:', error.message);
+    return [];
+  }
+
+  return (data || []).map((row) => ({
+    id: row.id,
+    integrationKey: row.integration_key || '',
+    displayName: row.display_name || row.integration_key || '',
+    category: row.category || 'System',
+    status: row.status || 'connected',
+    identifier: row.identifier || '',
+    capabilities: Array.isArray(row.capabilities) ? row.capabilities : [],
+    permissionScope: Array.isArray(row.permission_scope) ? row.permission_scope : [],
+    domain: row.domain || 'general',
+    trustLevel: row.trust_level || 'standard',
+    riskLevel: row.risk_level || 'medium',
+    metadata: row.metadata || {},
+  }));
+}
+
 function enforceRecurringMissionGuardrails(payload = {}) {
   if (!payload.repeat) return { payload, guardrails: [] };
 
@@ -573,6 +630,135 @@ async function inferAgentLaneDefaults(agentId) {
   };
 }
 
+function inferMissionDomain(intent = '', targetType = 'internal') {
+  const lower = String(intent || '').toLowerCase();
+  if (/(code|bug|debug|test|pr|repo|build)/.test(lower)) return 'build';
+  if (/(research|prospect|find|analyz|investigat|market|competitor)/.test(lower)) return 'research';
+  if (/(email|draft|outreach|crm|pipedrive|deal|customer|person|slack)/.test(lower)) return 'sell';
+  if (/(ops|shipment|tracking|delay|incident|war-room|vendor)/.test(lower)) return 'operate';
+  if (/(budget|finance|money|cost|roi)/.test(lower)) return 'money';
+  if (targetType !== 'internal') return 'sell';
+  return 'general';
+}
+
+function inferMissionIntentType(intent = '', outputType = 'summary') {
+  const lower = String(intent || '').toLowerCase();
+  if (/(draft|email|outreach|reply)/.test(lower) || outputType === 'email_drafts') return 'draft';
+  if (/(summary|summarize|brief|report|notes|crm|pipedrive)/.test(lower) || ['summary', 'report', 'crm_notes'].includes(outputType)) return 'summarize';
+  if (/(research|find|investigat|analyz|prospect)/.test(lower)) return 'research';
+  if (/(review|verify|validate|qa|check)/.test(lower)) return 'verify';
+  if (/(update|sync|triage|route|operate)/.test(lower)) return 'operate';
+  return 'general';
+}
+
+function inferMissionConstraints(payload = {}) {
+  const constraints = [];
+  if (payload.targetType && payload.targetType !== 'internal') {
+    constraints.push(`Deliver into ${payload.targetType.replaceAll('_', ' ')} instead of an internal-only artifact.`);
+  }
+  if (payload.when === 'repeat' && payload.repeat?.frequency) {
+    constraints.push(`Honor the ${payload.repeat.frequency} cadence without widening authority automatically.`);
+  }
+  if (payload.missionMode === 'watch_and_approve') {
+    constraints.push('Stop at the first human gate before the work can scale.');
+  } else if (payload.missionMode === 'plan_first') {
+    constraints.push('Build the graph first and hold execution until explicitly released.');
+  }
+  if (payload.mode === 'efficient') {
+    constraints.push('Bias decisions toward lower-cost execution unless trust is too weak.');
+  } else if (payload.mode === 'fast') {
+    constraints.push('Bias decisions toward faster completion while keeping approval posture intact.');
+  }
+  if (payload.outputType === 'custom' && payload.outputSpec) {
+    constraints.push(`Final artifact must match the custom output spec: ${payload.outputSpec}.`);
+  }
+  return constraints.slice(0, 3);
+}
+
+function buildStructuredMissionBrief(payload = {}, estimated = {}) {
+  const intent = String(payload.intent || '').trim();
+  const domain = inferMissionDomain(intent, payload.targetType);
+  const intentType = inferMissionIntentType(intent, payload.outputType);
+  const branchCount = Array.isArray(estimated.branches) ? estimated.branches.length : 0;
+  const riskLevel = branchCount >= 4 || payload.missionMode === 'watch_and_approve'
+    ? 'high'
+    : branchCount >= 2 || payload.mode === 'fast'
+      ? 'medium'
+      : 'low';
+  const approvalPosture = payload.missionMode === 'watch_and_approve'
+    ? 'human_required'
+    : payload.missionMode === 'plan_first'
+      ? 'plan_gated'
+      : riskLevel === 'high'
+        ? 'risk_weighted'
+        : 'auto_low_risk';
+  const costPosture = payload.mode === 'efficient'
+    ? 'cost_disciplined'
+    : payload.mode === 'fast'
+      ? 'speed_biased'
+      : 'balanced';
+  const outputLabel = payload.outputType === 'custom'
+    ? (payload.outputSpec || 'custom output')
+    : String(payload.outputType || 'summary').replaceAll('_', ' ');
+
+  return {
+    objective: intent || 'Mission intent still needs to be specified.',
+    domain,
+    intentType,
+    riskLevel,
+    approvalPosture,
+    costPosture,
+    successDefinition: `Complete the mission with a usable ${outputLabel} that lands cleanly without avoidable rescue pressure.`,
+    constraints: inferMissionConstraints(payload),
+  };
+}
+
+function buildExecutionPlanSummary(payload = {}, estimated = {}) {
+  const branches = Array.isArray(estimated.branches) ? estimated.branches : [];
+  const steps = Array.isArray(estimated.steps) ? estimated.steps : [];
+  const specialistRoles = [...new Set(branches.map((branch) => branch.agentRole).filter(Boolean))];
+  const hasParallel = branches.some((branch) => branch.executionStrategy === 'parallel');
+  const dependencyCount = branches.reduce((count, branch) => count + (Array.isArray(branch.dependsOn) ? branch.dependsOn.length : 0), 0);
+
+  return {
+    branchCount: branches.length || 1,
+    primaryStrategy: hasParallel ? 'hybrid_parallel' : 'sequential',
+    specialistRoles,
+    dependencyPosture: dependencyCount > 0 ? 'dependency_gated' : 'launch_ready',
+    verificationRequirement: payload.missionMode === 'watch_and_approve'
+      ? 'human_gate'
+      : specialistRoles.includes('verifier') || steps.length >= 3
+        ? 'verifier_branch'
+        : 'lightweight',
+  };
+}
+
+function summarizeMissionBrief(brief = null) {
+  if (!brief) return '';
+
+  return [
+    brief.domain && brief.intentType ? `${brief.domain}/${brief.intentType}` : null,
+    brief.riskLevel ? `${brief.riskLevel} risk` : null,
+    brief.approvalPosture ? `${String(brief.approvalPosture).replaceAll('_', ' ')} approval` : null,
+    brief.costPosture ? `${brief.costPosture} cost posture` : null,
+  ].filter(Boolean).join(' • ');
+}
+
+function summarizeExecutionPlan(planSummary = null) {
+  if (!planSummary) return '';
+
+  return [
+    Number.isFinite(Number(planSummary.branchCount))
+      ? `${planSummary.branchCount} branch${Number(planSummary.branchCount) === 1 ? '' : 'es'}`
+      : null,
+    planSummary.primaryStrategy ? `${planSummary.primaryStrategy.replaceAll('_', ' ')} strategy` : null,
+    planSummary.verificationRequirement ? `${planSummary.verificationRequirement.replaceAll('_', ' ')} verification` : null,
+    Array.isArray(planSummary.specialistRoles) && planSummary.specialistRoles.length
+      ? `roles ${planSummary.specialistRoles.join(', ')}`
+      : null,
+  ].filter(Boolean).join(' • ');
+}
+
 function estimateMissionPlan(payload) {
   const lower = payload.intent.toLowerCase();
   const steps = [];
@@ -613,6 +799,29 @@ function estimateMissionPlan(payload) {
     estimatedDuration: duration,
     estimatedCostRange: costRange,
     estimatedCostCents: centsBase * complexity,
+    brief: buildStructuredMissionBrief(payload, {
+      branches: steps.map((step, index) => ({
+        title: step.title,
+        description: step.description,
+        agentRole: index === 0 ? 'planner' : index === steps.length - 1 ? 'verifier' : 'executor',
+        executionStrategy: index === 0 ? 'sequential' : 'parallel',
+        branchLabel: index === 0 ? 'Command' : `Branch ${index}`,
+        dependsOn: index === 0 ? [] : [steps[0].title],
+      })),
+      steps,
+      estimatedCostCents: centsBase * complexity,
+    }),
+    planSummary: buildExecutionPlanSummary(payload, {
+      branches: steps.map((step, index) => ({
+        title: step.title,
+        description: step.description,
+        agentRole: index === 0 ? 'planner' : index === steps.length - 1 ? 'verifier' : 'executor',
+        executionStrategy: index === 0 ? 'sequential' : 'parallel',
+        branchLabel: index === 0 ? 'Command' : `Branch ${index}`,
+        dependsOn: index === 0 ? [] : [steps[0].title],
+      })),
+      steps,
+    }),
   };
 }
 
@@ -803,25 +1012,53 @@ async function buildMissionSubtasks({
   routingDecision,
   observedWinningLane,
   persistentLaneSignals,
+  missionBrief,
+  planSummary,
   runAt,
   scheduleType,
 }) {
   if (!Array.isArray(branches) || branches.length <= 1) return [];
 
+  const controlPressure = payload.controlContext?.failureTriage?.failedCount > 0
+    || payload.controlContext?.hybridApproval?.totalQueue > 2
+    ? 'high'
+    : 'stable';
+  const orderedBranches = prioritizeMissionBranches({
+    branches,
+    launchReadiness: payload.launchReadiness || null,
+    controlPressure,
+  });
   const branchIdByTitle = new Map();
   const rows = [];
+  orderedBranches.forEach((branch) => {
+    branchIdByTitle.set(branch.title, crypto.randomUUID());
+  });
 
-  for (const [index, branch] of branches.entries()) {
-    const stepId = crypto.randomUUID();
+  for (const [index, branch] of orderedBranches.entries()) {
+    const stepId = branchIdByTitle.get(branch.title) || crypto.randomUUID();
     const first = index === 0;
-    const branchCanRunImmediately = first || branch.executionStrategy === 'parallel';
     const executionPosture = getMissionExecutionPosture(payload);
-    const branchRequiresApproval = executionPosture.shouldWatchAndApprove && branchCanRunImmediately;
-    const branchShouldStayPlanned = executionPosture.shouldPlanOnly || (!branchCanRunImmediately && !branchRequiresApproval);
-    branchIdByTitle.set(branch.title, stepId);
+    const branchExecutionPosture = deriveBranchExecutionPosture({
+      branch,
+      branchIndex: index,
+      branchCount: orderedBranches.length,
+      launchReadiness: payload.launchReadiness || null,
+    });
     const dependencies = Array.isArray(branch.dependsOn)
       ? branch.dependsOn.map((dependencyTitle) => branchIdByTitle.get(dependencyTitle)).filter(Boolean)
       : [];
+    const dispatchContract = dependencies.length > 0
+      ? 'release_on_upstream_completion'
+      : branchExecutionPosture.executionStrategy === 'parallel' || branch.executionStrategy === 'parallel'
+        ? 'safe_parallel_fanout'
+        : 'serialized_mission_order';
+    const branchCanRunImmediately = dependencies.length === 0
+      && (first || branchExecutionPosture.executionStrategy === 'parallel' || branch.executionStrategy === 'parallel')
+      && !branchExecutionPosture.deferUntilSafeLane;
+    const baseBranchApprovalLevel = deriveMissionApprovalLevel(payload, routingDecision.approvalLevel);
+    const branchApprovalLevel = hardenApprovalLevel(baseBranchApprovalLevel, branchExecutionPosture.recommendedApprovalLevel || baseBranchApprovalLevel);
+    const branchRequiresApproval = branchApprovalLevel === 'human_required' || (executionPosture.shouldWatchAndApprove && branchCanRunImmediately);
+    const branchShouldStayPlanned = executionPosture.shouldPlanOnly || branchExecutionPosture.deferUntilSafeLane || (!branchCanRunImmediately && !branchRequiresApproval);
     const assignment = await resolveBranchAssignment({
       missionId,
       branch: {
@@ -831,6 +1068,8 @@ async function buildMissionSubtasks({
           : routingDecision.recommendedSkillNames,
       },
       user,
+      branchIndex: index,
+      branchCount: orderedBranches.length,
       agents: payload.agents || [],
       routingPolicy: payload.routingPolicy || null,
       selectedAgent: payload.selectedAgent || null,
@@ -838,6 +1077,8 @@ async function buildMissionSubtasks({
       routingDecision,
       observedWinningLane,
       persistentLaneSignals,
+      launchReadiness: payload.launchReadiness || null,
+      branchExecutionPosture,
     });
 
     rows.push({
@@ -874,17 +1115,19 @@ async function buildMissionSubtasks({
       root_mission_id: missionId,
       parent_id: missionId,
       routing_policy_id: routingPolicyId || null,
-      routing_reason: `${routingDecision.routingReason} | skills ${(assignment.recommendedSkillNames || routingDecision.recommendedSkillNames || []).join(', ') || 'none'} | ${assignment.agentRole || branch.agentRole || 'executor'} branch ${index + 1}/${branches.length}`,
+      routing_reason: `${routingDecision.routingReason} | skills ${(assignment.recommendedSkillNames || routingDecision.recommendedSkillNames || []).join(', ') || 'none'} | ${assignment.agentRole || branch.agentRole || 'executor'} branch ${index + 1}/${orderedBranches.length}${missionBrief?.objective ? ` | objective ${missionBrief.objective}` : ''}${planSummary?.primaryStrategy ? ` | ${planSummary.primaryStrategy.replaceAll('_', ' ')} plan` : ''}${planSummary?.verificationRequirement ? ` | ${planSummary.verificationRequirement.replaceAll('_', ' ')} verification` : ''}${branchExecutionPosture.available ? ` | connector posture ${branchExecutionPosture.title.toLowerCase()}${branchExecutionPosture.modes.length ? ` (${branchExecutionPosture.modes.join('/')})` : ''}` : ''}${branchExecutionPosture.fallbackStrategy ? ` | fallback ${branchExecutionPosture.fallbackStrategy.replaceAll('_', ' ')}` : ''}${branch.planningReason ? ` | order ${branch.planningReason}` : ''} | dispatch contract ${dispatchContract.replaceAll('_', ' ')}${dependencies.length > 0 ? ' | release trigger upstream completion' : ''}`,
       domain: routingDecision.domain,
       intent_type: routingDecision.intentType,
       budget_class: routingDecision.budgetClass,
       risk_level: routingDecision.riskLevel,
       context_pack_ids: routingDecision.contextPackIds,
       required_capabilities: routingDecision.requiredCapabilities,
-      approval_level: routingDecision.approvalLevel,
+      approval_level: branchApprovalLevel,
       depends_on: dependencies,
       agent_role: assignment.agentRole || branch.agentRole || 'executor',
-      execution_strategy: branch.executionStrategy || 'sequential',
+      execution_strategy: dependencies.length === 0
+        ? (branchExecutionPosture.executionStrategy || branch.executionStrategy || 'sequential')
+        : 'sequential',
       branch_label: branch.branchLabel || branch.title,
       provider_override: assignment.providerOverride || null,
       model_override: assignment.modelOverride || null,
@@ -898,6 +1141,8 @@ async function buildMissionSubtasks({
 async function resolveBranchAssignment({
   missionId,
   branch,
+  branchIndex = 0,
+  branchCount = 1,
   user,
   agents,
   routingPolicy,
@@ -906,12 +1151,23 @@ async function resolveBranchAssignment({
   commander,
   observedWinningLane,
   persistentLaneSignals,
+  launchReadiness = null,
+  branchExecutionPosture = null,
 }) {
   const liveAgents = agents.filter((agent) => !agent.isSyntheticCommander);
+  const readinessSystems = launchReadiness
+    ? [...(launchReadiness.missingSystems || []), ...(launchReadiness.degradedSystems || [])]
+    : [];
+  const needsConnectorStabilization = readinessSystems.length > 0;
+  const inferredReadinessRole = needsConnectorStabilization
+    ? (branchIndex === 0 ? 'ops' : branchIndex === branchCount - 1 ? 'verifier' : null)
+    : null;
   const branchRole = branch.agentRole
+    || branchExecutionPosture?.preferredRole
     || (observedWinningLane?.confidence === 'high' && observedWinningLane?.agentRole && !['commander', 'executor'].includes(observedWinningLane.agentRole)
       ? observedWinningLane.agentRole
       : null)
+    || inferredReadinessRole
     || routingDecision?.selectedAgentRole
     || routingPolicy?.preferredAgentRole
     || selectedAgent?.role
@@ -949,6 +1205,12 @@ async function resolveBranchAssignment({
   const recommendedSkillNames = Array.isArray(branch.recommendedSkillNames)
     ? branch.recommendedSkillNames
     : [];
+  const readinessSkillNames = [
+    ...(needsConnectorStabilization ? ['operations', 'integration'] : []),
+    ...readinessSystems.map((system) => system.key).filter(Boolean),
+    ...((branchExecutionPosture?.skillHints) || []),
+  ];
+  const finalRecommendedSkillNames = [...new Set([...recommendedSkillNames, ...readinessSkillNames])];
 
   const exactRoleMatches = liveAgents
     .filter((agent) => agent.role === branchRole)
@@ -964,8 +1226,8 @@ async function resolveBranchAssignment({
         const leftProviderMatch = Number(leftProvider === providerOverride);
         if (rightProviderMatch !== leftProviderMatch) return rightProviderMatch - leftProviderMatch;
       }
-      const leftSkillScore = (left.skills || []).filter((skill) => recommendedSkillNames.includes(skill)).length;
-      const rightSkillScore = (right.skills || []).filter((skill) => recommendedSkillNames.includes(skill)).length;
+      const leftSkillScore = (left.skills || []).filter((skill) => finalRecommendedSkillNames.includes(skill)).length;
+      const rightSkillScore = (right.skills || []).filter((skill) => finalRecommendedSkillNames.includes(skill)).length;
       return rightSkillScore - leftSkillScore;
     });
   const roleCandidates = exactRoleMatches.length
@@ -1012,7 +1274,7 @@ async function resolveBranchAssignment({
       selectedAgent,
       rootMissionId: missionId,
       objective: branch.title || branch.description || `${branchRole} branch`,
-      recommendedSkillNames,
+      recommendedSkillNames: finalRecommendedSkillNames,
     }).catch((error) => {
       console.error(`[api] ${durableGap ? 'createPersistentBranchSpecialist' : 'ensureBranchSpecialistAgent'}:`, error.message);
       return null;
@@ -1027,7 +1289,7 @@ async function resolveBranchAssignment({
     agentName: assignedAgent?.name || selectedAgent?.name || commander?.name || 'Unknown',
     providerOverride,
     modelOverride,
-    recommendedSkillNames,
+    recommendedSkillNames: finalRecommendedSkillNames,
   };
 }
 
@@ -1058,12 +1320,15 @@ export async function previewMissionPlan(payload) {
     }
 
     const data = await res.json();
+    const fallback = estimateMissionPlan(payload);
     return {
-      steps: Array.isArray(data.steps) ? data.steps : estimateMissionPlan(payload).steps,
-      branches: Array.isArray(data.branches) ? data.branches : estimateMissionPlan(payload).branches,
-      estimatedDuration: data.estimatedDuration || estimateMissionPlan(payload).estimatedDuration,
-      estimatedCostRange: data.estimatedCostRange || estimateMissionPlan(payload).estimatedCostRange,
-      estimatedCostCents: data.estimatedCostCents ?? estimateMissionPlan(payload).estimatedCostCents,
+      steps: Array.isArray(data.steps) ? data.steps : fallback.steps,
+      branches: Array.isArray(data.branches) ? data.branches : fallback.branches,
+      estimatedDuration: data.estimatedDuration || fallback.estimatedDuration,
+      estimatedCostRange: data.estimatedCostRange || fallback.estimatedCostRange,
+      estimatedCostCents: data.estimatedCostCents ?? fallback.estimatedCostCents,
+      brief: data.brief && typeof data.brief === 'object' ? { ...fallback.brief, ...data.brief } : fallback.brief,
+      planSummary: data.planSummary && typeof data.planSummary === 'object' ? { ...fallback.planSummary, ...data.planSummary } : fallback.planSummary,
       source: data.source || 'planner_endpoint',
     };
   } catch {
@@ -1095,6 +1360,111 @@ async function dispatchMissionNow({ taskId, agentId, taskDescription }) {
   }
 
   return result;
+}
+
+function isCompletedDependencyTask(task = {}) {
+  const status = String(task.status || '').toLowerCase();
+  const workflowStatus = String(task.workflowStatus || task.workflow_status || '').toLowerCase();
+  return ['done', 'completed'].includes(status) || workflowStatus === WORKFLOW_STATUS.COMPLETED;
+}
+
+function isFailedDependencyTask(task = {}) {
+  const status = String(task.status || '').toLowerCase();
+  const workflowStatus = String(task.workflowStatus || task.workflow_status || '').toLowerCase();
+  return ['failed', 'error', 'cancelled'].includes(status) || [WORKFLOW_STATUS.FAILED, WORKFLOW_STATUS.CANCELLED].includes(workflowStatus);
+}
+
+async function releaseDependencyReadyTasks({ user, tasks = [] }) {
+  const byId = new Map(tasks.map((task) => [task.id, task]));
+  const candidates = tasks.filter((task) => {
+    const status = String(task.status || '').toLowerCase();
+    if (!['pending', 'blocked'].includes(status)) return false;
+    if (task.requiresApproval) return false;
+    const dependencies = Array.isArray(task.dependsOn) ? task.dependsOn : [];
+    if (!dependencies.length) return false;
+    const upstream = dependencies.map((dependencyId) => byId.get(dependencyId)).filter(Boolean);
+    if (!upstream.length || upstream.length !== dependencies.length) return false;
+    if (upstream.some((dependency) => isFailedDependencyTask(dependency))) return false;
+    return upstream.every((dependency) => isCompletedDependencyTask(dependency));
+  });
+
+  let released = 0;
+
+  for (const task of candidates) {
+    const claimTimestamp = new Date().toISOString();
+    const { data: releasedTask, error } = await supabase
+      .from('tasks')
+      .update({
+        status: 'queued',
+        workflow_status: WORKFLOW_STATUS.READY,
+        lane: inferLane(task.priority ?? 5, false, 'queued'),
+        updated_at: claimTimestamp,
+      })
+      .eq('id', task.id)
+      .eq('user_id', user.id)
+      .in('status', ['pending', 'blocked'])
+      .select('id')
+      .maybeSingle();
+
+    if (error) {
+      console.error('[api] releaseDependencyReadyTasks:', error.message);
+      continue;
+    }
+
+    if (!releasedTask) continue;
+
+    released += 1;
+    const message = `[dependency-release] ${(task.title || task.name || task.id)} (${task.id}) on root ${task.rootMissionId || task.id} was released after upstream dependencies completed.`;
+    await logBranchEvent({
+      userId: user.id,
+      agentId: task.agentId || null,
+      message,
+    });
+    await persistExecutionControlEvent({
+      userId: user.id,
+      task: {
+        id: task.id,
+        rootMissionId: task.rootMissionId || task.id,
+        agentId: task.agentId || null,
+        domain: task.domain || 'general',
+        intentType: task.intentType || 'general',
+        providerOverride: task.providerOverride || null,
+        modelOverride: task.modelOverride || null,
+        scheduleType: task.scheduleType || 'once',
+      },
+      rootMissionId: task.rootMissionId || task.id,
+      agentId: task.agentId || null,
+      eventType: 'dependency_release',
+      eventSource: 'runtime',
+      tone: 'teal',
+      message,
+      domain: task.domain || 'general',
+      intentType: task.intentType || 'general',
+      provider: task.providerOverride || null,
+      model: task.modelOverride || null,
+      scheduleType: task.scheduleType || 'once',
+      metadata: buildExecutionControlMetadata({
+        controlCategory: 'routing',
+        actionType: 'dependency_release',
+        triageVerdict: 'dependency_cleared',
+        nextMove: 'dispatch_ready_branch',
+        previousStatus: task.status || 'pending',
+        nextStatus: 'queued',
+        previousApprovalLevel: task.approvalLevel || 'risk_weighted',
+        nextApprovalLevel: task.approvalLevel || 'risk_weighted',
+        approvalState: 'not_required',
+        reason: 'Upstream dependencies completed, so this branch was released into runnable execution.',
+        extra: {
+          dependsOn: Array.isArray(task.dependsOn) ? task.dependsOn : [],
+          releaseTrigger: 'upstream_completion',
+          dispatchContract: 'release_on_upstream_completion',
+          releaseChainState: 'cleared',
+        },
+      }),
+    });
+  }
+
+  return released;
 }
 
 async function touchAgentHeartbeat(agentId, status) {
@@ -1171,6 +1541,81 @@ async function persistTaskIntervention({
   if (error) {
     console.error('[api] persistTaskIntervention:', error.message);
   }
+}
+
+function buildExecutionControlMetadata({
+  controlCategory = 'intervention',
+  actionType = 'override',
+  triageVerdict = 'captured',
+  nextMove = 'review',
+  previousStatus = null,
+  nextStatus = null,
+  previousApprovalLevel = null,
+  nextApprovalLevel = null,
+  approvalState = null,
+  batchSize = null,
+  batchRoots = [],
+  targetAgent = null,
+  reviewId = null,
+  reviewDecision = null,
+  reason = null,
+  extra = {},
+} = {}) {
+  return {
+    controlCategory,
+    actionType,
+    triageVerdict,
+    nextMove,
+    previousStatus,
+    nextStatus,
+    previousApprovalLevel,
+    nextApprovalLevel,
+    approvalState,
+    batchSize,
+    batchRoots: Array.isArray(batchRoots) ? batchRoots.filter(Boolean) : [],
+    targetAgentId: targetAgent?.id || null,
+    targetAgentName: targetAgent?.name || null,
+    reviewId,
+    reviewDecision,
+    reason,
+    ...extra,
+  };
+}
+
+async function persistExecutionControlEvent({
+  userId,
+  task = null,
+  rootMissionId = null,
+  agentId = null,
+  eventType = 'override',
+  eventSource = 'manual',
+  tone = 'blue',
+  message = '',
+  domain = 'general',
+  intentType = 'general',
+  provider = null,
+  model = null,
+  scheduleType = 'once',
+  metadata = {},
+}) {
+  if (!userId || !message) return;
+
+  await persistTaskIntervention({
+    userId,
+    taskId: task?.id || null,
+    rootMissionId: rootMissionId || task?.root_mission_id || task?.rootMissionId || task?.id || null,
+    agentId: agentId ?? task?.agent_id ?? task?.agentId ?? null,
+    eventType,
+    eventSource,
+    tone,
+    message,
+    domain: domain || task?.domain || 'general',
+    intentType: intentType || task?.intent_type || task?.intentType || 'general',
+    provider: provider ?? task?.provider_override ?? task?.providerOverride ?? null,
+    model: model ?? task?.model_override ?? task?.modelOverride ?? null,
+    scheduleType: scheduleType || task?.schedule_type || task?.scheduleType || 'once',
+    metadata,
+  });
 }
 
 async function persistSpecialistLifecycleEvent({
@@ -1430,6 +1875,459 @@ async function fetchRecentBatchAuditLogs(userId) {
     }));
 }
 
+async function fetchRecentTasksForControlContext(userId) {
+  if (!userId) return [];
+
+  const { data, error } = await supabase
+    .from('tasks')
+    .select('*')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false })
+    .limit(180);
+
+  if (error) {
+    console.error('[api] fetchRecentTasksForControlContext:', error.message);
+    return [];
+  }
+
+  return (data || []).map(mapTaskRow);
+}
+
+async function fetchRecentInterventionsForControlContext(userId) {
+  if (!userId) return [];
+
+  const { data, error } = await supabase
+    .from('task_interventions')
+    .select('*')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false })
+    .limit(160);
+
+  if (error) {
+    console.error('[api] fetchRecentInterventionsForControlContext:', error.message);
+    return [];
+  }
+
+  return (data || []).map((row) => ({
+    id: row.id,
+    taskId: row.task_id || null,
+    rootMissionId: row.root_mission_id || null,
+    agentId: row.agent_id || null,
+    eventType: row.event_type || 'override',
+    eventSource: row.event_source || 'runtime',
+    tone: row.tone || 'blue',
+    message: row.message || '',
+    domain: row.domain || 'general',
+    intentType: row.intent_type || 'general',
+    provider: row.provider || null,
+    model: row.model || null,
+    scheduleType: row.schedule_type || 'once',
+    metadata: row.metadata || {},
+    createdAt: row.created_at,
+    timestamp: row.created_at,
+  }));
+}
+
+async function fetchRecentApprovalAuditForControlContext(userId) {
+  if (!userId) return [];
+
+  const { data, error } = await supabase
+    .from('approval_audit')
+    .select('*')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false })
+    .limit(120);
+
+  if (error) {
+    if (isMissingTableError(error)) return [];
+    console.error('[api] fetchRecentApprovalAuditForControlContext:', error.message);
+    return [];
+  }
+
+  return (data || []).map((row) => ({
+    id: row.id,
+    reviewId: row.review_id || null,
+    decision: row.decision || 'approved',
+    feedback: row.feedback || '',
+    createdAt: row.created_at,
+  }));
+}
+
+async function fetchPendingReviewsForControlContext(userId) {
+  if (!userId) return [];
+
+  const { data, error } = await supabase
+    .from('pending_reviews')
+    .select('id,status')
+    .eq('user_id', userId)
+    .in('status', ['awaiting_approval', 'needs_intervention'])
+    .order('created_at', { ascending: false })
+    .limit(120);
+
+  if (error) {
+    if (isMissingTableError(error)) return [];
+    console.error('[api] fetchPendingReviewsForControlContext:', error.message);
+    return [];
+  }
+
+  return (data || []).map((row) => ({
+    id: row.id,
+    status: row.status || 'awaiting_approval',
+  }));
+}
+
+function filterTasksForMission(tasks = [], missionId = null) {
+  if (!missionId) return tasks;
+  return tasks.filter((task) => task.rootMissionId === missionId || task.id === missionId);
+}
+
+function filterInterventionsForMission(interventions = [], missionId = null) {
+  if (!missionId) return interventions;
+  return interventions.filter((entry) => entry.rootMissionId === missionId || entry.taskId === missionId);
+}
+
+async function fetchExecutionControlContext(userId, missionId = null) {
+  if (!userId) {
+    return {
+      tasks: [],
+      interventions: [],
+      logs: [],
+      approvalAudit: [],
+      pendingReviews: [],
+      hybridApproval: { available: false, totalQueue: 0, tone: 'teal' },
+      failureTriage: { available: false, failedCount: 0, tone: 'teal', nextMove: 'keep flowing' },
+      executionAudit: { available: false, entries: [] },
+      commanderNextMove: null,
+    };
+  }
+
+  const [tasks, interventions, logs, approvalAudit, pendingReviews] = await Promise.all([
+    fetchRecentTasksForControlContext(userId),
+    fetchRecentInterventionsForControlContext(userId),
+    fetchRecentBatchAuditLogs(userId),
+    fetchRecentApprovalAuditForControlContext(userId),
+    fetchPendingReviewsForControlContext(userId),
+  ]);
+
+  const scopedTasks = filterTasksForMission(tasks, missionId);
+  const scopedInterventions = filterInterventionsForMission(interventions, missionId);
+  const scopedReviews = missionId ? [] : pendingReviews;
+
+  return {
+    tasks: scopedTasks,
+    interventions: scopedInterventions,
+    logs,
+    approvalAudit,
+    pendingReviews: scopedReviews,
+    hybridApproval: getHybridApprovalSummary({
+      tasks: scopedTasks,
+      reviews: scopedReviews,
+      interventions: scopedInterventions,
+      approvalAudit,
+    }),
+    failureTriage: getFailureTriageSummary({
+      tasks: scopedTasks,
+      interventions: scopedInterventions,
+      logs,
+      mission: missionId ? { id: missionId, rootMissionId: missionId } : null,
+    }),
+    executionAudit: getExecutionAuditReadback({
+      interventions: scopedInterventions,
+      approvalAudit: missionId ? [] : approvalAudit,
+      logs,
+      mission: missionId ? { id: missionId, rootMissionId: missionId } : null,
+      limit: 8,
+    }),
+    commanderNextMove: getCommanderNextMove({
+      tasks: scopedTasks,
+      reviews: scopedReviews,
+      schedules: [],
+      agents: [],
+      interventions: scopedInterventions,
+      logs,
+      approvalAudit: missionId ? [] : approvalAudit,
+      costData: null,
+      learningMemory: null,
+    }),
+  };
+}
+
+function deriveExecutionControlPosture({
+  payload = {},
+  executionPosture,
+  missionApprovalLevel = 'risk_weighted',
+  routingDecision,
+  launchReadiness,
+  controlContext,
+}) {
+  if (!executionPosture) {
+    return {
+      executionPosture,
+      missionApprovalLevel,
+      guardrails: [],
+      controlOrder: null,
+    };
+  }
+
+  const hybridApproval = controlContext?.hybridApproval || { totalQueue: 0, tone: 'teal' };
+  const failureTriage = controlContext?.failureTriage || { failedCount: 0, tone: 'teal', nextMove: 'keep flowing' };
+  const executionAudit = controlContext?.executionAudit || { entries: [] };
+  const commanderNextMove = controlContext?.commanderNextMove || null;
+  const latestAuditEntry = executionAudit.entries?.[0] || null;
+  const latestNextMove = String(commanderNextMove?.nextMove || latestAuditEntry?.nextMove || failureTriage.nextMove || '').toLowerCase();
+  const nextMoveSource = String(commanderNextMove?.source || '').toLowerCase();
+  const approvalQueue = Number(hybridApproval.totalQueue || 0);
+  const failureCount = Number(failureTriage.failedCount || 0);
+  const severePressure = approvalQueue >= 6
+    || failureCount >= 3
+    || latestNextMove.includes('approval')
+    || nextMoveSource === 'failure_triage';
+  const moderatePressure = severePressure
+    || approvalQueue >= 3
+    || failureCount >= 1
+    || String(failureTriage.tone || '') === 'rose'
+    || latestNextMove.includes('reroute')
+    || latestNextMove.includes('dependency')
+    || nextMoveSource === 'grouped_connector_blocker'
+    || nextMoveSource === 'connector_branch_pressure'
+    || nextMoveSource === 'dispatch_pressure'
+    || nextMoveSource === 'hybrid_approval';
+  const cleanTrail = approvalQueue === 0
+    && failureCount === 0
+    && String(hybridApproval.tone || '') === 'teal'
+    && !latestNextMove.includes('approval')
+    && !latestNextMove.includes('reroute');
+
+  let nextExecutionPosture = { ...executionPosture };
+  let nextApprovalLevel = missionApprovalLevel;
+  const guardrails = [];
+
+  if (moderatePressure) {
+    if (executionPosture.missionMode === 'do_now' && !launchReadiness?.requiresHumanGate) {
+      nextExecutionPosture = {
+        missionMode: 'watch_and_approve',
+        shouldPlanOnly: false,
+        shouldWatchAndApprove: true,
+        shouldAutoDispatch: false,
+      };
+      guardrails.push('Hardened mission mode because approval or recovery pressure is elevated in recent control memory.');
+    }
+
+    const hardenedLevel = hardenApprovalLevel(
+      nextApprovalLevel,
+      severePressure ? 'human_required' : 'risk_weighted',
+    );
+    if (hardenedLevel !== nextApprovalLevel) {
+      nextApprovalLevel = hardenedLevel;
+      guardrails.push(severePressure
+        ? 'Raised launch approval to human-required because recent control memory is noisy.'
+        : 'Kept launch approval risk-weighted because recent control memory is still fragile.');
+    }
+  } else if (
+    cleanTrail
+    && payload.missionMode === 'do_now'
+    && String(routingDecision?.riskLevel || 'medium') === 'low'
+    && !launchReadiness?.requiresHumanGate
+    && nextApprovalLevel === 'risk_weighted'
+  ) {
+    nextApprovalLevel = 'auto_low_risk';
+    guardrails.push('Relaxed launch approval to auto-low-risk because recent control memory is clean and this mission is low-risk.');
+  }
+
+  return {
+    executionPosture: nextExecutionPosture,
+    missionApprovalLevel: nextApprovalLevel,
+    guardrails,
+    controlOrder: latestAuditEntry
+      ? {
+          label: commanderNextMove?.title || latestAuditEntry.label,
+          nextMove: commanderNextMove?.nextMove || latestAuditEntry.nextMove || null,
+          detail: commanderNextMove?.detail || latestAuditEntry.detail || '',
+        }
+      : commanderNextMove
+      ? {
+          label: commanderNextMove.title,
+          nextMove: commanderNextMove.nextMove || null,
+          detail: commanderNextMove.detail || '',
+        }
+      : null,
+  };
+}
+
+function deriveRetryControlPosture(task = {}, controlContext = null) {
+  const interventions = Array.isArray(controlContext?.interventions) ? controlContext.interventions : [];
+  const related = interventions.filter((entry) => entry.rootMissionId === (task.root_mission_id || task.rootMissionId || task.id) || entry.taskId === task.id);
+  const retryCount = related.filter((entry) => entry.eventType === 'retry').length;
+  const rerouteCount = related.filter((entry) => ['reroute', 'interrupt_redirect', 'dependency'].includes(entry.eventType)).length;
+  const stopCount = related.filter((entry) => entry.eventType === 'stop').length;
+  const failureTriage = controlContext?.failureTriage || null;
+  const latestNextMove = String(failureTriage?.nextMove || '').toLowerCase();
+  const dispatchContract = getTaskDispatchContract({
+    ...task,
+    routingReason: task.routing_reason || task.routingReason || '',
+    dependsOn: Array.isArray(task.depends_on) ? task.depends_on : task.dependsOn,
+  }, interventions);
+
+  if (dispatchContract === 'release_on_upstream_completion') {
+    return {
+      status: 'blocked',
+      workflowStatus: WORKFLOW_STATUS.BLOCKED,
+      lane: 'blocked',
+      requiresApproval: false,
+      approvalLevel: task?.approval_level || 'risk_weighted',
+      triageVerdict: 'release_chain_recovery',
+      nextMove: 'clear_release_chain',
+      reason: 'Retry stayed blocked because this branch still depends on upstream release-chain recovery before another rerun makes sense.',
+    };
+  }
+
+  const shouldGuardRetry = retryCount >= 1 && (
+    rerouteCount >= 1
+    || stopCount >= 1
+    || latestNextMove.includes('approval')
+    || latestNextMove.includes('reroute')
+    || String(failureTriage?.tone || '') === 'rose'
+  );
+
+  if (!shouldGuardRetry) {
+    return {
+      status: 'queued',
+      workflowStatus: WORKFLOW_STATUS.READY,
+      lane: 'active',
+      requiresApproval: false,
+      approvalLevel: task?.approval_level || 'risk_weighted',
+      triageVerdict: dispatchContract === 'safe_parallel_fanout' ? 'safe_parallel_recovery' : 'recovery_started',
+      nextMove: dispatchContract === 'safe_parallel_fanout' ? 'watch_retry_on_safe_parallel_lane' : 'watch_retry',
+      reason: dispatchContract === 'safe_parallel_fanout'
+        ? 'Manual retry restarted this branch on a safe-parallel lane so recovery can continue without forcing tighter serialized drag.'
+        : 'Manual retry restarted this branch on a ready lane.',
+    };
+  }
+
+  return {
+    status: 'needs_approval',
+    workflowStatus: WORKFLOW_STATUS.WAITING_ON_HUMAN,
+    lane: 'approvals',
+    requiresApproval: true,
+    approvalLevel: hardenApprovalLevel(task?.approval_level || 'risk_weighted', 'human_required'),
+    triageVerdict: 'guarded_retry',
+    nextMove: rerouteCount > 0 ? 'review_retry_or_reroute' : 'review_retry',
+    reason: 'Retry was held for review because recent rescue history shows this branch needs a tighter recovery decision before rerunning.',
+  };
+}
+
+async function fetchMissionCreateInterventions(userId, rootMissionId) {
+  if (!userId || !rootMissionId) return [];
+
+  const { data, error } = await supabase
+    .from('task_interventions')
+    .select('*')
+    .eq('user_id', userId)
+    .eq('root_mission_id', rootMissionId)
+    .eq('event_type', 'mission_create')
+    .order('created_at', { ascending: false })
+    .limit(12);
+
+  if (error) {
+    console.error('[api] fetchMissionCreateInterventions:', error.message);
+    return [];
+  }
+
+  return (data || []).map((row) => ({
+    id: row.id,
+    taskId: row.task_id || null,
+    rootMissionId: row.root_mission_id || null,
+    eventType: row.event_type || 'mission_create',
+    eventSource: row.event_source || 'mission_create',
+    tone: row.tone || 'teal',
+    message: row.message || '',
+    domain: row.domain || 'general',
+    intentType: row.intent_type || 'general',
+    provider: row.provider || null,
+    model: row.model || null,
+    scheduleType: row.schedule_type || 'once',
+    metadata: row.metadata || {},
+    createdAt: row.created_at,
+    timestamp: row.created_at,
+  }));
+}
+
+async function fetchRecurringAdaptiveCandidateForSchedule(userId, schedule = null) {
+  if (!userId || !schedule?.name) return null;
+
+  const [{ data: taskRows, error: taskError }, { data: interventionRows, error: interventionError }, { data: outcomeRows, error: outcomeError }] = await Promise.all([
+    supabase
+      .from('tasks')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('schedule_type', 'recurring')
+      .order('created_at', { ascending: false })
+      .limit(180),
+    supabase
+      .from('task_interventions')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('schedule_type', 'recurring')
+      .order('created_at', { ascending: false })
+      .limit(240),
+    supabase
+      .from('task_outcomes')
+      .select('id,task_id,root_mission_id,score')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+      .limit(180),
+  ]);
+
+  if (taskError) {
+    console.error('[api] fetchRecurringAdaptiveCandidateForSchedule tasks:', taskError.message);
+    return null;
+  }
+  if (interventionError) {
+    console.error('[api] fetchRecurringAdaptiveCandidateForSchedule interventions:', interventionError.message);
+    return null;
+  }
+  if (outcomeError) {
+    console.error('[api] fetchRecurringAdaptiveCandidateForSchedule outcomes:', outcomeError.message);
+    return null;
+  }
+
+  const tasks = (taskRows || []).map(mapTaskRow);
+  const interventions = (interventionRows || []).map((row) => ({
+    id: row.id,
+    taskId: row.task_id || null,
+    rootMissionId: row.root_mission_id || null,
+    eventType: row.event_type || 'override',
+    eventSource: row.event_source || 'runtime',
+    tone: row.tone || 'blue',
+    message: row.message || '',
+    domain: row.domain || 'general',
+    intentType: row.intent_type || 'general',
+    provider: row.provider || null,
+    model: row.model || null,
+    scheduleType: row.schedule_type || 'once',
+    metadata: row.metadata || {},
+    createdAt: row.created_at,
+    timestamp: row.created_at,
+  }));
+  const outcomes = (outcomeRows || []).map((row) => ({
+    id: row.id,
+    taskId: row.task_id || null,
+    rootMissionId: row.root_mission_id || row.task_id || null,
+    score: Number(row.score || 0),
+  }));
+
+  const candidates = getAutomationCandidates(tasks, 150, interventions, outcomes);
+  const scheduleName = String(schedule.name || '').trim().toLowerCase();
+  return candidates.find((candidate) => {
+    const candidateName = String(candidate.title || '').trim().toLowerCase();
+    return scheduleName && candidateName && (
+      scheduleName === candidateName
+      || scheduleName.includes(candidateName)
+      || candidateName.includes(scheduleName)
+    );
+  }) || null;
+}
+
 function applyRuntimeConfidenceBias({ routingDecision, observedWinningLane, batchSignals = null }) {
   if (!observedWinningLane) return routingDecision;
 
@@ -1502,6 +2400,11 @@ export async function createMission(payload, agents = []) {
   const assignedAgentId = selectedAgent?.isSyntheticCommander ? null : selectedAgent?.id || null;
   const commanderId = commander?.isSyntheticCommander ? null : commander?.id || null;
   const estimated = estimateMissionPlan(effectivePayload);
+  const normalizedBrief = effectivePayload.planBrief || estimated.brief || null;
+  const normalizedPlanSummary = effectivePayload.planSummary || estimated.planSummary || null;
+  const missionBriefSummary = summarizeMissionBrief(normalizedBrief);
+  const executionPlanSummary = summarizeExecutionPlan(normalizedPlanSummary);
+  const combinedGuardrails = [...guardedMission.guardrails];
   const plannedBranches = Array.isArray(effectivePayload.planBranches) && effectivePayload.planBranches.length ? effectivePayload.planBranches : estimated.branches;
   const priorityScore = effectivePayload.priorityScore ?? 5;
   const scheduleType = effectivePayload.repeat ? 'recurring' : 'once';
@@ -1520,9 +2423,45 @@ export async function createMission(payload, agents = []) {
   const observedWinningLane = await selectOutcomeWinningLane(user, routingDecision, batchSignals);
   routingDecision = applyPatternApprovalBiasWithBatch({ routingDecision, observedWinningLane, batchSignals });
   routingDecision = applyRuntimeConfidenceBias({ routingDecision, observedWinningLane, batchSignals });
+  const connectedSystems = await fetchConnectedSystemsForUser(user.id);
+  const launchReadiness = buildExecutionReadiness({
+    payload: effectivePayload,
+    routingDecision,
+    connectedSystems,
+  });
+  if (launchReadiness.guardrails.length) {
+    combinedGuardrails.push(...launchReadiness.guardrails);
+  }
   const persistentLaneSignals = await fetchPersistentLaneSignals(user.id);
   const hasDelegatedSteps = plannedBranches.length > 1;
-  const executionPosture = getMissionExecutionPosture(effectivePayload);
+  const launchControlContext = await fetchExecutionControlContext(user.id);
+  let executionPosture = applyLaunchReadinessToExecutionPosture(
+    getMissionExecutionPosture(effectivePayload),
+    launchReadiness,
+  );
+  let missionApprovalLevel = hardenApprovalLevel(
+    deriveMissionApprovalLevel(
+      {
+        ...effectivePayload,
+        missionMode: executionPosture.missionMode,
+      },
+      routingDecision.approvalLevel,
+    ),
+    launchReadiness.recommendedApprovalLevel,
+  );
+  const controlPosture = deriveExecutionControlPosture({
+    payload: effectivePayload,
+    executionPosture,
+    missionApprovalLevel,
+    routingDecision,
+    launchReadiness,
+    controlContext: launchControlContext,
+  });
+  executionPosture = controlPosture.executionPosture;
+  missionApprovalLevel = controlPosture.missionApprovalLevel;
+  if (controlPosture.guardrails.length) {
+    combinedGuardrails.push(...controlPosture.guardrails);
+  }
   const workflowStatus = hasDelegatedSteps
     ? (executionPosture.shouldAutoDispatch ? WORKFLOW_STATUS.RUNNING : WORKFLOW_STATUS.PLANNED)
     : executionPosture.shouldWatchAndApprove
@@ -1572,14 +2511,14 @@ export async function createMission(payload, agents = []) {
     workflow_status: workflowStatus,
     root_mission_id: missionId,
     routing_policy_id: routingPolicy?.id || null,
-    routing_reason: `${routingDecision.routingReason} | skills ${(routingDecision.recommendedSkillNames || []).join(', ') || 'none'} | mission mode ${executionPosture.missionMode.replaceAll('_', ' ')}${routingDecision.approvalBiasDetail ? ` | ${routingDecision.approvalBiasDetail}` : ''}`,
+    routing_reason: `${routingDecision.routingReason} | skills ${(routingDecision.recommendedSkillNames || []).join(', ') || 'none'} | mission mode ${executionPosture.missionMode.replaceAll('_', ' ')}${scheduleType === 'recurring' ? ` | recurring approval ${missionApprovalLevel.replaceAll('_', ' ')}` : ''}${routingDecision.approvalBiasDetail ? ` | ${routingDecision.approvalBiasDetail}` : ''}${missionBriefSummary ? ` | brief ${missionBriefSummary}` : ''}${executionPlanSummary ? ` | plan ${executionPlanSummary}` : ''}${launchReadiness.summary ? ` | readiness ${launchReadiness.summary}` : ''}${launchReadiness.fallbackStrategy ? ` | fallback ${launchReadiness.fallbackStrategy.replaceAll('_', ' ')}` : ''}${controlPosture.controlOrder?.nextMove ? ` | control order ${String(controlPosture.controlOrder.nextMove).replaceAll('_', ' ')}` : ''}`,
     domain: routingDecision.domain,
     intent_type: routingDecision.intentType,
     budget_class: routingDecision.budgetClass,
     risk_level: routingDecision.riskLevel,
     context_pack_ids: routingDecision.contextPackIds,
     required_capabilities: routingDecision.requiredCapabilities,
-    approval_level: routingDecision.approvalLevel,
+    approval_level: missionApprovalLevel,
     depends_on: [],
     agent_role: 'commander',
     execution_strategy: hasDelegatedSteps ? 'graph_root' : 'sequential',
@@ -1594,7 +2533,7 @@ export async function createMission(payload, agents = []) {
     userId: user.id,
     user,
     title,
-    payload: { ...effectivePayload, priorityScore, agents, routingPolicy, selectedAgent, commander },
+    payload: { ...effectivePayload, missionMode: executionPosture.missionMode, priorityScore, agents, routingPolicy, selectedAgent, commander, launchReadiness, controlContext: launchControlContext },
     branches: plannedBranches.map((branch) => ({ ...branch })),
     assignedAgentId,
     agentName: effectivePayload.agentName || selectedAgent?.name || 'Unknown',
@@ -1604,6 +2543,8 @@ export async function createMission(payload, agents = []) {
     routingDecision,
     observedWinningLane,
     persistentLaneSignals,
+    missionBrief: normalizedBrief,
+    planSummary: normalizedPlanSummary,
     runAt,
     scheduleType,
   });
@@ -1648,14 +2589,14 @@ export async function createMission(payload, agents = []) {
         node_type: 'mission',
         root_mission_id: missionId,
         routing_policy_id: routingPolicy?.id || null,
-        routing_reason: routingDecision.routingReason,
+        routing_reason: `${routingDecision.routingReason}${missionBriefSummary ? ` | brief ${missionBriefSummary}` : ''}${executionPlanSummary ? ` | plan ${executionPlanSummary}` : ''}`,
         domain: routingDecision.domain,
         intent_type: routingDecision.intentType,
         budget_class: routingDecision.budgetClass,
         risk_level: routingDecision.riskLevel,
         context_pack_ids: [],
         required_capabilities: routingDecision.requiredCapabilities,
-        approval_level: routingDecision.approvalLevel,
+        approval_level: missionApprovalLevel,
         depends_on: [],
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
@@ -1707,11 +2648,17 @@ export async function createMission(payload, agents = []) {
         : effectivePayload.when === 'now' && assignedAgentId
       ? `Mission dispatched: ${title}`
       : `Mission queued: ${title}`;
+  const activityDetail = [
+    missionBriefSummary,
+    executionPlanSummary,
+    launchReadiness.summary,
+    controlPosture.controlOrder?.nextMove ? `control ${String(controlPosture.controlOrder.nextMove).replaceAll('_', ' ')}` : null,
+  ].filter(Boolean).join(' | ');
 
   const { error: activityError } = await supabase.from('activity_log').insert({
     user_id: user.id,
     type: 'SYS',
-    message: activityMessage,
+    message: activityDetail ? `${activityMessage} [mission-brief] ${activityDetail}` : activityMessage,
     agent_id: assignedAgentId,
     duration_ms: 0,
     tokens: 0,
@@ -1721,8 +2668,8 @@ export async function createMission(payload, agents = []) {
     console.error('[api] createMission activity_log:', activityError.message);
   }
 
-  if (guardedMission.guardrails.length) {
-    const guardrailMessage = `[automation-guardrail] ${title} on root ${missionId} -> ${guardedMission.guardrails.join(' ')}`;
+  if (combinedGuardrails.length) {
+    const guardrailMessage = `[automation-guardrail] ${title} on root ${missionId} -> ${combinedGuardrails.join(' ')}`;
     await logBranchEvent({
       userId: user.id,
       agentId: assignedAgentId,
@@ -1742,18 +2689,53 @@ export async function createMission(payload, agents = []) {
       scheduleType,
       metadata: {
         missionMode: executionPosture.missionMode,
-        guardrails: guardedMission.guardrails,
+        guardrails: combinedGuardrails,
         budgetClass: routingDecision.budgetClass,
         riskLevel: routingDecision.riskLevel,
+        launchReadiness,
       },
     });
   }
 
+  await persistTaskIntervention({
+    userId: user.id,
+    taskId: missionId,
+    rootMissionId: missionId,
+    agentId: assignedAgentId,
+    eventType: 'mission_create',
+    eventSource: 'mission_create',
+    tone: executionPosture.shouldWatchAndApprove ? 'amber' : 'teal',
+    message: `[mission-create] ${title} on root ${missionId}${missionBriefSummary ? ` | ${missionBriefSummary}` : ''}${executionPlanSummary ? ` | ${executionPlanSummary}` : ''}`,
+    domain: routingDecision.domain,
+    intentType: routingDecision.intentType,
+    provider: routingDecision.selectedProvider || null,
+    model: routingDecision.selectedModel || null,
+    scheduleType,
+    metadata: {
+      missionMode: executionPosture.missionMode,
+      objective: normalizedBrief?.objective || effectivePayload.intent,
+      successDefinition: normalizedBrief?.successDefinition || null,
+      domain: normalizedBrief?.domain || routingDecision.domain,
+      intentType: normalizedBrief?.intentType || routingDecision.intentType,
+      riskLevel: normalizedBrief?.riskLevel || routingDecision.riskLevel,
+      approvalPosture: normalizedBrief?.approvalPosture || routingDecision.approvalLevel,
+      costPosture: normalizedBrief?.costPosture || routingDecision.budgetClass,
+      constraints: Array.isArray(normalizedBrief?.constraints) ? normalizedBrief.constraints : [],
+      branchCount: normalizedPlanSummary?.branchCount ?? plannedBranches.length,
+      strategy: normalizedPlanSummary?.primaryStrategy || row.execution_strategy,
+      dependencyPosture: normalizedPlanSummary?.dependencyPosture || null,
+      verificationRequirement: normalizedPlanSummary?.verificationRequirement || null,
+      specialistRoles: Array.isArray(normalizedPlanSummary?.specialistRoles) ? normalizedPlanSummary.specialistRoles : [],
+      launchReadiness,
+      controlOrder: controlPosture.controlOrder,
+    },
+  });
+
   return {
     success: true,
-    mission: mapTaskRow({ ...row, created_at: new Date().toISOString(), updated_at: new Date().toISOString() }),
-    subtasks: subtaskRows.map((subtask) => mapTaskRow({ ...subtask, created_at: new Date().toISOString(), updated_at: new Date().toISOString() })),
-    guardrails: guardedMission.guardrails,
+    mission: mapTaskRow({ ...row, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), planBrief: normalizedBrief, planSummary: normalizedPlanSummary }),
+    subtasks: subtaskRows.map((subtask) => mapTaskRow({ ...subtask, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), planBrief: normalizedBrief, planSummary: normalizedPlanSummary })),
+    guardrails: combinedGuardrails,
   };
 }
 
@@ -1769,6 +2751,10 @@ export async function runCommanderHeartbeat(agents = [], tasks = [], reviews = [
   await touchAgentHeartbeat(commander.id, commander.status === 'processing' ? 'processing' : 'idle');
 
   const now = Date.now();
+  const released = await releaseDependencyReadyTasks({ user, tasks });
+  const currentTasks = released > 0
+    ? await fetchTasks()
+    : tasks;
   const blockedReviewAgentIds = new Set(reviews.map((review) => review.agentId).filter(Boolean));
   const busyAgentIds = new Set(
     agents
@@ -1776,11 +2762,24 @@ export async function runCommanderHeartbeat(agents = [], tasks = [], reviews = [
       .map((agent) => agent.id)
       .filter(Boolean)
   );
+  const runningRootCounts = currentTasks.reduce((acc, task) => {
+    if (task.status !== 'running') return acc;
+    const rootMissionId = task.rootMissionId || task.id;
+    acc.set(rootMissionId, (acc.get(rootMissionId) || 0) + 1);
+    return acc;
+  }, new Map());
+  const dispatchedRootCounts = new Map();
 
-  const runnableTasks = tasks
+  const runnableTasks = currentTasks
     .filter((task) => {
       if (task.status !== 'queued') return false;
       if (task.requiresApproval) return false;
+      const dependencies = Array.isArray(task.dependsOn) ? task.dependsOn : [];
+      if (dependencies.length > 0) {
+        const dependencyRows = dependencies.map((dependencyId) => currentTasks.find((candidate) => candidate.id === dependencyId)).filter(Boolean);
+        if (dependencyRows.length !== dependencies.length) return false;
+        if (!dependencyRows.every((dependency) => isCompletedDependencyTask(dependency))) return false;
+      }
       const dueAt = task.runAt ? new Date(task.runAt).getTime() : now;
       if (Number.isNaN(dueAt) || dueAt > now) return false;
       const effectiveAgentId = task.agentId || commander.id;
@@ -1789,7 +2788,13 @@ export async function runCommanderHeartbeat(agents = [], tasks = [], reviews = [
       if (busyAgentIds.has(effectiveAgentId)) return false;
       return true;
     })
+    .map((task) => ({
+      ...task,
+      dispatchSafety: getTaskDispatchSafety(task),
+    }))
     .sort((a, b) => {
+      const safetyDelta = Number(b.dispatchSafety?.priorityBoost || 0) - Number(a.dispatchSafety?.priorityBoost || 0);
+      if (safetyDelta !== 0) return safetyDelta;
       const priorityDelta = Number(b.priority || 0) - Number(a.priority || 0);
       if (priorityDelta !== 0) return priorityDelta;
       return new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime();
@@ -1800,6 +2805,11 @@ export async function runCommanderHeartbeat(agents = [], tasks = [], reviews = [
   for (const task of runnableTasks) {
     const effectiveAgentId = task.agentId || commander.id;
     if (!effectiveAgentId || busyAgentIds.has(effectiveAgentId)) continue;
+    const rootMissionId = task.rootMissionId || task.id;
+    const siblingRunningCount = runningRootCounts.get(rootMissionId) || 0;
+    const siblingDispatchedCount = dispatchedRootCounts.get(rootMissionId) || 0;
+    const canFanOut = Boolean(task.dispatchSafety?.parallelSafe);
+    if (!canFanOut && (siblingRunningCount > 0 || siblingDispatchedCount > 0)) continue;
 
     const claimTimestamp = new Date().toISOString();
     const { data: claimedTask, error: claimError } = await supabase
@@ -1835,6 +2845,8 @@ export async function runCommanderHeartbeat(agents = [], tasks = [], reviews = [
       });
       dispatched += 1;
       busyAgentIds.add(effectiveAgentId);
+      dispatchedRootCounts.set(rootMissionId, siblingDispatchedCount + 1);
+      runningRootCounts.set(rootMissionId, siblingRunningCount + 1);
     } catch (dispatchError) {
       console.error('[api] runCommanderHeartbeat dispatch:', dispatchError.message);
       await supabase
@@ -1852,7 +2864,7 @@ export async function runCommanderHeartbeat(agents = [], tasks = [], reviews = [
     }
   }
 
-  return { dispatched, scanned: runnableTasks.length };
+  return { dispatched, scanned: runnableTasks.length, released };
 }
 
 // ── Activity Log ────────────────────────────────────────────────
@@ -1887,23 +2899,27 @@ export async function retryTask(taskId) {
   if (!user) throw new Error('Not authenticated');
   const { data: task } = await supabase
     .from('tasks')
-    .select('id,title,name,agent_id,root_mission_id,domain,intent_type,provider_override,model_override,schedule_type')
+    .select('id,title,name,status,agent_id,root_mission_id,domain,intent_type,provider_override,model_override,schedule_type,approval_level,requires_approval')
     .eq('id', taskId)
     .maybeSingle();
   const laneDefaults = await inferAgentLaneDefaults(task?.agent_id || null);
+  const controlContext = await fetchExecutionControlContext(user.id, task?.root_mission_id || taskId);
+  const retryPosture = deriveRetryControlPosture(task, controlContext);
 
   const { error } = await supabase
     .from('tasks')
     .update({
-      status: 'queued',
-      workflow_status: WORKFLOW_STATUS.READY,
-      lane: 'active',
+      status: retryPosture.status,
+      workflow_status: retryPosture.workflowStatus,
+      lane: retryPosture.lane,
       duration_ms: 0,
       cost_usd: 0,
       actual_cost_cents: 0,
       progress_percent: 0,
       failed_at: null,
       cancelled_at: null,
+      requires_approval: retryPosture.requiresApproval,
+      approval_level: retryPosture.approvalLevel,
       provider_override: task?.provider_override || laneDefaults.provider || null,
       model_override: task?.model_override || laneDefaults.model || null,
     })
@@ -1933,6 +2949,18 @@ export async function retryTask(taskId) {
     provider: task?.provider_override || null,
     model: task?.model_override || null,
     scheduleType: task?.schedule_type || 'once',
+    metadata: buildExecutionControlMetadata({
+      controlCategory: 'recovery',
+      actionType: 'retry',
+      triageVerdict: retryPosture.triageVerdict,
+      nextMove: retryPosture.nextMove,
+      previousStatus: task?.status || 'failed',
+      nextStatus: retryPosture.status,
+      previousApprovalLevel: task?.approval_level || 'risk_weighted',
+      nextApprovalLevel: retryPosture.approvalLevel,
+      approvalState: retryPosture.requiresApproval ? 'waiting' : 'not_required',
+      reason: retryPosture.reason,
+    }),
   });
   return { success: true, taskId };
 }
@@ -1944,7 +2972,7 @@ export async function stopTask(taskId) {
   if (!user) throw new Error('Not authenticated');
   const { data: task } = await supabase
     .from('tasks')
-    .select('id,title,name,agent_id,root_mission_id,domain,intent_type,provider_override,model_override,schedule_type')
+    .select('id,title,name,status,agent_id,root_mission_id,domain,intent_type,provider_override,model_override,schedule_type,approval_level,requires_approval')
     .eq('id', taskId)
     .maybeSingle();
 
@@ -1983,6 +3011,18 @@ export async function stopTask(taskId) {
     provider: task?.provider_override || null,
     model: task?.model_override || null,
     scheduleType: task?.schedule_type || 'once',
+    metadata: buildExecutionControlMetadata({
+      controlCategory: 'recovery',
+      actionType: 'stop',
+      triageVerdict: 'human_hold',
+      nextMove: 'investigate_failure',
+      previousStatus: task?.status || 'running',
+      nextStatus: 'failed',
+      previousApprovalLevel: task?.approval_level || 'risk_weighted',
+      nextApprovalLevel: task?.approval_level || 'risk_weighted',
+      approvalState: task?.requires_approval ? 'approval_retained' : 'not_required',
+      reason: 'Manual stop moved this branch into a held failure state for triage.',
+    }),
   });
   return { success: true, taskId };
 }
@@ -2015,6 +3055,59 @@ export async function recordBatchCommandEvent({ actionType = 'batch', tasks = []
     type,
     message,
   });
+
+  await Promise.all(tasks.map((task) => persistExecutionControlEvent({
+    userId: user.id,
+    task,
+    agentId: targetAgent?.id || task?.agentId || task?.agent_id || null,
+    eventType: normalizedAction,
+    eventSource: 'batch_bridge',
+    tone: normalizedAction === 'stop' ? 'rose' : normalizedAction === 'approve' ? 'amber' : 'blue',
+    message,
+    domain: task?.domain || 'general',
+    intentType: task?.intentType || task?.intent_type || 'general',
+    provider: task?.providerOverride || task?.provider_override || null,
+    model: task?.modelOverride || task?.model_override || null,
+    scheduleType: task?.scheduleType || task?.schedule_type || 'once',
+    metadata: buildExecutionControlMetadata({
+      controlCategory: normalizedAction === 'approve' ? 'approval' : normalizedAction === 'retry' || normalizedAction === 'stop' ? 'recovery' : 'batch',
+      actionType: normalizedAction,
+      triageVerdict: normalizedAction === 'approve'
+        ? 'released'
+        : normalizedAction === 'retry'
+          ? 'recovery_started'
+          : normalizedAction === 'stop'
+            ? 'human_hold'
+            : 'batched',
+      nextMove: normalizedAction === 'approve'
+        ? 'dispatch_ready_work'
+        : normalizedAction === 'retry'
+          ? 'watch_retry'
+          : normalizedAction === 'stop'
+            ? 'investigate_failure'
+            : 'review_batch_effect',
+      previousStatus: task?.status || null,
+      nextStatus: normalizedAction === 'approve' || normalizedAction === 'retry'
+        ? 'queued'
+        : normalizedAction === 'stop'
+          ? 'failed'
+          : task?.status || null,
+      previousApprovalLevel: task?.approvalLevel || task?.approval_level || null,
+      nextApprovalLevel: task?.approvalLevel || task?.approval_level || null,
+      approvalState: normalizedAction === 'approve'
+        ? 'released'
+        : task?.requiresApproval || task?.requires_approval
+          ? 'waiting'
+          : 'not_required',
+      batchSize: tasks.length,
+      batchRoots: roots,
+      targetAgent,
+      reason: `Bridge batch ${normalizedAction} handled ${tasks.length} branches together.`,
+      extra: {
+        isBatchAction: true,
+      },
+    }),
+  })));
 
   return { success: true, message };
 }
@@ -2102,6 +3195,15 @@ export async function interruptAndRedirectTask(taskId, updates = {}, agents = []
     model: patch.model_override || null,
     scheduleType: task.schedule_type || 'once',
     metadata: {
+      ...buildExecutionControlMetadata({
+        controlCategory: 'routing',
+        actionType: 'redirect',
+        triageVerdict: 'rerouted',
+        nextMove: 'watch_new_lane',
+        previousStatus: task.status || null,
+        nextStatus: 'queued',
+        reason: 'Manual redirect moved this branch to a new agent or model lane.',
+      }),
       previousStatus: task.status || null,
       previousAgentId: task.agent_id || null,
       nextAgentId: patch.agent_id || task.agent_id || null,
@@ -2195,6 +3297,13 @@ export async function updateMissionBranchRouting(taskId, updates = {}, agents = 
     model: patch.model_override ?? currentTask.model_override ?? null,
     scheduleType: currentTask.schedule_type || 'once',
     metadata: {
+      ...buildExecutionControlMetadata({
+        controlCategory: 'routing',
+        actionType: 'reroute',
+        triageVerdict: 'rerouted',
+        nextMove: 'watch_new_lane',
+        reason: 'Branch routing was manually updated to a safer or stronger lane.',
+      }),
       previousAgentId: currentTask.agent_id || null,
       nextAgentId: patch.agent_id || currentTask.agent_id || null,
       inheritedProvider: patch.provider_override ?? currentTask.provider_override ?? inferAgentProvider(nextAgent) ?? null,
@@ -2260,6 +3369,13 @@ export async function updateMissionBranchDependencies(taskId, dependsOn = []) {
     model: currentTask.model_override || null,
     scheduleType: currentTask.schedule_type || 'once',
     metadata: {
+      ...buildExecutionControlMetadata({
+        controlCategory: 'routing',
+        actionType: 'dependency',
+        triageVerdict: normalizedDependencies.length > 0 ? 'held_for_dependency' : 'dependency_cleared',
+        nextMove: normalizedDependencies.length > 0 ? 'wait_for_upstream' : 'resume_when_ready',
+        reason: 'Dependency posture was manually adjusted for this branch.',
+      }),
       dependsOn: normalizedDependencies,
     },
   });
@@ -2275,7 +3391,7 @@ export async function approveMissionTask(taskId) {
 
   const { data: task, error: fetchError } = await supabase
     .from('tasks')
-    .select('id, agent_id, title, priority, root_mission_id, domain, intent_type, provider_override, model_override, schedule_type')
+    .select('id, agent_id, title, priority, status, root_mission_id, domain, intent_type, provider_override, model_override, schedule_type, approval_level, requires_approval')
     .eq('id', taskId)
     .single();
   const laneDefaults = await inferAgentLaneDefaults(task?.agent_id || null);
@@ -2326,6 +3442,18 @@ export async function approveMissionTask(taskId) {
     provider: task.provider_override || null,
     model: task.model_override || null,
     scheduleType: task.schedule_type || 'once',
+    metadata: buildExecutionControlMetadata({
+      controlCategory: 'approval',
+      actionType: 'approve',
+      triageVerdict: 'released',
+      nextMove: 'dispatch_ready_work',
+      previousStatus: task.status || 'needs_approval',
+      nextStatus: 'queued',
+      previousApprovalLevel: task.approval_level || 'risk_weighted',
+      nextApprovalLevel: task.approval_level || 'risk_weighted',
+      approvalState: 'released',
+      reason: 'Human approval released this branch back into execution.',
+    }),
   });
 
   return { success: true, taskId };
@@ -2339,7 +3467,7 @@ export async function cancelMissionTask(taskId) {
 
   const { data: task, error: fetchError } = await supabase
     .from('tasks')
-    .select('id, agent_id, title, root_mission_id, domain, intent_type, provider_override, model_override, schedule_type')
+    .select('id, agent_id, title, status, root_mission_id, domain, intent_type, provider_override, model_override, schedule_type, approval_level, requires_approval')
     .eq('id', taskId)
     .single();
 
@@ -2388,6 +3516,18 @@ export async function cancelMissionTask(taskId) {
     provider: task.provider_override || null,
     model: task.model_override || null,
     scheduleType: task.schedule_type || 'once',
+    metadata: buildExecutionControlMetadata({
+      controlCategory: 'approval',
+      actionType: 'cancel',
+      triageVerdict: 'cancelled_by_human',
+      nextMove: 'review_scope',
+      previousStatus: task.status || 'needs_approval',
+      nextStatus: 'cancelled',
+      previousApprovalLevel: task.approval_level || 'risk_weighted',
+      nextApprovalLevel: task.approval_level || 'risk_weighted',
+      approvalState: 'rejected',
+      reason: 'Human gate cancelled the branch instead of releasing it.',
+    }),
   });
 
   return { success: true, taskId };
@@ -2407,6 +3547,15 @@ export async function updateRecurringMissionFlow(taskId, updates = {}) {
 
   if (fetchError) throw fetchError;
 
+  const missionCreateInterventions = await fetchMissionCreateInterventions(user.id, currentTask.root_mission_id || currentTask.id);
+  const launchBrief = getMissionCreateBrief(missionCreateInterventions, {
+    id: currentTask.id,
+    rootMissionId: currentTask.root_mission_id || currentTask.id,
+    domain: currentTask.domain || 'general',
+    intentType: currentTask.intent_type || 'general',
+    approvalLevel: currentTask.approval_level || 'risk_weighted',
+  });
+
   const existingRepeat = currentTask.recurrence_rule || {};
   const requestedRepeat = {
     frequency: updates.frequency || existingRepeat.frequency || 'weekly',
@@ -2416,17 +3565,21 @@ export async function updateRecurringMissionFlow(taskId, updates = {}) {
     approvalPosture: updates.approvalPosture || existingRepeat.approvalPosture || currentTask.approval_level || 'risk_weighted',
     paused: updates.paused ?? existingRepeat.paused ?? false,
   };
+  const automationCandidate = {
+    ...(updates.automationCandidate || {
+      domain: currentTask.domain || 'general',
+      roi: updates.roi || 0,
+      runs: updates.runs || 0,
+    }),
+    launchBrief: updates.automationCandidate?.launchBrief || launchBrief || null,
+  };
 
   const { payload: guardedPayload, guardrails } = enforceRecurringMissionGuardrails({
     repeat: requestedRepeat,
     missionMode: requestedRepeat.missionMode,
     targetType: currentTask.domain || 'general',
     outputType: updates.outputType || 'summary',
-    automationCandidate: updates.automationCandidate || {
-      domain: currentTask.domain || 'general',
-      roi: updates.roi || 0,
-      runs: updates.runs || 0,
-    },
+    automationCandidate,
   });
 
   const effectiveRepeat = {
@@ -2488,6 +3641,16 @@ export async function updateRecurringMissionFlow(taskId, updates = {}) {
     model: currentTask.model_override || null,
     scheduleType: 'recurring',
     metadata: {
+      ...buildExecutionControlMetadata({
+        controlCategory: 'automation',
+        actionType: 'tuning',
+        triageVerdict: 'posture_updated',
+        nextMove: 'watch_recurring_flow',
+        previousApprovalLevel: currentTask.approval_level || 'risk_weighted',
+        nextApprovalLevel: nextState.approvalLevel,
+        approvalState: nextState.requiresApproval ? 'waiting' : 'not_required',
+        reason: 'Recurring mission posture was tuned and should be monitored against trust recovery.',
+      }),
       frequency: effectiveRepeat.frequency,
       time: effectiveRepeat.time,
       missionMode: effectiveRepeat.missionMode,
@@ -2720,20 +3883,108 @@ export async function dispatchFromSchedule(schedule, agents) {
   const agent = agents.find(a => a.id === schedule.agentId);
   const taskId = crypto.randomUUID();
   const laneDefaults = await inferAgentLaneDefaults(schedule.agentId);
+  const recurringCandidate = await fetchRecurringAdaptiveCandidateForSchedule(user.id, schedule);
+  const recurringAdaptiveControl = getRecurringAdaptiveControlSummary(recurringCandidate ? [recurringCandidate] : [], [], []);
+  const recurringMissionMode = recurringAdaptiveControl.available
+    ? recurringAdaptiveControl.recommendedMissionMode
+    : (schedule.approvalRequired ? 'watch_and_approve' : 'do_now');
+  const recurringApprovalPosture = recurringAdaptiveControl.available
+    ? recurringAdaptiveControl.recommendedApprovalPosture
+    : (schedule.approvalRequired ? 'human_required' : 'auto_low_risk');
+  const recurringFrequency = recurringAdaptiveControl.available
+    ? recurringAdaptiveControl.recommendedFrequency
+    : (String(schedule.cadence || '').toLowerCase().includes('day') ? 'daily' : 'weekly');
+  const recurringPaused = recurringAdaptiveControl.available
+    ? recurringAdaptiveControl.recommendedPaused
+    : false;
+  const recurringRoutingDecision = deriveRoutingDecision({
+    intent: recurringCandidate?.launchBrief?.objective || schedule.name,
+    targetType: 'internal',
+    outputType: 'summary',
+    mode: 'balanced',
+    requiresApproval: schedule.approvalRequired,
+    repeat: { frequency: recurringFrequency },
+  }, agent, null);
+  const connectedSystems = await fetchConnectedSystemsForUser(user.id);
+  const launchReadiness = buildExecutionReadiness({
+    payload: {
+      intent: recurringCandidate?.launchBrief?.objective || schedule.name,
+      targetType: 'internal',
+      outputType: 'summary',
+      missionMode: recurringMissionMode,
+      when: 'now',
+    },
+    routingDecision: recurringRoutingDecision,
+    connectedSystems,
+  });
+  const effectiveRecurringMissionMode = launchReadiness.requiresHumanGate && recurringMissionMode === 'do_now'
+    ? 'watch_and_approve'
+    : recurringMissionMode;
+  let effectiveRecurringApprovalPosture = hardenApprovalLevel(
+    recurringApprovalPosture,
+    launchReadiness.recommendedApprovalLevel,
+  );
+  const launchControlContext = await fetchExecutionControlContext(user.id);
+  const recurringControlPosture = deriveExecutionControlPosture({
+    payload: { missionMode: effectiveRecurringMissionMode },
+    executionPosture: getMissionExecutionPosture({
+      missionMode: effectiveRecurringMissionMode,
+      when: 'now',
+    }),
+    missionApprovalLevel: effectiveRecurringApprovalPosture,
+    routingDecision: recurringRoutingDecision,
+    launchReadiness,
+    controlContext: launchControlContext,
+  });
+  const controlledRecurringMissionMode = recurringControlPosture.executionPosture?.missionMode || effectiveRecurringMissionMode;
+  effectiveRecurringApprovalPosture = recurringControlPosture.missionApprovalLevel;
+  const recurringState = deriveRecurringFlowState({
+    missionMode: controlledRecurringMissionMode,
+    approvalPosture: effectiveRecurringApprovalPosture,
+    paused: recurringPaused,
+    priority: schedule.priority ?? 5,
+  });
+  const recurrenceRule = buildRecurrenceRule({
+    frequency: recurringFrequency,
+    time: schedule.nextRunAt
+      ? new Date(schedule.nextRunAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
+      : '09:00',
+    missionMode: controlledRecurringMissionMode,
+    approvalPosture: effectiveRecurringApprovalPosture,
+    paused: recurringPaused,
+  });
+  const routingReason = recurringAdaptiveControl.available
+    ? `Schedule launch using recurring adaptive control | ${recurringAdaptiveControl.title.toLowerCase()} | ${recurringAdaptiveControl.detail}${launchReadiness.summary ? ` | readiness ${launchReadiness.summary}` : ''}${recurringControlPosture.controlOrder?.nextMove ? ` | control order ${String(recurringControlPosture.controlOrder.nextMove).replaceAll('_', ' ')}` : ''}`
+    : `Schedule launch using current recurring schedule defaults.${launchReadiness.summary ? ` | readiness ${launchReadiness.summary}` : ''}${recurringControlPosture.controlOrder?.nextMove ? ` | control order ${String(recurringControlPosture.controlOrder.nextMove).replaceAll('_', ' ')}` : ''}`;
   const { error } = await supabase
     .from('tasks')
     .insert({
       id: taskId,
       user_id: user.id,
       name: schedule.name,
-      status: 'pending',
-      workflow_status: WORKFLOW_STATUS.READY,
+      status: recurringState.status,
+      workflow_status: recurringState.workflowStatus,
       node_type: 'mission',
       root_mission_id: taskId,
       agent_id: schedule.agentId,
       agent_name: agent?.name || 'Unknown',
       provider_override: laneDefaults.provider || inferAgentProvider(agent) || null,
       model_override: laneDefaults.model || agent?.model || null,
+      schedule_type: 'recurring',
+      recurrence_rule: recurrenceRule,
+      lane: recurringState.lane,
+      approval_level: recurringState.approvalLevel,
+      requires_approval: recurringState.requiresApproval,
+      priority: schedule.priority ?? 5,
+      title: schedule.name,
+      description: recurringCandidate?.launchBrief?.objective || schedule.name,
+      routing_reason: routingReason,
+      domain: recurringCandidate?.domain || recurringRoutingDecision.domain || 'general',
+      intent_type: recurringCandidate?.intentType || recurringRoutingDecision.intentType || 'general',
+      budget_class: recurringRoutingDecision.budgetClass || 'balanced',
+      risk_level: recurringRoutingDecision.riskLevel || 'medium',
+      context_pack_ids: recurringRoutingDecision.contextPackIds || [],
+      required_capabilities: recurringRoutingDecision.requiredCapabilities || [],
       duration_ms: 0,
       cost_usd: 0,
     });
@@ -2858,6 +4109,30 @@ export async function approveReview(reviewId) {
 
   if (auditErr) console.error('[api] audit insert:', auditErr.message);
 
+  const reviewMessage = `[review-approve] Review ${reviewId} was approved for live release.`;
+  await logBranchEvent({
+    userId: user.id,
+    type: 'OK',
+    message: reviewMessage,
+  });
+  await persistExecutionControlEvent({
+    userId: user.id,
+    eventType: 'review_approve',
+    eventSource: 'review_room',
+    tone: 'amber',
+    message: reviewMessage,
+    metadata: buildExecutionControlMetadata({
+      controlCategory: 'approval',
+      actionType: 'review_approve',
+      triageVerdict: 'released',
+      nextMove: 'publish_review_output',
+      approvalState: 'released',
+      reviewId,
+      reviewDecision: 'approved',
+      reason: 'Review-room approval released a pending output.',
+    }),
+  });
+
   return { success: true, reviewId };
 }
 
@@ -2884,6 +4159,33 @@ export async function rejectReview(reviewId, feedback) {
     });
 
   if (auditErr) console.error('[api] audit insert:', auditErr.message);
+
+  const reviewMessage = `[review-reject] Review ${reviewId} was sent back for revision.${feedback ? ` Feedback: ${feedback}` : ''}`;
+  await logBranchEvent({
+    userId: user.id,
+    type: 'ERR',
+    message: reviewMessage,
+  });
+  await persistExecutionControlEvent({
+    userId: user.id,
+    eventType: 'review_reject',
+    eventSource: 'review_room',
+    tone: 'rose',
+    message: reviewMessage,
+    metadata: buildExecutionControlMetadata({
+      controlCategory: 'approval',
+      actionType: 'review_reject',
+      triageVerdict: 'revision_requested',
+      nextMove: 'revise_output',
+      approvalState: 'rejected',
+      reviewId,
+      reviewDecision: 'revision_requested',
+      reason: 'Review-room rejection sent the output back for revision.',
+      extra: {
+        feedback: feedback || '',
+      },
+    }),
+  });
 
   return { success: true, reviewId, feedback };
 }

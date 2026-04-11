@@ -27,7 +27,7 @@ import {
 } from 'recharts';
 import { container, item } from '../utils/variants';
 import { cn } from '../utils/cn';
-import { useActivityLog, useAgents, useCostData, usePendingReviews, useRoutingPolicies, useTasks } from '../utils/useSupabase';
+import { useActivityLog, useAgents, useApprovalAudit, useCostData, usePendingReviews, useRoutingPolicies, useTaskInterventions, useTasks } from '../utils/useSupabase';
 import { CommandDeckHero } from '../components/command/CommandDeckHero';
 import { AnimatedNumber } from '../components/command/AnimatedNumber';
 import { CommandSectionHeader } from '../components/command/CommandSectionHeader';
@@ -35,7 +35,9 @@ import { useLearningMemory } from '../utils/useLearningMemory';
 import { DoctrineCards } from '../components/command/DoctrineCards';
 import { TruthAuditStrip } from '../components/command/TruthAuditStrip';
 import { useCommandCenterTruth } from '../utils/useCommandCenterTruth';
-import { getBatchRoutingTrustSummary, getLatestBatchCommandAudit, getPolicyActionGuidance, getTradeoffOutcomeSummary } from '../utils/commanderAnalytics';
+import { getAutomationCandidates, getBatchRoutingTrustSummary, getExecutionAuditReadback, getFailureTriageSummary, getHybridApprovalSummary, getLatestBatchCommandAudit, getMissionCreateBrief, getPolicyActionGuidance, getRecurringBriefFitAction, getRecurringBriefFitReadback, getRecurringChangePayback, getRecurringChangeReadback, getRecurringNextCorrection, getRecurringPostChangeVerdict, getTradeoffOutcomeSummary } from '../utils/commanderAnalytics';
+import { formatFallbackStrategyLabel, getFallbackStrategyDetail, getGraphReasoningSummary, getMissionLaunchReadiness } from '../utils/executionReadiness';
+import { getDecisionNarrativeSummary, getLiveControlNarrativeSummary } from '../utils/missionLifecycle';
 
 const PERIOD_OPTIONS = ['30d', '90d', 'QTD'];
 const STATUS_COLORS = {
@@ -226,11 +228,426 @@ function BatchAuditPanel({ audit, doctrineItem = null }) {
   );
 }
 
+function HybridApprovalPanel({ summary }) {
+  if (!summary?.available) return null;
+
+  return (
+    <div className="ui-panel-soft p-4">
+      <div className="flex items-center gap-2">
+        <CheckCircle2 className="h-4 w-4 text-aurora-amber" />
+        <span className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Hybrid approval</span>
+      </div>
+      <div className="mt-4 ui-card-row px-3 py-3">
+        <div className="flex items-center justify-between gap-3">
+          <div className="text-[12px] font-semibold text-text-primary">{summary.title}</div>
+          <div className={`text-[10px] font-mono uppercase ${summary.tone === 'amber' ? 'text-aurora-amber' : 'text-aurora-teal'}`}>
+            {summary.totalQueue} open
+          </div>
+        </div>
+        <div className="mt-2 text-[11px] leading-relaxed text-text-body">{summary.detail}</div>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <TelemetryTag label="Mission gates" value={summary.missionApprovalCount} tone="amber" />
+          <TelemetryTag label="Review gates" value={summary.reviewApprovalCount} tone="amber" />
+          <TelemetryTag label="Released" value={summary.releasedCount} tone="teal" />
+          <TelemetryTag label="Held" value={summary.rejectedCount} tone="blue" />
+        </div>
+        <div className="mt-3 text-[11px] leading-relaxed text-text-body">
+          <span className="font-semibold text-text-primary">Approval posture:</span> {summary.resolutionLabel}. {summary.resolutionDetail}
+        </div>
+        <div className="mt-2 text-[10px] uppercase tracking-[0.16em] text-text-muted">
+          {summary.queuePosture ? `Queue posture: ${String(summary.queuePosture).replaceAll('_', ' ')} • ` : ''}Do next: {String(summary.nextMove || 'keep_flowing').replaceAll('_', ' ')}
+        </div>
+        {summary.latestDecision && (
+          <div className="mt-3 text-[11px] leading-relaxed text-text-muted">
+            Latest decision: {summary.latestDecision.label}. {summary.latestDecision.detail}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function FailureTriagePanel({ summary }) {
+  if (!summary?.available) return null;
+
+  return (
+    <div className="ui-panel-soft p-4">
+      <div className="flex items-center gap-2">
+        <AlertTriangle className="h-4 w-4 text-aurora-rose" />
+        <span className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Failure triage</span>
+      </div>
+      <div className="mt-4 ui-card-row px-3 py-3">
+        <div className="flex items-center justify-between gap-3">
+          <div className="text-[12px] font-semibold text-text-primary">{summary.title}</div>
+          <div className="text-[10px] font-mono uppercase text-aurora-rose">{summary.failedCount} active</div>
+        </div>
+        <div className="mt-2 text-[11px] leading-relaxed text-text-body">{summary.detail}</div>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <TelemetryTag label="Verdict" value={summary.verdict} tone="amber" />
+          <TelemetryTag label="Do next" value={summary.nextMove} tone="rose" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ExecutionAuditPanel({ audit }) {
+  if (!audit?.available) return null;
+
+  return (
+    <div className="ui-panel-soft p-4">
+      <div className="flex items-center gap-2">
+        <History className="h-4 w-4 text-aurora-blue" />
+        <span className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Execution control audit</span>
+      </div>
+      <div className="mt-4 space-y-3">
+        {audit.entries.map((entry) => (
+          <div key={entry.id} className="ui-card-row px-3 py-3">
+            <div className="flex items-center justify-between gap-3">
+              <div className="text-[12px] font-semibold text-text-primary">{entry.label}</div>
+              <div className={`text-[10px] font-mono uppercase ${
+                entry.tone === 'rose' ? 'text-aurora-rose' : entry.tone === 'amber' ? 'text-aurora-amber' : 'text-aurora-blue'
+              }`}>
+                {entry.category}
+              </div>
+            </div>
+            <div className="mt-2 text-[11px] leading-relaxed text-text-body">{entry.detail}</div>
+            {(entry.verdict || entry.nextMove) && (
+              <div className="mt-2 text-[10px] uppercase tracking-[0.16em] text-text-muted">
+                {[entry.verdict ? `Verdict ${entry.verdict}` : null, entry.nextMove ? `Next ${entry.nextMove}` : null].filter(Boolean).join(' • ')}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function LiveControlNarrativePanel({ summary }) {
+  if (!summary?.available) return null;
+
+  return (
+    <div className="ui-panel-soft p-4">
+      <div className="flex items-center gap-2">
+        <Sparkles className="h-4 w-4 text-aurora-violet" />
+        <span className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Live control narrative</span>
+      </div>
+      <div className="mt-4 ui-card-row px-3 py-3">
+        <div className="flex items-center justify-between gap-3">
+          <div className="text-[12px] font-semibold text-text-primary">{summary.title}</div>
+          <div className={`text-[10px] font-mono uppercase ${
+            summary.tone === 'rose' ? 'text-aurora-rose' : summary.tone === 'amber' ? 'text-aurora-amber' : summary.tone === 'blue' ? 'text-aurora-blue' : 'text-aurora-teal'
+          }`}>
+            {summary.topControlState?.label || 'control'}
+          </div>
+        </div>
+        <div className="mt-2 text-[11px] leading-relaxed text-text-body">{summary.detail}</div>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <TelemetryTag label="Top branch" value={summary.topBranch?.title || summary.topBranch?.name || 'Branch'} tone="violet" />
+          <TelemetryTag label="Do next" value={String(summary.nextMove || 'keep_flowing').replaceAll('_', ' ')} tone="amber" />
+          <TelemetryTag
+            label="Resume posture"
+            value={summary.topControlState?.canAutoResume ? 'auto-resume safe' : summary.topControlState?.shouldStayHeld ? 'keep held' : 'review first'}
+            tone={summary.topControlState?.canAutoResume ? 'teal' : 'blue'}
+          />
+        </div>
+        {summary.branches?.length ? (
+          <div className="mt-3 text-[11px] leading-relaxed text-text-muted">
+            Live branches: {summary.branches.map((branch) => `${branch.title} (${branch.stateLabel})`).join(' • ')}
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function DecisionNarrativePanel({ summary }) {
+  if (!summary?.available) return null;
+
+  return (
+    <div className="ui-panel-soft p-4">
+      <div className="flex items-center gap-2">
+        <FileText className="h-4 w-4 text-aurora-blue" />
+        <span className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Decision narrative</span>
+      </div>
+      <div className="mt-4 ui-card-row px-3 py-3">
+        <div className="flex items-center justify-between gap-3">
+          <div className="text-[12px] font-semibold text-text-primary">{summary.title}</div>
+          <div className={`text-[10px] font-mono uppercase ${
+            summary.tone === 'rose' ? 'text-aurora-rose' : summary.tone === 'amber' ? 'text-aurora-amber' : summary.tone === 'blue' ? 'text-aurora-blue' : 'text-aurora-teal'
+          }`}>
+            {summary.topNarrative?.stateLabel || 'decision'}
+          </div>
+        </div>
+        <div className="mt-2 text-[11px] leading-relaxed text-text-body">{summary.detail}</div>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <TelemetryTag label="Top branch" value={summary.topBranch?.title || summary.topBranch?.name || 'Branch'} tone="blue" />
+          <TelemetryTag label="Do next" value={String(summary.nextMove || 'keep_flowing').replaceAll('_', ' ')} tone="amber" />
+          {summary.topNarrative?.approvalLabel ? <TelemetryTag label="Approval" value={summary.topNarrative.approvalLabel} tone="amber" /> : null}
+        </div>
+        {summary.branches?.length ? (
+          <div className="mt-3 text-[11px] leading-relaxed text-text-muted">
+            Branch decisions: {summary.branches.map((branch) => `${branch.title} (${branch.approvalLabel || branch.transitionLabel || branch.stateLabel || 'flow'})`).join(' • ')}
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function GraphReasoningPanel({ summary }) {
+  if (!summary?.available) return null;
+
+  return (
+    <div className="ui-panel-soft p-4">
+      <div className="flex items-center gap-2">
+        <Target className="h-4 w-4 text-aurora-blue" />
+        <span className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Graph reasoning</span>
+      </div>
+      <div className="mt-4 ui-card-row px-3 py-3">
+        <div className="flex items-center justify-between gap-3">
+          <div className="text-[12px] font-semibold text-text-primary">{summary.title}</div>
+          <div className={`text-[10px] font-mono uppercase ${
+            summary.tone === 'rose' ? 'text-aurora-rose' : summary.tone === 'amber' ? 'text-aurora-amber' : summary.tone === 'blue' ? 'text-aurora-blue' : 'text-aurora-teal'
+          }`}>
+            {summary.topReasoning?.dispatchClass || 'graph'}
+          </div>
+        </div>
+        <div className="mt-2 text-[11px] leading-relaxed text-text-body">{summary.detail}</div>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <TelemetryTag label="Top branch" value={summary.topTask?.title || summary.topTask?.name || 'Branch'} tone="blue" />
+          <TelemetryTag label="Do next" value={String(summary.nextMove || 'keep_flowing').replaceAll('_', ' ')} tone="amber" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function LaunchBriefPanel({ brief, readiness = null }) {
+  if (!brief) return null;
+
+  return (
+    <div className="ui-panel-soft p-4">
+      <div className="flex items-center gap-2">
+        <Target className="h-4 w-4 text-aurora-teal" />
+        <span className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Launch brief memory</span>
+      </div>
+      <div className="mt-4 ui-card-row px-3 py-3">
+        <div className="text-[12px] font-semibold text-text-primary">{brief.objective}</div>
+        <div className="mt-2 text-[11px] leading-relaxed text-text-body">{brief.detail}</div>
+        {brief.successDefinition && (
+          <div className="mt-2 text-[11px] leading-relaxed text-text-muted">
+            Success definition: {brief.successDefinition}
+          </div>
+        )}
+        <div className="mt-3 flex flex-wrap gap-2">
+          <TelemetryTag label="Branches" value={brief.branchCount} tone="teal" />
+          <TelemetryTag label="Strategy" value={String(brief.strategy || '').replaceAll('_', ' ')} tone="blue" />
+          <TelemetryTag label="Verify" value={String(brief.verificationRequirement || '').replaceAll('_', ' ')} tone="amber" />
+        </div>
+        {readiness && (
+          <div className="mt-3 rounded-2xl border border-white/[0.08] bg-black/20 px-3 py-3">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Launch readiness</div>
+                <div className="mt-1 text-[12px] font-semibold text-text-primary">{readiness.title}</div>
+              </div>
+              <div className={`rounded-full border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] ${
+                readiness.tone === 'teal'
+                  ? 'border-aurora-teal/20 bg-aurora-teal/10 text-aurora-teal'
+                  : readiness.tone === 'amber'
+                    ? 'border-aurora-amber/20 bg-aurora-amber/10 text-aurora-amber'
+                    : 'border-aurora-rose/20 bg-aurora-rose/10 text-aurora-rose'
+              }`}>
+                {readiness.coveragePercent}% covered
+              </div>
+            </div>
+            <div className="mt-2 text-[11px] leading-relaxed text-text-body">{readiness.detail}</div>
+            {Array.isArray(readiness.guardrails) && readiness.guardrails.length > 0 && (
+              <div className="mt-3 text-[11px] leading-relaxed text-text-muted">
+                Guardrails: {readiness.guardrails.join(' • ')}
+              </div>
+            )}
+          </div>
+        )}
+        {brief.constraints.length > 0 && (
+          <div className="mt-3 text-[11px] leading-relaxed text-text-muted">
+            Constraints: {brief.constraints.join(' • ')}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function LaunchPostmortemPanel({ doctrineItem }) {
+  if (!doctrineItem) return null;
+
+  return (
+    <div className="ui-panel-soft p-4">
+      <div className="flex items-center gap-2">
+        <BrainCircuit className="h-4 w-4 text-aurora-violet" />
+        <span className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Launch postmortem</span>
+      </div>
+      <div className="mt-4 ui-card-row px-3 py-3">
+        <div className="flex items-center justify-between gap-3">
+          <div className="text-[12px] font-semibold text-text-primary">{doctrineItem.title}</div>
+          <div className="text-[10px] font-mono text-aurora-violet">{doctrineItem.confidence}%</div>
+        </div>
+        <div className="mt-2 text-[11px] leading-relaxed text-text-body">{doctrineItem.detail}</div>
+        {Array.isArray(doctrineItem.evidence) && doctrineItem.evidence.length > 0 && (
+          <div className="mt-3 text-[11px] leading-relaxed text-text-muted">
+            {doctrineItem.evidence.slice(0, 2).join(' • ')}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function RecurringLaunchMemoryPanel({ candidate }) {
+  if (!candidate?.launchBrief) return null;
+
+  const tone = candidate.launchBriefFit === 'holding'
+    ? 'text-aurora-teal'
+    : candidate.launchBriefFit === 'watch'
+      ? 'text-aurora-amber'
+      : 'text-aurora-rose';
+
+  return (
+    <div className="ui-panel-soft p-4">
+      <div className="flex items-center gap-2">
+        <History className="h-4 w-4 text-aurora-blue" />
+        <span className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Recurring launch memory</span>
+      </div>
+      <div className="mt-4 ui-card-row px-3 py-3">
+        <div className="flex items-center justify-between gap-3">
+          <div className="text-[12px] font-semibold text-text-primary">{candidate.title}</div>
+          <div className={`text-[10px] font-mono uppercase ${tone}`}>{candidate.launchBriefFit}</div>
+        </div>
+        <div className="mt-2 text-[11px] leading-relaxed text-text-body">{candidate.launchBrief.objective}</div>
+        <div className="mt-2 text-[11px] leading-relaxed text-text-muted">{candidate.trustDetail}</div>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <TelemetryTag label="Cadence" value={candidate.trustLabel} tone="blue" />
+          <TelemetryTag label="Verify" value={String(candidate.launchBrief.verificationRequirement || '').replaceAll('_', ' ')} tone="amber" />
+          <TelemetryTag label="Outcome" value={candidate.avgOutcome || 'n/a'} tone="teal" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function RecurringChangePanel({ candidate }) {
+  const change = getRecurringChangeReadback(candidate);
+  if (!change.available) return null;
+
+  return (
+    <div className="ui-panel-soft p-4">
+      <div className="flex items-center gap-2">
+        <History className="h-4 w-4 text-aurora-teal" />
+        <span className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Recurring change history</span>
+      </div>
+      <div className="mt-4 ui-card-row px-3 py-3">
+        <div className="text-[12px] font-semibold text-text-primary">{change.title}</div>
+        <div className="mt-2 text-[11px] leading-relaxed text-text-body">{change.detail}</div>
+      </div>
+      {change.history?.length > 0 && (
+        <div className="mt-3 space-y-2">
+          {change.history.map((entry) => (
+            <div key={entry.id} className="ui-card-row px-3 py-3">
+              <div className="text-[10px] uppercase tracking-[0.16em] text-text-disabled">
+                {entry.timestamp ? new Date(entry.timestamp).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Current session'}
+              </div>
+              <div className="mt-1 text-[11px] leading-relaxed text-text-body">{entry.summary}</div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function RecurringPaybackPanel({ candidate }) {
+  const payback = getRecurringChangePayback(candidate);
+  if (!payback.available) return null;
+
+  return (
+    <div className="ui-panel-soft p-4">
+      <div className="flex items-center gap-2">
+        <TrendingUp className="h-4 w-4 text-aurora-teal" />
+        <span className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Recurring payback</span>
+      </div>
+      <div className="mt-4 ui-card-row px-3 py-3">
+        <div className="flex items-center justify-between gap-3">
+          <div className="text-[12px] font-semibold text-text-primary">{payback.title}</div>
+          <div className="text-[10px] font-mono text-aurora-teal">{payback.outcomeLabel}</div>
+        </div>
+        <div className="mt-2 text-[11px] leading-relaxed text-text-body">{payback.detail}</div>
+        <div className="mt-3 grid gap-2 md:grid-cols-4">
+          {payback.metrics.map((metric) => (
+            <div key={metric.label} className="rounded-[14px] border border-white/10 bg-black/20 px-3 py-2.5">
+              <div className="text-[10px] uppercase tracking-[0.14em] text-text-muted">{metric.label}</div>
+              <div className="mt-1 text-[12px] font-semibold text-text-primary">{metric.value}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function RecurringVerdictPanel({ candidate }) {
+  const verdict = getRecurringPostChangeVerdict(candidate);
+  const nextCorrection = getRecurringNextCorrection(candidate);
+  if (!verdict.available) return null;
+
+  return (
+    <div className="ui-panel-soft p-4">
+      <div className="flex items-center gap-2">
+        <History className="h-4 w-4 text-aurora-blue" />
+        <span className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Post-change verdict</span>
+      </div>
+      <div className="mt-4 ui-card-row px-3 py-3">
+        <div className="text-[12px] font-semibold text-text-primary">{verdict.title}</div>
+        <div className="mt-2 text-[11px] leading-relaxed text-text-body">{verdict.detail}</div>
+        {(verdict.previousPosture || verdict.currentPosture) && (
+          <div className="mt-3 grid gap-2 md:grid-cols-2">
+            {verdict.previousPosture && (
+              <div className="rounded-[14px] border border-white/10 bg-black/20 px-3 py-2.5 text-[11px] leading-5 text-text-body">
+                <div className="text-[10px] uppercase tracking-[0.14em] text-text-muted">Previous</div>
+                <div className="mt-1">Cadence: {String(verdict.previousPosture.cadence || 'not_set').replaceAll('_', ' ')}</div>
+                <div>Approval: {String(verdict.previousPosture.approvalPosture || 'not_set').replaceAll('_', ' ')}</div>
+                <div>Mode: {String(verdict.previousPosture.missionMode || 'not_set').replaceAll('_', ' ')}</div>
+              </div>
+            )}
+            {verdict.currentPosture && (
+              <div className="rounded-[14px] border border-aurora-teal/15 bg-aurora-teal/[0.05] px-3 py-2.5 text-[11px] leading-5 text-text-body">
+                <div className="text-[10px] uppercase tracking-[0.14em] text-aurora-teal">Current</div>
+                <div className="mt-1">Cadence: {String(verdict.currentPosture.cadence || 'not_set').replaceAll('_', ' ')}</div>
+                <div>Approval: {String(verdict.currentPosture.approvalPosture || 'not_set').replaceAll('_', ' ')}</div>
+                <div>Mode: {String(verdict.currentPosture.missionMode || 'not_set').replaceAll('_', ' ')}</div>
+              </div>
+            )}
+          </div>
+        )}
+        {nextCorrection.available && (
+          <div className="mt-3 rounded-[14px] border border-white/10 bg-black/20 px-3 py-2.5">
+            <div className="text-[10px] uppercase tracking-[0.14em] text-text-muted">Next move</div>
+            <div className="mt-1 text-[11px] leading-relaxed text-text-body">{nextCorrection.detail}</div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function ExecutiveSignalRail({ learningMemory, summary, burnByModel, logs = [], policyTradeoff = null }) {
   const [focus, setFocus] = useState('doctrine');
   const latestBatchAudit = useMemo(() => getLatestBatchCommandAudit(logs), [logs]);
   const batchDoctrine = learningMemory?.doctrineById?.['batch-command-memory'] || null;
   const batchRoutingTrust = useMemo(() => getBatchRoutingTrustSummary({ logs, doctrineItem: batchDoctrine }), [logs, batchDoctrine]);
+  const recurringBriefAction = learningMemory?.metadata?.recurringBriefAction || null;
   const orders = [
     {
       title: 'Cut approval drag',
@@ -253,6 +670,11 @@ function ExecutiveSignalRail({ learningMemory, summary, burnByModel, logs = [], 
         : 'Volume is still light enough to set standards before habits harden.',
       tone: 'blue',
     },
+    ...(recurringBriefAction?.available ? [{
+      title: recurringBriefAction.title,
+      detail: recurringBriefAction.detail,
+      tone: recurringBriefAction.tone,
+    }] : []),
     ...(policyTradeoff?.enabled ? [{
       title: `Route toward the ${policyTradeoff.intentLabel}`,
       detail: policyTradeoff.signal,
@@ -393,6 +815,8 @@ export function ReportsView() {
   const { tasks } = useTasks();
   const { reviews } = usePendingReviews();
   const { logs } = useActivityLog();
+  const { interventions } = useTaskInterventions();
+  const { auditTrail } = useApprovalAudit();
   const { policies: routingPolicies } = useRoutingPolicies();
   const truth = useCommandCenterTruth();
 
@@ -401,7 +825,8 @@ export function ReportsView() {
     const running = tasks.filter((task) => ['running', 'queued', 'pending'].includes(task.status));
     const blocked = tasks.filter((task) => ['failed', 'error', 'blocked', 'cancelled'].includes(task.status));
     const successRate = tasks.length ? Math.round((completed.length / tasks.length) * 100) : 100;
-    const approvalPressure = reviews.length;
+    const missionApprovalPressure = tasks.filter((task) => task.status === 'needs_approval' || task.requiresApproval).length;
+    const approvalPressure = missionApprovalPressure + reviews.length;
     const totalCost = costData.total || tasks.reduce((sum, task) => sum + Number(task.costUsd || 0), 0);
     const avgCost = tasks.length ? totalCost / tasks.length : 0;
     const tasksByAgent = tasks.reduce((acc, task) => {
@@ -480,9 +905,65 @@ export function ReportsView() {
     () => getPolicyActionGuidance(topPolicy, tasks, [], logs, agents),
     [topPolicy, tasks, logs, agents]
   );
+  const launchPostmortem = learningMemory?.doctrineById?.['mission-brief-memory'] || null;
   const tradeoffOutcome = useMemo(
     () => getTradeoffOutcomeSummary(topPolicyActionGuidance.swap),
     [topPolicyActionGuidance]
+  );
+  const recurringCandidates = useMemo(
+    () => getAutomationCandidates(tasks, 150, interventions, []),
+    [tasks, interventions]
+  );
+  const recurringLaunchCandidate = recurringCandidates.find((candidate) => candidate.launchBrief) || null;
+  const recurringBriefReadback = useMemo(
+    () => getRecurringBriefFitReadback(tasks, interventions, []),
+    [tasks, interventions]
+  );
+  const recurringBriefAction = useMemo(
+    () => getRecurringBriefFitAction(tasks, interventions, []),
+    [tasks, interventions]
+  );
+  const learningMemoryWithRecurringAction = useMemo(
+    () => ({
+      ...learningMemory,
+      metadata: {
+        ...(learningMemory?.metadata || {}),
+        recurringBriefAction,
+      },
+    }),
+    [learningMemory, recurringBriefAction]
+  );
+  const latestLaunchBrief = useMemo(
+    () => getMissionCreateBrief(interventions),
+    [interventions]
+  );
+  const latestLaunchReadiness = useMemo(
+    () => getMissionLaunchReadiness(interventions),
+    [interventions]
+  );
+  const graphReasoning = useMemo(
+    () => getGraphReasoningSummary(tasks, interventions),
+    [tasks, interventions]
+  );
+  const hybridApprovalSummary = useMemo(
+    () => getHybridApprovalSummary({ tasks, reviews, interventions, approvalAudit: auditTrail }),
+    [tasks, reviews, interventions, auditTrail]
+  );
+  const failureTriage = useMemo(
+    () => getFailureTriageSummary({ tasks, interventions, logs }),
+    [tasks, interventions, logs]
+  );
+  const executionAudit = useMemo(
+    () => getExecutionAuditReadback({ tasks, interventions, approvalAudit: auditTrail, logs }),
+    [tasks, interventions, auditTrail, logs]
+  );
+  const liveControlNarrative = useMemo(
+    () => getLiveControlNarrativeSummary(tasks, interventions),
+    [tasks, interventions]
+  );
+  const decisionNarrative = useMemo(
+    () => getDecisionNarrativeSummary(tasks, interventions),
+    [tasks, interventions]
   );
   const peakActivity = useMemo(
     () => activityWave.reduce((best, bucket) => (bucket.volume > best.volume ? bucket : best), activityWave[0] || { name: 'No activity yet', volume: 0 }),
@@ -492,10 +973,16 @@ export function ReportsView() {
   const readFirstItems = useMemo(() => [
     {
       eyebrow: 'Read First',
-      title: summary.approvalPressure > 0 ? 'Human approvals are the first drag point' : 'Approval drag is currently contained',
-      detail: summary.approvalPressure > 0
-        ? `${summary.approvalPressure} items are waiting on people, which means the fastest win is clearing or bundling those decisions.`
-        : 'No meaningful queue is forming at human gates, so the system can lean harder into autonomous flow.',
+      title: hybridApprovalSummary.available
+        ? hybridApprovalSummary.title
+        : summary.approvalPressure > 0
+          ? 'Human approvals are the first drag point'
+          : 'Approval drag is currently contained',
+      detail: hybridApprovalSummary.available
+        ? `${hybridApprovalSummary.detail} ${hybridApprovalSummary.resolutionLabel}. Do next: ${String(hybridApprovalSummary.nextMove || 'keep_flowing').replaceAll('_', ' ')}.`
+        : summary.approvalPressure > 0
+          ? `${summary.approvalPressure} items are waiting on people, which means the fastest win is clearing or bundling those decisions.`
+          : 'No meaningful queue is forming at human gates, so the system can lean harder into autonomous flow.',
     },
     {
       eyebrow: 'Margin Signal',
@@ -515,7 +1002,49 @@ export function ReportsView() {
           ? `${summary.topAgents[0].name} has become the strongest branch by load and completion, which makes it the best pattern to replicate.`
           : 'Traffic is still broad enough that you should keep focusing on standards and quality before scaling one branch.',
     },
-  ], [summary, topCostCenter, topPolicyActionGuidance]);
+    ...(latestLaunchBrief ? [{
+      eyebrow: 'Launch Memory',
+      title: latestLaunchBrief.title,
+      detail: `${latestLaunchBrief.objective}. ${latestLaunchBrief.detail}.${latestLaunchReadiness?.summary ? ` ${latestLaunchReadiness.summary}.` : ''}${latestLaunchReadiness?.fallbackStrategy ? ` Fallback: ${formatFallbackStrategyLabel(latestLaunchReadiness.fallbackStrategy)}. ${getFallbackStrategyDetail(latestLaunchReadiness.fallbackStrategy)}` : ''}`,
+    }] : []),
+    ...(recurringLaunchCandidate ? [{
+      eyebrow: 'Recurring Memory',
+      title: `${recurringLaunchCandidate.title} is ${recurringLaunchCandidate.launchBriefFit === 'holding' ? 'holding' : recurringLaunchCandidate.launchBriefFit === 'watch' ? 'still earning trust' : 'drifting from its brief'}`,
+      detail: recurringLaunchCandidate.trustDetail,
+    }] : []),
+    ...(recurringBriefReadback.available ? [{
+      eyebrow: 'Recurring Signal',
+      title: recurringBriefReadback.title,
+      detail: recurringBriefAction.available
+        ? `${recurringBriefReadback.detail} Next move: ${recurringBriefAction.actionLabel.toLowerCase()}.`
+        : recurringBriefReadback.detail,
+    }] : []),
+    ...(hybridApprovalSummary.available ? [{
+      eyebrow: 'Approval Signal',
+      title: hybridApprovalSummary.title,
+      detail: `${hybridApprovalSummary.detail} ${hybridApprovalSummary.resolutionLabel}. Do next: ${String(hybridApprovalSummary.nextMove || 'keep_flowing').replaceAll('_', ' ')}.`,
+    }] : []),
+    ...(failureTriage.available ? [{
+      eyebrow: 'Recovery Signal',
+      title: failureTriage.title,
+      detail: `${failureTriage.detail} Verdict: ${failureTriage.verdict}. Do next: ${failureTriage.nextMove}.`,
+    }] : []),
+    ...(liveControlNarrative.available ? [{
+      eyebrow: 'Control Signal',
+      title: liveControlNarrative.title,
+      detail: `${liveControlNarrative.detail} Resume posture: ${liveControlNarrative.topControlState?.canAutoResume ? 'safe to auto-resume' : liveControlNarrative.topControlState?.shouldStayHeld ? 'keep held until review' : 'active commander decision required'}.`,
+    }] : []),
+    ...(decisionNarrative.available ? [{
+      eyebrow: 'Decision Signal',
+      title: decisionNarrative.title,
+      detail: `${decisionNarrative.detail} Do next: ${String(decisionNarrative.nextMove || 'keep_flowing').replaceAll('_', ' ')}.`,
+    }] : []),
+    ...(graphReasoning.available ? [{
+      eyebrow: 'Graph Signal',
+      title: graphReasoning.title,
+      detail: `${graphReasoning.detail} Do next: ${String(graphReasoning.nextMove || 'keep_flowing').replaceAll('_', ' ')}.`,
+    }] : []),
+  ], [summary, topCostCenter, topPolicyActionGuidance, latestLaunchBrief, latestLaunchReadiness, recurringLaunchCandidate, recurringBriefReadback, recurringBriefAction, hybridApprovalSummary, failureTriage, liveControlNarrative, decisionNarrative, graphReasoning]);
 
   return (
     <div className="relative flex h-full flex-col overflow-y-auto pb-10">
@@ -823,8 +1352,80 @@ export function ReportsView() {
         </Motion.section>
 
         <Motion.section variants={item}>
-          <ExecutiveSignalRail learningMemory={learningMemory} summary={summary} burnByModel={burnByModel} logs={logs} policyTradeoff={topPolicyActionGuidance.swap} />
+          <ExecutiveSignalRail learningMemory={learningMemoryWithRecurringAction} summary={summary} burnByModel={burnByModel} logs={logs} policyTradeoff={topPolicyActionGuidance.swap} />
         </Motion.section>
+
+        {hybridApprovalSummary.available && (
+          <Motion.section variants={item}>
+            <HybridApprovalPanel summary={hybridApprovalSummary} />
+          </Motion.section>
+        )}
+
+        {failureTriage.available && (
+          <Motion.section variants={item}>
+            <FailureTriagePanel summary={failureTriage} />
+          </Motion.section>
+        )}
+
+        {executionAudit.available && (
+          <Motion.section variants={item}>
+            <ExecutionAuditPanel audit={executionAudit} />
+          </Motion.section>
+        )}
+
+        {liveControlNarrative.available && (
+          <Motion.section variants={item}>
+            <LiveControlNarrativePanel summary={liveControlNarrative} />
+          </Motion.section>
+        )}
+
+        {decisionNarrative.available && (
+          <Motion.section variants={item}>
+            <DecisionNarrativePanel summary={decisionNarrative} />
+          </Motion.section>
+        )}
+
+        {graphReasoning.available && (
+          <Motion.section variants={item}>
+            <GraphReasoningPanel summary={graphReasoning} />
+          </Motion.section>
+        )}
+
+        {latestLaunchBrief && (
+          <Motion.section variants={item}>
+            <LaunchBriefPanel brief={latestLaunchBrief} readiness={latestLaunchReadiness} />
+          </Motion.section>
+        )}
+
+        {launchPostmortem && (
+          <Motion.section variants={item}>
+            <LaunchPostmortemPanel doctrineItem={launchPostmortem} />
+          </Motion.section>
+        )}
+
+        {recurringLaunchCandidate && (
+          <Motion.section variants={item}>
+            <RecurringLaunchMemoryPanel candidate={recurringLaunchCandidate} />
+          </Motion.section>
+        )}
+
+        {recurringLaunchCandidate && (
+          <Motion.section variants={item}>
+            <RecurringChangePanel candidate={recurringLaunchCandidate} />
+          </Motion.section>
+        )}
+
+        {recurringLaunchCandidate && (
+          <Motion.section variants={item}>
+            <RecurringPaybackPanel candidate={recurringLaunchCandidate} />
+          </Motion.section>
+        )}
+
+        {recurringLaunchCandidate && (
+          <Motion.section variants={item}>
+            <RecurringVerdictPanel candidate={recurringLaunchCandidate} />
+          </Motion.section>
+        )}
 
         <Motion.section variants={item}>
           <div className="ui-panel p-5">

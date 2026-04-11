@@ -3,7 +3,7 @@ import { motion as Motion } from 'framer-motion';
 import { BrainCircuit, Loader2, Rocket, ShieldCheck, Sparkles, Target, Workflow } from 'lucide-react';
 import { container, item } from '../utils/variants';
 import { cn } from '../utils/cn';
-import { useActivityLog, useCostData, useModelBank, usePendingReviews, useRoutingPolicies, useSchedules } from '../utils/useSupabase';
+import { useActivityLog, useApprovalAudit, useCostData, useModelBank, usePendingReviews, useRoutingPolicies, useSchedules, useTaskInterventions, useTaskOutcomes } from '../utils/useSupabase';
 import { approveMissionTask, interruptAndRedirectTask, recordBatchCommandEvent, retryTask, stopTask } from '../lib/api';
 import { CommanderHero } from '../components/overview/CommanderHero';
 import { CommandReadFirst } from '../components/overview/CommandReadFirst';
@@ -22,7 +22,9 @@ import { useCommandCenterTruth } from '../utils/useCommandCenterTruth';
 import { ReactorCoreBoard } from '../components/command/ReactorCoreBoard';
 import { CommandTimelineRail } from '../components/command/CommandTimelineRail';
 import { buildTimelineEntries } from '../utils/buildCommandTimeline';
-import { getPolicyActionGuidance, getPolicyDeltaReadback, getTradeoffCorrectiveAction, getTradeoffOutcomeSummary } from '../utils/commanderAnalytics';
+import { buildFailureTriageActionDraft, getCommanderNextMove, getExecutionAuditReadback, getFailureTriageSummary, getHybridApprovalSummary, getPolicyActionGuidance, getPolicyDeltaReadback, getPrimaryBottleneck, getRecurringBriefFitAction, getRecurringBriefFitReadback, getTradeoffCorrectiveAction, getTradeoffOutcomeSummary } from '../utils/commanderAnalytics';
+import { buildConnectorActionDraft, formatBranchConnectorBlocker, formatFallbackStrategyLabel, getBranchConnectorCorrectiveAction, getBranchConnectorPressureSummary, getGraphContractPressureSummary, getGraphReasoningSummary, getGroupedConnectorBlockers, getLaunchReadinessPressure, getMissionDispatchPressureSummary, getTaskBranchExecutionPosture, getTaskDispatchReadback } from '../utils/executionReadiness';
+import { buildTaskControlActionDraft, describeTaskTransition, getApprovalTransitionState, getDecisionNarrativeSummary, getMissionGraphSummary, getTaskControlActionMode, getTaskExecutableControlAction, getTaskLiveControlState } from '../utils/missionLifecycle';
 
 function formatWaitLabel(ms) {
   if (!ms || ms <= 0) return 'None';
@@ -93,7 +95,10 @@ function BridgeModeCard({ eyebrow, title, description, stats = [], actionLabel, 
 
 export function OverviewView({ agents, tasks, loading, onOpenDetail, onNavigate }) {
   const { logs } = useActivityLog();
+  const { auditTrail } = useApprovalAudit();
   const { reviews } = usePendingReviews();
+  const { interventions } = useTaskInterventions();
+  const { outcomes } = useTaskOutcomes();
   const { schedules, loading: loadingSchedules } = useSchedules();
   const { models } = useModelBank();
   const { policies: routingPolicies } = useRoutingPolicies();
@@ -180,6 +185,11 @@ export function OverviewView({ agents, tasks, loading, onOpenDetail, onNavigate 
     () => reviews.map((review) => Number(review.waitingMs || 0)).filter((value) => value > 0),
     [reviews]
   );
+  const missionApprovalPressure = useMemo(
+    () => tasks.filter((task) => task.status === 'needs_approval' || task.requiresApproval).length,
+    [tasks]
+  );
+  const totalApprovalPressure = missionApprovalPressure + reviews.length;
   const avgApprovalWaitMs = approvalWaitTimes.length
     ? Math.round(approvalWaitTimes.reduce((sum, value) => sum + value, 0) / approvalWaitTimes.length)
     : 0;
@@ -189,7 +199,7 @@ export function OverviewView({ agents, tasks, loading, onOpenDetail, onNavigate 
     () => schedules.filter((job) => job.status === 'active' && job.nextRunAt && new Date(job.nextRunAt).getTime() < referenceNow).length,
     [referenceNow, schedules]
   );
-  const needsAttention = reviews.length + failedTasks.length + stalledAgents.length + lateSchedules;
+  const needsAttention = totalApprovalPressure + failedTasks.length + stalledAgents.length + lateSchedules;
 
   const prioritizedTasks = useMemo(() => {
     const reviewAgentIds = new Set(reviews.map((review) => review.agentId).filter(Boolean));
@@ -204,19 +214,71 @@ export function OverviewView({ agents, tasks, loading, onOpenDetail, onNavigate 
         return Number(b.durationMs || 0) - Number(a.durationMs || 0);
       })
       .slice(0, 8)
-      .map((task) => ({
-        ...task,
-        needsReview: reviewAgentIds.has(task.agentId),
-        blocker:
-          task.status === 'error'
-            ? 'Task failed and likely needs retry or review.'
-            : reviewAgentIds.has(task.agentId)
-              ? 'Waiting on human approval.'
-              : task.status === 'pending'
-                ? 'Queued behind current work.'
-                : 'Running normally.',
-      }));
-  }, [reviews, tasks]);
+      .map((task) => {
+        const connectorPosture = getTaskBranchExecutionPosture(task, interventions);
+        const connectorBlocker = formatBranchConnectorBlocker(connectorPosture);
+        const transition = describeTaskTransition(task, tasks);
+        const graphSummary = getMissionGraphSummary(tasks, task.rootMissionId || task.root_mission_id || task.id);
+        const dispatchReadback = getTaskDispatchReadback(task, tasks);
+        const isDependencyHeld = transition.label === 'Held on upstream';
+        const isReleased = transition.label === 'Released';
+        return {
+          ...task,
+          connectorPosture,
+          transition,
+          graphSummary,
+          dispatchReadback,
+          fallbackLabel: formatFallbackStrategyLabel(connectorPosture.fallbackStrategy),
+          connectorCorrectiveAction: getBranchConnectorCorrectiveAction(connectorPosture),
+          needsReview: reviewAgentIds.has(task.agentId) || connectorPosture.requiresHumanGate || transition.label === 'Held for approval',
+          blocker:
+            task.status === 'error'
+              ? transition.detail
+              : connectorPosture.requiresHumanGate
+                ? connectorBlocker
+                : isDependencyHeld || isReleased || transition.label === 'Blocked' || transition.label === 'Held for approval'
+                  ? transition.detail
+                : reviewAgentIds.has(task.agentId)
+                  ? 'Waiting on human approval.'
+                  : task.status === 'pending'
+                    ? connectorBlocker || 'Queued behind current work.'
+                    : connectorBlocker || 'Running normally.',
+          postureLabel: isDependencyHeld
+            ? 'Held on upstream'
+            : isReleased
+              ? 'Released to run'
+              : dispatchReadback.label || transition.label,
+        };
+      })
+      .sort((a, b) => {
+        const scoreForNextMove = (entry) => {
+          if (!commanderNextMove?.available) return 0;
+          const source = commanderNextMove.source;
+          if (source === 'failure_triage') return ['failed', 'error', 'blocked'].includes(entry.status) ? 100 : 0;
+          if (source === 'hybrid_approval') return entry.needsReview ? 100 : 0;
+          if (source === 'grouped_connector_blocker' || source === 'connector_branch_pressure') return entry.connectorPosture?.requiresHumanGate ? 100 : 0;
+          if (source === 'dispatch_pressure' || source === 'graph_contract') return entry.dispatchReadback?.label === 'Held upstream' || String(entry.dispatchReadback?.label || '').toLowerCase().includes('serialized') ? 100 : 0;
+          return 0;
+        };
+        const nextMoveDelta = scoreForNextMove(b) - scoreForNextMove(a);
+        if (nextMoveDelta !== 0) return nextMoveDelta;
+        const guardDelta = Number(Boolean(b.connectorPosture?.requiresHumanGate)) - Number(Boolean(a.connectorPosture?.requiresHumanGate));
+        if (guardDelta !== 0) return guardDelta;
+        return 0;
+      });
+  }, [reviews, tasks, interventions, commanderNextMove]);
+  const missionGraph = useMemo(() => getMissionGraphSummary(tasks), [tasks]);
+  const missionDispatchPressure = useMemo(() => getMissionDispatchPressureSummary(tasks), [tasks]);
+  const graphContractPressure = useMemo(() => getGraphContractPressureSummary(tasks, interventions), [tasks, interventions]);
+  const graphReasoning = useMemo(() => getGraphReasoningSummary(tasks, interventions), [tasks, interventions]);
+  const primaryBottleneck = useMemo(
+    () => getPrimaryBottleneck({ tasks, reviews, schedules, agents, interventions, logs, costData }),
+    [tasks, reviews, schedules, agents, interventions, logs, costData]
+  );
+  const commanderNextMove = useMemo(
+    () => getCommanderNextMove({ tasks, reviews, schedules, agents, interventions, logs, approvalAudit: auditTrail, costData, learningMemory }),
+    [tasks, reviews, schedules, agents, interventions, logs, auditTrail, costData, learningMemory]
+  );
 
   const overviewSummary = {
     primaryMessage:
@@ -226,7 +288,7 @@ export function OverviewView({ agents, tasks, loading, onOpenDetail, onNavigate 
     needsAttention,
     activeAgents,
     burnRate: costData.burnRate,
-    pendingApprovals: reviews.length,
+    pendingApprovals: totalApprovalPressure,
     runningTasks: runningTasks.length,
     failedTasks: failedTasks.length,
     idleAgents,
@@ -241,6 +303,10 @@ export function OverviewView({ agents, tasks, loading, onOpenDetail, onNavigate 
     longestApprovalWaitLabel: formatWaitLabel(longestApprovalWaitMs),
     lateSchedules,
     scheduledJobs: schedules.length,
+    graphHeldBranches: missionGraph.heldCount,
+    graphBlockedBranches: missionGraph.blockedCount,
+    graphReleasedBranches: missionGraph.releasedCount,
+    graphProgressLabel: `${missionGraph.progressPercent}%`,
   };
   const learningMemory = useLearningMemory({ agents, tasks, approvals: reviews, logs, costData });
   const truth = useCommandCenterTruth();
@@ -251,7 +317,7 @@ export function OverviewView({ agents, tasks, loading, onOpenDetail, onNavigate 
   );
 
   const readiness = useMemo(() => {
-    const score = Math.max(0, Math.min(100, 100 - (reviews.length * 8) - (failedTasks.length * 12) - (stalledAgents.length * 10) - (lateSchedules * 7)));
+    const score = Math.max(0, Math.min(100, 100 - (totalApprovalPressure * 8) - (failedTasks.length * 12) - (stalledAgents.length * 10) - (lateSchedules * 7)));
     const state = score >= 82 ? 'ready' : score >= 58 ? 'caution' : 'blocked';
     const label = state === 'ready' ? 'Launch ready' : state === 'caution' ? 'Proceed with caution' : 'Hold and stabilize';
     const headline = state === 'ready'
@@ -265,7 +331,7 @@ export function OverviewView({ agents, tasks, loading, onOpenDetail, onNavigate 
         ? 'The machine is moving, but human gates or unstable lanes are still visible from the bridge.'
         : 'Recovery work is outweighing acceleration. Clear the blockers before adding more throughput.';
     return { score, state, label, headline, readback };
-  }, [reviews.length, failedTasks.length, stalledAgents.length, lateSchedules]);
+  }, [totalApprovalPressure, failedTasks.length, stalledAgents.length, lateSchedules]);
   const topPolicyDelta = useMemo(
     () => getPolicyDeltaReadback(routingPolicies.find((policy) => policy.isDefault) || routingPolicies[0] || null, tasks, [], logs),
     [routingPolicies, tasks, logs]
@@ -286,24 +352,67 @@ export function OverviewView({ agents, tasks, loading, onOpenDetail, onNavigate 
     () => getTradeoffCorrectiveAction(topTradeoffOutcome, topPolicyActionGuidance.swap),
     [topTradeoffOutcome, topPolicyActionGuidance]
   );
+  const recurringBriefReadback = useMemo(
+    () => getRecurringBriefFitReadback(tasks, interventions, outcomes),
+    [tasks, interventions, outcomes]
+  );
+  const recurringBriefAction = useMemo(
+    () => getRecurringBriefFitAction(tasks, interventions, outcomes),
+    [tasks, interventions, outcomes]
+  );
+  const recurringPaybackDoctrine = learningMemory?.doctrineById?.['recurring-payback-memory'] || null;
+  const recurringAdaptiveDoctrine = learningMemory?.doctrineById?.['recurring-adaptive-control'] || null;
+  const launchReadinessPressure = useMemo(
+    () => getLaunchReadinessPressure(interventions),
+    [interventions]
+  );
+  const branchConnectorPressure = useMemo(
+    () => getBranchConnectorPressureSummary(tasks, interventions),
+    [tasks, interventions]
+  );
+  const groupedConnectorBlockers = useMemo(
+    () => getGroupedConnectorBlockers(tasks, interventions),
+    [tasks, interventions]
+  );
+  const hybridApprovalSummary = useMemo(
+    () => getHybridApprovalSummary({ tasks, reviews, interventions, approvalAudit: auditTrail }),
+    [tasks, reviews, interventions, auditTrail]
+  );
+  const failureTriage = useMemo(
+    () => getFailureTriageSummary({ tasks, interventions, logs }),
+    [tasks, interventions, logs]
+  );
+  const failureTriageDraft = useMemo(
+    () => buildFailureTriageActionDraft(failureTriage),
+    [failureTriage]
+  );
+  const executionAudit = useMemo(
+    () => getExecutionAuditReadback({ tasks, interventions, approvalAudit: auditTrail, logs, limit: 3 }),
+    [tasks, interventions, auditTrail, logs]
+  );
+  const decisionNarrative = useMemo(
+    () => getDecisionNarrativeSummary(tasks, interventions),
+    [tasks, interventions]
+  );
 
   const readFirstItems = useMemo(() => {
-    const primaryDrag = reviews.length > 0
-      ? `${reviews.length} approval${reviews.length === 1 ? '' : 's'} are slowing the machine first`
-      : lateSchedules > 0
-        ? `${lateSchedules} automation${lateSchedules === 1 ? ' is' : 's are'} behind schedule`
-        : 'The machine is clear enough to push throughput';
     const spendLeader = costData.models?.[0];
     return [
       {
         eyebrow: 'Read First',
-        title: primaryDrag,
-        detail: reviews.length > 0
-          ? 'The fastest executive win is clearing approvals or bundling decisions so missions stop stacking behind humans.'
-          : lateSchedules > 0
-            ? 'Recurring systems have drifted behind their next run window, so automation credibility is the first thing to restore.'
+        title: commanderNextMove?.available
+          ? commanderNextMove.title
+          : primaryBottleneck?.title || 'The machine is clear enough to push throughput',
+        detail: commanderNextMove?.available
+          ? `${commanderNextMove.detail} Do next: ${commanderNextMove.nextMove}.`
+          : primaryBottleneck
+            ? `${primaryBottleneck.detail} Do next: ${primaryBottleneck.action}`
             : 'No dominant choke point is visible. This is the right moment to launch, delegate, or scale the cleanest lane.',
-        tone: 'text-aurora-amber',
+        tone: commanderNextMove?.tone === 'rose'
+          ? 'text-aurora-rose'
+          : commanderNextMove?.tone === 'amber'
+            ? 'text-aurora-amber'
+            : 'text-aurora-teal',
       },
       {
         eyebrow: 'Scale Signal',
@@ -327,11 +436,95 @@ export function OverviewView({ agents, tasks, loading, onOpenDetail, onNavigate 
               : 'No single operator or model is dominating the board yet, which means you still have room to shape clean habits.',
         tone: topPolicyDelta.tone === 'teal' ? 'text-aurora-teal' : topPolicyDelta.tone === 'amber' ? 'text-aurora-amber' : 'text-aurora-blue',
       },
+      ...(hybridApprovalSummary.available ? [{
+        eyebrow: 'Approval Signal',
+        title: hybridApprovalSummary.title,
+        detail: `${hybridApprovalSummary.detail} ${hybridApprovalSummary.transitionLabel}. ${hybridApprovalSummary.resolutionLabel}. Do next: ${String(hybridApprovalSummary.nextMove || 'keep_flowing').replaceAll('_', ' ')}.${hybridApprovalSummary.latestDecision ? ` Latest decision: ${hybridApprovalSummary.latestDecision.label}.` : ''}`,
+        tone: hybridApprovalSummary.tone === 'amber' ? 'text-aurora-amber' : 'text-aurora-teal',
+      }] : []),
+      ...(failureTriage.available ? [{
+        eyebrow: 'Recovery Signal',
+        title: failureTriage.title,
+        detail: `${failureTriage.detail} Verdict: ${failureTriage.verdict}. ${failureTriage.resolutionLabel}. Do next: ${failureTriage.nextMove}.${failureTriage.graphContract?.label ? ` Graph contract: ${failureTriage.graphContract.label}.` : ''}`,
+        tone: failureTriage.tone === 'amber' ? 'text-aurora-amber' : 'text-aurora-rose',
+      }] : []),
+      ...(executionAudit.available ? [{
+        eyebrow: 'Audit Signal',
+        title: executionAudit.title,
+        detail: executionAudit.entries[0]
+          ? `${executionAudit.entries[0].label}. ${executionAudit.entries[0].detail}`
+          : executionAudit.detail,
+        tone: 'text-aurora-blue',
+      }] : []),
+      ...(decisionNarrative.available ? [{
+        eyebrow: 'Decision Signal',
+        title: decisionNarrative.title,
+        detail: `${decisionNarrative.detail} Do next: ${String(decisionNarrative.nextMove || 'keep_flowing').replaceAll('_', ' ')}.`,
+        tone: decisionNarrative.tone === 'rose'
+          ? 'text-aurora-rose'
+          : decisionNarrative.tone === 'amber'
+            ? 'text-aurora-amber'
+            : decisionNarrative.tone === 'blue'
+              ? 'text-aurora-blue'
+              : 'text-aurora-teal',
+      }] : []),
+      ...(launchReadinessPressure.available && launchReadinessPressure.score > 0 ? [{
+        eyebrow: 'System Signal',
+        title: launchReadinessPressure.title,
+        detail: `${launchReadinessPressure.detail} Top systems: ${launchReadinessPressure.topSystems.map((system) => system.label).join(', ')}.`,
+        tone: launchReadinessPressure.tone === 'rose' ? 'text-aurora-rose' : 'text-aurora-amber',
+      }] : []),
+      ...(branchConnectorPressure.available && branchConnectorPressure.score > 0 ? [{
+        eyebrow: 'Branch Signal',
+        title: groupedConnectorBlockers.topGroup?.affectedCount > 1 ? groupedConnectorBlockers.title : branchConnectorPressure.title,
+        detail: groupedConnectorBlockers.topGroup?.affectedCount > 1
+          ? `${groupedConnectorBlockers.detail} Top branches: ${groupedConnectorBlockers.topGroup.affectedBranches.map((branch) => branch.title).join(', ')}.${groupedConnectorBlockers.topGroup.correctiveAction?.label ? ` Next move: ${groupedConnectorBlockers.topGroup.correctiveAction.label.toLowerCase()}.` : ''}`
+          : `${branchConnectorPressure.detail} Top branches: ${branchConnectorPressure.topBranches.map((branch) => branch.title).join(', ')}.${branchConnectorPressure.topBranches[0]?.fallbackStrategy ? ` Fallback: ${formatFallbackStrategyLabel(branchConnectorPressure.topBranches[0].fallbackStrategy).toLowerCase()}.` : ''}${branchConnectorPressure.topCorrectiveAction?.label ? ` Next move: ${branchConnectorPressure.topCorrectiveAction.label.toLowerCase()}.` : ''}`,
+        tone: branchConnectorPressure.tone === 'rose' ? 'text-aurora-rose' : 'text-aurora-amber',
+      }] : []),
+      ...(missionDispatchPressure.available ? [{
+        eyebrow: 'Dispatch Signal',
+        title: missionDispatchPressure.title,
+        detail: `${missionDispatchPressure.detail} Do next: ${missionDispatchPressure.nextMove}`,
+        tone: missionDispatchPressure.tone === 'rose' ? 'text-aurora-rose' : missionDispatchPressure.tone === 'amber' ? 'text-aurora-amber' : 'text-aurora-teal',
+      }] : []),
+      ...(graphContractPressure.available ? [{
+        eyebrow: 'Graph Contract',
+        title: graphContractPressure.title,
+        detail: `${graphContractPressure.detail} Do next: ${graphContractPressure.nextMove}`,
+        tone: graphContractPressure.tone === 'rose' ? 'text-aurora-rose' : graphContractPressure.tone === 'amber' ? 'text-aurora-amber' : graphContractPressure.tone === 'blue' ? 'text-aurora-blue' : 'text-aurora-teal',
+      }] : []),
+      ...(graphReasoning.available ? [{
+        eyebrow: 'Graph Signal',
+        title: graphReasoning.title,
+        detail: `${graphReasoning.detail} Do next: ${graphReasoning.nextMove}`,
+        tone: graphReasoning.tone === 'rose' ? 'text-aurora-rose' : graphReasoning.tone === 'amber' ? 'text-aurora-amber' : graphReasoning.tone === 'blue' ? 'text-aurora-blue' : 'text-aurora-teal',
+      }] : []),
+      ...(recurringBriefReadback.available ? [{
+        eyebrow: 'Recurring Signal',
+        title: recurringBriefReadback.title,
+        detail: recurringBriefAction.available
+          ? `${recurringBriefReadback.detail} Next move: ${recurringBriefAction.actionLabel.toLowerCase()}.`
+          : recurringBriefReadback.detail,
+        tone: recurringBriefReadback.tone === 'teal' ? 'text-aurora-teal' : recurringBriefReadback.tone === 'amber' ? 'text-aurora-amber' : 'text-aurora-blue',
+      }] : []),
+      ...(recurringPaybackDoctrine ? [{
+        eyebrow: 'Recurring Payback',
+        title: recurringPaybackDoctrine.title,
+        detail: recurringPaybackDoctrine.detail,
+        tone: recurringPaybackDoctrine.tone === 'teal' ? 'text-aurora-teal' : recurringPaybackDoctrine.tone === 'amber' ? 'text-aurora-amber' : 'text-aurora-blue',
+      }] : []),
+      ...(recurringAdaptiveDoctrine ? [{
+        eyebrow: 'Recurring Defaults',
+        title: recurringAdaptiveDoctrine.title,
+        detail: recurringAdaptiveDoctrine.detail,
+        tone: recurringAdaptiveDoctrine.tone === 'teal' ? 'text-aurora-teal' : recurringAdaptiveDoctrine.tone === 'amber' ? 'text-aurora-amber' : 'text-aurora-blue',
+      }] : []),
     ];
-  }, [reviews.length, lateSchedules, costData.models, flaggedAgents, readiness.score, topPolicyDelta, routingPolicies.length, topPolicyActionGuidance.swap.enabled, topPolicyActionGuidance.swap.signal, topTradeoffOutcome.available, topTradeoffOutcome.detail]);
+  }, [commanderNextMove, costData.models, decisionNarrative, flaggedAgents, graphContractPressure, graphReasoning, readiness.score, topPolicyDelta, routingPolicies.length, topPolicyActionGuidance.swap.enabled, topPolicyActionGuidance.swap.signal, topTradeoffOutcome.available, topTradeoffOutcome.detail, hybridApprovalSummary, failureTriage, executionAudit, launchReadinessPressure, branchConnectorPressure, groupedConnectorBlockers, missionDispatchPressure, recurringBriefReadback, recurringBriefAction, recurringPaybackDoctrine, recurringAdaptiveDoctrine, primaryBottleneck]);
 
   const autonomyPosture = useMemo(() => {
-    const humanGates = reviews.length + lateSchedules;
+    const humanGates = totalApprovalPressure + lateSchedules;
     const recoveryDrag = failedTasks.length + stalledAgents.length;
     const totalPressure = runningTasks.length + pendingTasks.length + humanGates + recoveryDrag;
     const autonomousPercent = totalPressure === 0 ? 100 : Math.max(0, Math.round(((runningTasks.length + pendingTasks.length) / totalPressure) * 100));
@@ -342,7 +535,7 @@ export function OverviewView({ agents, tasks, loading, onOpenDetail, onNavigate 
       : state === 'assisted'
         ? 'Core flow is working, but enough manual intervention remains that command still matters in the loop.'
         : 'Human decisions and recovery work are dominating too much of the bridge right now.';
-    const primaryDrag = reviews.length > 0
+    const primaryDrag = totalApprovalPressure > 0
       ? 'Approval gates are still the main drag'
       : failedTasks.length > 0
         ? 'Recovery work is still visible'
@@ -366,15 +559,15 @@ export function OverviewView({ agents, tasks, loading, onOpenDetail, onNavigate 
       primaryDrag,
       readback: readiness.readback,
     };
-  }, [reviews.length, lateSchedules, failedTasks.length, stalledAgents.length, runningTasks.length, pendingTasks.length, readiness]);
+  }, [totalApprovalPressure, lateSchedules, failedTasks.length, stalledAgents.length, runningTasks.length, pendingTasks.length, readiness]);
 
   const launchProtocolActions = useMemo(() => {
     const actions = [];
-    if (reviews.length > 0) {
+    if (totalApprovalPressure > 0) {
       actions.push({
         label: 'Clear approval drag',
-        detail: `${reviews.length} item${reviews.length === 1 ? '' : 's'} are waiting on human judgment before execution can continue.`,
-        badge: `${reviews.length} gates`,
+        detail: `${totalApprovalPressure} approval gate${totalApprovalPressure === 1 ? '' : 's'} are waiting on human judgment before execution can continue.`,
+        badge: `${totalApprovalPressure} gates`,
         type: 'navigate',
         target: 'missions',
         icon: 'approvals',
@@ -426,7 +619,7 @@ export function OverviewView({ agents, tasks, loading, onOpenDetail, onNavigate 
       });
     }
     return actions.slice(0, 4);
-  }, [reviews.length, flaggedAgents, lateSchedules, operatorAgents.length]);
+  }, [totalApprovalPressure, flaggedAgents, lateSchedules, operatorAgents.length]);
 
   const bridgeModeCards = useMemo(() => {
     const topDoctrine = learningMemory?.topThree?.[0];
@@ -453,9 +646,9 @@ export function OverviewView({ agents, tasks, loading, onOpenDetail, onNavigate 
       {
         key: 'missions',
         eyebrow: 'Mission Deck',
-        title: `${runningTasks.length} live mission${runningTasks.length === 1 ? '' : 's'} with ${reviews.length} human gate${reviews.length === 1 ? '' : 's'}`,
-        description: reviews.length > 0
-          ? `${formatWaitLabel(avgApprovalWaitMs)} average approval drag is still the biggest mission-speed constraint on the deck.`
+        title: `${runningTasks.length} live mission${runningTasks.length === 1 ? '' : 's'} with ${totalApprovalPressure} human gate${totalApprovalPressure === 1 ? '' : 's'}`,
+        description: totalApprovalPressure > 0
+          ? `${formatWaitLabel(avgApprovalWaitMs)} average approval drag is still the biggest mission-speed constraint on the deck, with mission and review gates both counted.`
           : lateSchedules > 0
             ? `${lateSchedules} recurring flow${lateSchedules === 1 ? ' is' : 's are'} behind schedule and should be stabilized before the next wave.`
             : 'Mission throughput is clean enough that Commander can push the next wave without immediate gate pressure.',
@@ -464,7 +657,7 @@ export function OverviewView({ agents, tasks, loading, onOpenDetail, onNavigate 
         stats: [
           { label: 'live', value: runningTasks.length },
           { label: 'queued', value: pendingTasks.length },
-          { label: 'approvals', value: reviews.length },
+          { label: 'approvals', value: totalApprovalPressure },
           { label: 'late schedules', value: lateSchedules },
         ],
         actionLabel: 'Open Live Deck',
@@ -495,7 +688,7 @@ export function OverviewView({ agents, tasks, loading, onOpenDetail, onNavigate 
     overviewSummary.needsAttention,
     onNavigate,
     runningTasks.length,
-    reviews.length,
+    totalApprovalPressure,
     avgApprovalWaitMs,
     lateSchedules,
     pendingTasks.length,
@@ -512,8 +705,15 @@ export function OverviewView({ agents, tasks, loading, onOpenDetail, onNavigate 
       .map((task) => {
         let priorityScore = 0;
         let posture = 'queued';
+        const connectorPosture = getTaskBranchExecutionPosture(task, interventions);
+        const controlState = getTaskLiveControlState(task, interventions, tasks);
+        const hasDependents = Array.isArray(task.dependsOn)
+          ? task.dependsOn.length > 0
+          : Array.isArray(task.depends_on)
+            ? task.depends_on.length > 0
+            : false;
 
-        if (task.status === 'needs_approval') {
+        if (task.status === 'needs_approval' || task.requiresApproval) {
           priorityScore = 100;
           posture = 'approval';
         } else if (['failed', 'error', 'blocked'].includes(task.status)) {
@@ -529,6 +729,22 @@ export function OverviewView({ agents, tasks, loading, onOpenDetail, onNavigate 
 
         priorityScore += Number(task.priority || 0);
         if (task.requiresApproval) priorityScore += 8;
+        if (connectorPosture.fallbackStrategy === 'guarded_external') {
+          priorityScore += hasDependents ? 18 : 14;
+          posture = posture === 'live' ? 'guarded-external' : posture;
+        } else if (connectorPosture.fallbackStrategy === 'local_first') {
+          priorityScore -= 8;
+          posture = posture === 'queued' ? 'local-first' : posture;
+        } else if (connectorPosture.fallbackStrategy === 'read_only_reroute') {
+          priorityScore -= 2;
+          posture = posture === 'queued' ? 'reroute-safe' : posture;
+        }
+        if (connectorPosture.requiresHumanGate) {
+          priorityScore += 14;
+          posture = posture === 'live' ? 'connector-guard' : posture;
+        } else if (connectorPosture.available && connectorPosture.modes.includes('draft')) {
+          priorityScore += 6;
+        }
 
         const taskProvider = String(task.providerOverride || '').trim() || (task.routingReason?.match(/Provider[:=]\s*([A-Za-z0-9_-]+)/i)?.[1] || '');
         const taskModel = String(task.modelOverride || '').trim();
@@ -549,13 +765,23 @@ export function OverviewView({ agents, tasks, loading, onOpenDetail, onNavigate 
           priorityScore -= 6;
         }
 
-        return { task, posture, priorityScore, correctiveAction: matchesCurrentTradeoffLane && topTradeoffOutcome.available ? topTradeoffCorrectiveAction : null };
+        return {
+          task,
+          posture,
+          priorityScore,
+          correctiveAction: matchesCurrentTradeoffLane && topTradeoffOutcome.available ? topTradeoffCorrectiveAction : null,
+          connectorPosture,
+          connectorBlocker: formatBranchConnectorBlocker(connectorPosture),
+          connectorCorrectiveAction: getBranchConnectorCorrectiveAction(connectorPosture),
+          controlState,
+          controlActionDraft: buildTaskControlActionDraft(controlState, task),
+        };
       })
       .filter((entry) => entry.priorityScore > 0)
       .sort((a, b) => b.priorityScore - a.priorityScore);
 
     return scored.slice(0, 3);
-  }, [tasks, topPolicyActionGuidance, topTradeoffOutcome, topTradeoffCorrectiveAction]);
+  }, [tasks, interventions, topPolicyActionGuidance, topTradeoffOutcome, topTradeoffCorrectiveAction]);
 
   const safestRedirectAgent = useMemo(() => {
     const operators = agents.filter((agent) => !agent.isSyntheticCommander);
@@ -564,7 +790,7 @@ export function OverviewView({ agents, tasks, loading, onOpenDetail, onNavigate 
       || null;
   }, [agents]);
   const approvalQueue = useMemo(
-    () => bridgeControlQueue.filter(({ task }) => task.status === 'needs_approval'),
+    () => bridgeControlQueue.filter(({ task }) => task.status === 'needs_approval' || task.requiresApproval),
     [bridgeControlQueue]
   );
   const recoveryQueue = useMemo(
@@ -753,6 +979,52 @@ export function OverviewView({ agents, tasks, loading, onOpenDetail, onNavigate 
 
                 {bridgeControlQueue.length > 0 ? (
                   <div className="mt-4 space-y-3">
+                    {groupedConnectorBlockers.topGroup?.affectedCount > 1 ? (
+                      <div className="rounded-[20px] border border-aurora-blue/15 bg-[linear-gradient(135deg,rgba(96,165,250,0.08),rgba(255,255,255,0.02))] p-4">
+                        <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.16em] text-aurora-blue font-semibold">
+                          <Target className="h-3.5 w-3.5" />
+                          Shared connector fix
+                        </div>
+                        <div className="mt-2 text-[14px] font-semibold text-text-primary">{groupedConnectorBlockers.topGroup.title}</div>
+                        <div className="mt-2 text-[12px] leading-relaxed text-text-body">{groupedConnectorBlockers.topGroup.detail}</div>
+                        <div className="mt-2 text-[11px] leading-relaxed text-aurora-blue">{groupedConnectorBlockers.topGroup.order}</div>
+                        <div className="mt-2 text-[11px] leading-relaxed text-text-muted">
+                          Affected branches: {groupedConnectorBlockers.topGroup.affectedBranches.map((branch) => branch.title).join(', ')}.
+                        </div>
+                        {groupedConnectorBlockers.topGroup.correctiveAction?.label ? (
+                          <div className="mt-3 ui-panel-soft px-3 py-2 text-[11px] leading-relaxed text-text-body">
+                            <span className="font-semibold text-text-primary">Fastest safe move:</span> {groupedConnectorBlockers.topGroup.correctiveAction.label}. {groupedConnectorBlockers.topGroup.correctiveAction.detail}
+                            <div className="mt-2 text-[11px] leading-relaxed text-text-muted">
+                              Target lane: {groupedConnectorBlockers.topGroup.correctiveAction.targetRole || 'ops'}. Approval: {String(groupedConnectorBlockers.topGroup.correctiveAction.targetApprovalPosture || 'risk_weighted').replaceAll('_', ' ')}.
+                            </div>
+                            {groupedConnectorBlockers.topGroup.correctiveAction.opsPrompt ? (
+                              <div className="mt-3">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const connectorDraft = buildConnectorActionDraft(groupedConnectorBlockers.topGroup.correctiveAction, {
+                                      title: groupedConnectorBlockers.topGroup.title,
+                                      connectorLabel: groupedConnectorBlockers.topGroup.connectorLabel,
+                                      affectedBranches: groupedConnectorBlockers.topGroup.affectedBranches.map((branch) => branch.title),
+                                    });
+                                    if (!connectorDraft) return;
+                                    onNavigate?.('managedOps', {
+                                      managedOpsRouteState: {
+                                        tab: 'create',
+                                        ...connectorDraft,
+                                      },
+                                    });
+                                  }}
+                                  className="rounded-2xl border border-aurora-blue/20 bg-aurora-blue/10 px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-aurora-blue transition-colors hover:bg-aurora-blue/15"
+                                >
+                                  Stage grouped connector fix
+                                </button>
+                              </div>
+                            ) : null}
+                          </div>
+                        ) : null}
+                      </div>
+                    ) : null}
                     <div className="flex flex-wrap gap-2">
                       {approvalQueue.length > 1 && (
                         <button
@@ -768,14 +1040,24 @@ export function OverviewView({ agents, tasks, loading, onOpenDetail, onNavigate 
                       )}
                       {recoveryQueue.length > 1 && (
                         <button
-                          onClick={() => runBridgeAction('BatchRetry', async () => {
-                            await Promise.all(recoveryQueue.map(({ task }) => retryTask(task.id)));
-                            await recordBatchCommandEvent({ actionType: 'retry', tasks: recoveryQueue.map(({ task }) => task) });
-                          })}
+                          onClick={() => {
+                            if (failureTriageDraft && onNavigate) {
+                              onNavigate('managedOps', { managedOpsRouteState: failureTriageDraft });
+                              return;
+                            }
+                            runBridgeAction('BatchRetry', async () => {
+                              await Promise.all(recoveryQueue.map(({ task }) => retryTask(task.id)));
+                              await recordBatchCommandEvent({ actionType: 'retry', tasks: recoveryQueue.map(({ task }) => task) });
+                            });
+                          }}
                           disabled={!!bridgeActionLoading}
                           className="rounded-2xl border border-aurora-amber/20 bg-aurora-amber/10 px-4 py-2 text-[11px] font-semibold text-aurora-amber transition-colors hover:bg-aurora-amber/15 disabled:opacity-50"
                         >
-                          {bridgeActionLoading === 'BatchRetry' ? 'Retrying queue...' : `Retry ${recoveryQueue.length} branches`}
+                          {failureTriageDraft
+                            ? (failureTriage.actionLabel || 'Stage recovery move')
+                            : bridgeActionLoading === 'BatchRetry'
+                              ? 'Retrying queue...'
+                              : `Retry ${recoveryQueue.length} branches`}
                         </button>
                       )}
                       {liveQueue.length > 1 && (
@@ -812,7 +1094,20 @@ export function OverviewView({ agents, tasks, loading, onOpenDetail, onNavigate 
                       )}
                     </div>
 
-                    {bridgeControlQueue.map(({ task, posture, correctiveAction }, index) => (
+                    {bridgeControlQueue.map(({ task, posture, correctiveAction, connectorCorrectiveAction, connectorBlocker, controlState, controlActionDraft }, index) => {
+                      const approvalTransition = getApprovalTransitionState(task, interventions);
+                      const executableControlAction = getTaskExecutableControlAction({
+                        task,
+                        controlState,
+                        approvalTransition,
+                        redirectAgent: safestRedirectAgent,
+                      });
+                      const controlActionMode = getTaskControlActionMode({
+                        controlState,
+                        executableAction: executableControlAction,
+                        controlActionDraft,
+                      });
+                      return (
                       <div key={task.id} className="rounded-[20px] border border-white/[0.08] bg-black/20 p-4">
                         <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
                           <div>
@@ -824,6 +1119,31 @@ export function OverviewView({ agents, tasks, loading, onOpenDetail, onNavigate 
                             <div className="mt-1 text-[11px] leading-relaxed text-text-body">
                               {task.routingReason || 'Commander has not persisted a route rationale for this branch yet.'}
                             </div>
+                            {connectorBlocker ? (
+                              <div className="mt-2 ui-panel-soft px-3 py-2 text-[11px] leading-relaxed text-text-body">
+                                <span className="font-semibold text-text-primary">Connector blocker:</span> {connectorBlocker}
+                              </div>
+                            ) : null}
+                            {controlState?.available && controlState.kind !== 'flowing' ? (
+                              <div className="mt-2 ui-panel-soft px-3 py-2 text-[11px] leading-relaxed text-text-body">
+                                <span className="font-semibold text-text-primary">Live control state:</span> {controlState.label}. {controlState.detail}
+                                {controlState.resolutionLabel ? (
+                                  <div className="mt-2 text-[11px] leading-relaxed text-text-muted">
+                                    <span className="font-semibold text-text-primary">Safest next move:</span> {controlState.resolutionLabel}. {controlState.resolutionDetail}
+                                  </div>
+                                ) : null}
+                              </div>
+                            ) : null}
+                            {approvalTransition.available ? (
+                              <div className="mt-2 ui-panel-soft px-3 py-2 text-[11px] leading-relaxed text-text-body">
+                                <span className="font-semibold text-text-primary">Approval transition:</span> {approvalTransition.label}. {approvalTransition.detail}
+                                {approvalTransition.nextMove ? (
+                                  <div className="mt-2 text-[11px] leading-relaxed text-text-muted">
+                                    Do next: {String(approvalTransition.nextMove).replaceAll('_', ' ')}.
+                                  </div>
+                                ) : null}
+                              </div>
+                            ) : null}
                             {correctiveAction?.label ? (
                               <div className="mt-2 ui-panel-soft px-3 py-2 text-[11px] leading-relaxed text-text-body">
                                 <span className="font-semibold text-text-primary">Corrective action:</span> {correctiveAction.label}. {correctiveAction.detail}
@@ -840,6 +1160,45 @@ export function OverviewView({ agents, tasks, loading, onOpenDetail, onNavigate 
                                 ) : null}
                               </div>
                             ) : null}
+                            {!correctiveAction?.label && connectorCorrectiveAction?.label ? (
+                              <div className="mt-2 ui-panel-soft px-3 py-2 text-[11px] leading-relaxed text-text-body">
+                                <span className="font-semibold text-text-primary">Connector action:</span> {connectorCorrectiveAction.label}. {connectorCorrectiveAction.detail}
+                                {(connectorCorrectiveAction.targetRole || connectorCorrectiveAction.targetApprovalPosture) ? (
+                                  <div className="mt-2 text-[11px] leading-relaxed text-text-muted">
+                                    Target lane: {connectorCorrectiveAction.targetRole || 'ops'}. Approval: {String(connectorCorrectiveAction.targetApprovalPosture || 'risk_weighted').replaceAll('_', ' ')}.
+                                  </div>
+                                ) : null}
+                              </div>
+                            ) : null}
+                            {onNavigate && controlActionDraft ? (
+                              <div className="mt-3">
+                                {controlActionMode.helperText ? (
+                                  <div className="mb-2 text-[10px] leading-relaxed text-text-muted">
+                                    {controlActionMode.helperText}
+                                  </div>
+                                ) : null}
+                                <button
+                                  type="button"
+                                  onClick={() => onNavigate('managedOps', {
+                                    managedOpsRouteState: controlActionDraft,
+                                  })}
+                                  className="rounded-2xl border border-aurora-violet/20 bg-aurora-violet/10 px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-aurora-violet transition-colors hover:bg-aurora-violet/15"
+                                >
+                                  {controlActionMode.stageLabel || controlState.actionLabel}
+                                </button>
+                              </div>
+                            ) : null}
+                            {!controlActionDraft && failureTriage.topFailure?.id === task.id && failureTriageDraft ? (
+                              <div className="mt-3">
+                                <button
+                                  type="button"
+                                  onClick={() => onNavigate?.('managedOps', { managedOpsRouteState: failureTriageDraft })}
+                                  className="rounded-2xl border border-aurora-rose/20 bg-aurora-rose/10 px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-aurora-rose transition-colors hover:bg-aurora-rose/15"
+                                >
+                                  {failureTriage.actionLabel || 'Stage recovery move'}
+                                </button>
+                              </div>
+                            ) : null}
                           </div>
                           <div className="grid grid-cols-3 gap-2 xl:min-w-[320px]">
                             <div className="rounded-2xl border border-white/[0.08] bg-white/[0.03] px-3 py-2">
@@ -854,10 +1213,29 @@ export function OverviewView({ agents, tasks, loading, onOpenDetail, onNavigate 
                               <div className="text-[9px] uppercase tracking-[0.16em] text-text-muted">Agent</div>
                               <div className="mt-1 text-[12px] font-semibold text-text-primary">{task.agentName || 'Unassigned'}</div>
                             </div>
+                            <div className="rounded-2xl border border-white/[0.08] bg-white/[0.03] px-3 py-2 col-span-3 xl:col-span-3">
+                              <div className="text-[9px] uppercase tracking-[0.16em] text-text-muted">Resume posture</div>
+                              <div className="mt-1 text-[12px] font-semibold text-text-primary">
+                                {controlState?.canAutoResume
+                                  ? 'Safe to resume when lane clears'
+                                  : controlState?.shouldStayHeld
+                                    ? 'Should stay held until reviewed'
+                                    : 'Needs active commander decision'}
+                              </div>
+                            </div>
                           </div>
                         </div>
 
                         <div className="mt-4 flex flex-wrap gap-2">
+                          {executableControlAction.available && executableControlAction.kind === 'release' && (
+                            <button
+                              onClick={() => runBridgeAction(`Release-${task.id}`, () => approveMissionTask(task.id))}
+                              disabled={!!bridgeActionLoading}
+                              className="rounded-2xl bg-aurora-teal px-4 py-2 text-[11px] font-semibold text-black transition-colors hover:bg-[#00ebd8] disabled:opacity-50"
+                            >
+                              {bridgeActionLoading === `Release-${task.id}` ? 'Releasing...' : executableControlAction.label}
+                            </button>
+                          )}
                           {task.status === 'needs_approval' && (
                             <button
                               onClick={() => runBridgeAction(`Approve-${task.id}`, () => approveMissionTask(task.id))}
@@ -869,11 +1247,30 @@ export function OverviewView({ agents, tasks, loading, onOpenDetail, onNavigate 
                           )}
                           {['failed', 'error', 'blocked'].includes(task.status) && (
                             <button
-                              onClick={() => runBridgeAction(`Retry-${task.id}`, () => retryTask(task.id))}
+                              onClick={() => {
+                                if (failureTriage.topFailure?.id === task.id && failureTriageDraft && onNavigate) {
+                                  onNavigate('managedOps', { managedOpsRouteState: failureTriageDraft });
+                                  return;
+                                }
+                                runBridgeAction(`Retry-${task.id}`, () => retryTask(task.id));
+                              }}
                               disabled={!!bridgeActionLoading}
                               className="rounded-2xl border border-aurora-amber/20 bg-aurora-amber/10 px-4 py-2 text-[11px] font-semibold text-aurora-amber transition-colors hover:bg-aurora-amber/15 disabled:opacity-50"
                             >
-                              {bridgeActionLoading === `Retry-${task.id}` ? 'Retrying...' : 'Retry branch'}
+                              {failureTriage.topFailure?.id === task.id && failureTriageDraft
+                                ? (failureTriage.actionLabel || 'Run recovery move')
+                                : bridgeActionLoading === `Retry-${task.id}`
+                                  ? 'Retrying...'
+                                  : 'Retry branch'}
+                            </button>
+                          )}
+                          {executableControlAction.available && executableControlAction.kind === 'hold' && (
+                            <button
+                              onClick={() => runBridgeAction(`Hold-${task.id}`, () => stopTask(task.id))}
+                              disabled={!!bridgeActionLoading}
+                              className="rounded-2xl border border-aurora-rose/20 bg-aurora-rose/10 px-4 py-2 text-[11px] font-semibold text-aurora-rose transition-colors hover:bg-aurora-rose/15 disabled:opacity-50"
+                            >
+                              {bridgeActionLoading === `Hold-${task.id}` ? 'Holding...' : executableControlAction.label}
                             </button>
                           )}
                           {task.status === 'running' && (
@@ -883,6 +1280,19 @@ export function OverviewView({ agents, tasks, loading, onOpenDetail, onNavigate 
                               className="rounded-2xl border border-aurora-rose/20 bg-aurora-rose/10 px-4 py-2 text-[11px] font-semibold text-aurora-rose transition-colors hover:bg-aurora-rose/15 disabled:opacity-50"
                             >
                               {bridgeActionLoading === `Stop-${task.id}` ? 'Stopping...' : 'Stabilize branch'}
+                            </button>
+                          )}
+                          {executableControlAction.available && executableControlAction.kind === 'reroute' && safestRedirectAgent && (
+                            <button
+                              onClick={() => runBridgeAction(`GraphRedirect-${task.id}`, () => interruptAndRedirectTask(task.id, {
+                                agentId: safestRedirectAgent.id,
+                                providerOverride: safestRedirectAgent.provider || null,
+                                modelOverride: safestRedirectAgent.model || null,
+                              }, agents))}
+                              disabled={!!bridgeActionLoading}
+                              className="rounded-2xl border border-aurora-blue/20 bg-aurora-blue/10 px-4 py-2 text-[11px] font-semibold text-aurora-blue transition-colors hover:bg-aurora-blue/15 disabled:opacity-50"
+                            >
+                              {bridgeActionLoading === `GraphRedirect-${task.id}` ? 'Rerouting...' : executableControlAction.label}
                             </button>
                           )}
                           {safestRedirectAgent && (
@@ -906,7 +1316,8 @@ export function OverviewView({ agents, tasks, loading, onOpenDetail, onNavigate 
                           </button>
                         </div>
                       </div>
-                    ))}
+                      );
+                    })}
 
                     {bridgeActionError && (
                       <div className="rounded-2xl border border-aurora-rose/20 bg-aurora-rose/10 px-3 py-2 text-[11px] text-aurora-rose">

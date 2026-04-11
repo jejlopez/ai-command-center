@@ -45,6 +45,25 @@ function fallbackPlan(intent: string, mode = 'balanced') {
     branchLabel: index === 0 ? 'Command' : `Branch ${index}`,
     dependsOn: index === 0 ? [] : [steps[0].title],
   }));
+  const domain = /(code|bug|debug|test|pr|repo|build)/.test(lower)
+    ? 'build'
+    : /(research|prospect|find|analyz|investigat)/.test(lower)
+      ? 'research'
+      : /(email|draft|outreach|crm|pipedrive|customer|deal)/.test(lower)
+        ? 'sell'
+        : /(tracking|shipment|delay|ops|alert|incident)/.test(lower)
+          ? 'operate'
+          : 'general';
+  const intentType = /(email|draft|outreach)/.test(lower)
+    ? 'draft'
+    : /(summary|notes|report|call|crm|pipedrive)/.test(lower)
+      ? 'summarize'
+      : /(research|prospect|find|analyz|investigat)/.test(lower)
+        ? 'research'
+        : /(review|verify|check|qa|validate)/.test(lower)
+          ? 'verify'
+          : 'general';
+  const riskLevel = branches.length >= 4 ? 'high' : branches.length >= 2 ? 'medium' : 'low';
 
   return {
     steps,
@@ -52,6 +71,23 @@ function fallbackPlan(intent: string, mode = 'balanced') {
     estimatedDuration: `${durationBase * complexity}-${durationBase * complexity + 6} min`,
     estimatedCostRange: `$${(estimatedCostCents / 100).toFixed(2)}-$${((estimatedCostCents + 35) / 100).toFixed(2)}`,
     estimatedCostCents,
+    brief: {
+      objective: intent,
+      domain,
+      intentType,
+      riskLevel,
+      approvalPosture: riskLevel === 'high' ? 'risk_weighted' : 'auto_low_risk',
+      costPosture: mode === 'efficient' ? 'cost_disciplined' : mode === 'fast' ? 'speed_biased' : 'balanced',
+      successDefinition: 'Complete the mission with a usable artifact and minimal rescue pressure.',
+      constraints: [],
+    },
+    planSummary: {
+      branchCount: branches.length || 1,
+      primaryStrategy: branches.some((branch) => branch.executionStrategy === 'parallel') ? 'hybrid_parallel' : 'sequential',
+      specialistRoles: [...new Set(branches.map((branch) => branch.agentRole).filter(Boolean))],
+      dependencyPosture: branches.some((branch) => (branch.dependsOn || []).length > 0) ? 'dependency_gated' : 'launch_ready',
+      verificationRequirement: branches.some((branch) => branch.agentRole === 'verifier') ? 'verifier_branch' : 'lightweight',
+    },
     source: 'fallback',
   };
 }
@@ -107,6 +143,23 @@ Deno.serve(async (req: Request) => {
     const system = `You convert mission requests into compact execution plans.
 Return strict JSON only with shape:
 {
+  "brief":{
+    "objective":"...",
+    "domain":"general|build|research|sell|operate|money|personal",
+    "intentType":"research|draft|summarize|verify|operate|general",
+    "riskLevel":"low|medium|high",
+    "approvalPosture":"auto_low_risk|risk_weighted|human_required|plan_gated",
+    "costPosture":"cost_disciplined|balanced|speed_biased",
+    "successDefinition":"...",
+    "constraints":["..."]
+  },
+  "planSummary":{
+    "branchCount":3,
+    "primaryStrategy":"sequential|hybrid_parallel",
+    "specialistRoles":["planner","researcher","verifier"],
+    "dependencyPosture":"launch_ready|dependency_gated",
+    "verificationRequirement":"lightweight|verifier_branch|human_gate"
+  },
   "steps":[{"title":"...","description":"..."}],
   "branches":[
     {

@@ -849,6 +849,7 @@ export function useConnectedSystems(workspaceId = null) {
     const row = {
       status: patch.status || 'connected',
       last_verified_at: patch.lastVerifiedAt || new Date().toISOString(),
+      permission_scope: Array.isArray(patch.permissionScope) ? patch.permissionScope : undefined,
       metadata: patch.metadata,
     };
 
@@ -1755,6 +1756,59 @@ export function useTaskInterventions() {
   return { interventions, loading, refetch: fetchInterventions };
 }
 
+export function useApprovalAudit() {
+  const { user } = useAuth();
+  const [auditTrail, setAuditTrail] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetchAuditTrail = useCallback(async () => {
+    if (!user) {
+      setAuditTrail([]);
+      setLoading(false);
+      return;
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from('approval_audit')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      setAuditTrail((data || []).map(mapApprovalAuditFromDb));
+    } catch (error) {
+      console.error('[useApprovalAudit] Fetch error:', error);
+      setAuditTrail([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) return undefined;
+
+    fetchAuditTrail();
+    const channel = supabase
+      .channel(createRealtimeChannelName('approval-audit-user', user.id))
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'approval_audit',
+        filter: `user_id=eq.${user.id}`,
+      }, () => {
+        fetchAuditTrail();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user, fetchAuditTrail]);
+
+  return { auditTrail, loading, refetch: fetchAuditTrail };
+}
+
 export function useSpecialistLifecycle() {
   const { user } = useAuth();
   const [events, setEvents] = useState([]);
@@ -1910,6 +1964,10 @@ export async function ensureProviderInfrastructure({ provider, identifier }) {
       status: hasCredential ? 'connected' : 'needs_refresh',
       identifier: identifier || `${normalizedProvider}-primary`,
       capabilities: ['Read', 'Write', 'Sync'],
+      permission_scope: ['read', 'write', 'sync'],
+      domain: 'build',
+      trust_level: 'standard',
+      risk_level: 'medium',
       last_verified_at: hasCredential ? new Date().toISOString() : null,
       metadata: {
         tone: normalizedProvider === 'anthropic' ? 'violet' : normalizedProvider === 'openai' ? 'teal' : 'blue',
@@ -2772,6 +2830,10 @@ function mapConnectedSystemFromDb(row) {
     status: row.status || 'connected',
     identifier: row.identifier || '',
     capabilities: Array.isArray(row.capabilities) ? row.capabilities : [],
+    permissionScope: Array.isArray(row.permission_scope) ? row.permission_scope : [],
+    domain: row.domain || 'general',
+    trustLevel: row.trust_level || 'standard',
+    riskLevel: row.risk_level || 'medium',
     metadata: row.metadata || {},
     lastVerifiedAt: row.last_verified_at,
     createdAt: row.created_at,
@@ -2788,6 +2850,10 @@ function mapConnectedSystemToDb(userId, system, workspaceId = null) {
     status: system.status || 'connected',
     identifier: system.identifier || '',
     capabilities: system.capabilities || [],
+    permission_scope: system.permissionScope || [],
+    domain: system.domain || 'general',
+    trust_level: system.trustLevel || 'standard',
+    risk_level: system.riskLevel || 'medium',
     metadata: system.metadata || {},
     last_verified_at: system.lastVerifiedAt || new Date().toISOString(),
   };
@@ -2908,14 +2974,30 @@ function mapTaskInterventionFromDb(row) {
     taskId: row.task_id || null,
     rootMissionId: row.root_mission_id || null,
     eventType: row.event_type || 'intervention',
+    eventSource: row.event_source || 'runtime',
     scheduleType: row.schedule_type || null,
     domain: row.domain || 'general',
     intentType: row.intent_type || 'general',
     status: row.status || null,
+    tone: row.tone || 'blue',
+    provider: row.provider || null,
+    model: row.model || null,
     message: row.message || '',
     metadata: row.metadata || {},
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+  };
+}
+
+function mapApprovalAuditFromDb(row) {
+  return {
+    id: row.id,
+    userId: row.user_id,
+    reviewId: row.review_id || null,
+    decision: row.decision || 'approved',
+    feedback: row.feedback || '',
+    createdAt: row.created_at,
+    updatedAt: row.updated_at || row.created_at,
   };
 }
 

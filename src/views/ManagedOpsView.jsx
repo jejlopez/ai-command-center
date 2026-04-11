@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { TraceWaterfall } from '../components/TraceWaterfall';
 import { cn } from '../utils/cn';
+import { updateRecurringMissionFlow } from '../lib/api';
 import {
   createAgentTemplate,
   createCredentialVault,
@@ -38,8 +39,11 @@ import {
   useModelBank,
   useProviderCredentials,
   useSessionEvents,
+  useTaskInterventions,
+  useTasks,
   useVaultBindings,
 } from '../utils/useSupabase';
+import { getAutomationCandidates, getRecurringAutonomyTuningSummary, getRecurringBriefFitAction, getRecurringChangePayback, getRecurringChangeReadback, getRecurringNextCorrection, getRecurringPostChangeVerdict } from '../utils/commanderAnalytics';
 
 const workflowTabs = [
   { id: 'create', label: 'Create', icon: Sparkles, description: 'Describe the specialist, review the draft, then launch.' },
@@ -186,6 +190,16 @@ function formatStatusLabel(value) {
   return value.replace(/_/g, ' ');
 }
 
+function formatRecurringPostureValue(value, kind = 'text') {
+  if (value == null || value === '') return 'Not set';
+  if (kind === 'paused') return value ? 'Paused' : 'Active';
+  return String(value).replaceAll('_', ' ');
+}
+
+function formatPermissionScope(value) {
+  return String(value || 'limited').replaceAll('_', ' ');
+}
+
 function normalizeManagedOpsTab(tab) {
   if (tab === 'quickstart') return 'create';
   if (tab === 'templates' || tab === 'agents') return 'registry';
@@ -291,8 +305,92 @@ function ReadinessItem({ label, ready, detail }) {
   );
 }
 
-export function ManagedOpsView({ initialTab = 'create' }) {
+function RecurringTrustCard({ candidate, onStageAction }) {
+  if (!candidate?.launchBrief) return null;
+
+  const trust = getRecurringAutonomyTuningSummary(candidate);
+  const recurringAction = getRecurringBriefFitAction([candidate], [], []);
+  const recurringChange = getRecurringChangeReadback(candidate);
+  const recurringVerdict = getRecurringPostChangeVerdict(candidate);
+  const nextCorrection = getRecurringNextCorrection(candidate);
+  const tone = candidate.launchBriefFit === 'holding'
+    ? 'text-aurora-green border-aurora-green/20 bg-aurora-green/10'
+    : candidate.launchBriefFit === 'watch'
+      ? 'text-aurora-amber border-aurora-amber/20 bg-aurora-amber/10'
+      : 'text-aurora-rose border-aurora-rose/20 bg-aurora-rose/10';
+
+  return (
+    <div className="rounded-[24px] border border-white/10 bg-black/20 p-4">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <div className="text-[10px] uppercase tracking-[0.18em] text-text-muted">Recurring trust readback</div>
+          <div className="mt-2 text-sm font-semibold text-text-primary">{candidate.title}</div>
+        </div>
+        <span className={cn('rounded-full border px-2.5 py-1 text-[10px] uppercase tracking-[0.16em]', tone)}>
+          {candidate.launchBriefFit}
+        </span>
+      </div>
+      <div className="mt-3 text-sm leading-6 text-text-body">{trust.detail}</div>
+      <div className="mt-3 text-[11px] leading-5 text-text-muted">
+        Saved brief: {candidate.launchBrief.objective}
+      </div>
+      {recurringChange.available && (
+        <div className="mt-3 rounded-[18px] border border-white/10 bg-black/20 px-3 py-3">
+          <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Saved change</div>
+          <div className="mt-2 text-[12px] font-semibold text-text-primary">{recurringChange.title}</div>
+          <div className="mt-1 text-[11px] leading-5 text-text-body">{recurringChange.detail}</div>
+        </div>
+      )}
+      {recurringVerdict.available && (
+        <div className="mt-3 rounded-[18px] border border-white/10 bg-black/20 px-3 py-3">
+          <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Post-change verdict</div>
+          <div className="mt-2 text-[12px] font-semibold text-text-primary">{recurringVerdict.title}</div>
+          <div className="mt-1 text-[11px] leading-5 text-text-body">{recurringVerdict.detail}</div>
+          {(recurringVerdict.previousPosture || recurringVerdict.currentPosture) && (
+            <div className="mt-3 grid gap-2 md:grid-cols-2">
+              {recurringVerdict.previousPosture && (
+                <div className="rounded-[14px] border border-white/10 bg-black/20 px-3 py-2.5 text-[11px] leading-5 text-text-body">
+                  <div className="text-[10px] uppercase tracking-[0.14em] text-text-muted">Previous</div>
+                  <div className="mt-1">Cadence: {formatRecurringPostureValue(recurringVerdict.previousPosture.cadence)}</div>
+                  <div>Approval: {formatRecurringPostureValue(recurringVerdict.previousPosture.approvalPosture)}</div>
+                  <div>Mode: {formatRecurringPostureValue(recurringVerdict.previousPosture.missionMode)}</div>
+                </div>
+              )}
+              {recurringVerdict.currentPosture && (
+                <div className="rounded-[14px] border border-aurora-teal/15 bg-aurora-teal/[0.05] px-3 py-2.5 text-[11px] leading-5 text-text-body">
+                  <div className="text-[10px] uppercase tracking-[0.14em] text-aurora-teal">Current</div>
+                  <div className="mt-1">Cadence: {formatRecurringPostureValue(recurringVerdict.currentPosture.cadence)}</div>
+                  <div>Approval: {formatRecurringPostureValue(recurringVerdict.currentPosture.approvalPosture)}</div>
+                  <div>Mode: {formatRecurringPostureValue(recurringVerdict.currentPosture.missionMode)}</div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+      {recurringAction.available && (
+        <div className="mt-3 flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => onStageAction?.(candidate, recurringAction)}
+            className="inline-flex items-center gap-2 rounded-xl border border-aurora-teal/20 bg-aurora-teal/10 px-3 py-2 text-[11px] font-semibold text-aurora-teal"
+          >
+            <Sparkles className="h-3.5 w-3.5" />
+            Stage {recurringAction.actionLabel}
+          </button>
+          {nextCorrection.available && nextCorrection.tone !== 'teal' && (
+            <span className="text-[11px] leading-5 text-text-muted">{nextCorrection.title}</span>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function ManagedOpsView({ initialTab = 'create', routeState = null, onConsumeRouteState }) {
   const { agents } = useAgents();
+  const { tasks } = useTasks();
+  const { interventions } = useTaskInterventions();
   const { templates, loading: templatesLoading, refetch: refetchTemplates } = useAgentTemplates();
   const { sessions, loading: sessionsLoading, refetch: refetchSessions } = useAgentSessions();
   const { models, refetch: refetchModels } = useModelBank();
@@ -323,12 +421,34 @@ export function ManagedOpsView({ initialTab = 'create' }) {
   const [selectedVaultId, setSelectedVaultId] = useState('');
   const [vaultDraft, setVaultDraft] = useState({ name: '', provider: 'custom', secretRefs: 'API key' });
   const [flash, setFlash] = useState('');
+  const [stagedRecurringBrief, setStagedRecurringBrief] = useState(null);
+  const [stagedConnectorBrief, setStagedConnectorBrief] = useState(null);
+  const [stagedDispatchBrief, setStagedDispatchBrief] = useState(null);
+  const [stagedControlBrief, setStagedControlBrief] = useState(null);
+  const [stagedRecurringDraft, setStagedRecurringDraft] = useState(null);
+  const [lastAppliedRecurringResult, setLastAppliedRecurringResult] = useState(null);
+  const [pendingAutoStageRecurringCorrection, setPendingAutoStageRecurringCorrection] = useState(null);
   const [saving, setSaving] = useState(false);
   const [errorState, setErrorState] = useState({ scope: 'create', message: '' });
 
   useEffect(() => {
     setActiveTab(normalizeManagedOpsTab(initialTab));
   }, [initialTab]);
+
+  useEffect(() => {
+    if (!routeState) return;
+    if (routeState.tab) setActiveTab(normalizeManagedOpsTab(routeState.tab));
+    if (routeState.quickstartPrompt) setQuickstartPrompt(routeState.quickstartPrompt);
+    if (routeState.notice) setFlash(routeState.notice);
+    setStagedRecurringBrief(routeState.recurringActionBrief || null);
+    setStagedConnectorBrief(routeState.connectorActionBrief || null);
+    setStagedDispatchBrief(routeState.dispatchActionBrief || null);
+    setStagedControlBrief(routeState.controlActionBrief || null);
+    setStagedRecurringDraft(routeState.recurringActionBrief?.proposedPosture || null);
+    setLastAppliedRecurringResult(null);
+    setPendingAutoStageRecurringCorrection(null);
+    onConsumeRouteState?.();
+  }, [routeState, onConsumeRouteState]);
 
   useEffect(() => {
     if (!selectedTemplateId && templates[0]) setSelectedTemplateId(templates[0].id);
@@ -340,6 +460,11 @@ export function ManagedOpsView({ initialTab = 'create' }) {
   }, [sessions, selectedSessionId]);
 
   const quickstartDraft = useMemo(() => parseQuickstartPrompt(quickstartPrompt), [quickstartPrompt]);
+  const recurringCandidates = useMemo(
+    () => getAutomationCandidates(tasks, 150, interventions, []),
+    [tasks, interventions]
+  );
+  const topRecurringCandidate = recurringCandidates.find((candidate) => candidate.launchBrief) || null;
   const quickstartProvider = useMemo(() => inferProvider(quickstartDraft.defaultModel), [quickstartDraft.defaultModel]);
   const providerConnected = quickstartProvider === 'custom' ? true : providerCredentials[quickstartProvider];
   const selectedSession = sessions.find((session) => session.id === selectedSessionId) || null;
@@ -413,6 +538,116 @@ export function ManagedOpsView({ initialTab = 'create' }) {
         [field]: value,
       },
     }));
+  }
+
+  function handleStageRecurringAction(candidate, recurringAction, options = {}) {
+    if (!recurringAction?.available || !recurringAction.opsPrompt) return;
+    setActiveTab('create');
+    setQuickstartPrompt(recurringAction.opsPrompt);
+    setFlash(options.notice || `Staged recurring ops draft: ${recurringAction.actionLabel} for ${candidate?.title || 'the selected flow'}.`);
+    setStagedRecurringBrief({
+      taskId: recurringAction.taskId,
+      title: recurringAction.title,
+      actionLabel: recurringAction.actionLabel,
+      currentPosture: recurringAction.currentPosture || null,
+      proposedPosture: recurringAction.proposedPosture || null,
+      expectedImprovement: recurringAction.expectedImprovement,
+      verificationTarget: recurringAction.verificationTarget,
+      successCriteria: recurringAction.successCriteria,
+      rollbackCriteria: recurringAction.rollbackCriteria,
+    });
+    setStagedRecurringDraft(recurringAction.proposedPosture || null);
+    if (!options.preserveLastAppliedResult) {
+      setLastAppliedRecurringResult(null);
+    }
+  }
+
+  const stagedRecurringHistory = useMemo(
+    () => topRecurringCandidate ? getRecurringChangeReadback(topRecurringCandidate) : null,
+    [topRecurringCandidate]
+  );
+  const stagedRecurringPayback = useMemo(
+    () => topRecurringCandidate ? getRecurringChangePayback(topRecurringCandidate) : null,
+    [topRecurringCandidate]
+  );
+  const stagedRecurringCandidate = useMemo(
+    () => recurringCandidates.find((candidate) => candidate.latestTaskId === stagedRecurringBrief?.taskId) || topRecurringCandidate || null,
+    [recurringCandidates, stagedRecurringBrief?.taskId, topRecurringCandidate]
+  );
+  const stagedRecurringVerdict = useMemo(
+    () => stagedRecurringCandidate ? getRecurringPostChangeVerdict(stagedRecurringCandidate) : null,
+    [stagedRecurringCandidate]
+  );
+  const stagedRecurringNextCorrection = useMemo(
+    () => stagedRecurringCandidate ? getRecurringNextCorrection(stagedRecurringCandidate) : null,
+    [stagedRecurringCandidate]
+  );
+
+  useEffect(() => {
+    if (!pendingAutoStageRecurringCorrection?.taskId) return;
+    if (!stagedRecurringCandidate || stagedRecurringCandidate.latestTaskId !== pendingAutoStageRecurringCorrection.taskId) return;
+
+    if (stagedRecurringNextCorrection?.available && stagedRecurringNextCorrection.tone === 'amber' && stagedRecurringNextCorrection.action?.available) {
+      handleStageRecurringAction(stagedRecurringCandidate, stagedRecurringNextCorrection.action, {
+        preserveLastAppliedResult: true,
+        notice: `Commander auto-staged the next recurring correction because the last saved posture is still underperforming for ${stagedRecurringCandidate.title}.`,
+      });
+      setPendingAutoStageRecurringCorrection(null);
+      return;
+    }
+
+    if (stagedRecurringVerdict?.available) {
+      setPendingAutoStageRecurringCorrection(null);
+    }
+  }, [pendingAutoStageRecurringCorrection, stagedRecurringCandidate, stagedRecurringNextCorrection, stagedRecurringVerdict]);
+
+  function patchStagedRecurringDraft(field, value) {
+    setStagedRecurringDraft((current) => ({
+      ...(current || {}),
+      [field]: value,
+    }));
+  }
+
+  async function handleApplyRecurringDraft() {
+    if (!stagedRecurringBrief?.taskId || !stagedRecurringDraft) return;
+    setSaving(true);
+    clearNotice('create');
+    try {
+      const previousPosture = stagedRecurringBrief.currentPosture || null;
+      const result = await updateRecurringMissionFlow(stagedRecurringBrief.taskId, {
+        frequency: stagedRecurringDraft.cadence,
+        missionMode: stagedRecurringDraft.missionMode,
+        approvalPosture: stagedRecurringDraft.approvalPosture,
+        paused: stagedRecurringDraft.paused,
+      });
+      const appliedPosture = {
+        cadence: result?.recurrenceRule?.frequency || stagedRecurringDraft.cadence,
+        approvalPosture: result?.recurrenceRule?.approvalPosture || stagedRecurringDraft.approvalPosture,
+        missionMode: result?.recurrenceRule?.missionMode || stagedRecurringDraft.missionMode,
+        paused: result?.recurrenceRule?.paused ?? stagedRecurringDraft.paused,
+      };
+      setStagedRecurringBrief((current) => current ? {
+        ...current,
+        currentPosture: appliedPosture,
+        proposedPosture: appliedPosture,
+      } : current);
+      setStagedRecurringDraft(appliedPosture);
+      setLastAppliedRecurringResult({
+        previousPosture,
+        posture: appliedPosture,
+        guardrails: result?.guardrails || [],
+      });
+      setPendingAutoStageRecurringCorrection({
+        taskId: stagedRecurringBrief.taskId,
+      });
+      setFlash(result?.guardrails?.length
+        ? `Applied recurring posture with guardrails: ${result.guardrails.join(' ')}`
+        : 'Applied drafted recurring posture');
+    } catch (err) {
+      setScopedError('create', err.message || 'Failed to apply recurring posture');
+    } finally {
+      setSaving(false);
+    }
   }
 
   async function ensureModelExists(modelLabel) {
@@ -640,6 +875,10 @@ export function ManagedOpsView({ initialTab = 'create' }) {
             </div>
           </Surface>
 
+          {topRecurringCandidate && (
+            <RecurringTrustCard candidate={topRecurringCandidate} onStageAction={handleStageRecurringAction} />
+          )}
+
           <AnimatePresence mode="wait">
             {activeTab === 'create' && (
               <Motion.div key="create" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="grid gap-5 xl:grid-cols-[1.1fr_0.9fr]">
@@ -650,6 +889,370 @@ export function ManagedOpsView({ initialTab = 'create' }) {
                 >
                   <div className="space-y-4">
                     <InlineAlert message={errorState.scope === 'create' ? errorState.message : ''} />
+                    {stagedRecurringBrief && (
+                      <div className="rounded-[24px] border border-aurora-blue/15 bg-[linear-gradient(135deg,rgba(96,165,250,0.08),rgba(255,255,255,0.02))] p-4">
+                        <div className="flex items-center justify-between gap-3">
+                          <div>
+                            <div className="text-[10px] uppercase tracking-[0.18em] text-aurora-blue">Staged recurring action</div>
+                            <div className="mt-2 text-sm font-semibold text-text-primary">{stagedRecurringBrief.title}</div>
+                          </div>
+                          <span className="rounded-full border border-aurora-blue/20 bg-aurora-blue/10 px-2.5 py-1 text-[10px] uppercase tracking-[0.16em] text-aurora-blue">
+                            {stagedRecurringBrief.actionLabel}
+                          </span>
+                        </div>
+                        {(stagedRecurringBrief.currentPosture || stagedRecurringBrief.proposedPosture) && (
+                          <div className="mt-3 grid gap-3 md:grid-cols-2">
+                            {stagedRecurringBrief.currentPosture && (
+                              <div className="rounded-[18px] border border-white/10 bg-black/20 px-3 py-3">
+                                <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Current posture</div>
+                                <div className="mt-2 space-y-1 text-[12px] leading-6 text-text-body">
+                                  <div>Cadence: {formatRecurringPostureValue(stagedRecurringBrief.currentPosture.cadence)}</div>
+                                  <div>Approval: {formatRecurringPostureValue(stagedRecurringBrief.currentPosture.approvalPosture)}</div>
+                                  <div>Mission mode: {formatRecurringPostureValue(stagedRecurringBrief.currentPosture.missionMode)}</div>
+                                  <div>Run state: {formatRecurringPostureValue(stagedRecurringBrief.currentPosture.paused, 'paused')}</div>
+                                </div>
+                              </div>
+                            )}
+                            {stagedRecurringBrief.proposedPosture && (
+                              <div className="rounded-[18px] border border-aurora-teal/15 bg-aurora-teal/[0.05] px-3 py-3">
+                                <div className="text-[10px] uppercase tracking-[0.16em] text-aurora-teal">Drafted posture</div>
+                                <div className="mt-2 space-y-1 text-[12px] leading-6 text-text-body">
+                                  <div>Cadence: {formatRecurringPostureValue(stagedRecurringDraft?.cadence || stagedRecurringBrief.proposedPosture.cadence)}</div>
+                                  <div>Approval: {formatRecurringPostureValue(stagedRecurringDraft?.approvalPosture || stagedRecurringBrief.proposedPosture.approvalPosture)}</div>
+                                  <div>Mission mode: {formatRecurringPostureValue(stagedRecurringDraft?.missionMode || stagedRecurringBrief.proposedPosture.missionMode)}</div>
+                                  <div>Run state: {formatRecurringPostureValue(stagedRecurringDraft?.paused ?? stagedRecurringBrief.proposedPosture.paused, 'paused')}</div>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                        {stagedRecurringDraft && (
+                          <div className="mt-3 rounded-[18px] border border-white/10 bg-black/20 px-4 py-4">
+                            <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Edit drafted posture</div>
+                            <div className="mt-3 grid gap-3 md:grid-cols-2">
+                              <label className="space-y-2">
+                                <div className="text-[11px] font-semibold text-text-primary">Cadence</div>
+                                <select
+                                  value={stagedRecurringDraft.cadence || 'weekly'}
+                                  onChange={(event) => patchStagedRecurringDraft('cadence', event.target.value)}
+                                  className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm text-text-primary outline-none"
+                                >
+                                  <option value="daily">daily</option>
+                                  <option value="weekly">weekly</option>
+                                </select>
+                              </label>
+                              <label className="space-y-2">
+                                <div className="text-[11px] font-semibold text-text-primary">Approval posture</div>
+                                <select
+                                  value={stagedRecurringDraft.approvalPosture || 'risk_weighted'}
+                                  onChange={(event) => patchStagedRecurringDraft('approvalPosture', event.target.value)}
+                                  className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm text-text-primary outline-none"
+                                >
+                                  <option value="auto_low_risk">auto low risk</option>
+                                  <option value="risk_weighted">risk weighted</option>
+                                  <option value="human_required">human required</option>
+                                </select>
+                              </label>
+                              <label className="space-y-2">
+                                <div className="text-[11px] font-semibold text-text-primary">Mission mode</div>
+                                <select
+                                  value={stagedRecurringDraft.missionMode || 'watch_and_approve'}
+                                  onChange={(event) => patchStagedRecurringDraft('missionMode', event.target.value)}
+                                  className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm text-text-primary outline-none"
+                                >
+                                  <option value="do_now">do now</option>
+                                  <option value="plan_first">plan first</option>
+                                  <option value="watch_and_approve">watch and approve</option>
+                                </select>
+                              </label>
+                              <label className="space-y-2">
+                                <div className="text-[11px] font-semibold text-text-primary">Run state</div>
+                                <select
+                                  value={stagedRecurringDraft.paused ? 'paused' : 'active'}
+                                  onChange={(event) => patchStagedRecurringDraft('paused', event.target.value === 'paused')}
+                                  className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm text-text-primary outline-none"
+                                >
+                                  <option value="active">active</option>
+                                  <option value="paused">paused</option>
+                                </select>
+                              </label>
+                            </div>
+                            <div className="mt-4 flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={handleApplyRecurringDraft}
+                                disabled={saving || !stagedRecurringBrief?.taskId}
+                                className="inline-flex items-center gap-2 rounded-xl bg-aurora-teal px-4 py-2 text-sm font-semibold text-black disabled:cursor-not-allowed disabled:opacity-60"
+                              >
+                                <Save className="h-4 w-4" />
+                                Apply drafted posture
+                              </button>
+                              {!stagedRecurringBrief?.taskId && (
+                                <span className="text-[11px] text-text-muted">Commander needs a persisted recurring mission before this posture can be applied.</span>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                        <div className="mt-3 grid gap-3 md:grid-cols-2">
+                          <div className="rounded-[18px] border border-white/10 bg-black/20 px-3 py-3">
+                            <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Expected improvement</div>
+                            <div className="mt-2 text-[12px] leading-6 text-text-body">{stagedRecurringBrief.expectedImprovement}</div>
+                          </div>
+                          <div className="rounded-[18px] border border-white/10 bg-black/20 px-3 py-3">
+                            <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Verify next</div>
+                            <div className="mt-2 text-[12px] leading-6 text-text-body">{stagedRecurringBrief.verificationTarget}</div>
+                          </div>
+                          <div className="rounded-[18px] border border-white/10 bg-black/20 px-3 py-3">
+                            <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Success criteria</div>
+                            <div className="mt-2 text-[12px] leading-6 text-text-body">{stagedRecurringBrief.successCriteria}</div>
+                          </div>
+                          <div className="rounded-[18px] border border-white/10 bg-black/20 px-3 py-3">
+                            <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Rollback criteria</div>
+                            <div className="mt-2 text-[12px] leading-6 text-text-body">{stagedRecurringBrief.rollbackCriteria}</div>
+                          </div>
+                        </div>
+                        {stagedRecurringHistory?.available && (
+                          <div className="mt-3 rounded-[18px] border border-white/10 bg-black/20 px-4 py-4">
+                            <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Recent recurring changes</div>
+                            <div className="mt-2 text-[12px] font-semibold text-text-primary">{stagedRecurringHistory.title}</div>
+                            <div className="mt-1 text-[12px] leading-6 text-text-body">{stagedRecurringHistory.detail}</div>
+                            {stagedRecurringHistory.history?.length > 0 && (
+                              <div className="mt-3 space-y-2">
+                                {stagedRecurringHistory.history.map((entry) => (
+                                  <div key={entry.id} className="rounded-[14px] border border-white/10 bg-black/20 px-3 py-2.5">
+                                    <div className="text-[10px] uppercase tracking-[0.14em] text-text-muted">
+                                      {entry.timestamp ? new Date(entry.timestamp).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Current session'}
+                                    </div>
+                                    <div className="mt-1 text-[11px] leading-5 text-text-body">{entry.summary}</div>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                        {stagedRecurringVerdict?.available && (
+                          <div className="mt-3 rounded-[18px] border border-white/10 bg-black/20 px-4 py-4">
+                            <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Post-change verdict</div>
+                            <div className="mt-2 text-[12px] font-semibold text-text-primary">{stagedRecurringVerdict.title}</div>
+                            <div className="mt-1 text-[12px] leading-6 text-text-body">{stagedRecurringVerdict.detail}</div>
+                            {(stagedRecurringVerdict.previousPosture || stagedRecurringVerdict.currentPosture) && (
+                              <div className="mt-3 grid gap-3 md:grid-cols-2">
+                                {stagedRecurringVerdict.previousPosture && (
+                                  <div className="rounded-[14px] border border-white/10 bg-black/20 px-3 py-2.5 text-[11px] leading-5 text-text-body">
+                                    <div className="text-[10px] uppercase tracking-[0.14em] text-text-muted">Previous posture</div>
+                                    <div className="mt-1">Cadence: {formatRecurringPostureValue(stagedRecurringVerdict.previousPosture.cadence)}</div>
+                                    <div>Approval: {formatRecurringPostureValue(stagedRecurringVerdict.previousPosture.approvalPosture)}</div>
+                                    <div>Mission mode: {formatRecurringPostureValue(stagedRecurringVerdict.previousPosture.missionMode)}</div>
+                                    <div>Run state: {formatRecurringPostureValue(stagedRecurringVerdict.previousPosture.paused, 'paused')}</div>
+                                  </div>
+                                )}
+                                {stagedRecurringVerdict.currentPosture && (
+                                  <div className="rounded-[14px] border border-aurora-teal/15 bg-aurora-teal/[0.05] px-3 py-2.5 text-[11px] leading-5 text-text-body">
+                                    <div className="text-[10px] uppercase tracking-[0.14em] text-aurora-teal">Current posture</div>
+                                    <div className="mt-1">Cadence: {formatRecurringPostureValue(stagedRecurringVerdict.currentPosture.cadence)}</div>
+                                    <div>Approval: {formatRecurringPostureValue(stagedRecurringVerdict.currentPosture.approvalPosture)}</div>
+                                    <div>Mission mode: {formatRecurringPostureValue(stagedRecurringVerdict.currentPosture.missionMode)}</div>
+                                    <div>Run state: {formatRecurringPostureValue(stagedRecurringVerdict.currentPosture.paused, 'paused')}</div>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                        {stagedRecurringPayback?.available && (
+                          <div className="mt-3 rounded-[18px] border border-white/10 bg-black/20 px-4 py-4">
+                            <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Recurring payback</div>
+                            <div className="mt-2 text-[12px] font-semibold text-text-primary">{stagedRecurringPayback.title}</div>
+                            <div className="mt-1 text-[12px] leading-6 text-text-body">{stagedRecurringPayback.detail}</div>
+                            <div className="mt-3 grid gap-2 md:grid-cols-4">
+                              {stagedRecurringPayback.metrics.map((metric) => (
+                                <div key={metric.label} className="rounded-[14px] border border-white/10 bg-black/20 px-3 py-2.5">
+                                  <div className="text-[10px] uppercase tracking-[0.14em] text-text-muted">{metric.label}</div>
+                                  <div className="mt-1 text-[12px] font-semibold text-text-primary">{metric.value}</div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        {stagedRecurringNextCorrection?.available && (
+                          <div className="mt-3 rounded-[18px] border border-aurora-blue/15 bg-aurora-blue/[0.05] px-4 py-4">
+                            <div className="text-[10px] uppercase tracking-[0.16em] text-aurora-blue">Next move</div>
+                            <div className="mt-2 text-[12px] font-semibold text-text-primary">{stagedRecurringNextCorrection.title}</div>
+                            <div className="mt-1 text-[12px] leading-6 text-text-body">{stagedRecurringNextCorrection.detail}</div>
+                            {stagedRecurringNextCorrection.action?.available && stagedRecurringNextCorrection.tone !== 'teal' && (
+                              <div className="mt-3">
+                                <button
+                                  type="button"
+                                  onClick={() => handleStageRecurringAction(stagedRecurringCandidate, stagedRecurringNextCorrection.action)}
+                                  className="inline-flex items-center gap-2 rounded-xl border border-aurora-blue/20 bg-aurora-blue/10 px-3 py-2 text-[11px] font-semibold text-aurora-blue"
+                                >
+                                  <Sparkles className="h-3.5 w-3.5" />
+                                  Stage {stagedRecurringNextCorrection.action.actionLabel}
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                        {lastAppliedRecurringResult && (
+                          <div className="mt-3 rounded-[18px] border border-aurora-green/15 bg-aurora-green/[0.05] px-4 py-4">
+                            <div className="text-[10px] uppercase tracking-[0.16em] text-aurora-green">Saved confirmation</div>
+                            <div className="mt-2 text-[12px] font-semibold text-text-primary">Recurring posture saved</div>
+                            {lastAppliedRecurringResult.previousPosture && (
+                              <div className="mt-3 grid gap-3 md:grid-cols-2">
+                                <div className="rounded-[14px] border border-white/10 bg-black/20 px-3 py-2.5 text-[11px] leading-5 text-text-body">
+                                  <div className="text-[10px] uppercase tracking-[0.14em] text-text-muted">Before</div>
+                                  <div className="mt-1">Cadence: {formatRecurringPostureValue(lastAppliedRecurringResult.previousPosture.cadence)}</div>
+                                  <div>Approval: {formatRecurringPostureValue(lastAppliedRecurringResult.previousPosture.approvalPosture)}</div>
+                                  <div>Mission mode: {formatRecurringPostureValue(lastAppliedRecurringResult.previousPosture.missionMode)}</div>
+                                  <div>Run state: {formatRecurringPostureValue(lastAppliedRecurringResult.previousPosture.paused, 'paused')}</div>
+                                </div>
+                                <div className="rounded-[14px] border border-aurora-green/15 bg-aurora-green/[0.05] px-3 py-2.5 text-[11px] leading-5 text-text-body">
+                                  <div className="text-[10px] uppercase tracking-[0.14em] text-aurora-green">After</div>
+                                  <div className="mt-1">Cadence: {formatRecurringPostureValue(lastAppliedRecurringResult.posture.cadence)}</div>
+                                  <div>Approval: {formatRecurringPostureValue(lastAppliedRecurringResult.posture.approvalPosture)}</div>
+                                  <div>Mission mode: {formatRecurringPostureValue(lastAppliedRecurringResult.posture.missionMode)}</div>
+                                  <div>Run state: {formatRecurringPostureValue(lastAppliedRecurringResult.posture.paused, 'paused')}</div>
+                                </div>
+                              </div>
+                            )}
+                            <div className="mt-2 space-y-1 text-[12px] leading-6 text-text-body">
+                              <div>Cadence: {formatRecurringPostureValue(lastAppliedRecurringResult.posture.cadence)}</div>
+                              <div>Approval: {formatRecurringPostureValue(lastAppliedRecurringResult.posture.approvalPosture)}</div>
+                              <div>Mission mode: {formatRecurringPostureValue(lastAppliedRecurringResult.posture.missionMode)}</div>
+                              <div>Run state: {formatRecurringPostureValue(lastAppliedRecurringResult.posture.paused, 'paused')}</div>
+                            </div>
+                            {lastAppliedRecurringResult.guardrails?.length > 0 && (
+                              <div className="mt-3 text-[11px] leading-5 text-text-muted">
+                                Guardrails: {lastAppliedRecurringResult.guardrails.join(' ')}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    {stagedConnectorBrief && (
+                      <div className="rounded-[24px] border border-aurora-blue/15 bg-[linear-gradient(135deg,rgba(96,165,250,0.08),rgba(255,255,255,0.02))] p-4">
+                        <div className="flex items-center justify-between gap-3">
+                          <div>
+                            <div className="text-[10px] uppercase tracking-[0.18em] text-aurora-blue">Staged connector action</div>
+                            <div className="mt-2 text-sm font-semibold text-text-primary">{stagedConnectorBrief.title}</div>
+                          </div>
+                          <span className="rounded-full border border-aurora-blue/20 bg-aurora-blue/10 px-2.5 py-1 text-[10px] uppercase tracking-[0.16em] text-aurora-blue">
+                            {stagedConnectorBrief.actionLabel}
+                          </span>
+                        </div>
+                        <div className="mt-3 grid gap-3 md:grid-cols-2">
+                          <div className="rounded-[18px] border border-white/10 bg-black/20 px-3 py-3">
+                            <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Target lane</div>
+                            <div className="mt-2 text-[12px] leading-6 text-text-body">{stagedConnectorBrief.targetRole || 'ops'}</div>
+                          </div>
+                          <div className="rounded-[18px] border border-white/10 bg-black/20 px-3 py-3">
+                            <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Approval posture</div>
+                            <div className="mt-2 text-[12px] leading-6 text-text-body">{String(stagedConnectorBrief.targetApprovalPosture || 'risk_weighted').replaceAll('_', ' ')}</div>
+                          </div>
+                          <div className="rounded-[18px] border border-white/10 bg-black/20 px-3 py-3">
+                            <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Expected improvement</div>
+                            <div className="mt-2 text-[12px] leading-6 text-text-body">{stagedConnectorBrief.expectedImprovement}</div>
+                          </div>
+                          <div className="rounded-[18px] border border-white/10 bg-black/20 px-3 py-3">
+                            <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Verify next</div>
+                            <div className="mt-2 text-[12px] leading-6 text-text-body">{stagedConnectorBrief.verificationTarget}</div>
+                          </div>
+                          <div className="rounded-[18px] border border-white/10 bg-black/20 px-3 py-3">
+                            <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Success criteria</div>
+                            <div className="mt-2 text-[12px] leading-6 text-text-body">{stagedConnectorBrief.successCriteria}</div>
+                          </div>
+                          <div className="rounded-[18px] border border-white/10 bg-black/20 px-3 py-3">
+                            <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Rollback criteria</div>
+                            <div className="mt-2 text-[12px] leading-6 text-text-body">{stagedConnectorBrief.rollbackCriteria}</div>
+                          </div>
+                        </div>
+                        {stagedConnectorBrief.affectedBranches?.length ? (
+                          <div className="mt-3 rounded-[18px] border border-white/10 bg-black/20 px-4 py-4">
+                            <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Affected branches</div>
+                            <div className="mt-2 text-[12px] leading-6 text-text-body">{stagedConnectorBrief.affectedBranches.join(', ')}</div>
+                          </div>
+                        ) : null}
+                      </div>
+                    )}
+                    {stagedDispatchBrief && (
+                      <div className="rounded-[24px] border border-aurora-violet/15 bg-[linear-gradient(135deg,rgba(167,139,250,0.08),rgba(255,255,255,0.02))] p-4">
+                        <div className="flex items-center justify-between gap-3">
+                          <div>
+                            <div className="text-[10px] uppercase tracking-[0.18em] text-aurora-violet">Staged dispatch order</div>
+                            <div className="mt-2 text-sm font-semibold text-text-primary">{stagedDispatchBrief.title}</div>
+                          </div>
+                          <span className="rounded-full border border-aurora-violet/20 bg-aurora-violet/10 px-2.5 py-1 text-[10px] uppercase tracking-[0.16em] text-aurora-violet">
+                            {stagedDispatchBrief.actionLabel}
+                          </span>
+                        </div>
+                        <div className="mt-3 grid gap-3 md:grid-cols-2">
+                          <div className="rounded-[18px] border border-white/10 bg-black/20 px-3 py-3">
+                            <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Expected improvement</div>
+                            <div className="mt-2 text-[12px] leading-6 text-text-body">{stagedDispatchBrief.expectedImprovement}</div>
+                          </div>
+                          <div className="rounded-[18px] border border-white/10 bg-black/20 px-3 py-3">
+                            <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Verification target</div>
+                            <div className="mt-2 text-[12px] leading-6 text-text-body">{stagedDispatchBrief.verificationTarget}</div>
+                          </div>
+                          <div className="rounded-[18px] border border-white/10 bg-black/20 px-3 py-3">
+                            <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Success criteria</div>
+                            <div className="mt-2 text-[12px] leading-6 text-text-body">{stagedDispatchBrief.successCriteria}</div>
+                          </div>
+                          <div className="rounded-[18px] border border-white/10 bg-black/20 px-3 py-3">
+                            <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Rollback criteria</div>
+                            <div className="mt-2 text-[12px] leading-6 text-text-body">{stagedDispatchBrief.rollbackCriteria}</div>
+                          </div>
+                        </div>
+                        <div className="mt-3 rounded-[18px] border border-white/10 bg-black/20 px-3 py-3 text-[12px] leading-6 text-text-body">
+                          <div><span className="font-semibold text-text-primary">Do next:</span> {stagedDispatchBrief.nextMove}</div>
+                          {stagedDispatchBrief.topTaskTitle ? (
+                            <div className="mt-1"><span className="font-semibold text-text-primary">Top branch:</span> {stagedDispatchBrief.topTaskTitle}</div>
+                          ) : null}
+                          <div className="mt-1">
+                            <span className="font-semibold text-text-primary">Pressure mix:</span> Safe parallel {stagedDispatchBrief.safeParallelCount}, serialized {stagedDispatchBrief.serializedCount}, held upstream {stagedDispatchBrief.heldUpstreamCount}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                    {stagedControlBrief && (
+                      <div className="rounded-[24px] border border-aurora-amber/15 bg-[linear-gradient(135deg,rgba(251,191,36,0.08),rgba(255,255,255,0.02))] p-4">
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <div className="text-[10px] uppercase tracking-[0.18em] text-aurora-amber">Staged live control brief</div>
+                            <div className="mt-2 text-sm font-semibold text-text-primary">{stagedControlBrief.title}</div>
+                          </div>
+                          <span className="rounded-full border border-aurora-amber/20 bg-aurora-amber/10 px-2.5 py-1 text-[10px] uppercase tracking-[0.16em] text-aurora-amber">
+                            {stagedControlBrief.actionLabel}
+                          </span>
+                        </div>
+                        <div className="mt-3 grid gap-3 md:grid-cols-2">
+                          <div className="rounded-[18px] border border-white/10 bg-black/20 px-3 py-3">
+                            <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Current state</div>
+                            <div className="mt-2 text-[12px] leading-6 text-text-body">{stagedControlBrief.currentState}</div>
+                          </div>
+                          <div className="rounded-[18px] border border-white/10 bg-black/20 px-3 py-3">
+                            <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Expected improvement</div>
+                            <div className="mt-2 text-[12px] leading-6 text-text-body">{stagedControlBrief.expectedImprovement}</div>
+                          </div>
+                          <div className="rounded-[18px] border border-white/10 bg-black/20 px-3 py-3">
+                            <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Verification target</div>
+                            <div className="mt-2 text-[12px] leading-6 text-text-body">{stagedControlBrief.verificationTarget}</div>
+                          </div>
+                          <div className="rounded-[18px] border border-white/10 bg-black/20 px-3 py-3">
+                            <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Success criteria</div>
+                            <div className="mt-2 text-[12px] leading-6 text-text-body">{stagedControlBrief.successCriteria}</div>
+                          </div>
+                        </div>
+                        <div className="mt-3 rounded-[18px] border border-white/10 bg-black/20 px-3 py-3 text-[12px] leading-6 text-text-body">
+                          <div><span className="font-semibold text-text-primary">Do next:</span> {String(stagedControlBrief.nextMove || 'review_control_state').replaceAll('_', ' ')}</div>
+                          {stagedControlBrief.taskTitle ? (
+                            <div className="mt-1"><span className="font-semibold text-text-primary">Branch:</span> {stagedControlBrief.taskTitle}</div>
+                          ) : null}
+                          <div className="mt-1"><span className="font-semibold text-text-primary">Rollback:</span> {stagedControlBrief.rollbackCriteria}</div>
+                        </div>
+                      </div>
+                    )}
                     <div className="rounded-[24px] border border-white/10 bg-black/20 p-4">
                       <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.18em] text-text-muted">
                         <Command className="h-3.5 w-3.5 text-aurora-teal" />
@@ -1096,10 +1699,13 @@ export function ManagedOpsView({ initialTab = 'create' }) {
                             {connectedSystems.map((system) => (
                               <div key={system.id} className="rounded-[20px] border border-white/10 bg-white/[0.03] px-4 py-4">
                                 <div className="text-sm font-semibold text-text-primary">{system.displayName}</div>
-                                <div className="mt-1 text-xs text-text-muted">{system.category}</div>
+                                <div className="mt-1 text-xs text-text-muted">{system.category} · {system.domain || 'general'} · {system.status}</div>
                                 <div className="mt-3 flex flex-wrap gap-2">
                                   {system.capabilities.map((capability) => (
                                     <span key={capability} className="rounded-full border border-white/10 bg-black/20 px-2.5 py-1 text-[10px] uppercase tracking-[0.16em] text-text-body">{capability}</span>
+                                  ))}
+                                  {(system.permissionScope || []).map((scope) => (
+                                    <span key={`${system.id}-${scope}`} className="rounded-full border border-aurora-amber/20 bg-aurora-amber/10 px-2.5 py-1 text-[10px] uppercase tracking-[0.16em] text-aurora-amber">{formatPermissionScope(scope)}</span>
                                   ))}
                                 </div>
                               </div>

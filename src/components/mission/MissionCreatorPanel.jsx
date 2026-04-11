@@ -16,6 +16,7 @@ import { cn } from '../../utils/cn';
 import { useConnectedSystems, useTasks } from '../../utils/useSupabase';
 import { deriveRoutingDecision } from '../../utils/routingPolicy';
 import { getPreflightAlignmentSummary } from '../../utils/commanderAnalytics';
+import { buildExecutionReadiness, deriveBranchExecutionPosture, formatReleaseTriggerLabel, getBranchGraphContractReadback, prioritizeMissionBranches } from '../../utils/executionReadiness';
 
 const SESSION_KEY = 'mission-creator-session-v1';
 const SAVED_PRESETS_KEY = 'mission-creator-presets-v1';
@@ -343,29 +344,7 @@ function describeSchedule(form) {
   return `Repeat ${form.repeatFrequency} at ${form.repeatTime}${form.repeatEndDate ? ` until ${form.repeatEndDate}` : ''}.`;
 }
 
-function inferSystemsReadback(form, connectedSystems) {
-  const intent = String(form.intent || '').toLowerCase();
-  const systems = [];
-
-  if (form.targetType !== 'internal' || /pipedrive|crm|deal|person/.test(intent)) systems.push('Pipedrive');
-  if (/email|draft|outreach|reply/.test(intent)) systems.push('Email lane');
-  if (/doc|report|summary|notes/.test(intent)) systems.push('Workspace docs');
-  if (/shipment|tracking|ops|delay/.test(intent)) systems.push('Ops telemetry');
-
-  const connectedLabels = connectedSystems
-    .filter((system) => system.status !== 'error')
-    .map((system) => system.integrationKey || system.name || '')
-    .filter(Boolean)
-    .map((value) => String(value).toLowerCase());
-
-  return [...new Set(systems)].map((label) => {
-    const key = label.toLowerCase();
-    const connected = connectedLabels.some((entry) => key.includes(entry) || entry.includes(key.split(' ')[0]));
-    return { label, connected };
-  });
-}
-
-function inferDoctrineDefaults({ intent, agents, learningMemory }) {
+function inferDoctrineDefaults({ intent, when, agents, learningMemory }) {
   const lower = intent.toLowerCase();
   const doctrine = learningMemory?.doctrineById || {};
   const agentDoctrine = doctrine['doctrine-agent'];
@@ -374,6 +353,7 @@ function inferDoctrineDefaults({ intent, agents, learningMemory }) {
   const speedDoctrine = doctrine['doctrine-speed'];
   const routingDoctrine = doctrine['doctrine-routing'];
   const batchDoctrine = doctrine['batch-command-memory'];
+  const recurringAdaptiveDoctrine = doctrine['recurring-adaptive-control'];
 
   const explicitOutput = inferExplicitOutput(intent);
   const doctrineAgent = findAgentByDoctrineName(agents, agentDoctrine?.metrics?.topAgentName);
@@ -387,6 +367,7 @@ function inferDoctrineDefaults({ intent, agents, learningMemory }) {
     suggestedMode = 'efficient';
   }
   let suggestedMissionMode = 'do_now';
+  let suggestedRepeatFrequency = 'daily';
   const batchApprovePressure = Number(batchDoctrine?.metrics?.batchSignals?.actionCounts?.approve || 0);
   const batchRescuePressure = Number(batchDoctrine?.metrics?.batchSignals?.actionCounts?.retry || 0)
     + Number(batchDoctrine?.metrics?.batchSignals?.actionCounts?.redirect || 0)
@@ -400,11 +381,17 @@ function inferDoctrineDefaults({ intent, agents, learningMemory }) {
     suggestedMissionMode = 'watch_and_approve';
   }
 
+  if (when === 'repeat' && recurringAdaptiveDoctrine?.metrics) {
+    suggestedMissionMode = recurringAdaptiveDoctrine.metrics.missionMode || suggestedMissionMode;
+    suggestedRepeatFrequency = recurringAdaptiveDoctrine.metrics.frequency || suggestedRepeatFrequency;
+  }
+
   return {
     agent: suggestedAgent,
     outputType: suggestedOutput,
     mode: suggestedMode,
     missionMode: suggestedMissionMode,
+    repeatFrequency: suggestedRepeatFrequency,
     notes: [
       doctrineAgent
         ? `${doctrineAgent.name} is carrying the strongest execution pattern right now.`
@@ -417,6 +404,9 @@ function inferDoctrineDefaults({ intent, agents, learningMemory }) {
         : suggestedMode === 'efficient'
           ? 'Spend concentration suggests a more disciplined mode by default.'
           : 'Balanced mode is still the safest lane for quality and cost together.',
+      when === 'repeat'
+        ? recurringAdaptiveDoctrine?.detail || 'Recurring launch defaults are still forming, so cadence stays on the standard daily draft.'
+        : 'Recurring launch defaults only apply when you stage this as a repeating mission.',
       batchDoctrine?.detail || 'Grouped bridge outcomes have not yet shifted launch posture defaults.',
     ],
   };
@@ -438,16 +428,36 @@ function buildFlightPlan(preview, missionSummary, form) {
   });
 }
 
-function buildBranchPreview(preview) {
-  const branches = Array.isArray(preview?.branches) ? preview.branches : [];
+function buildBranchPreview(preview, launchReadiness = null) {
+  const rawBranches = Array.isArray(preview?.branches) ? preview.branches : [];
+  const branches = prioritizeMissionBranches({
+    branches: rawBranches,
+    launchReadiness,
+    controlPressure: 'stable',
+  });
   const labelByTitle = new Map(branches.map((branch) => [branch.title, branch.branchLabel || branch.title]));
-  return branches.map((branch, index) => ({
-    ...branch,
-    id: `${branch.title}-${index}`,
-    dependencies: Array.isArray(branch.dependsOn) ? branch.dependsOn.map((dependency) => labelByTitle.get(dependency) || dependency) : [],
-    roleLabel: (branch.agentRole || 'executor').toUpperCase(),
-    strategyLabel: branch.executionStrategy === 'parallel' ? 'Parallel' : 'Sequential',
-  }));
+  return branches.map((branch, index) => {
+    const connectorPosture = deriveBranchExecutionPosture({
+      branch,
+      branchIndex: index,
+      branchCount: branches.length,
+      launchReadiness,
+    });
+    const graphContract = getBranchGraphContractReadback(branch, branches, launchReadiness);
+    return {
+      ...branch,
+      id: `${branch.title}-${index}`,
+      dependencies: Array.isArray(branch.dependsOn) ? branch.dependsOn.map((dependency) => labelByTitle.get(dependency) || dependency) : [],
+      roleLabel: (branch.agentRole || 'executor').toUpperCase(),
+      strategyLabel: branch.dependsOn?.length ? 'Dependency-gated' : branch.executionStrategy === 'parallel' ? 'Parallel' : 'Sequential',
+      connectorPosture,
+      graphContract,
+    };
+  });
+}
+
+function formatPostureLabel(value) {
+  return String(value || 'forming').replaceAll('_', ' ');
 }
 
 function formatApprovalLabel(value) {
@@ -478,8 +488,8 @@ function buildPreflightReadback({
   form,
   preview,
   missionSummary,
-  systemsReadback,
   routingDecision,
+  launchReadiness,
 }) {
   const expectedBranches = Array.isArray(preview?.branches) && preview.branches.length
     ? preview.branches.length
@@ -491,12 +501,12 @@ function buildPreflightReadback({
     branchCount: expectedBranches,
     confidence: missionSummary.confidence,
   });
-  const disconnectedSystems = systemsReadback.filter((system) => !system.connected);
   const topRisks = [
     missionSummary.confidence < 55 ? 'Intent is still broad, so Commander may need to improvise before it can route cleanly.' : null,
     routingDecision.riskLevel === 'high' ? 'This mission touches higher-risk operations and should stay human-aware.' : null,
     form.when === 'repeat' && form.missionMode === 'do_now' ? 'Recurring missions launched in do-now mode can scale mistakes faster than planned review modes.' : null,
-    disconnectedSystems.length > 0 ? `${disconnectedSystems.map((system) => system.label).join(', ')} is not fully connected, which can force fallback behavior.` : null,
+    launchReadiness.missingSystems.length > 0 ? `${launchReadiness.missingSystems.map((system) => system.label).join(', ')} is missing, which can force a launch gate before execution.` : null,
+    launchReadiness.degradedSystems.length > 0 ? `${launchReadiness.degradedSystems.map((system) => system.label).join(', ')} is degraded, which can force a human-aware launch posture.` : null,
     form.outputType === 'custom' && !form.outputSpec.trim() ? 'The final artifact is still underspecified, which increases revision risk.' : null,
   ].filter(Boolean).slice(0, 3);
   const uncertainty = [
@@ -512,6 +522,7 @@ function buildPreflightReadback({
     approvalPosture: form.missionMode === 'watch_and_approve' ? 'human_required' : routingDecision.approvalLevel,
     contextPacks: routingDecision.contextPackIds,
     requiredCapabilities: routingDecision.requiredCapabilities,
+    launchReadiness,
     topRisks,
     uncertainty,
   };
@@ -520,7 +531,7 @@ function buildPreflightReadback({
 function buildCommanderMemoryBrief({
   learningMemory,
   routingDecision,
-  systemsReadback,
+  launchReadiness,
   selectedAgent,
   missionSummary,
   preflightAlignment,
@@ -532,7 +543,6 @@ function buildCommanderMemoryBrief({
     || null;
   const batchDoctrine = learningMemory?.doctrineById?.['batch-command-memory'] || null;
   const winningPattern = patternDoctrine?.metrics?.winningPattern || null;
-  const disconnectedSystems = systemsReadback.filter((system) => !system.connected);
   const activeContext = routingDecision.contextPackIds || [];
   const capabilities = routingDecision.requiredCapabilities || [];
   const strongestDoctrine = doctrineItems[0] || executiveItems[0] || null;
@@ -542,8 +552,8 @@ function buildCommanderMemoryBrief({
     : strongestDoctrine?.detail
       || 'Commander does best when the mission intent is specific about output, destination, and success criteria.';
 
-  const usuallyFails = disconnectedSystems.length > 0
-    ? `${disconnectedSystems.map((system) => system.label).join(', ')} is not fully connected, so missions touching those systems are more likely to fall back or stall.`
+  const usuallyFails = launchReadiness.missingSystems.length > 0 || launchReadiness.degradedSystems.length > 0
+    ? `${[...launchReadiness.missingSystems, ...launchReadiness.degradedSystems].map((system) => system.label).join(', ')} is not fully healthy, so missions touching those systems are more likely to fall back or stall.`
     : preflightAlignment?.posture === 'drifting'
       ? 'Similar missions have been drifting from preflight expectations, so broad requests are more likely to need human correction.'
       : missionSummary.confidence < 60
@@ -551,7 +561,7 @@ function buildCommanderMemoryBrief({
         : 'No dominant failure pattern is outranking the usual risk controls right now.';
 
   const contextReadback = activeContext.length > 0
-    ? `Commander is loading ${activeContext.join(', ')}${capabilities.length ? ` and expects ${capabilities.join(', ')}` : ''}.`
+    ? `Commander is loading ${activeContext.join(', ')}${capabilities.length ? ` and expects ${capabilities.join(', ')}` : ''}. ${launchReadiness.summary}.`
     : 'Commander is still leaning mostly on the core context layer for this mission.';
 
   const launchPosture = selectedAgent
@@ -580,12 +590,11 @@ function buildCommanderDecisionReadback({
   selectedAgent,
   missionSummary,
   routingDecision,
-  systemsReadback,
   preflight,
   preflightAlignment,
   commanderMemoryBrief,
 }) {
-  const disconnectedSystems = systemsReadback.filter((system) => !system.connected);
+  const launchReadiness = preflight.launchReadiness;
   const whyChosen = [
     selectedAgent
       ? `${selectedAgent.name} is the lead lane because the mission language best matches ${selectedAgent.role || 'its'} execution pattern.`
@@ -595,6 +604,7 @@ function buildCommanderDecisionReadback({
     preflight.contextPacks.length > 0
       ? `Commander is grounding the launch in ${preflight.contextPacks.join(', ')} before it fans out the branches.`
       : null,
+    launchReadiness.summary ? `Launch readiness: ${launchReadiness.summary}.` : null,
     commanderMemoryBrief.batchReadback,
   ].filter(Boolean).slice(0, 3);
 
@@ -618,8 +628,8 @@ function buildCommanderDecisionReadback({
     whyPause.push('Intent clarity is still broad, so Commander may pause to avoid scaling the wrong branch shape.');
   }
 
-  if (disconnectedSystems.length > 0) {
-    whyPause.push(`${disconnectedSystems.map((system) => system.label).join(', ')} is not fully connected, so fallback behavior may force a pause or redirect.`);
+  if (launchReadiness.missingSystems.length > 0 || launchReadiness.degradedSystems.length > 0) {
+    whyPause.push(`${[...launchReadiness.missingSystems, ...launchReadiness.degradedSystems].map((system) => system.label).join(', ')} is not fully healthy, so fallback behavior may force a pause or redirect.`);
   }
 
   if (whyPause.length === 0) {
@@ -670,6 +680,7 @@ export function MissionCreatorPanel({
   const [outputTouched, setOutputTouched] = useState(false);
   const [modeTouched, setModeTouched] = useState(false);
   const [missionModeTouched, setMissionModeTouched] = useState(false);
+  const [repeatFrequencyTouched, setRepeatFrequencyTouched] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [preview, setPreview] = useState(null);
   const [previewLoading, setPreviewLoading] = useState(false);
@@ -693,17 +704,14 @@ export function MissionCreatorPanel({
     [pipedriveConnected]
   );
   const doctrineDefaults = useMemo(
-    () => inferDoctrineDefaults({ intent: form.intent, agents, learningMemory }),
-    [agents, form.intent, learningMemory]
+    () => inferDoctrineDefaults({ intent: form.intent, when: form.when, agents, learningMemory }),
+    [agents, form.intent, form.when, learningMemory]
   );
   const missionSummary = useMemo(() => summarizeMissionIntent(form.intent), [form.intent]);
   const agentRationale = useMemo(() => describeWhyAgent(form.intent, selectedAgent), [form.intent, selectedAgent]);
   const modeRationale = useMemo(() => describeWhyMode(form.mode), [form.mode]);
   const missionModeRationale = useMemo(() => describeMissionMode(form.missionMode), [form.missionMode]);
   const scheduleRationale = useMemo(() => describeSchedule(form), [form]);
-  const flightPlan = useMemo(() => buildFlightPlan(preview, missionSummary, form), [preview, missionSummary, form]);
-  const branchPreview = useMemo(() => buildBranchPreview(preview), [preview]);
-  const systemsReadback = useMemo(() => inferSystemsReadback(form, connectedSystems), [connectedSystems, form]);
   const routingDecision = useMemo(() => deriveRoutingDecision({
     intent: form.intent,
     targetType: form.targetType,
@@ -712,13 +720,26 @@ export function MissionCreatorPanel({
     mode: form.mode,
     requiresApproval: form.missionMode === 'watch_and_approve',
   }, selectedAgent, null), [form.intent, form.mode, form.missionMode, form.outputSpec, form.outputType, form.repeatFrequency, form.repeatTime, form.targetType, form.when, selectedAgent]);
+  const flightPlan = useMemo(() => buildFlightPlan(preview, missionSummary, form), [preview, missionSummary, form]);
+  const launchReadiness = useMemo(() => buildExecutionReadiness({
+    payload: {
+      intent: form.intent,
+      targetType: form.targetType,
+      outputType: form.outputType === 'custom' ? form.outputSpec || form.outputType : form.outputType,
+      missionMode: form.missionMode,
+      when: form.when,
+    },
+    routingDecision,
+    connectedSystems,
+  }), [connectedSystems, form.intent, form.missionMode, form.outputSpec, form.outputType, form.targetType, form.when, routingDecision]);
+  const branchPreview = useMemo(() => buildBranchPreview(preview, launchReadiness), [preview, launchReadiness]);
   const preflight = useMemo(() => buildPreflightReadback({
     form,
     preview,
     missionSummary,
-    systemsReadback,
     routingDecision,
-  }), [form, preview, missionSummary, systemsReadback, routingDecision]);
+    launchReadiness,
+  }), [form, preview, missionSummary, routingDecision, launchReadiness]);
   const preflightAlignment = useMemo(() => getPreflightAlignmentSummary({
     tasks,
     routingDecision,
@@ -729,22 +750,23 @@ export function MissionCreatorPanel({
   const commanderMemoryBrief = useMemo(() => buildCommanderMemoryBrief({
     learningMemory,
     routingDecision,
-    systemsReadback,
+    launchReadiness,
     selectedAgent,
     missionSummary,
     preflightAlignment,
-  }), [learningMemory, routingDecision, systemsReadback, selectedAgent, missionSummary, preflightAlignment]);
+  }), [learningMemory, routingDecision, launchReadiness, selectedAgent, missionSummary, preflightAlignment]);
   const commanderDecisionReadback = useMemo(() => buildCommanderDecisionReadback({
     form,
     selectedAgent,
     missionSummary,
     routingDecision,
-    systemsReadback,
     preflight,
     preflightAlignment,
     commanderMemoryBrief,
-  }), [form, selectedAgent, missionSummary, routingDecision, systemsReadback, preflight, preflightAlignment, commanderMemoryBrief]);
+  }), [form, selectedAgent, missionSummary, routingDecision, preflight, preflightAlignment, commanderMemoryBrief]);
   const selectedAgentIsPersistent = !!(selectedAgent && !selectedAgent.isEphemeral && !selectedAgent.isSyntheticCommander);
+  const structuredBrief = useMemo(() => preview?.brief || null, [preview]);
+  const executionPlanSummary = useMemo(() => preview?.planSummary || null, [preview]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -765,6 +787,7 @@ export function MissionCreatorPanel({
     setOutputTouched(false);
     setModeTouched(false);
     setMissionModeTouched(false);
+    setRepeatFrequencyTouched(false);
     setError('');
     setPreview(null);
     setPreviewOpen(false);
@@ -819,6 +842,13 @@ export function MissionCreatorPanel({
   }, [doctrineDefaults.missionMode, form.missionMode, missionModeTouched]);
 
   useEffect(() => {
+    if (form.when !== 'repeat' || repeatFrequencyTouched || !doctrineDefaults.repeatFrequency) return;
+    if (doctrineDefaults.repeatFrequency !== form.repeatFrequency) {
+      setForm((prev) => ({ ...prev, repeatFrequency: doctrineDefaults.repeatFrequency }));
+    }
+  }, [doctrineDefaults.repeatFrequency, form.repeatFrequency, form.when, repeatFrequencyTouched]);
+
+  useEffect(() => {
     if (!availableTargetOptions.some((option) => option.value === form.targetType)) {
       setForm((prev) => ({ ...prev, targetType: 'internal', targetIdentifier: '' }));
     }
@@ -847,6 +877,7 @@ export function MissionCreatorPanel({
     if (field === 'outputType') setOutputTouched(true);
     if (field === 'mode') setModeTouched(true);
     if (field === 'missionMode') setMissionModeTouched(true);
+    if (field === 'repeatFrequency') setRepeatFrequencyTouched(true);
     setForm(prev => ({ ...prev, [field]: value }));
     setError('');
   }
@@ -895,12 +926,21 @@ export function MissionCreatorPanel({
         frequency: form.repeatFrequency,
         time: form.repeatTime,
         endDate: form.repeatEndDate || null,
+        missionMode: form.missionMode,
+        approvalPosture: form.missionMode === 'watch_and_approve'
+          ? 'human_required'
+          : form.missionMode === 'plan_first'
+            ? 'risk_weighted'
+            : 'auto_low_risk',
       } : null,
       agentName: selectedAgent?.name || '',
       agentModel: selectedAgent?.model || '',
       agentExecutionMode: inferAgentModeBadge(selectedAgent),
       planSteps: Array.isArray(preview?.steps) ? preview.steps : [],
       planBranches: Array.isArray(preview?.branches) ? preview.branches : [],
+      planBrief: preview?.brief || null,
+      planSummary: preview?.planSummary || null,
+      launchReadiness,
     };
   }
 
@@ -1127,6 +1167,68 @@ export function MissionCreatorPanel({
                           <span className="text-[11px] text-text-muted">No extra capability pressure inferred yet.</span>
                         )}
                       </div>
+                      <div className="mt-3 rounded-2xl border border-white/[0.08] bg-white/[0.03] px-3 py-3">
+                        <div className="flex items-center justify-between gap-3">
+                          <div>
+                            <div className="text-[9px] uppercase tracking-[0.18em] text-text-muted">Execution readiness</div>
+                            <div className="mt-1 text-[12px] font-semibold text-text-primary">{launchReadiness.title}</div>
+                          </div>
+                          <div className={cn(
+                            'rounded-full border px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.16em]',
+                            launchReadiness.tone === 'teal'
+                              ? 'border-aurora-teal/20 bg-aurora-teal/10 text-aurora-teal'
+                              : launchReadiness.tone === 'amber'
+                                ? 'border-aurora-amber/20 bg-aurora-amber/10 text-aurora-amber'
+                                : 'border-aurora-rose/20 bg-aurora-rose/10 text-aurora-rose'
+                          )}>
+                            {launchReadiness.coveragePercent}% covered
+                          </div>
+                        </div>
+                        <div className="mt-2 text-[11px] leading-relaxed text-text-body">{launchReadiness.detail}</div>
+                        <div className="mt-3 grid grid-cols-2 gap-2">
+                          <div className="rounded-2xl border border-white/[0.08] bg-black/20 px-3 py-2">
+                            <div className="text-[9px] uppercase tracking-[0.18em] text-text-muted">Connector posture</div>
+                            <div className="mt-1 text-[11px] font-semibold text-text-primary">
+                              {launchReadiness.capabilityGraphSummary?.writeCapableCount || 0} write-ready · {launchReadiness.capabilityGraphSummary?.readOnlyCount || 0} read-only
+                            </div>
+                          </div>
+                          <div className="rounded-2xl border border-white/[0.08] bg-black/20 px-3 py-2">
+                            <div className="text-[9px] uppercase tracking-[0.18em] text-text-muted">Local-first</div>
+                            <div className="mt-1 text-[11px] font-semibold text-text-primary">
+                              {launchReadiness.localFirstEligible ? 'Eligible' : 'Connector-aware'}
+                            </div>
+                          </div>
+                          <div className="rounded-2xl border border-white/[0.08] bg-black/20 px-3 py-2 col-span-2">
+                            <div className="text-[9px] uppercase tracking-[0.18em] text-text-muted">Fallback plan</div>
+                            <div className="mt-1 text-[11px] font-semibold text-text-primary">
+                              {launchReadiness.fallbackStrategy === 'local_first'
+                                ? 'Prefer local-first execution'
+                                : launchReadiness.fallbackStrategy === 'read_only_reroute'
+                                  ? 'Reroute read-only work internally'
+                                  : 'Hold guarded external lane'}
+                            </div>
+                          </div>
+                        </div>
+                        {launchReadiness.requiredSystems.length > 0 && (
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            {launchReadiness.requiredSystems.map((system) => (
+                              <span
+                                key={system.key}
+                                className={cn(
+                                  'rounded-full border px-2 py-1 text-[10px] font-semibold',
+                                  system.status === 'connected'
+                                    ? 'border-aurora-teal/20 bg-aurora-teal/10 text-aurora-teal'
+                                    : system.status === 'degraded'
+                                      ? 'border-aurora-amber/20 bg-aurora-amber/10 text-aurora-amber'
+                                      : 'border-aurora-rose/20 bg-aurora-rose/10 text-aurora-rose'
+                                )}
+                              >
+                                {system.label} · {system.requiredPermissionMode}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
                     </div>
 
                     <div className="rounded-2xl border border-white/[0.08] bg-black/20 px-3 py-3">
@@ -1247,6 +1349,18 @@ export function MissionCreatorPanel({
                       <div className="text-[9px] uppercase tracking-[0.18em] text-text-muted">Grouped command memory</div>
                       <div className="mt-2 text-[11px] leading-relaxed text-text-body">{commanderMemoryBrief.batchReadback}</div>
                     </div>
+                    {launchReadiness.guardrails.length > 0 && (
+                      <div className="rounded-2xl border border-aurora-amber/20 bg-aurora-amber/10 px-3 py-3">
+                        <div className="text-[9px] uppercase tracking-[0.18em] text-aurora-amber">Launch guardrails</div>
+                        <div className="mt-2 space-y-2">
+                          {launchReadiness.guardrails.map((entry) => (
+                            <div key={entry} className="text-[11px] leading-relaxed text-text-body">
+                              {entry}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -1604,9 +1718,98 @@ export function MissionCreatorPanel({
                               </div>
                               <div className="rounded-xl border border-border bg-canvas/50 px-3 py-2.5">
                                 <p className="text-[10px] uppercase tracking-[0.15em] text-text-muted">Likely systems</p>
-                                <p className="text-sm font-semibold text-text-primary mt-1">{systemsReadback.length ? systemsReadback.map((system) => system.label).join(', ') : 'Internal lane'}</p>
+                                <p className="text-sm font-semibold text-text-primary mt-1">
+                                  {launchReadiness.requiredSystems.length
+                                    ? launchReadiness.requiredSystems.map((system) => system.label).join(', ')
+                                    : 'Internal lane'}
+                                </p>
                               </div>
                             </div>
+                            {structuredBrief && (
+                              <div className="rounded-[20px] border border-aurora-blue/15 bg-[linear-gradient(135deg,rgba(96,165,250,0.08),rgba(167,139,250,0.05))] p-3">
+                                <div className="flex items-center justify-between gap-3">
+                                  <div>
+                                    <div className="text-[10px] uppercase tracking-[0.18em] text-aurora-blue font-semibold">Structured mission brief</div>
+                                    <div className="mt-1 text-[12px] text-text-body">Commander’s normalized read of the mission before launch.</div>
+                                  </div>
+                                  <div className="text-[11px] font-mono text-aurora-blue">{structuredBrief.domain} / {structuredBrief.intentType}</div>
+                                </div>
+                                <div className="mt-3 grid gap-3 xl:grid-cols-2">
+                                  <div className="rounded-2xl border border-white/[0.08] bg-black/20 px-3 py-3">
+                                    <div className="text-[9px] uppercase tracking-[0.18em] text-text-muted">Objective</div>
+                                    <div className="mt-2 text-[11px] leading-relaxed text-text-body">{structuredBrief.objective}</div>
+                                  </div>
+                                  <div className="rounded-2xl border border-white/[0.08] bg-black/20 px-3 py-3">
+                                    <div className="text-[9px] uppercase tracking-[0.18em] text-text-muted">Success definition</div>
+                                    <div className="mt-2 text-[11px] leading-relaxed text-text-body">{structuredBrief.successDefinition}</div>
+                                  </div>
+                                </div>
+                                <div className="mt-3 grid grid-cols-2 gap-3 xl:grid-cols-4">
+                                  <div className="rounded-2xl border border-white/[0.08] bg-black/20 px-3 py-3">
+                                    <div className="text-[9px] uppercase tracking-[0.18em] text-text-muted">Domain</div>
+                                    <div className="mt-1 text-[12px] font-semibold text-text-primary">{structuredBrief.domain}</div>
+                                  </div>
+                                  <div className="rounded-2xl border border-white/[0.08] bg-black/20 px-3 py-3">
+                                    <div className="text-[9px] uppercase tracking-[0.18em] text-text-muted">Risk</div>
+                                    <div className="mt-1 text-[12px] font-semibold text-text-primary">{structuredBrief.riskLevel}</div>
+                                  </div>
+                                  <div className="rounded-2xl border border-white/[0.08] bg-black/20 px-3 py-3">
+                                    <div className="text-[9px] uppercase tracking-[0.18em] text-text-muted">Approval</div>
+                                    <div className="mt-1 text-[12px] font-semibold text-text-primary">{formatApprovalLabel(structuredBrief.approvalPosture)}</div>
+                                  </div>
+                                  <div className="rounded-2xl border border-white/[0.08] bg-black/20 px-3 py-3">
+                                    <div className="text-[9px] uppercase tracking-[0.18em] text-text-muted">Cost posture</div>
+                                    <div className="mt-1 text-[12px] font-semibold text-text-primary">{formatPostureLabel(structuredBrief.costPosture)}</div>
+                                  </div>
+                                </div>
+                                <div className="mt-3 rounded-2xl border border-white/[0.08] bg-black/20 px-3 py-3">
+                                  <div className="text-[9px] uppercase tracking-[0.18em] text-text-muted">Constraints</div>
+                                  <div className="mt-2 space-y-2">
+                                    {(structuredBrief.constraints?.length ? structuredBrief.constraints : ['No extra mission constraints were inferred beyond the current launch posture.']).map((entry) => (
+                                      <div key={entry} className="text-[11px] leading-relaxed text-text-body">
+                                        {entry}
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+                            {executionPlanSummary && (
+                              <div className="rounded-[20px] border border-aurora-violet/15 bg-[linear-gradient(135deg,rgba(167,139,250,0.08),rgba(96,165,250,0.04))] p-3">
+                                <div className="flex items-center justify-between gap-3">
+                                  <div>
+                                    <div className="text-[10px] uppercase tracking-[0.18em] text-aurora-violet font-semibold">Execution brief</div>
+                                    <div className="mt-1 text-[12px] text-text-body">How Commander expects the mission graph to run before dispatch.</div>
+                                  </div>
+                                  <div className="text-[11px] font-mono text-aurora-violet">{executionPlanSummary.branchCount} branches</div>
+                                </div>
+                                <div className="mt-3 grid grid-cols-2 gap-3 xl:grid-cols-4">
+                                  <div className="rounded-2xl border border-white/[0.08] bg-black/20 px-3 py-3">
+                                    <div className="text-[9px] uppercase tracking-[0.18em] text-text-muted">Strategy</div>
+                                    <div className="mt-1 text-[12px] font-semibold text-text-primary">{formatPostureLabel(executionPlanSummary.primaryStrategy)}</div>
+                                  </div>
+                                  <div className="rounded-2xl border border-white/[0.08] bg-black/20 px-3 py-3">
+                                    <div className="text-[9px] uppercase tracking-[0.18em] text-text-muted">Dependencies</div>
+                                    <div className="mt-1 text-[12px] font-semibold text-text-primary">{formatPostureLabel(executionPlanSummary.dependencyPosture)}</div>
+                                  </div>
+                                  <div className="rounded-2xl border border-white/[0.08] bg-black/20 px-3 py-3">
+                                    <div className="text-[9px] uppercase tracking-[0.18em] text-text-muted">Verification</div>
+                                    <div className="mt-1 text-[12px] font-semibold text-text-primary">{formatPostureLabel(executionPlanSummary.verificationRequirement)}</div>
+                                  </div>
+                                  <div className="rounded-2xl border border-white/[0.08] bg-black/20 px-3 py-3">
+                                    <div className="text-[9px] uppercase tracking-[0.18em] text-text-muted">Specialists</div>
+                                    <div className="mt-1 text-[12px] font-semibold text-text-primary">{executionPlanSummary.specialistRoles?.length || 0}</div>
+                                  </div>
+                                </div>
+                                <div className="mt-3 flex flex-wrap gap-2">
+                                  {(executionPlanSummary.specialistRoles?.length ? executionPlanSummary.specialistRoles : ['executor']).map((role) => (
+                                    <span key={role} className="rounded-full border border-white/[0.08] bg-black/20 px-2 py-1 text-[10px] font-semibold uppercase text-text-body">
+                                      {role}
+                                    </span>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
                             <div className="rounded-[20px] border border-white/[0.08] bg-black/20 p-3">
                               <div className="flex items-center justify-between mb-3">
                                 <div>
@@ -1659,8 +1862,57 @@ export function MissionCreatorPanel({
                                         <span className="text-[12px] font-semibold text-text-primary">{branch.branchLabel || branch.title}</span>
                                         <span className="rounded-full border border-white/[0.08] bg-black/20 px-2 py-0.5 text-[9px] font-mono uppercase text-text-muted">{branch.roleLabel}</span>
                                         <span className="rounded-full border border-aurora-blue/20 bg-aurora-blue/10 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.14em] text-aurora-blue">{branch.strategyLabel}</span>
+                                        {branch.graphContract?.available && (
+                                          <span className={cn(
+                                            'rounded-full border px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.14em]',
+                                            branch.graphContract.tone === 'teal'
+                                              ? 'border-aurora-teal/20 bg-aurora-teal/10 text-aurora-teal'
+                                              : branch.graphContract.tone === 'amber'
+                                                ? 'border-aurora-amber/20 bg-aurora-amber/10 text-aurora-amber'
+                                                : 'border-aurora-blue/20 bg-aurora-blue/10 text-aurora-blue'
+                                          )}>
+                                            {branch.graphContract.label}
+                                          </span>
+                                        )}
+                                        {branch.planningReason && (
+                                          <span className="rounded-full border border-aurora-violet/20 bg-aurora-violet/10 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.14em] text-aurora-violet">
+                                            Starts here because {branch.planningReason}
+                                          </span>
+                                        )}
+                                        {branch.connectorPosture?.available && (
+                                          <span className={cn(
+                                            'rounded-full border px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.14em]',
+                                            branch.connectorPosture.tone === 'teal'
+                                              ? 'border-aurora-teal/20 bg-aurora-teal/10 text-aurora-teal'
+                                              : branch.connectorPosture.tone === 'amber'
+                                                ? 'border-aurora-amber/20 bg-aurora-amber/10 text-aurora-amber'
+                                                : 'border-aurora-rose/20 bg-aurora-rose/10 text-aurora-rose'
+                                          )}>
+                                            {branch.connectorPosture.title}
+                                          </span>
+                                        )}
                                       </div>
                                       <div className="mt-2 text-[11px] leading-relaxed text-text-body">{branch.description || branch.title}</div>
+                                      {branch.connectorPosture?.available && (
+                                        <div className="mt-2 rounded-2xl border border-white/[0.08] bg-black/20 px-3 py-2 text-[11px] leading-relaxed text-text-body">
+                                          {branch.connectorPosture.detail}
+                                        </div>
+                                      )}
+                                      {branch.graphContract?.available && (
+                                        <div className="mt-2 rounded-2xl border border-white/[0.08] bg-black/20 px-3 py-2 text-[11px] leading-relaxed text-text-body">
+                                          <span className="font-semibold text-text-primary">Graph contract:</span> {branch.graphContract.detail}
+                                          {branch.graphContract.releaseTrigger ? (
+                                            <div className="mt-2 text-[11px] leading-relaxed text-text-muted">
+                                              Release trigger: {formatReleaseTriggerLabel(branch.graphContract.releaseTrigger)}.
+                                            </div>
+                                          ) : null}
+                                        </div>
+                                      )}
+                                      {branch.dependencies.length > 0 && (
+                                        <div className="mt-2 rounded-2xl border border-aurora-amber/15 bg-aurora-amber/[0.06] px-3 py-2 text-[11px] leading-relaxed text-text-body">
+                                          This branch stays held until {branch.dependencies.join(', ')} finishes or is released.
+                                        </div>
+                                      )}
                                       <div className="mt-2 flex flex-wrap gap-2">
                                         {branch.dependencies.length === 0 ? (
                                           <span className="rounded-full border border-aurora-teal/20 bg-aurora-teal/10 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-aurora-teal">
@@ -1707,14 +1959,16 @@ export function MissionCreatorPanel({
                     <div className="rounded-2xl border border-white/[0.08] bg-black/15 px-3 py-2.5">
                       <div className="text-[9px] uppercase tracking-[0.18em] text-text-muted">Systems Commander expects to touch</div>
                       <div className="mt-2 flex flex-wrap gap-2">
-                        {(systemsReadback.length ? systemsReadback : [{ label: 'Internal lane', connected: true }]).map((system) => (
+                        {(launchReadiness.requiredSystems.length ? launchReadiness.requiredSystems : [{ label: 'Internal lane', status: 'connected' }]).map((system) => (
                           <span
-                            key={system.label}
+                            key={system.key || system.label}
                             className={cn(
                               'px-2 py-1 rounded-full text-[10px] font-semibold border',
-                              system.connected
+                              system.status === 'connected'
                                 ? 'border-aurora-teal/20 bg-aurora-teal/10 text-aurora-teal'
-                                : 'border-aurora-amber/20 bg-aurora-amber/10 text-aurora-amber'
+                                : system.status === 'degraded'
+                                  ? 'border-aurora-amber/20 bg-aurora-amber/10 text-aurora-amber'
+                                  : 'border-aurora-rose/20 bg-aurora-rose/10 text-aurora-rose'
                             )}
                           >
                             {system.label}

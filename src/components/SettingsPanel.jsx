@@ -61,6 +61,11 @@ function formatVerifiedTime(value) {
   }
 }
 
+function formatPermissionLabel(value) {
+  if (!value) return 'Limited';
+  return String(value).replaceAll('_', ' ');
+}
+
 function normalizeConnectedSystem(entry) {
   const toneByCategory = {
     Models: 'teal',
@@ -84,6 +89,7 @@ function normalizeConnectedSystem(entry) {
           ? 'Error'
           : 'Connected',
     securityState: entry.metadata?.securityState || 'Encrypted vault link',
+    permissionScope: Array.isArray(entry.permissionScope) ? entry.permissionScope : [],
   };
 }
 
@@ -108,7 +114,8 @@ function Toggle({ enabled, onChange, color = 'bg-aurora-teal', label }) {
   );
 }
 
-function TabButton({ icon: Icon, label, active, onClick }) {
+function TabButton({ icon, label, active, onClick }) {
+  const IconComponent = icon;
   return (
     <button
       type="button"
@@ -120,7 +127,7 @@ function TabButton({ icon: Icon, label, active, onClick }) {
           : 'border-white/[0.08] bg-white/[0.03] text-text-muted hover:text-text-primary'
       )}
     >
-      <Icon className="h-3.5 w-3.5" />
+      <IconComponent className="h-3.5 w-3.5" />
       {label}
     </button>
   );
@@ -592,6 +599,11 @@ function IntegrationsTab() {
                   {entry.capabilities.map((capability) => (
                     <span key={capability} className="ui-chip px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em]">
                       {capability}
+                    </span>
+                  ))}
+                  {entry.permissionScope.map((scope) => (
+                    <span key={`${entry.id}-${scope}`} className="rounded-full border border-aurora-amber/20 bg-aurora-amber/10 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-aurora-amber">
+                      {formatPermissionLabel(scope)}
                     </span>
                   ))}
                 </div>

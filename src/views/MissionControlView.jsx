@@ -38,12 +38,14 @@ import { useLearningMemory } from '../utils/useLearningMemory';
 import { DoctrineCards } from '../components/command/DoctrineCards';
 import { TruthAuditStrip } from '../components/command/TruthAuditStrip';
 import { useCommandCenterTruth } from '../utils/useCommandCenterTruth';
-import { useConnectedSystems, useRoutingPolicies } from '../utils/useSupabase';
+import { useApprovalAudit, useConnectedSystems, useRoutingPolicies, useTaskInterventions } from '../utils/useSupabase';
 import { ReactorCoreBoard } from '../components/command/ReactorCoreBoard';
 import { CommandTimelineRail } from '../components/command/CommandTimelineRail';
 import { TacticalInterventionConsole } from '../components/command/TacticalInterventionConsole';
 import { buildTimelineEntries } from '../utils/buildCommandTimeline';
-import { getBatchRoutingTrustSummary, getLatestBatchCommandAudit, getPolicyActionGuidance, getPolicyDeltaReadback, getTradeoffCorrectiveAction, getTradeoffOutcomeSummary } from '../utils/commanderAnalytics';
+import { buildTaskControlActionDraft, describeTaskTransition, getApprovalTransitionState, getMissionGraphSummary, getTaskControlActionMode, getTaskDecisionNarrative, getTaskExecutableControlAction, getTaskLiveControlState } from '../utils/missionLifecycle';
+import { buildFailureTriageActionDraft, getAutomationCandidates, getBatchRoutingTrustSummary, getCommanderNextMove, getExecutionAuditReadback, getFailureTriageSummary, getHybridApprovalSummary, getLatestBatchCommandAudit, getMissionCreateBrief, getPolicyActionGuidance, getPolicyDeltaReadback, getRecurringAutonomyTuningSummary, getRecurringBriefFitAction, getRecurringChangePayback, getRecurringChangeReadback, getRecurringNextCorrection, getRecurringPostChangeVerdict, getTradeoffCorrectiveAction, getTradeoffOutcomeSummary } from '../utils/commanderAnalytics';
+import { buildConnectorActionDraft, buildDispatchActionDraft, formatBranchConnectorBlocker, formatDispatchClassLabel, formatFallbackStrategyLabel, formatReleaseTriggerLabel, getBranchConnectorCorrectiveAction, getBranchConnectorPressureSummary, getFallbackStrategyDetail, getGroupedConnectorBlockers, getMissionDispatchPressureSummary, getMissionLaunchReadiness, getTaskBranchExecutionPosture, getTaskDispatchReadback, getTaskExecutionHoldReason, getTaskExecutionReleaseReason, getTaskGraphContractReadback, getTaskPlanningReason } from '../utils/executionReadiness';
 
 // ═══════════════════════════════════════════════════════════════
 // UI ATOMS
@@ -85,7 +87,8 @@ function formatTaskMoment(task) {
   return date.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
-function formatProgress(task) {
+function formatProgress(task, graphSummary = null) {
+  if (graphSummary?.available) return `${Math.max(0, Math.min(100, graphSummary.progressPercent))}%`;
   if (task.progressPercent == null) return null;
   return `${Math.max(0, Math.min(100, task.progressPercent))}%`;
 }
@@ -131,12 +134,16 @@ function Card({ children, className, onClick, selected }) {
 // ITEM ROW (tasks + approvals)
 // ═══════════════════════════════════════════════════════════════
 
-function ItemRow({ item, agents, selected, onClick }) {
+function ItemRow({ item, agents, tasks = [], selected, onClick }) {
   const cfg = stColor[item.status] || stColor.pending;
   const isRun = item.status === 'running';
   const agent = agents.find(a => a.id === (item.agentId || item.agent_id));
   const urgC = item.urgency ? urgColors[item.urgency] : null;
-  const progress = formatProgress(item);
+  const graphSummary = getMissionGraphSummary(tasks, item.rootMissionId || item.id);
+  const transition = describeTaskTransition(item, tasks);
+  const dispatchReadback = getTaskDispatchReadback(item, tasks);
+  const graphContract = getTaskGraphContractReadback(item, tasks, []);
+  const progress = formatProgress(item, graphSummary.available ? graphSummary : null);
   const relativeTime = formatTaskMoment(item);
   const costLabel = item.actualCostCents != null
     ? `$${(item.actualCostCents / 100).toFixed(2)}`
@@ -166,10 +173,28 @@ function ItemRow({ item, agents, selected, onClick }) {
         {relativeTime && <span className="text-[10px] font-mono text-text-disabled flex items-center gap-1"><Clock className="w-3 h-3" />{relativeTime}</span>}
         {item.status === 'needs_intervention' && <span className="flex items-center gap-1 text-[10px] font-mono font-bold text-aurora-rose"><AlertTriangle className="w-3 h-3" />Needs Me</span>}
         {item.status === 'needs_approval' && <span className="flex items-center gap-1 text-[10px] font-mono font-bold text-aurora-amber"><Lock className="w-3 h-3" />Needs Approval</span>}
+        {transition?.label && (
+          <span className="rounded-full border border-white/[0.08] bg-black/20 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.14em] text-text-body">
+            {transition.label}
+          </span>
+        )}
+        {dispatchReadback?.available && (
+          <span className="rounded-full border border-white/[0.08] bg-black/20 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.14em] text-text-body">
+            {dispatchReadback.label}
+          </span>
+        )}
+        {graphContract?.available && (
+          <span className="rounded-full border border-white/[0.08] bg-black/20 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.14em] text-text-body">
+            {graphContract.label}
+          </span>
+        )}
       </div>
 
       {item.summary && <p className="text-[10px] text-text-muted mt-1.5 ml-8 leading-relaxed line-clamp-1">{item.summary}</p>}
       {!item.summary && item.description && <p className="text-[10px] text-text-muted mt-1.5 ml-8 leading-relaxed line-clamp-1">{item.description}</p>}
+      {graphSummary.available && (
+        <p className="text-[10px] text-text-muted mt-1.5 ml-8 leading-relaxed line-clamp-1">{graphSummary.detail}</p>
+      )}
       {progress && (
         <div className="ml-8 mt-2">
           <div className="w-full h-1.5 rounded-full bg-surface-raised overflow-hidden">
@@ -184,6 +209,7 @@ function ItemRow({ item, agents, selected, onClick }) {
 function ApprovalCard({ item, agents, onClick, onApprove, onReject }) {
   const agent = agents.find(a => a.id === (item.agentId || item.agent_id));
   const isMissionApproval = item.status === 'needs_approval';
+  const approvalTransition = getApprovalTransitionState(item);
 
   return (
     <Motion.div
@@ -203,11 +229,21 @@ function ApprovalCard({ item, agents, onClick, onApprove, onReject }) {
             {agent?.model && <ModelChip model={agent.model} />}
             {item.mode && <span className="px-2 py-0.5 rounded-full text-[9px] font-mono font-semibold bg-white/[0.04] text-text-muted border border-border uppercase">{item.mode}</span>}
             <span className="text-[10px] font-mono text-text-disabled">{formatTaskMoment(item) || 'Awaiting review'}</span>
+            {approvalTransition.available && (
+              <span className="rounded-full border border-aurora-amber/20 bg-aurora-amber/10 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.14em] text-aurora-amber">
+                {approvalTransition.label}
+              </span>
+            )}
           </div>
         </div>
       </div>
 
       <p className="text-[12px] text-text-body leading-relaxed mb-3">{item.summary || item.description || 'Mission is paused at a decision gate and needs your call.'}</p>
+      {approvalTransition.available && (
+        <div className="mb-3 rounded-2xl border border-white/[0.08] bg-black/20 px-3 py-2 text-[11px] leading-relaxed text-text-body">
+          <span className="font-semibold text-text-primary">Approval transition:</span> {approvalTransition.detail}
+        </div>
+      )}
 
       <div className="flex items-center gap-2">
         <button onClick={() => onApprove(item.id)} className="flex-1 h-10 rounded-xl bg-aurora-teal text-black text-[11px] font-bold uppercase shadow-glow-teal hover:bg-[#00ebd8] transition-colors">
@@ -224,7 +260,8 @@ function ApprovalCard({ item, agents, onClick, onApprove, onReject }) {
   );
 }
 
-function buildMissionControlExplanation(item, agent) {
+function buildMissionControlExplanation(item, agent, tasks = []) {
+  const transition = describeTaskTransition(item, tasks);
   const whyChosen = [
     item.routingReason || 'Commander did not persist a detailed routing rationale for this branch yet.',
     agent?.name
@@ -236,6 +273,9 @@ function buildMissionControlExplanation(item, agent) {
   ].filter(Boolean).slice(0, 3);
 
   const whyPaused = [];
+  if (transition?.detail) {
+    whyPaused.push(transition.detail);
+  }
   if (item.status === 'needs_approval' || item.requiresApproval) {
     whyPaused.push('Commander paused this branch at a human gate because the current posture requires approval before execution continues.');
   }
@@ -268,7 +308,7 @@ function buildMissionControlExplanation(item, agent) {
 // DETAIL DRAWER
 // ═══════════════════════════════════════════════════════════════
 
-function Drawer({ item, agents, tasks, logs, learningMemory, onClose, onApprove, onReject, onRetry, onStop, onCopy, onAcknowledge, onReopen, onSnooze }) {
+function Drawer({ item, agents, tasks, logs, interventions, approvalAudit, learningMemory, onNavigate, onClose, onApprove, onReject, onRetry, onStop, onCopy, onAcknowledge, onReopen, onSnooze }) {
   const [tab, setTab] = useState('timeline');
   const [feedback, setFeedback] = useState('');
   const [showRejectForm, setShowRejectForm] = useState(false);
@@ -335,10 +375,44 @@ function Drawer({ item, agents, tasks, logs, learningMemory, onClose, onApprove,
   const isCompleted = ['completed', 'approved', 'done'].includes(item.status);
   const isRunning = item.status === 'running';
   const itemLogs = logs.filter(l => l.agentId === (item.agentId || item.agent_id));
-  const explanation = buildMissionControlExplanation(item, agent);
+  const explanation = buildMissionControlExplanation(item, agent, tasks);
   const latestBatchAudit = getLatestBatchCommandAudit(logs);
   const batchDoctrine = learningMemory?.doctrineById?.['batch-command-memory'] || null;
   const batchRoutingTrust = getBatchRoutingTrustSummary({ logs, doctrineItem: batchDoctrine });
+  const decisionNarrative = getTaskDecisionNarrative(item, tasks, interventions);
+  const launchBrief = getMissionCreateBrief(interventions, item);
+  const launchReadiness = getMissionLaunchReadiness(interventions, item);
+  const branchConnectorPosture = getTaskBranchExecutionPosture(item, interventions);
+  const dispatchReadback = getTaskDispatchReadback(item, tasks);
+  const planningReason = getTaskPlanningReason(item);
+  const holdReason = getTaskExecutionHoldReason(item, tasks, interventions);
+  const releaseReason = getTaskExecutionReleaseReason(item, tasks);
+  const graphContract = getTaskGraphContractReadback(item, tasks, interventions);
+  const graphSummary = getMissionGraphSummary(tasks, item.rootMissionId || item.id);
+  const transition = describeTaskTransition(item, tasks);
+  const approvalTransition = getApprovalTransitionState(item, interventions);
+  const liveControlState = getTaskLiveControlState(item, interventions, tasks);
+  const liveControlDraft = buildTaskControlActionDraft(liveControlState, item);
+  const executableControlAction = getTaskExecutableControlAction({
+    task: item,
+    controlState: liveControlState,
+    approvalTransition,
+    redirectAgent: selectedRedirectAgent,
+  });
+  const controlActionMode = getTaskControlActionMode({
+    controlState: liveControlState,
+    executableAction: executableControlAction,
+    controlActionDraft: liveControlDraft,
+  });
+  const hybridApprovalSummary = getHybridApprovalSummary({
+    tasks: [item],
+    reviews: isReviewApproval ? [item] : [],
+    interventions,
+    approvalAudit,
+  });
+  const failureTriage = getFailureTriageSummary({ tasks, interventions, logs, mission: item });
+  const failureTriageDraft = buildFailureTriageActionDraft(failureTriage);
+  const executionAudit = getExecutionAuditReadback({ tasks, interventions, approvalAudit, logs, mission: item, limit: 5 });
 
   return (<>
     <Motion.div key="dbg" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 bg-black/50 backdrop-blur-sm z-40" onClick={onClose} />
@@ -378,8 +452,342 @@ function Drawer({ item, agents, tasks, logs, learningMemory, onClose, onApprove,
         </div>
       )}
 
+      {!isApproval && launchBrief && (
+        <div className="px-5 py-3 border-b border-border bg-surface">
+          <div className="rounded-2xl border border-aurora-teal/15 bg-[linear-gradient(135deg,rgba(45,212,191,0.08),rgba(255,255,255,0.02))] px-3 py-3">
+            <div className="text-[10px] uppercase tracking-[0.16em] text-aurora-teal font-semibold">Launch brief</div>
+            <div className="mt-1 text-[12px] font-semibold text-text-primary">{launchBrief.objective}</div>
+            <div className="mt-2 text-[11px] leading-relaxed text-text-body">{launchBrief.detail}</div>
+            {launchBrief.successDefinition && (
+              <div className="mt-2 rounded-2xl border border-white/[0.08] bg-black/20 px-3 py-2 text-[11px] leading-relaxed text-text-body">
+                Success definition: {launchBrief.successDefinition}
+              </div>
+            )}
+            <div className="mt-2 flex flex-wrap gap-2">
+              <span className="rounded-full border border-white/[0.08] bg-white/[0.03] px-2 py-1 text-[10px] font-semibold text-text-body">
+                {launchBrief.branchCount} branch{launchBrief.branchCount === 1 ? '' : 'es'}
+              </span>
+              <span className="rounded-full border border-white/[0.08] bg-white/[0.03] px-2 py-1 text-[10px] font-semibold text-text-body">
+                {String(launchBrief.strategy || '').replaceAll('_', ' ')}
+              </span>
+              <span className="rounded-full border border-white/[0.08] bg-white/[0.03] px-2 py-1 text-[10px] font-semibold text-text-body">
+                {String(launchBrief.verificationRequirement || '').replaceAll('_', ' ')}
+              </span>
+            </div>
+            {launchBrief.constraints.length > 0 && (
+              <div className="mt-2 text-[11px] leading-relaxed text-text-muted">
+                Constraints: {launchBrief.constraints.join(' • ')}
+              </div>
+            )}
+            {(planningReason || holdReason || releaseReason) && (
+              <div className="mt-2 rounded-2xl border border-white/[0.08] bg-black/20 px-3 py-2 text-[11px] leading-relaxed text-text-body">
+                {planningReason ? `Execution order: ${planningReason}. ` : ''}{holdReason || releaseReason || 'This branch is clear to run when its lane is ready.'}
+              </div>
+            )}
+            {graphContract?.available && (
+              <div className="mt-2 rounded-2xl border border-white/[0.08] bg-black/20 px-3 py-2">
+                <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Graph contract</div>
+                <div className="mt-1 text-[11px] font-semibold text-text-primary">{graphContract.label}</div>
+                <div className="mt-1 text-[11px] leading-relaxed text-text-body">{graphContract.detail}</div>
+                {graphContract.releaseTrigger ? (
+                  <div className="mt-2 text-[11px] leading-relaxed text-text-muted">
+                    Release trigger: {formatReleaseTriggerLabel(graphContract.releaseTrigger)}.
+                  </div>
+                ) : null}
+                {graphContract.nextMove ? (
+                  <div className="mt-2 text-[11px] leading-relaxed text-text-muted">
+                    Do next: {graphContract.nextMove}
+                  </div>
+                ) : null}
+              </div>
+            )}
+            {(transition?.detail || graphSummary.available) && (
+              <div className="mt-2 grid gap-2 xl:grid-cols-2">
+                {transition?.detail && (
+                  <div className="rounded-2xl border border-white/[0.08] bg-black/20 px-3 py-2">
+                    <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Transition</div>
+                    <div className="mt-1 text-[11px] font-semibold text-text-primary">{transition.label}</div>
+                    <div className="mt-1 text-[11px] leading-relaxed text-text-body">{transition.detail}</div>
+                  </div>
+                )}
+                {graphSummary.available && (
+                  <div className="rounded-2xl border border-white/[0.08] bg-black/20 px-3 py-2">
+                    <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Graph progress</div>
+                    <div className="mt-1 text-[11px] font-semibold text-text-primary">{graphSummary.progressPercent}% complete</div>
+                    <div className="mt-1 text-[11px] leading-relaxed text-text-body">{graphSummary.detail}</div>
+                  </div>
+                )}
+              </div>
+            )}
+            {approvalTransition.available && (
+              <div className="mt-2 rounded-2xl border border-white/[0.08] bg-black/20 px-3 py-2">
+                <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Approval transition</div>
+                <div className="mt-1 text-[11px] font-semibold text-text-primary">{approvalTransition.label}</div>
+                <div className="mt-1 text-[11px] leading-relaxed text-text-body">{approvalTransition.detail}</div>
+                {approvalTransition.nextMove ? (
+                  <div className="mt-2 text-[11px] leading-relaxed text-text-muted">
+                    Do next: {String(approvalTransition.nextMove).replaceAll('_', ' ')}.
+                  </div>
+                ) : null}
+              </div>
+            )}
+            {liveControlState?.available && liveControlState.kind !== 'flowing' && (
+              <div className="mt-2 rounded-2xl border border-white/[0.08] bg-black/20 px-3 py-2">
+                <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Live control state</div>
+                <div className="mt-1 text-[11px] font-semibold text-text-primary">{liveControlState.label}</div>
+                <div className="mt-1 text-[11px] leading-relaxed text-text-body">{liveControlState.detail}</div>
+                {liveControlState.nextMove ? (
+                  <div className="mt-2 text-[11px] leading-relaxed text-text-muted">
+                    Do next: {String(liveControlState.nextMove).replaceAll('_', ' ')}.
+                  </div>
+                ) : null}
+                {liveControlState.resolutionLabel ? (
+                  <div className="mt-2 rounded-2xl border border-white/[0.08] bg-white/[0.03] px-3 py-2 text-[11px] leading-relaxed text-text-body">
+                    <span className="font-semibold text-text-primary">Safest next move:</span> {liveControlState.resolutionLabel}. {liveControlState.resolutionDetail}
+                    <div className="mt-2 text-[11px] leading-relaxed text-text-muted">
+                      Resume posture: {liveControlState.canAutoResume
+                        ? 'safe to resume automatically'
+                        : liveControlState.shouldStayHeld
+                          ? 'keep held until reviewed'
+                          : 'active commander decision required'}.
+                    </div>
+                  </div>
+                ) : null}
+                {onNavigate && liveControlDraft ? (
+                  <div className="mt-3">
+                    <button
+                      type="button"
+                      onClick={() => onNavigate('managedOps', { managedOpsRouteState: liveControlDraft })}
+                      className="inline-flex items-center gap-2 rounded-xl border border-aurora-violet/20 bg-aurora-violet/10 px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-aurora-violet"
+                    >
+                      <Sparkles className="h-3.5 w-3.5" />
+                      {liveControlState.actionLabel}
+                    </button>
+                  </div>
+                ) : null}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {!isApproval && launchReadiness && (
+        <div className="px-5 py-3 border-b border-border bg-surface">
+          <div className="rounded-2xl border border-aurora-blue/15 bg-[linear-gradient(135deg,rgba(96,165,250,0.08),rgba(255,255,255,0.02))] px-3 py-3">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <div className="text-[10px] uppercase tracking-[0.16em] text-aurora-blue font-semibold">Launch readiness</div>
+                <div className="mt-1 text-[12px] font-semibold text-text-primary">{launchReadiness.title}</div>
+              </div>
+              <div className={cn(
+                'rounded-full border px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.16em]',
+                launchReadiness.tone === 'teal'
+                  ? 'border-aurora-teal/20 bg-aurora-teal/10 text-aurora-teal'
+                  : launchReadiness.tone === 'amber'
+                    ? 'border-aurora-amber/20 bg-aurora-amber/10 text-aurora-amber'
+                    : 'border-aurora-rose/20 bg-aurora-rose/10 text-aurora-rose'
+              )}>
+                {launchReadiness.coveragePercent}% covered
+              </div>
+            </div>
+            <div className="mt-2 text-[11px] leading-relaxed text-text-body">{launchReadiness.detail}</div>
+            {launchReadiness.requiredSystems.length > 0 && (
+              <div className="mt-2 flex flex-wrap gap-2">
+                {launchReadiness.requiredSystems.map((system) => (
+                  <span
+                    key={system.key}
+                    className={cn(
+                      'rounded-full border px-2 py-1 text-[10px] font-semibold',
+                      system.status === 'connected'
+                        ? 'border-aurora-teal/20 bg-aurora-teal/10 text-aurora-teal'
+                        : system.status === 'degraded'
+                          ? 'border-aurora-amber/20 bg-aurora-amber/10 text-aurora-amber'
+                          : 'border-aurora-rose/20 bg-aurora-rose/10 text-aurora-rose'
+                    )}
+                  >
+                    {system.label}
+                  </span>
+                ))}
+              </div>
+            )}
+            {launchReadiness.guardrails.length > 0 && (
+              <div className="mt-2 text-[11px] leading-relaxed text-text-muted">
+                Guardrails: {launchReadiness.guardrails.join(' • ')}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {!isApproval && branchConnectorPosture?.available && (
+        <div className="px-5 py-3 border-b border-border bg-surface">
+          <div className="rounded-2xl border border-aurora-violet/15 bg-[linear-gradient(135deg,rgba(167,139,250,0.08),rgba(255,255,255,0.02))] px-3 py-3">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <div className="text-[10px] uppercase tracking-[0.16em] text-aurora-violet font-semibold">Branch connector posture</div>
+                <div className="mt-1 text-[12px] font-semibold text-text-primary">{branchConnectorPosture.title}</div>
+              </div>
+              <div className={cn(
+                'rounded-full border px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.16em]',
+                branchConnectorPosture.tone === 'teal'
+                  ? 'border-aurora-teal/20 bg-aurora-teal/10 text-aurora-teal'
+                  : branchConnectorPosture.tone === 'amber'
+                    ? 'border-aurora-amber/20 bg-aurora-amber/10 text-aurora-amber'
+                    : 'border-aurora-rose/20 bg-aurora-rose/10 text-aurora-rose'
+              )}>
+                {branchConnectorPosture.modes.length ? branchConnectorPosture.modes.join('/') : 'local-first'}
+              </div>
+            </div>
+            <div className="mt-2 text-[11px] leading-relaxed text-text-body">{branchConnectorPosture.detail}</div>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {branchConnectorPosture.fallbackStrategy && (
+                <span className="rounded-full border border-aurora-blue/20 bg-aurora-blue/10 px-2 py-1 text-[10px] font-semibold text-aurora-blue">
+                  Fallback: {formatFallbackStrategyLabel(branchConnectorPosture.fallbackStrategy)}
+                </span>
+              )}
+              {branchConnectorPosture.preferredRole && (
+                <span className="rounded-full border border-white/[0.08] bg-white/[0.03] px-2 py-1 text-[10px] font-semibold text-text-body">
+                  Preferred lane: {branchConnectorPosture.preferredRole}
+                </span>
+              )}
+              {branchConnectorPosture.recommendedApprovalLevel && (
+                <span className="rounded-full border border-white/[0.08] bg-white/[0.03] px-2 py-1 text-[10px] font-semibold text-text-body">
+                  Approval: {String(branchConnectorPosture.recommendedApprovalLevel).replaceAll('_', ' ')}
+                </span>
+              )}
+            </div>
+            {branchConnectorPosture.fallbackStrategy && (
+              <div className="mt-2 text-[10px] leading-relaxed text-text-muted">
+                {getFallbackStrategyDetail(branchConnectorPosture.fallbackStrategy)}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {!isApproval && dispatchReadback?.available && (
+        <div className="px-5 py-3 border-b border-border bg-surface">
+          <div className="rounded-2xl border border-white/[0.08] bg-black/20 px-3 py-3">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted font-semibold">Dispatch posture</div>
+                <div className="mt-1 text-[12px] font-semibold text-text-primary">{dispatchReadback.title}</div>
+              </div>
+              <div className={cn(
+                'rounded-full border px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.16em]',
+                dispatchReadback.tone === 'teal'
+                  ? 'border-aurora-teal/20 bg-aurora-teal/10 text-aurora-teal'
+                  : dispatchReadback.tone === 'amber'
+                    ? 'border-aurora-amber/20 bg-aurora-amber/10 text-aurora-amber'
+                    : dispatchReadback.tone === 'rose'
+                      ? 'border-aurora-rose/20 bg-aurora-rose/10 text-aurora-rose'
+                      : 'border-aurora-blue/20 bg-aurora-blue/10 text-aurora-blue'
+              )}>
+                {formatDispatchClassLabel(dispatchReadback.dispatchClass)}
+              </div>
+            </div>
+            <div className="mt-2 text-[11px] leading-relaxed text-text-body">{dispatchReadback.detail}</div>
+            <div className="mt-2 text-[11px] leading-relaxed text-text-muted">
+              Next move: {dispatchReadback.nextMove}
+            </div>
+          </div>
+        </div>
+      )}
+
       {!isApproval && (
         <div className="px-5 py-3 border-b border-border bg-surface">
+          {(hybridApprovalSummary.available || failureTriage.available || executionAudit.available) && (
+            <div className="mb-3 grid gap-3">
+              {hybridApprovalSummary.available && (
+                <div className="rounded-2xl border border-aurora-teal/15 bg-[linear-gradient(135deg,rgba(45,212,191,0.08),rgba(255,255,255,0.02))] px-3 py-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <div className="text-[10px] uppercase tracking-[0.16em] text-aurora-teal font-semibold">Hybrid approval</div>
+                      <div className="mt-1 text-[12px] font-semibold text-text-primary">{hybridApprovalSummary.title}</div>
+                    </div>
+                    <div className="rounded-full border border-aurora-amber/20 bg-aurora-amber/10 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-aurora-amber">
+                      {hybridApprovalSummary.totalQueue} open
+                    </div>
+                  </div>
+                  <div className="mt-2 text-[11px] leading-relaxed text-text-body">{hybridApprovalSummary.detail}</div>
+                  <div className="mt-2 rounded-2xl border border-white/[0.08] bg-black/20 px-3 py-2 text-[10px] leading-relaxed text-text-muted">
+                    <span className="font-semibold text-text-primary">Approval transition:</span> {hybridApprovalSummary.transitionLabel}. {hybridApprovalSummary.transitionDetail}
+                    <div className="mt-1">
+                      <span className="font-semibold text-text-primary">Approval posture:</span> {hybridApprovalSummary.resolutionLabel}. {hybridApprovalSummary.resolutionDetail}
+                    </div>
+                    <div className="mt-1">
+                      Do next: {String(hybridApprovalSummary.nextMove || 'keep_flowing').replaceAll('_', ' ')}.
+                    </div>
+                  </div>
+                  {hybridApprovalSummary.latestDecision && (
+                    <div className="mt-2 text-[10px] leading-relaxed text-text-muted">
+                      Latest decision: {hybridApprovalSummary.latestDecision.label}. {hybridApprovalSummary.latestDecision.detail}
+                    </div>
+                  )}
+                </div>
+              )}
+              {failureTriage.available && (
+                <div className="rounded-2xl border border-aurora-rose/15 bg-[linear-gradient(135deg,rgba(251,113,133,0.08),rgba(255,255,255,0.02))] px-3 py-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <div className="text-[10px] uppercase tracking-[0.16em] text-aurora-rose font-semibold">Failure triage</div>
+                      <div className="mt-1 text-[12px] font-semibold text-text-primary">{failureTriage.title}</div>
+                    </div>
+                    <div className="rounded-full border border-aurora-rose/20 bg-aurora-rose/10 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-aurora-rose">
+                      {failureTriage.failedCount} active
+                    </div>
+                  </div>
+                  <div className="mt-2 text-[11px] leading-relaxed text-text-body">{failureTriage.detail}</div>
+                  <div className="mt-2 rounded-2xl border border-white/[0.08] bg-black/20 px-3 py-2 text-[10px] leading-relaxed text-text-muted">
+                    <span className="font-semibold text-text-primary">Recovery mode:</span> {String(failureTriage.recoveryMode || 'generic_recovery').replaceAll('_', ' ')}.
+                    <div className="mt-1">
+                      <span className="font-semibold text-text-primary">Safest next move:</span> {failureTriage.resolutionLabel}. {failureTriage.resolutionDetail}
+                    </div>
+                    <div className="mt-1">
+                      Verdict {failureTriage.verdict} • Do next {failureTriage.nextMove}
+                    </div>
+                    {failureTriage.graphContract?.label ? (
+                      <div className="mt-1">
+                        Graph contract: {failureTriage.graphContract.label}.
+                      </div>
+                    ) : null}
+                  </div>
+              {onNavigate && failureTriageDraft ? (
+                <div className="mt-3">
+                  <button
+                        type="button"
+                        onClick={() => onNavigate('managedOps', { managedOpsRouteState: failureTriageDraft })}
+                        className="rounded-2xl border border-aurora-rose/20 bg-aurora-rose/10 px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-aurora-rose transition-colors hover:bg-aurora-rose/15"
+                      >
+                        {failureTriage.actionLabel || 'Stage recovery move'}
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
+              )}
+              {executionAudit.available && (
+                <div className="rounded-2xl border border-aurora-blue/15 bg-[linear-gradient(135deg,rgba(96,165,250,0.08),rgba(255,255,255,0.02))] px-3 py-3">
+                  <div className="text-[10px] uppercase tracking-[0.16em] text-aurora-blue font-semibold">Execution control audit</div>
+                  <div className="mt-2 space-y-2">
+                    {executionAudit.entries.slice(0, 3).map((entry) => (
+                      <div key={entry.id} className="rounded-2xl border border-white/[0.08] bg-black/20 px-3 py-2">
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="text-[11px] font-semibold text-text-primary">{entry.label}</div>
+                          <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">{entry.category}</div>
+                        </div>
+                        <div className="mt-1 text-[11px] leading-relaxed text-text-body">{entry.detail}</div>
+                        {(entry.verdict || entry.nextMove) && (
+                          <div className="mt-1 text-[10px] uppercase tracking-[0.16em] text-text-muted">
+                            {[entry.verdict ? `Verdict ${entry.verdict}` : null, entry.nextMove ? `Next ${entry.nextMove}` : null].filter(Boolean).join(' • ')}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
           <div className="grid gap-3 xl:grid-cols-2">
             <div className="rounded-2xl border border-aurora-violet/15 bg-[linear-gradient(135deg,rgba(167,139,250,0.08),rgba(96,165,250,0.04))] px-3 py-3">
               <div className="text-[10px] uppercase tracking-[0.16em] text-aurora-violet font-semibold">Why Commander Chose This</div>
@@ -402,6 +810,23 @@ function Drawer({ item, agents, tasks, logs, learningMemory, onClose, onApprove,
               </div>
             </div>
           </div>
+          {decisionNarrative.available && (
+            <div className="mt-3 rounded-2xl border border-aurora-blue/15 bg-[linear-gradient(135deg,rgba(96,165,250,0.08),rgba(255,255,255,0.02))] px-3 py-3">
+              <div className="text-[10px] uppercase tracking-[0.16em] text-aurora-blue font-semibold">Decision narrative</div>
+              <div className="mt-2 text-[12px] font-semibold text-text-primary">{decisionNarrative.title}</div>
+              <div className="mt-2 text-[11px] leading-relaxed text-text-body">{decisionNarrative.detail}</div>
+              {decisionNarrative.nextMove ? (
+                <div className="mt-2 text-[10px] uppercase tracking-[0.16em] text-text-muted">
+                  Do next: {String(decisionNarrative.nextMove).replaceAll('_', ' ')}
+                </div>
+              ) : null}
+              {controlActionMode.available && controlActionMode.helperText ? (
+                <div className="mt-3 rounded-2xl border border-white/[0.08] bg-black/20 px-3 py-2 text-[10px] leading-relaxed text-text-muted">
+                  {controlActionMode.helperText}
+                </div>
+              ) : null}
+            </div>
+          )}
           {(batchDoctrine || latestBatchAudit) && (
             <div className="mt-3 rounded-2xl border border-aurora-blue/15 bg-[linear-gradient(135deg,rgba(96,165,250,0.08),rgba(255,255,255,0.02))] px-3 py-3">
               <div className="text-[10px] uppercase tracking-[0.16em] text-aurora-blue font-semibold">Grouped command doctrine</div>
@@ -611,7 +1036,64 @@ function Drawer({ item, agents, tasks, logs, learningMemory, onClose, onApprove,
                 {actionLoading === 'Redirect' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}Interrupt + Redirect
               </button>
             )}
-            <button onClick={() => act('Rerun', () => onRetry(item.id))} disabled={!!actionLoading} className="flex items-center gap-1.5 px-3 py-2.5 text-[11px] font-bold text-aurora-amber bg-aurora-amber/5 border border-aurora-amber/20 rounded-xl hover:bg-aurora-amber/10">{actionLoading === 'Rerun' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RotateCcw className="w-3.5 h-3.5" />}Rerun</button>
+            <button
+              onClick={() => {
+                if (onNavigate && failureTriageDraft && failureTriage.topFailure?.id === item.id) {
+                  onNavigate('managedOps', { managedOpsRouteState: failureTriageDraft });
+                  return;
+                }
+                act('Rerun', () => onRetry(item.id));
+              }}
+              disabled={!!actionLoading}
+              className="flex items-center gap-1.5 px-3 py-2.5 text-[11px] font-bold text-aurora-amber bg-aurora-amber/5 border border-aurora-amber/20 rounded-xl hover:bg-aurora-amber/10"
+            >
+              {actionLoading === 'Rerun' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RotateCcw className="w-3.5 h-3.5" />}
+              {failureTriageDraft && failureTriage.topFailure?.id === item.id
+                ? (failureTriage.actionLabel || 'Run recovery move')
+                : 'Rerun'}
+            </button>
+            {executableControlAction.available && executableControlAction.kind === 'release' && (
+              <button
+                onClick={() => act('Release', () => onApprove(item.id))}
+                disabled={!!actionLoading}
+                className="flex items-center gap-1.5 px-3 py-2.5 text-[11px] font-bold text-black bg-aurora-teal border border-aurora-teal/20 rounded-xl hover:bg-[#00ebd8]"
+              >
+                {actionLoading === 'Release' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
+                {executableControlAction.label}
+              </button>
+            )}
+            {executableControlAction.available && executableControlAction.kind === 'hold' && (
+              <button
+                onClick={() => act('Hold', () => onStop(item.id))}
+                disabled={!!actionLoading}
+                className="flex items-center gap-1.5 px-3 py-2.5 text-[11px] font-bold text-aurora-rose bg-aurora-rose/5 border border-aurora-rose/20 rounded-xl hover:bg-aurora-rose/10"
+              >
+                {actionLoading === 'Hold' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <StopCircle className="w-3.5 h-3.5" />}
+                {executableControlAction.label}
+              </button>
+            )}
+            {executableControlAction.available && executableControlAction.kind === 'reroute' && selectedRedirectAgent && (
+              <button
+                onClick={() => act('GraphReroute', () => interruptAndRedirectTask(item.id, {
+                  agentId: selectedRedirectAgent.id,
+                  providerOverride: redirectProvider.trim() || null,
+                  modelOverride: redirectModel.trim() || null,
+                }, agents))}
+                disabled={!!actionLoading}
+                className="flex items-center gap-1.5 px-3 py-2.5 text-[11px] font-bold text-aurora-blue bg-aurora-blue/5 border border-aurora-blue/20 rounded-xl hover:bg-aurora-blue/10"
+              >
+                {actionLoading === 'GraphReroute' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <GitBranch className="w-3.5 h-3.5" />}
+                {executableControlAction.label}
+              </button>
+            )}
+            {onNavigate && liveControlDraft ? (
+              <button
+                onClick={() => onNavigate('managedOps', { managedOpsRouteState: liveControlDraft })}
+                className="flex items-center gap-1.5 px-3 py-2.5 text-[11px] font-bold text-aurora-violet bg-aurora-violet/5 border border-aurora-violet/20 rounded-xl hover:bg-aurora-violet/10"
+              >
+                <Sparkles className="w-3.5 h-3.5" />{controlActionMode.stageLabel || liveControlState.actionLabel}
+              </button>
+            ) : null}
             <button onClick={() => onCopy(item)} className="flex items-center gap-1.5 px-3 py-2.5 text-[11px] font-bold text-text-muted bg-surface border border-border rounded-xl hover:bg-surface-raised ml-auto"><Copy className="w-3.5 h-3.5" />Copy</button>
           </>
         )}
@@ -624,21 +1106,61 @@ function Drawer({ item, agents, tasks, logs, learningMemory, onClose, onApprove,
 // INTELLIGENCE SIDEBAR
 // ═══════════════════════════════════════════════════════════════
 
-function IntelSidebar({ tasks, approvals, completed, agents, schedules, logs, learningMemory, connectedSystems, truth, onOpenApprovals, onOpenSystems, onOpenCreator, onOpenOps }) {
+function IntelSidebar({ tasks, approvals, completed, agents, schedules, logs, interventions, learningMemory, connectedSystems, truth, branchConnectorPressure, groupedConnectorBlockers, missionDispatchPressure, approvalAudit = [], onOpenApprovals, onOpenSystems, onOpenCreator, onOpenOps, onNavigate }) {
   const totalCost = tasks.reduce((sum, task) => sum + Number(task.costUsd || 0), 0);
   const failedCount = tasks.filter(t => t.status === 'failed' || t.status === 'error').length;
   const runningCount = tasks.filter(t => t.status === 'running').length;
   const avgApprovalWait = approvals.length > 0 ? Math.round(approvals.reduce((s, a) => s + (a.waitingMs || 0), 0) / approvals.length / 60000) : 0;
   const timelineEntries = buildTimelineEntries({ tasks, reviews: approvals, logs, connectedSystems });
+  const approvalDoctrine = learningMemory?.doctrineById?.['hybrid-approval-memory'] || null;
+  const failureDoctrine = learningMemory?.doctrineById?.['failure-triage-memory'] || null;
+  const auditDoctrine = learningMemory?.doctrineById?.['execution-audit-memory'] || null;
+  const commanderNextMove = getCommanderNextMove({
+    tasks,
+    reviews: approvals,
+    schedules,
+    agents,
+    interventions,
+    logs,
+    approvalAudit,
+    learningMemory,
+  });
 
   // Derive recommendations from real data
   const recs = [];
+  if (auditDoctrine) {
+    recs.push({
+      type: 'audit',
+      text: `${auditDoctrine.title}. ${auditDoctrine.detail}`,
+      imp: failureDoctrine?.tone === 'rose' || approvalDoctrine?.tone === 'amber' ? 'high' : 'med',
+    });
+  }
   if (failedCount > 0) {
     const failedAgents = [...new Set(tasks.filter(t => t.status === 'failed' || t.status === 'error').map(t => t.agentName || 'Unknown'))];
     recs.push({ type: 'anomaly', text: `${failedCount} failed task${failedCount > 1 ? 's' : ''} from ${failedAgents.join(', ')}. Check agent health and retry or reassign.`, imp: 'high' });
   }
   if (avgApprovalWait > 3) {
     recs.push({ type: 'bottleneck', text: `Approval queue averaging ${avgApprovalWait}m wait. Consider auto-approve rules for low-risk items.`, imp: 'high' });
+  }
+  if (branchConnectorPressure.available && branchConnectorPressure.score > 0) {
+    const groupedFix = groupedConnectorBlockers?.topGroup;
+    const topBranchName = groupedFix?.affectedCount > 1
+      ? `${groupedFix.affectedCount} guarded branches`
+      : branchConnectorPressure.topBranches[0]?.title || 'the top guarded branch';
+    recs.push({
+      type: 'connector',
+      text: groupedFix?.affectedCount > 1
+        ? `${groupedFix.title}. ${groupedFix.detail} Do next: ${groupedFix.order} Fastest safe move: ${groupedFix.correctiveAction?.label ? `${groupedFix.correctiveAction.label.toLowerCase()} across ${topBranchName}` : `clear the blocked connector lane across ${topBranchName}`} before scaling anything behind it.`
+        : `${branchConnectorPressure.title}. ${branchConnectorPressure.detail} Fastest safe move: ${branchConnectorPressure.topCorrectiveAction?.label ? `${branchConnectorPressure.topCorrectiveAction.label.toLowerCase()} on ${topBranchName}` : `focus on ${topBranchName} and clear the blocked connector lane`} before scaling anything behind it.`,
+      imp: branchConnectorPressure.tone === 'rose' ? 'high' : 'med',
+    });
+  }
+  if (missionDispatchPressure?.available) {
+    recs.push({
+      type: 'dispatch',
+      text: `${missionDispatchPressure.title}. ${missionDispatchPressure.detail} Do next: ${missionDispatchPressure.nextMove}`,
+      imp: missionDispatchPressure.tone === 'rose' ? 'high' : missionDispatchPressure.tone === 'amber' ? 'med' : 'low',
+    });
   }
   if (totalCost > 1) {
     recs.push({ type: 'cost', text: `Session cost at $${totalCost.toFixed(2)}. Review if research tasks can use cheaper models.`, imp: 'med' });
@@ -691,6 +1213,35 @@ function IntelSidebar({ tasks, approvals, completed, agents, schedules, logs, le
     {recs.length > 0 && (
       <div className="p-3.5 rounded-[24px] bg-surface border border-border">
         <div className="flex items-center gap-2 mb-2.5"><Sparkles className="w-3.5 h-3.5 text-aurora-violet" /><span className="text-[11px] font-bold uppercase text-text-muted tracking-wider">Commander Readback</span></div>
+        {(approvalDoctrine || failureDoctrine || commanderNextMove?.available) && (
+          <div className="mb-3 rounded-2xl border border-white/[0.08] bg-black/20 px-3 py-3">
+            <div className="text-[10px] uppercase tracking-[0.16em] text-text-muted">Control order</div>
+            <div className="mt-2 text-[12px] font-semibold text-text-primary">{commanderNextMove?.title || failureDoctrine?.title || approvalDoctrine?.title}</div>
+            <div className="mt-1 text-[11px] leading-relaxed text-text-body">{commanderNextMove?.detail || failureDoctrine?.detail || approvalDoctrine?.detail}</div>
+            {commanderNextMove?.available && onNavigate ? (
+              <div className="mt-3">
+                <button
+                  type="button"
+                  onClick={() => onNavigate('managedOps', {
+                    managedOpsRouteState: commanderNextMove.dispatchActionBrief
+                      ? { tab: 'create', quickstartPrompt: commanderNextMove.opsPrompt, notice: `Commander staged the next control move from Mission Control: ${commanderNextMove.actionLabel}.`, dispatchActionBrief: commanderNextMove.dispatchActionBrief }
+                      : commanderNextMove.connectorActionBrief
+                        ? { tab: 'create', quickstartPrompt: commanderNextMove.opsPrompt, notice: `Commander staged the next control move from Mission Control: ${commanderNextMove.actionLabel}.`, connectorActionBrief: commanderNextMove.connectorActionBrief }
+                        : {
+                            tab: 'create',
+                            quickstartPrompt: commanderNextMove.opsPrompt,
+                            notice: `Commander staged the next control move from Mission Control: ${commanderNextMove.actionLabel}.`,
+                          },
+                  })}
+                  className="inline-flex items-center gap-2 rounded-xl border border-aurora-blue/20 bg-aurora-blue/10 px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-aurora-blue"
+                >
+                  <Sparkles className="h-3.5 w-3.5" />
+                  Stage next move
+                </button>
+              </div>
+            ) : null}
+          </div>
+        )}
         <div className={cn("rounded-2xl border border-l-[3px] p-3",
           recs[0].imp === 'high' ? 'bg-aurora-rose/[0.03] border-aurora-rose/20 border-l-aurora-rose' :
           recs[0].imp === 'med' ? 'bg-aurora-amber/[0.03] border-aurora-amber/20 border-l-aurora-amber' :
@@ -722,9 +1273,14 @@ function IntelSidebar({ tasks, approvals, completed, agents, schedules, logs, le
 // PLANNER TAB (static until schedules table)
 // ═══════════════════════════════════════════════════════════════
 
-function PlannerTab({ schedules, agents, onToggle, onDispatch }) {
+function PlannerTab({ schedules, agents, recurringCandidates = [], onToggle, onDispatch, onStageRecurringAction }) {
   const enabled = schedules.filter(s => s.enabled);
   const paused = schedules.filter(s => !s.enabled);
+  const findRecurringCandidate = (schedule) => recurringCandidates.find((candidate) => {
+    const scheduleName = String(schedule.name || '').trim().toLowerCase();
+    const candidateName = String(candidate.title || '').trim().toLowerCase();
+    return scheduleName && candidateName && (scheduleName === candidateName || scheduleName.includes(candidateName) || candidateName.includes(scheduleName));
+  }) || null;
 
   return (<div className="flex-1 overflow-y-auto no-scrollbar pr-1">
     {/* Queued / upcoming */}
@@ -735,6 +1291,13 @@ function PlannerTab({ schedules, agents, onToggle, onDispatch }) {
         {enabled.map(s => {
           const agent = agents.find(a => a.id === s.agentId);
           const lCfg = stColor[s.lastResult] || stColor.pending;
+          const recurringCandidate = findRecurringCandidate(s);
+          const recurringTrust = getRecurringAutonomyTuningSummary(recurringCandidate);
+          const recurringAction = recurringCandidate ? getRecurringBriefFitAction([recurringCandidate], [], []) : null;
+          const recurringChange = recurringCandidate ? getRecurringChangeReadback(recurringCandidate) : null;
+          const recurringPayback = recurringCandidate ? getRecurringChangePayback(recurringCandidate) : null;
+          const recurringVerdict = recurringCandidate ? getRecurringPostChangeVerdict(recurringCandidate) : null;
+          const recurringNextCorrection = recurringCandidate ? getRecurringNextCorrection(recurringCandidate) : null;
           return (
             <div key={s.id} className="px-4 py-3.5 rounded-2xl border border-border bg-surface">
               <div className="flex items-center gap-3 mb-2">
@@ -753,7 +1316,59 @@ function PlannerTab({ schedules, agents, onToggle, onDispatch }) {
               <div className="flex items-center gap-2 mt-3 ml-8">
                 <button onClick={() => onDispatch(s)} className="flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-bold text-aurora-teal bg-aurora-teal/5 border border-aurora-teal/20 rounded-lg hover:bg-aurora-teal/10"><Send className="w-3 h-3" />Dispatch Now</button>
                 <button onClick={() => onToggle(s.id, false)} className="flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-bold text-text-muted bg-surface border border-border rounded-lg hover:bg-surface-raised"><AlarmClock className="w-3 h-3" />Pause</button>
+                {recurringAction?.available && (
+                  <button onClick={() => onStageRecurringAction?.(s, recurringCandidate, recurringAction)} className="flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-bold text-aurora-blue bg-aurora-blue/5 border border-aurora-blue/20 rounded-lg hover:bg-aurora-blue/10">
+                    <Sparkles className="w-3 h-3" />Stage {recurringAction.actionLabel}
+                  </button>
+                )}
               </div>
+              {recurringCandidate?.launchBrief && (
+                <div className="mt-3 ml-8 rounded-2xl border border-aurora-blue/15 bg-[linear-gradient(135deg,rgba(96,165,250,0.08),rgba(255,255,255,0.02))] px-3 py-2.5">
+                  <div className="text-[10px] uppercase tracking-[0.14em] text-aurora-blue">Recurring brief fit</div>
+                  <div className="mt-1 text-[11px] leading-relaxed text-text-body">{recurringTrust.detail}</div>
+                  <div className="mt-2 text-[10px] leading-relaxed text-text-muted">
+                    Saved brief: {recurringCandidate.launchBrief.objective}
+                  </div>
+                  {recurringChange?.available && (
+                    <div className="mt-2 rounded-xl border border-white/10 bg-black/20 px-3 py-2">
+                      <div className="text-[10px] uppercase tracking-[0.14em] text-text-muted">Latest saved change</div>
+                      <div className="mt-1 text-[11px] leading-relaxed text-text-body">{recurringChange.detail}</div>
+                    </div>
+                  )}
+                  {recurringPayback?.available && (
+                    <div className="mt-2 rounded-xl border border-white/10 bg-black/20 px-3 py-2">
+                      <div className="text-[10px] uppercase tracking-[0.14em] text-text-muted">Change payback</div>
+                      <div className="mt-1 text-[11px] leading-relaxed text-text-body">{recurringPayback.detail}</div>
+                    </div>
+                  )}
+                  {recurringVerdict?.available && (
+                    <div className="mt-2 rounded-xl border border-white/10 bg-black/20 px-3 py-2">
+                      <div className="text-[10px] uppercase tracking-[0.14em] text-text-muted">Post-change verdict</div>
+                      <div className="mt-1 text-[11px] leading-relaxed text-text-body">{recurringVerdict.detail}</div>
+                      {(recurringVerdict.previousPosture || recurringVerdict.currentPosture) && (
+                        <div className="mt-2 grid gap-2 md:grid-cols-2 text-[10px] leading-5 text-text-muted">
+                          {recurringVerdict.previousPosture && (
+                            <div>
+                              Previous: {String(recurringVerdict.previousPosture.cadence || 'not_set').replaceAll('_', ' ')} / {String(recurringVerdict.previousPosture.approvalPosture || 'not_set').replaceAll('_', ' ')}
+                            </div>
+                          )}
+                          {recurringVerdict.currentPosture && (
+                            <div>
+                              Current: {String(recurringVerdict.currentPosture.cadence || 'not_set').replaceAll('_', ' ')} / {String(recurringVerdict.currentPosture.approvalPosture || 'not_set').replaceAll('_', ' ')}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  {recurringNextCorrection?.available && (
+                    <div className="mt-2 rounded-xl border border-aurora-blue/15 bg-aurora-blue/[0.05] px-3 py-2">
+                      <div className="text-[10px] uppercase tracking-[0.14em] text-aurora-blue">Next move</div>
+                      <div className="mt-1 text-[11px] leading-relaxed text-text-body">{recurringNextCorrection.detail}</div>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           );
         })}
@@ -767,6 +1382,13 @@ function PlannerTab({ schedules, agents, onToggle, onDispatch }) {
         <div className="space-y-2 opacity-60">
           {paused.map(s => {
             const agent = agents.find(a => a.id === s.agentId);
+            const recurringCandidate = findRecurringCandidate(s);
+            const recurringTrust = getRecurringAutonomyTuningSummary(recurringCandidate);
+            const recurringAction = recurringCandidate ? getRecurringBriefFitAction([recurringCandidate], [], []) : null;
+            const recurringChange = recurringCandidate ? getRecurringChangeReadback(recurringCandidate) : null;
+            const recurringPayback = recurringCandidate ? getRecurringChangePayback(recurringCandidate) : null;
+            const recurringVerdict = recurringCandidate ? getRecurringPostChangeVerdict(recurringCandidate) : null;
+            const recurringNextCorrection = recurringCandidate ? getRecurringNextCorrection(recurringCandidate) : null;
             return (
               <div key={s.id} className="px-4 py-3 rounded-2xl border border-border bg-surface">
                 <div className="flex items-center gap-3">
@@ -776,7 +1398,35 @@ function PlannerTab({ schedules, agents, onToggle, onDispatch }) {
                 </div>
                 <div className="flex items-center gap-2 mt-2 ml-8">
                   <button onClick={() => onToggle(s.id, true)} className="flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-bold text-aurora-teal bg-aurora-teal/5 border border-aurora-teal/20 rounded-lg hover:bg-aurora-teal/10">Enable</button>
+                  {recurringAction?.available && (
+                    <button onClick={() => onStageRecurringAction?.(s, recurringCandidate, recurringAction)} className="flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-bold text-aurora-blue bg-aurora-blue/5 border border-aurora-blue/20 rounded-lg hover:bg-aurora-blue/10">
+                      <Sparkles className="w-3 h-3" />Stage {recurringAction.actionLabel}
+                    </button>
+                  )}
                 </div>
+                {recurringCandidate?.launchBrief && (
+                  <div className="mt-3 ml-8 rounded-2xl border border-white/[0.08] bg-black/20 px-3 py-2.5">
+                    <div className="text-[10px] uppercase tracking-[0.14em] text-text-muted">Paused because</div>
+                    <div className="mt-1 text-[11px] leading-relaxed text-text-body">{recurringTrust.recoveryLabel}</div>
+                    {recurringChange?.available && (
+                      <div className="mt-2 text-[10px] leading-relaxed text-text-muted">{recurringChange.detail}</div>
+                    )}
+                    {recurringPayback?.available && (
+                      <div className="mt-2 text-[10px] leading-relaxed text-text-muted">{recurringPayback.detail}</div>
+                    )}
+                    {recurringVerdict?.available && (
+                      <div className="mt-2 text-[10px] leading-relaxed text-text-muted">
+                        {recurringVerdict.detail}
+                        {recurringVerdict.previousPosture || recurringVerdict.currentPosture
+                          ? ` Previous: ${String(recurringVerdict.previousPosture?.cadence || 'not_set').replaceAll('_', ' ')} / ${String(recurringVerdict.previousPosture?.approvalPosture || 'not_set').replaceAll('_', ' ')}. Current: ${String(recurringVerdict.currentPosture?.cadence || 'not_set').replaceAll('_', ' ')} / ${String(recurringVerdict.currentPosture?.approvalPosture || 'not_set').replaceAll('_', ' ')}.`
+                          : ''}
+                      </div>
+                    )}
+                    {recurringNextCorrection?.available && (
+                      <div className="mt-2 text-[10px] leading-relaxed text-aurora-blue">{recurringNextCorrection.detail}</div>
+                    )}
+                  </div>
+                )}
               </div>
             );
           })}
@@ -792,6 +1442,8 @@ function PlannerTab({ schedules, agents, onToggle, onDispatch }) {
 
 export function MissionControlView({ launchDraft = null, onConsumeLaunchDraft, onNavigate }) {
   const { setPendingCount, setSettingsOpen } = useSystemState();
+  const { interventions } = useTaskInterventions();
+  const { auditTrail } = useApprovalAudit();
   const [agents, setAgents] = useState([]);
   const [tasks, setTasks] = useState([]);
   const [logs, setLogs] = useState([]);
@@ -805,7 +1457,7 @@ export function MissionControlView({ launchDraft = null, onConsumeLaunchDraft, o
   const reload = useCallback(async () => {
     const [a, t, l, p, c, s] = await Promise.all([fetchAgents(), fetchTasks(), fetchActivityLog(), fetchPendingReviews(), fetchCompletedOutputs(), fetchSchedules()]);
     setAgents(a); setTasks(t); setLogs(l); setApprovals(p); setCompleted(c); setSchedules(s);
-    setPendingCount(p.length + t.filter(task => task.status === 'needs_approval').length);
+    setPendingCount(p.length + t.filter(task => task.status === 'needs_approval' || task.requiresApproval || task.lane === 'approvals').length);
   }, [setPendingCount]);
 
   // Initial mission data load for the screen.
@@ -815,7 +1467,7 @@ export function MissionControlView({ launchDraft = null, onConsumeLaunchDraft, o
   useEffect(() => { const u = subscribeToTasks(() => reload()); return u; }, [reload]);
 
   const missionApprovals = useMemo(
-    () => tasks.filter(task => task.status === 'needs_approval' || task.lane === 'approvals'),
+    () => tasks.filter(task => task.status === 'needs_approval' || task.requiresApproval || task.lane === 'approvals'),
     [tasks]
   );
   const approvalItems = useMemo(() => [...missionApprovals, ...approvals], [missionApprovals, approvals]);
@@ -827,7 +1479,7 @@ export function MissionControlView({ launchDraft = null, onConsumeLaunchDraft, o
     [tasks, completed]
   );
   const operationalTasks = useMemo(
-    () => tasks.filter(task => !['done', 'completed'].includes(task.status) && task.status !== 'needs_approval'),
+    () => tasks.filter(task => !['done', 'completed'].includes(task.status) && !(task.status === 'needs_approval' || task.requiresApproval || task.lane === 'approvals')),
     [tasks]
   );
   const totalMissionCost = useMemo(
@@ -840,6 +1492,26 @@ export function MissionControlView({ launchDraft = null, onConsumeLaunchDraft, o
     logs,
     costData: { total: totalMissionCost, models: [] },
   });
+  const recurringCandidates = useMemo(
+    () => getAutomationCandidates(tasks, 150, interventions, []),
+    [tasks, interventions]
+  );
+  const branchConnectorPressure = useMemo(
+    () => getBranchConnectorPressureSummary(tasks, interventions),
+    [tasks, interventions]
+  );
+  const missionDispatchPressure = useMemo(
+    () => getMissionDispatchPressureSummary(tasks),
+    [tasks]
+  );
+  const commanderNextMove = useMemo(
+    () => getCommanderNextMove({ tasks, reviews: approvalItems, schedules, agents, interventions, logs, approvalAudit: auditTrail, costData: null, learningMemory }),
+    [tasks, approvalItems, schedules, agents, interventions, logs, auditTrail, learningMemory]
+  );
+  const groupedConnectorBlockers = useMemo(
+    () => getGroupedConnectorBlockers(tasks, interventions),
+    [tasks, interventions]
+  );
 
   const running = tasks.filter(t => t.status === 'running' || t.status === 'queued').length;
   const failed = tasks.filter(t => ['failed', 'error', 'blocked', 'cancelled'].includes(t.status)).length;
@@ -847,9 +1519,55 @@ export function MissionControlView({ launchDraft = null, onConsumeLaunchDraft, o
   const criticalItems = useMemo(() => {
     const c = [];
     approvalItems.filter(a => a.urgency === 'critical' || a.status === 'needs_intervention' || a.priority >= 8).forEach(a => c.push(a));
+    const guardedTasks = tasks
+      .filter(t => !['completed', 'done', 'cancelled'].includes(t.status))
+      .map((task) => ({ task, connectorPosture: getTaskBranchExecutionPosture(task, interventions) }))
+      .filter((entry) => entry.connectorPosture.requiresHumanGate || entry.connectorPosture.fallbackStrategy === 'guarded_external')
+      .sort((a, b) => Number(b.task.priority || 0) - Number(a.task.priority || 0))
+      .slice(0, 2)
+      .map((entry) => ({
+        ...entry.task,
+        summary: `${formatBranchConnectorBlocker(entry.connectorPosture) || entry.task.summary}${getBranchConnectorCorrectiveAction(entry.connectorPosture)?.detail ? ` ${getBranchConnectorCorrectiveAction(entry.connectorPosture).detail}` : ''}`,
+      }));
     tasks.filter(t => ['failed', 'error', 'blocked'].includes(t.status)).slice(0, 2).forEach(t => c.push(t));
-    return c.slice(0, 3);
-  }, [approvalItems, tasks]);
+    guardedTasks.forEach((task) => {
+      if (!c.find((entry) => entry.id === task.id)) c.push(task);
+    });
+    const scoreForNextMove = (entry) => {
+      if (!commanderNextMove?.available) return 0;
+      const source = commanderNextMove.source;
+      if (source === 'failure_triage') return ['failed', 'error', 'blocked'].includes(entry.status) ? 100 : 0;
+      if (source === 'hybrid_approval') return entry.status === 'needs_approval' || entry.requiresApproval || entry.urgency != null ? 100 : 0;
+      if (source === 'grouped_connector_blocker' || source === 'connector_branch_pressure') {
+        const posture = getTaskBranchExecutionPosture(entry, interventions);
+        return posture.requiresHumanGate || posture.fallbackStrategy === 'guarded_external' ? 100 : 0;
+      }
+      if (source === 'dispatch_pressure' || source === 'graph_contract') {
+        const dispatchReadback = getTaskDispatchReadback(entry, tasks);
+        return dispatchReadback?.label === 'Held upstream' || String(dispatchReadback?.label || '').toLowerCase().includes('serialized') ? 100 : 0;
+      }
+      return 0;
+    };
+    return c
+      .map((entry) => {
+        const liveControlState = getTaskLiveControlState(entry, interventions, tasks);
+        const nextSummary = entry.summary
+          || (liveControlState?.available && liveControlState.kind !== 'flowing'
+            ? `${liveControlState.label}. ${liveControlState.detail}`
+            : entry.description);
+        return {
+          ...entry,
+          liveControlState,
+          summary: nextSummary,
+        };
+      })
+      .sort((a, b) => {
+        const nextMoveDelta = scoreForNextMove(b) - scoreForNextMove(a);
+        if (nextMoveDelta !== 0) return nextMoveDelta;
+        return Number(b.priority || 0) - Number(a.priority || 0);
+      })
+      .slice(0, 3);
+  }, [approvalItems, tasks, interventions, commanderNextMove]);
 
   async function handleApprove(id) {
     const missionTask = missionApprovals.find(task => task.id === id);
@@ -872,6 +1590,32 @@ export function MissionControlView({ launchDraft = null, onConsumeLaunchDraft, o
   async function handleSnooze(id) { await snoozeReview(id, 30); setSel(null); reload(); }
   async function handleToggleSchedule(id, enabled) { await toggleSchedule(id, enabled); reload(); }
   async function handleDispatch(schedule) { await dispatchFromSchedule(schedule, agents); reload(); }
+  function handleStageRecurringAction(schedule, recurringCandidate, recurringAction) {
+    if (!recurringAction?.available || !recurringAction.opsPrompt) return;
+    onNavigate?.('managedOps', {
+      managedOpsRouteState: {
+        tab: 'create',
+        quickstartPrompt: recurringAction.opsPrompt,
+        notice: `Staged recurring ops draft from ${schedule?.name || recurringCandidate?.title || 'the selected recurring flow'}: ${recurringAction.actionLabel}.`,
+        recurringActionBrief: {
+          taskId: recurringAction.taskId,
+          title: recurringAction.title,
+          actionLabel: recurringAction.actionLabel,
+          currentPosture: recurringAction.currentPosture || {
+            cadence: schedule?.cadence || 'weekly',
+            approvalPosture: schedule?.approvalRequired ? 'human_required' : 'auto_low_risk',
+            missionMode: schedule?.approvalRequired ? 'watch_and_approve' : 'do_now',
+            paused: !schedule?.enabled,
+          },
+          proposedPosture: recurringAction.proposedPosture,
+          expectedImprovement: recurringAction.expectedImprovement,
+          verificationTarget: recurringAction.verificationTarget,
+          successCriteria: recurringAction.successCriteria,
+          rollbackCriteria: recurringAction.rollbackCriteria,
+        },
+      },
+    });
+  }
   async function handleLaunchMission(payload) {
     const priorityScore = payload.priority === 'critical' ? 9 : payload.priority === 'low' ? 2 : 5;
     await createMission({ ...payload, priorityScore }, agents);
@@ -1090,6 +1834,88 @@ export function MissionControlView({ launchDraft = null, onConsumeLaunchDraft, o
                     </div>
                   </div>
                 )}
+                {branchConnectorPressure.available && branchConnectorPressure.score > 0 ? (
+                  <div className="ui-panel-soft mt-2 px-3 py-2.5">
+                    <div className="text-[10px] uppercase tracking-[0.14em] text-text-muted mb-1">Branch signal</div>
+                    <div className="text-[12px] font-semibold text-text-primary">
+                      {groupedConnectorBlockers.topGroup?.affectedCount > 1 ? groupedConnectorBlockers.topGroup.title : branchConnectorPressure.title}
+                    </div>
+                    <p className="mt-1 text-[11px] leading-relaxed text-text-body">
+                      {groupedConnectorBlockers.topGroup?.affectedCount > 1 ? groupedConnectorBlockers.topGroup.detail : branchConnectorPressure.detail}
+                    </p>
+                    {groupedConnectorBlockers.topGroup?.affectedCount > 1 ? (
+                      <div className="mt-2 text-[10px] leading-relaxed text-aurora-blue">
+                        Do next: {groupedConnectorBlockers.topGroup.order}
+                      </div>
+                    ) : null}
+                    {!groupedConnectorBlockers.topGroup?.affectedCount && branchConnectorPressure.topBranches[0]?.fallbackStrategy ? (
+                      <div className="mt-2 text-[10px] leading-relaxed text-text-muted">
+                        Fallback: {formatFallbackStrategyLabel(branchConnectorPressure.topBranches[0].fallbackStrategy)}. {getFallbackStrategyDetail(branchConnectorPressure.topBranches[0].fallbackStrategy)}
+                      </div>
+                    ) : null}
+                    {groupedConnectorBlockers.topGroup?.affectedCount > 1 ? (
+                      <div className="mt-2 text-[10px] leading-relaxed text-text-muted">
+                        Affected branches: {groupedConnectorBlockers.topGroup.affectedBranches.map((branch) => branch.title).join(', ')}.
+                      </div>
+                    ) : null}
+                    {groupedConnectorBlockers.topGroup?.affectedCount > 1 && groupedConnectorBlockers.topGroup.correctiveAction?.opsPrompt ? (
+                      <div className="mt-3">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const connectorDraft = buildConnectorActionDraft(groupedConnectorBlockers.topGroup.correctiveAction, {
+                              title: groupedConnectorBlockers.topGroup.title,
+                              connectorLabel: groupedConnectorBlockers.topGroup.connectorLabel,
+                              affectedBranches: groupedConnectorBlockers.topGroup.affectedBranches.map((branch) => branch.title),
+                            });
+                            if (!connectorDraft) return;
+                            onNavigate?.('managedOps', {
+                              managedOpsRouteState: {
+                                tab: 'create',
+                                ...connectorDraft,
+                              },
+                            });
+                          }}
+                          className="inline-flex items-center gap-2 rounded-xl border border-aurora-blue/20 bg-aurora-blue/10 px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-aurora-blue"
+                        >
+                          <Sparkles className="h-3.5 w-3.5" />
+                          Stage grouped fix
+                        </button>
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
+                {missionDispatchPressure?.available ? (
+                  <div className="ui-panel-soft mt-2 px-3 py-2.5">
+                    <div className="text-[10px] uppercase tracking-[0.14em] text-text-muted mb-1">Dispatch signal</div>
+                    <div className="text-[12px] font-semibold text-text-primary">{missionDispatchPressure.title}</div>
+                    <p className="mt-1 text-[11px] leading-relaxed text-text-body">{missionDispatchPressure.detail}</p>
+                    <div className="mt-2 text-[10px] leading-relaxed text-aurora-blue">
+                      Do next: {missionDispatchPressure.nextMove}
+                    </div>
+                    <div className="mt-2 text-[10px] leading-relaxed text-text-muted">
+                      Safe parallel: {missionDispatchPressure.safeParallelCount}. Serialized: {missionDispatchPressure.serializedCount}. Held upstream: {missionDispatchPressure.heldUpstreamCount}.
+                    </div>
+                    {onNavigate ? (
+                      <div className="mt-3">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const dispatchDraft = buildDispatchActionDraft(missionDispatchPressure);
+                            if (!dispatchDraft) return;
+                            onNavigate('managedOps', {
+                              managedOpsRouteState: dispatchDraft,
+                            });
+                          }}
+                          className="inline-flex items-center gap-2 rounded-xl border border-aurora-blue/20 bg-aurora-blue/10 px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-aurora-blue"
+                        >
+                          <Sparkles className="h-3.5 w-3.5" />
+                          Stage dispatch order
+                        </button>
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
               </div>
             </div>
           }
@@ -1190,7 +2016,7 @@ export function MissionControlView({ launchDraft = null, onConsumeLaunchDraft, o
                   exit={{ opacity: 0, y: -14, scale: 0.98 }}
                   transition={{ duration: 0.24, ease: 'easeOut' }}
                 >
-                  <ItemRow item={t} agents={agents} selected={sel === t.id} onClick={() => setSel(t.id)} />
+                  <ItemRow item={t} agents={agents} tasks={tasks} selected={sel === t.id} onClick={() => setSel(t.id)} />
                 </Motion.div>
               ))}
             </AnimatePresence>
@@ -1229,7 +2055,7 @@ export function MissionControlView({ launchDraft = null, onConsumeLaunchDraft, o
             </div>
           )}
 
-          {tab === 'plan' && <PlannerTab schedules={schedules} agents={agents} onToggle={handleToggleSchedule} onDispatch={handleDispatch} />}
+          {tab === 'plan' && <PlannerTab schedules={schedules} agents={agents} recurringCandidates={recurringCandidates} onToggle={handleToggleSchedule} onDispatch={handleDispatch} onStageRecurringAction={handleStageRecurringAction} />}
 
           {tab === 'app' && (() => {
             const visible = approvalItems.filter(a => !a.snoozedUntil);
@@ -1260,7 +2086,7 @@ export function MissionControlView({ launchDraft = null, onConsumeLaunchDraft, o
               {snoozed.length > 0 && (
                 <div className="mt-4">
                   <div className="flex items-center gap-2 mb-2"><AlarmClock className="w-3 h-3 text-text-disabled" /><span className="text-[11px] font-bold uppercase text-text-disabled tracking-wider">Snoozed ({snoozed.length})</span></div>
-                  <div className="space-y-1.5 opacity-60">{snoozed.map(a => <ItemRow key={a.id} item={a} agents={agents} selected={sel === a.id} onClick={() => setSel(a.id)} />)}</div>
+                  <div className="space-y-1.5 opacity-60">{snoozed.map(a => <ItemRow key={a.id} item={a} agents={agents} tasks={tasks} selected={sel === a.id} onClick={() => setSel(a.id)} />)}</div>
                 </div>
               )}
             </>);
@@ -1307,10 +2133,16 @@ export function MissionControlView({ launchDraft = null, onConsumeLaunchDraft, o
             learningMemory={learningMemory}
             connectedSystems={connectedSystems}
             truth={truth}
+            interventions={interventions}
+            branchConnectorPressure={branchConnectorPressure}
+            groupedConnectorBlockers={groupedConnectorBlockers}
+            missionDispatchPressure={missionDispatchPressure}
+            approvalAudit={auditTrail}
             onOpenApprovals={() => setTab('app')}
             onOpenSystems={() => setSettingsOpen(true)}
             onOpenCreator={() => setCreatorOpen(true)}
             onOpenOps={() => setTab('ops')}
+            onNavigate={onNavigate}
           />
           <ScratchpadStrip />
         </div>
@@ -1318,7 +2150,7 @@ export function MissionControlView({ launchDraft = null, onConsumeLaunchDraft, o
 
       {/* Drawer */}
       <AnimatePresence>
-        {selectedItem && <Drawer item={selectedItem} agents={agents} tasks={tasks} logs={logs} learningMemory={learningMemory} onClose={() => setSel(null)} onApprove={handleApprove} onReject={handleReject} onRetry={handleRetry} onStop={handleStop} onCopy={handleCopy} onAcknowledge={handleAcknowledge} onReopen={handleReopen} onSnooze={handleSnooze} />}
+        {selectedItem && <Drawer item={selectedItem} agents={agents} tasks={tasks} logs={logs} interventions={interventions} approvalAudit={auditTrail} learningMemory={learningMemory} onNavigate={onNavigate} onClose={() => setSel(null)} onApprove={handleApprove} onReject={handleReject} onRetry={handleRetry} onStop={handleStop} onCopy={handleCopy} onAcknowledge={handleAcknowledge} onReopen={handleReopen} onSnooze={handleSnooze} />}
       </AnimatePresence>
 
       <MissionCreatorPanel
