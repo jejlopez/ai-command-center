@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
+import { motion } from "framer-motion";
+import { stagger } from "../lib/motion.js";
 import {
   Brain as BrainIcon,
   Search,
@@ -42,12 +44,12 @@ const KIND_META = {
 const KIND_ORDER = ["person", "project", "task", "fact", "event", "pref"];
 
 const TONE = {
-  cyan:   "text-jarvis-cyan",
-  blue:   "text-jarvis-blue",
-  amber:  "text-jarvis-amber",
+  cyan:   "text-jarvis-primary",
+  blue:   "text-jarvis-primary",
+  amber:  "text-jarvis-warning",
   purple: "text-jarvis-purple",
-  green:  "text-jarvis-green",
-  red:    "text-jarvis-red",
+  green:  "text-jarvis-success",
+  red:    "text-jarvis-danger",
 };
 
 function TrustBar({ trust }) {
@@ -56,7 +58,7 @@ function TrustBar({ trust }) {
     <div className="flex items-center gap-2">
       <div className="flex-1 h-1.5 rounded-full bg-white/5 overflow-hidden">
         <div
-          className="h-full bg-jarvis-cyan/80"
+          className="h-full bg-jarvis-primary/80"
           style={{ width: `${pct}%` }}
         />
       </div>
@@ -101,7 +103,7 @@ function KindGroup({ kind, nodes, selectedId, onSelect }) {
                 className={[
                   "text-left px-2 py-1.5 rounded-lg text-[12px] truncate transition",
                   isActive
-                    ? "bg-jarvis-cyan/10 text-jarvis-cyan"
+                    ? "bg-jarvis-primary/10 text-jarvis-primary"
                     : "text-jarvis-body hover:text-jarvis-ink hover:bg-white/5",
                 ].join(" ")}
                 title={n.label}
@@ -163,7 +165,7 @@ function RememberModal({ open, onClose, onSubmit }) {
     <div className="fixed inset-0 z-50 grid place-items-center bg-black/60 backdrop-blur-sm p-6">
       <form
         onSubmit={submit}
-        className="glass w-full max-w-lg p-6 relative"
+        className="surface w-full max-w-lg p-6 relative"
       >
         <button
           type="button"
@@ -172,7 +174,7 @@ function RememberModal({ open, onClose, onSubmit }) {
         >
           <X size={16} />
         </button>
-        <div className="label text-jarvis-cyan mb-1">Remember</div>
+        <div className="label text-jarvis-primary mb-1">Remember</div>
         <h2 className="text-lg font-semibold text-jarvis-ink mb-5">New memory node</h2>
 
         <div className="grid grid-cols-1 gap-4">
@@ -181,7 +183,7 @@ function RememberModal({ open, onClose, onSubmit }) {
             <select
               value={kind}
               onChange={(e) => setKind(e.target.value)}
-              className="mt-1 w-full bg-jarvis-panel/40 border border-jarvis-border rounded-xl px-3 py-2 text-sm text-jarvis-ink focus:border-jarvis-cyan/50 outline-none"
+              className="mt-1 w-full bg-jarvis-surface/40 border border-jarvis-border rounded-xl px-3 py-2 text-sm text-jarvis-ink focus:border-jarvis-primary/50 outline-none"
             >
               {KIND_ORDER.map((k) => (
                 <option key={k} value={k}>{KIND_META[k].label.replace(/s$/, "")}</option>
@@ -195,7 +197,7 @@ function RememberModal({ open, onClose, onSubmit }) {
               value={label}
               onChange={(e) => setLabel(e.target.value)}
               placeholder="e.g. Alex Chen"
-              className="mt-1 w-full bg-jarvis-panel/40 border border-jarvis-border rounded-xl px-3 py-2 text-sm text-jarvis-ink focus:border-jarvis-cyan/50 outline-none"
+              className="mt-1 w-full bg-jarvis-surface/40 border border-jarvis-border rounded-xl px-3 py-2 text-sm text-jarvis-ink focus:border-jarvis-primary/50 outline-none"
             />
           </div>
 
@@ -206,7 +208,7 @@ function RememberModal({ open, onClose, onSubmit }) {
               onChange={(e) => setBody(e.target.value)}
               rows={4}
               placeholder="Short description or notes"
-              className="mt-1 w-full bg-jarvis-panel/40 border border-jarvis-border rounded-xl px-3 py-2 text-sm text-jarvis-ink focus:border-jarvis-cyan/50 outline-none resize-none"
+              className="mt-1 w-full bg-jarvis-surface/40 border border-jarvis-border rounded-xl px-3 py-2 text-sm text-jarvis-ink focus:border-jarvis-primary/50 outline-none resize-none"
             />
           </div>
 
@@ -216,14 +218,14 @@ function RememberModal({ open, onClose, onSubmit }) {
               value={file}
               onChange={(e) => setFile(e.target.value)}
               placeholder="brain/people/alex.md"
-              className="mt-1 w-full bg-jarvis-panel/40 border border-jarvis-border rounded-xl px-3 py-2 text-sm text-jarvis-ink focus:border-jarvis-cyan/50 outline-none"
+              className="mt-1 w-full bg-jarvis-surface/40 border border-jarvis-border rounded-xl px-3 py-2 text-sm text-jarvis-ink focus:border-jarvis-primary/50 outline-none"
             />
           </div>
 
           <div>
             <div className="flex items-center justify-between">
               <label className="text-[10px] uppercase tracking-[0.18em] text-jarvis-muted font-semibold">Trust</label>
-              <span className="text-[11px] text-jarvis-cyan tabular-nums">{trust.toFixed(2)}</span>
+              <span className="text-[11px] text-jarvis-primary tabular-nums">{trust.toFixed(2)}</span>
             </div>
             <input
               type="range"
@@ -232,13 +234,13 @@ function RememberModal({ open, onClose, onSubmit }) {
               step={0.05}
               value={trust}
               onChange={(e) => setTrust(parseFloat(e.target.value))}
-              className="mt-2 w-full accent-jarvis-cyan"
+              className="mt-2 w-full accent-jarvis-primary"
             />
           </div>
         </div>
 
         {err && (
-          <div className="mt-4 text-[11px] text-jarvis-red">{err}</div>
+          <div className="mt-4 text-[11px] text-jarvis-danger">{err}</div>
         )}
 
         <div className="mt-6 flex items-center justify-end gap-2">
@@ -252,7 +254,7 @@ function RememberModal({ open, onClose, onSubmit }) {
           <button
             type="submit"
             disabled={busy || !label.trim()}
-            className="px-4 py-2 rounded-xl text-sm font-semibold bg-jarvis-cyan/10 text-jarvis-cyan border border-jarvis-cyan/30 shadow-glow-cyan hover:bg-jarvis-cyan/20 disabled:opacity-40 disabled:cursor-not-allowed transition flex items-center gap-2"
+            className="px-4 py-2 rounded-xl text-sm font-semibold bg-jarvis-primary/10 text-jarvis-primary border border-jarvis-primary/30 hover:bg-jarvis-primary/20 disabled:opacity-40 disabled:cursor-not-allowed transition flex items-center gap-2"
           >
             {busy && <Loader2 size={14} className="animate-spin" />}
             Remember
@@ -276,11 +278,11 @@ function Detail({ node, onForget, forgetting }) {
   return (
     <div className="h-full flex flex-col min-h-0">
       <div className="flex items-start gap-3 pb-4 border-b border-jarvis-border">
-        <div className="w-10 h-10 rounded-xl bg-jarvis-cyan/10 border border-jarvis-cyan/20 grid place-items-center">
+        <div className="w-10 h-10 rounded-xl bg-jarvis-primary/10 border border-jarvis-primary/20 grid place-items-center">
           <Icon size={18} className={TONE[meta.tone]} />
         </div>
         <div className="flex-1 min-w-0">
-          <div className="label text-jarvis-cyan">{meta.label.replace(/s$/, "")}</div>
+          <div className="label text-jarvis-primary">{meta.label.replace(/s$/, "")}</div>
           <h2 className="text-lg font-semibold text-jarvis-ink leading-tight truncate">{node.label}</h2>
         </div>
       </div>
@@ -318,9 +320,9 @@ function Detail({ node, onForget, forgetting }) {
         {node.filePath && (
           <div>
             <div className="label mb-1">Vault file</div>
-            <div className="flex items-center gap-2 text-[12px] text-jarvis-body bg-jarvis-panel/40 border border-jarvis-border rounded-xl px-3 py-2">
-              <FileText size={13} className="text-jarvis-blue" />
-              <code className="text-jarvis-cyan truncate">{node.filePath}</code>
+            <div className="flex items-center gap-2 text-[12px] text-jarvis-body bg-jarvis-surface/40 border border-jarvis-border rounded-xl px-3 py-2">
+              <FileText size={13} className="text-jarvis-primary" />
+              <code className="text-jarvis-primary truncate">{node.filePath}</code>
             </div>
           </div>
         )}
@@ -332,9 +334,9 @@ function Detail({ node, onForget, forgetting }) {
               {node.related.map((r, i) => (
                 <div
                   key={`${r.src}-${r.dst}-${i}`}
-                  className="text-[11px] text-jarvis-body bg-jarvis-panel/40 border border-jarvis-border rounded-lg px-3 py-1.5"
+                  className="text-[11px] text-jarvis-body bg-jarvis-surface/40 border border-jarvis-border rounded-lg px-3 py-1.5"
                 >
-                  <span className="text-jarvis-muted">{r.relation}</span> · <span className="text-jarvis-cyan">{r.dst}</span>
+                  <span className="text-jarvis-muted">{r.relation}</span> · <span className="text-jarvis-primary">{r.dst}</span>
                 </div>
               ))}
             </div>
@@ -347,7 +349,7 @@ function Detail({ node, onForget, forgetting }) {
           type="button"
           onClick={() => onForget(node.id)}
           disabled={forgetting}
-          className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold bg-jarvis-red/10 text-jarvis-red border border-jarvis-red/30 hover:bg-jarvis-red/20 disabled:opacity-50 transition"
+          className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold bg-jarvis-danger/10 text-jarvis-danger border border-jarvis-danger/30 hover:bg-jarvis-danger/20 disabled:opacity-50 transition"
         >
           {forgetting ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
           Forget this
@@ -486,9 +488,9 @@ export default function Brain() {
   };
 
   return (
-    <div className="h-full w-full flex flex-col min-h-0">
+    <motion.div variants={stagger.container} initial="hidden" animate="show" className="h-full w-full flex flex-col min-h-0">
       {/* Header */}
-      <div className="flex items-center justify-between px-6 py-4 border-b border-jarvis-border">
+      <motion.div variants={stagger.item} className="flex items-center justify-between px-6 py-4 border-b border-jarvis-border">
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 rounded-xl bg-jarvis-purple/10 border border-jarvis-purple/20 grid place-items-center">
             <BrainIcon size={16} className="text-jarvis-purple" />
@@ -502,7 +504,7 @@ export default function Brain() {
           {embedStatus && (
             embedStatus.ok ? (
               <div
-                className="flex items-center gap-1.5 px-2 py-1 rounded-lg text-[10px] uppercase tracking-[0.14em] font-semibold bg-jarvis-green/10 text-jarvis-green border border-jarvis-green/30"
+                className="flex items-center gap-1.5 px-2 py-1 rounded-lg text-[10px] uppercase tracking-[0.14em] font-semibold bg-jarvis-success/10 text-jarvis-success border border-jarvis-success/30"
                 title={`Ollama · ${embedStatus.dims || "?"} dims`}
               >
                 <Zap size={11} />
@@ -510,7 +512,7 @@ export default function Brain() {
               </div>
             ) : (
               <div
-                className="flex items-center gap-1.5 px-2 py-1 rounded-lg text-[10px] uppercase tracking-[0.14em] font-semibold bg-jarvis-amber/10 text-jarvis-amber border border-jarvis-amber/30"
+                className="flex items-center gap-1.5 px-2 py-1 rounded-lg text-[10px] uppercase tracking-[0.14em] font-semibold bg-jarvis-warning/10 text-jarvis-warning border border-jarvis-warning/30"
                 title={embedStatus.error || "Embedding backend unreachable"}
               >
                 <ZapOff size={11} />
@@ -522,7 +524,7 @@ export default function Brain() {
             type="button"
             onClick={() => setImportOpen(true)}
             title="Import Obsidian vault"
-            className="flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-semibold bg-jarvis-panel/40 text-jarvis-body border border-jarvis-border hover:text-jarvis-ink hover:bg-white/5 transition"
+            className="flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-semibold bg-jarvis-surface/40 text-jarvis-body border border-jarvis-border hover:text-jarvis-ink hover:bg-white/5 transition"
           >
             <FolderInput size={14} />
             Import Obsidian
@@ -536,11 +538,11 @@ export default function Brain() {
             Remember
           </button>
         </div>
-      </div>
+      </motion.div>
 
       {/* Tab segmented control + KnowledgeStats */}
       <div className="flex items-center gap-0 px-6 pt-3 pb-0 border-b border-jarvis-border">
-        <div className="flex items-center gap-1 bg-jarvis-panel/40 border border-jarvis-border rounded-xl p-0.5">
+        <div className="flex items-center gap-1 bg-jarvis-surface/40 border border-jarvis-border rounded-xl p-0.5">
           <button
             type="button"
             onClick={() => setActiveTab("explorer")}
@@ -575,9 +577,9 @@ export default function Brain() {
 
       {/* Content area — Explorer tab */}
       {activeTab === "explorer" && (
-      <div className="flex-1 min-h-0 flex">
+      <motion.div variants={stagger.item} className="flex-1 min-h-0 flex">
         {/* Left rail */}
-        <div className="w-72 shrink-0 border-r border-jarvis-border bg-jarvis-panel/20 flex flex-col min-h-0">
+        <div className="w-72 shrink-0 border-r border-jarvis-border bg-jarvis-surface/20 flex flex-col min-h-0">
           <div className="p-3 border-b border-jarvis-border">
             <div className="relative">
               <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-jarvis-muted" />
@@ -585,7 +587,7 @@ export default function Brain() {
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder="Recall…"
-                className="w-full bg-jarvis-panel/50 border border-jarvis-border rounded-xl pl-8 pr-3 py-2 text-[12px] text-jarvis-ink placeholder:text-jarvis-muted focus:border-jarvis-cyan/50 outline-none"
+                className="w-full bg-jarvis-surface/50 border border-jarvis-border rounded-xl pl-8 pr-3 py-2 text-[12px] text-jarvis-ink placeholder:text-jarvis-muted focus:border-jarvis-primary/50 outline-none"
               />
             </div>
           </div>
@@ -597,7 +599,7 @@ export default function Brain() {
               </div>
             )}
             {error && !loading && (
-              <div className="p-4 text-[11px] text-jarvis-red">Memory unreachable</div>
+              <div className="p-4 text-[11px] text-jarvis-danger">Memory unreachable</div>
             )}
 
             {!loading && !error && query.trim() ? (
@@ -640,7 +642,7 @@ export default function Brain() {
 
         {/* Detail */}
         <div className="flex-1 min-w-0 p-6 overflow-y-auto">
-          <div className="glass p-6 h-full min-h-[420px] flex flex-col">
+          <div className="surface p-6 h-full min-h-[420px] flex flex-col">
             {detailLoading ? (
               <div className="h-full grid place-items-center text-jarvis-muted text-sm">
                 <Loader2 size={16} className="animate-spin" />
@@ -650,12 +652,12 @@ export default function Brain() {
             )}
           </div>
         </div>
-      </div>
+      </motion.div>
       )}
 
       {/* Graph tab */}
       {activeTab === "graph" && (
-        <div className="flex-1 min-h-0 overflow-y-auto p-6 flex flex-col gap-4">
+        <motion.div variants={stagger.item} className="flex-1 min-h-0 overflow-y-auto p-6 flex flex-col gap-4">
           <GraphView
             nodes={nodes}
             edges={edges}
@@ -668,7 +670,7 @@ export default function Brain() {
             <StaleNodes nodes={nodes} onRefreshed={refresh} />
             <ConnectionSuggestions nodes={nodes} edges={edges} onLinked={refresh} />
           </div>
-        </div>
+        </motion.div>
       )}
 
       <RememberModal
@@ -687,6 +689,6 @@ export default function Brain() {
             .catch(() => {});
         }}
       />
-    </div>
+    </motion.div>
   );
 }

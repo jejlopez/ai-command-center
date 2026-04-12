@@ -1,3 +1,5 @@
+import { motion } from "framer-motion";
+import { stagger } from "../lib/motion.js";
 import { useToday, useJarvisBrief, useCostToday } from "../hooks/useJarvis.js";
 import { useTodaySupa } from "../hooks/useTodaySupa.js";
 import { MorningBriefHero } from "../components/today/MorningBriefHero.jsx";
@@ -22,32 +24,40 @@ export default function Today() {
 
   return (
     <div className="h-full w-full overflow-y-auto">
-      <div className="space-y-6 p-6 max-w-6xl mx-auto">
-        <MorningBriefHero
-          brief={brief}
-          meetingCount={meetingCount || hero.meetings}
-          pipelineValue={hero.pipeline_value}
-          tradingPnl={hero.trading_pnl}
-          followUpsDue={hero.follow_ups_due}
-          budgetRemaining={budgetRemaining}
-          onRegenerate={regenerateBrief}
-          regenerating={briefLoading}
-        />
+      <motion.div variants={stagger.container} initial="hidden" animate="show" className="space-y-6 p-6 max-w-6xl mx-auto">
+        <motion.div variants={stagger.item}>
+          <MorningBriefHero
+            brief={brief}
+            meetingCount={meetingCount || hero.meetings}
+            pipelineValue={hero.pipeline_value}
+            tradingPnl={hero.trading_pnl}
+            followUpsDue={hero.follow_ups_due}
+            budgetRemaining={budgetRemaining}
+            onRegenerate={regenerateBrief}
+            regenerating={briefLoading}
+          />
+        </motion.div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <motion.div variants={stagger.item} className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <TopFiveFocus precomputed={intelligence?.top_five} />
           <NextBestActions precomputed={intelligence?.next_actions} onRecompute={recompute} />
-        </div>
+        </motion.div>
 
-        <TimeBlocks items={items} onRefresh={calRefresh} />
+        <motion.div variants={stagger.item}>
+          <TimeBlocks items={items} onRefresh={calRefresh} />
+        </motion.div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <motion.div variants={stagger.item} className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <WaitingOn precomputed={intelligence?.waiting_on} onRecompute={recompute} />
           <WasteDetector precomputed={intelligence?.waste_alerts} />
-        </div>
+        </motion.div>
 
-        {showEod && <EndOfDayReview onSaved={recompute} />}
-      </div>
+        {showEod && (
+          <motion.div variants={stagger.item}>
+            <EndOfDayReview onSaved={recompute} />
+          </motion.div>
+        )}
+      </motion.div>
 
       <NotificationToast />
     </div>

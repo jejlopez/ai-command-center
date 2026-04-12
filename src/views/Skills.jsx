@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
+import { motion } from "framer-motion";
+import { stagger } from "../lib/motion.js";
 import {
   Wand2,
   RefreshCcw,
@@ -18,14 +20,14 @@ import SkillRunResult, { StatusPill, formatDuration, formatCost } from "../compo
 function TriggerChip({ trigger }) {
   if (trigger.kind === "manual") {
     return (
-      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] uppercase tracking-[0.14em] font-semibold bg-jarvis-cyan/10 text-jarvis-cyan border border-jarvis-cyan/30">
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] uppercase tracking-[0.14em] font-semibold bg-jarvis-primary/10 text-jarvis-primary border border-jarvis-primary/30">
         <Hand size={10} /> Manual
       </span>
     );
   }
   if (trigger.kind === "cron") {
     return (
-      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] uppercase tracking-[0.14em] font-semibold bg-jarvis-blue/10 text-jarvis-blue border border-jarvis-blue/30" title={trigger.expr}>
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] uppercase tracking-[0.14em] font-semibold bg-jarvis-primary/10 text-jarvis-primary border border-jarvis-primary/30" title={trigger.expr}>
         <CalendarClock size={10} /> {trigger.expr}
       </span>
     );
@@ -42,7 +44,7 @@ function TriggerChip({ trigger }) {
 
 function ScopeChip({ scope }) {
   return (
-    <span className="inline-block px-2 py-0.5 rounded-lg text-[10px] font-mono font-semibold bg-jarvis-panel/60 text-jarvis-body border border-jarvis-border">
+    <span className="inline-block px-2 py-0.5 rounded-lg text-[10px] font-mono font-semibold bg-jarvis-surface/60 text-jarvis-body border border-jarvis-border">
       {scope}
     </span>
   );
@@ -56,13 +58,13 @@ function SkillListRow({ skill, active, onClick }) {
       className={[
         "w-full text-left px-3 py-3 rounded-xl transition border",
         active
-          ? "bg-jarvis-cyan/10 border-jarvis-cyan/30 text-jarvis-cyan shadow-glow-cyan"
-          : "bg-jarvis-panel/20 border-jarvis-border text-jarvis-body hover:text-jarvis-ink hover:bg-white/5",
+          ? "bg-jarvis-primary/10 border-jarvis-primary/30 text-jarvis-primary "
+          : "bg-jarvis-surface/20 border-jarvis-border text-jarvis-body hover:text-jarvis-ink hover:bg-white/5",
       ].join(" ")}
     >
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
-          <div className={`text-[13px] font-semibold truncate ${active ? "text-jarvis-cyan" : "text-jarvis-ink"}`}>
+          <div className={`text-[13px] font-semibold truncate ${active ? "text-jarvis-primary" : "text-jarvis-ink"}`}>
             {skill.title || skill.name}
           </div>
           <div className="text-[11px] text-jarvis-muted font-mono truncate">{skill.name}</div>
@@ -83,7 +85,7 @@ function SkillListRow({ skill, active, onClick }) {
 function RecentRunRow({ run }) {
   const [open, setOpen] = useState(false);
   return (
-    <div className="rounded-xl bg-jarvis-panel/30 border border-jarvis-border overflow-hidden">
+    <div className="rounded-xl bg-jarvis-surface/30 border border-jarvis-border overflow-hidden">
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
@@ -133,7 +135,7 @@ function WorkflowsSection({ workflows }) {
         {items.map((w, i) => (
           <div
             key={`${w.skill}-${i}`}
-            className="flex items-center justify-between gap-3 rounded-xl bg-jarvis-panel/30 border border-jarvis-border px-3 py-2.5"
+            className="flex items-center justify-between gap-3 rounded-xl bg-jarvis-surface/30 border border-jarvis-border px-3 py-2.5"
           >
             <div className="min-w-0">
               <div className="text-[13px] text-jarvis-ink font-medium truncate">{w.skill}</div>
@@ -144,7 +146,7 @@ function WorkflowsSection({ workflows }) {
               </div>
             </div>
             {w.nextRun && (
-              <div className="flex items-center gap-1.5 text-[11px] text-jarvis-cyan tabular-nums">
+              <div className="flex items-center gap-1.5 text-[11px] text-jarvis-primary tabular-nums">
                 <Clock size={11} />
                 {new Date(w.nextRun).toLocaleString()}
               </div>
@@ -156,9 +158,9 @@ function WorkflowsSection({ workflows }) {
   );
 
   return (
-    <div className="glass p-5">
+    <div className="surfacep-5">
       <div className="flex items-center gap-2 mb-4">
-        <CalendarClock size={14} className="text-jarvis-cyan" />
+        <CalendarClock size={14} className="text-jarvis-primary" />
         <h3 className="text-[14px] font-semibold text-jarvis-ink">Workflows</h3>
         <span className="text-[11px] text-jarvis-muted">{(workflows ?? []).length} active</span>
       </div>
@@ -166,7 +168,7 @@ function WorkflowsSection({ workflows }) {
         <Section
           title="Scheduled (cron)"
           Icon={CalendarClock}
-          tone="text-jarvis-blue"
+          tone="text-jarvis-primary"
           items={grouped.cron}
           emptyLabel="No cron-scheduled skills."
         />
@@ -249,39 +251,39 @@ export default function Skills() {
   const detail = selectedDetail ?? skills.find((s) => s.name === selectedName) ?? null;
 
   return (
-    <div className="h-full w-full flex flex-col min-h-0">
+    <motion.div variants={stagger.container} initial="hidden" animate="show" className="h-full w-full flex flex-col min-h-0">
       {/* Header */}
-      <div className="flex items-center justify-between px-6 py-4 border-b border-jarvis-border">
+      <motion.div variants={stagger.item} className="flex items-center justify-between px-6 py-4 border-b border-jarvis-border">
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-jarvis-cyan/10 border border-jarvis-cyan/20 grid place-items-center">
-            <Wand2 size={16} className="text-jarvis-cyan" />
+          <div className="w-9 h-9 rounded-xl bg-jarvis-primary/10 border border-jarvis-primary/20 grid place-items-center">
+            <Wand2 size={16} className="text-jarvis-primary" />
           </div>
           <div>
-            <div className="label text-jarvis-cyan">Skills</div>
+            <div className="label text-jarvis-primary">Skills</div>
             <div className="text-[12px] text-jarvis-body">
               Registry · {skills.length} skill{skills.length === 1 ? "" : "s"}
             </div>
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <span className="px-2 py-1 rounded-lg text-[10px] uppercase tracking-[0.14em] font-semibold bg-jarvis-panel/40 text-jarvis-body border border-jarvis-border">
+          <span className="px-2 py-1 rounded-lg text-[10px] uppercase tracking-[0.14em] font-semibold bg-jarvis-surface/40 text-jarvis-body border border-jarvis-border">
             {skills.length} total
           </span>
           <button
             type="button"
             onClick={refresh}
             disabled={loading}
-            className="flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-semibold bg-jarvis-panel/40 text-jarvis-body border border-jarvis-border hover:text-jarvis-ink hover:bg-white/5 transition disabled:opacity-40"
+            className="flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-semibold bg-jarvis-surface/40 text-jarvis-body border border-jarvis-border hover:text-jarvis-ink hover:bg-white/5 transition disabled:opacity-40"
           >
             {loading ? <Loader2 size={14} className="animate-spin" /> : <RefreshCcw size={14} />}
             Refresh
           </button>
         </div>
-      </div>
+      </motion.div>
 
-      <div className="flex-1 min-h-0 flex">
+      <motion.div variants={stagger.item} className="flex-1 min-h-0 flex">
         {/* Left rail */}
-        <div className="w-80 shrink-0 border-r border-jarvis-border bg-jarvis-panel/20 flex flex-col min-h-0">
+        <div className="w-80 shrink-0 border-r border-jarvis-border bg-jarvis-surface/20 flex flex-col min-h-0">
           <div className="flex-1 min-h-0 overflow-y-auto p-3 space-y-2">
             {loading && (
               <div className="p-4 text-[11px] text-jarvis-muted flex items-center gap-2">
@@ -289,7 +291,7 @@ export default function Skills() {
               </div>
             )}
             {!loading && error && (
-              <div className="p-4 text-[11px] text-jarvis-red">Skill registry unreachable</div>
+              <div className="p-4 text-[11px] text-jarvis-danger">Skill registry unreachable</div>
             )}
             {!loading && !error && skills.length === 0 && (
               <div className="p-4 text-[11px] text-jarvis-muted italic">No skills registered yet.</div>
@@ -309,7 +311,7 @@ export default function Skills() {
         <div className="flex-1 min-w-0 overflow-y-auto">
           <div className="px-6 py-5 space-y-5 pb-10">
             {!detail && !loading && (
-              <div className="glass p-6 text-jarvis-muted text-sm">
+              <div className="surfacep-6 text-jarvis-muted text-sm">
                 Select a skill on the left to inspect its manifest and run it.
               </div>
             )}
@@ -317,10 +319,10 @@ export default function Skills() {
             {detail && (
               <>
                 {/* Manifest */}
-                <div className="glass p-5">
+                <div className="surfacep-5">
                   <div className="flex items-start justify-between gap-4">
                     <div className="min-w-0">
-                      <div className="label text-jarvis-cyan">Manifest</div>
+                      <div className="label text-jarvis-primary">Manifest</div>
                       <h2 className="text-xl font-semibold text-jarvis-ink leading-tight mt-0.5">
                         {detail.title || detail.name}
                       </h2>
@@ -338,8 +340,8 @@ export default function Skills() {
                       className={[
                         "flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold transition border shrink-0",
                         running
-                          ? "bg-jarvis-cyan/5 text-jarvis-cyan/60 border-jarvis-cyan/20 cursor-not-allowed"
-                          : "bg-jarvis-cyan/15 text-jarvis-cyan border-jarvis-cyan/40 shadow-glow-cyan hover:bg-jarvis-cyan/25",
+                          ? "bg-jarvis-primary/5 text-jarvis-primary/60 border-jarvis-primary/20 cursor-not-allowed"
+                          : "bg-jarvis-primary/15 text-jarvis-primary border-jarvis-primary/40  hover:bg-jarvis-primary/25",
                       ].join(" ")}
                     >
                       {running ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
@@ -386,14 +388,14 @@ export default function Skills() {
                   <div className="space-y-2">
                     <div className="label">Latest run</div>
                     {running && !latestRun && (
-                      <div className="glass p-5 flex items-center gap-3 text-jarvis-body text-sm">
-                        <Loader2 size={16} className="animate-spin text-jarvis-cyan" />
+                      <div className="surfacep-5 flex items-center gap-3 text-jarvis-body text-sm">
+                        <Loader2 size={16} className="animate-spin text-jarvis-primary" />
                         Executing {detail.name}…
                       </div>
                     )}
                     {runError && !running && (
-                      <div className="glass p-5 border-jarvis-red/30">
-                        <div className="text-jarvis-red text-sm font-semibold">Run failed</div>
+                      <div className="surfacep-5 border-jarvis-danger/30">
+                        <div className="text-jarvis-danger text-sm font-semibold">Run failed</div>
                         <div className="text-jarvis-body text-xs mt-1">{runError}</div>
                       </div>
                     )}
@@ -409,7 +411,7 @@ export default function Skills() {
                   </div>
                   <div className="space-y-2">
                     {skillRuns.length === 0 && (
-                      <div className="glass p-4 text-[12px] text-jarvis-muted italic">No runs yet for this skill.</div>
+                      <div className="surfacep-4 text-[12px] text-jarvis-muted italic">No runs yet for this skill.</div>
                     )}
                     {skillRuns.map((r) => <RecentRunRow key={r.id} run={r} />)}
                   </div>
@@ -421,7 +423,7 @@ export default function Skills() {
             <WorkflowsSection workflows={workflows} />
           </div>
         </div>
-      </div>
-    </div>
+      </motion.div>
+    </motion.div>
   );
 }
