@@ -23,6 +23,7 @@ import HomeLife from "./views/HomeLife.jsx";
 import Health from "./views/Health.jsx";
 import Skills from "./views/Skills.jsx";
 import { VaultLockedOverlay } from "./components/VaultLockedOverlay.jsx";
+import { useNotifications } from "./hooks/useNotifications.js";
 import { useJarvisBrief, useOnboarding, useCostToday } from "./hooks/useJarvis.js";
 import { useAuth } from "./hooks/useAuth.js";
 import { jarvis } from "./lib/jarvis.js";
@@ -32,6 +33,7 @@ export default function App() {
   const [health, setHealth] = useState(null);
   const [localMode, setLocalMode] = useState(() => localStorage.getItem("jarvis_local_mode") === "true");
   const auth = useAuth();
+  useNotifications();
   const { brief, rail, recentRuns, error, loading, decide, regenerateBrief } = useJarvisBrief();
   const { status: onboardingStatus, loading: onboardingLoading, refresh: refreshOnboarding } = useOnboarding();
   const { cost } = useCostToday();

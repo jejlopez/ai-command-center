@@ -167,4 +167,10 @@ export const jarvis = {
   feedbackStats:   (skill)              => get(`/feedback/stats/${encodeURIComponent(skill)}`),
   routingStats:    (taskKind)           => get(`/routing/stats${taskKind ? `?taskKind=${encodeURIComponent(taskKind)}` : ""}`),
   routingExplain:  (kind)               => post("/routing/explain", { kind }),
+
+  // M6 Learning polish
+  recordEdit:      (outputId, original, edited) => post("/learning/edit", { outputId, original, edited }),
+  recordSnooze:    (itemType, itemId, action, delayMs) => post("/learning/snooze", { itemType, itemId, action, delayMs }),
+  snoozeStats:     (itemType) => get(`/learning/snooze/stats${itemType ? `?itemType=${encodeURIComponent(itemType)}` : ""}`),
+  bestTiming:      (eventType) => get(`/learning/timing?eventType=${encodeURIComponent(eventType)}`),
 };
