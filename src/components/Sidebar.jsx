@@ -1,75 +1,63 @@
-import React, { useState } from 'react';
-import { Terminal, Send, Command, Cpu } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { Home, CalendarClock, Briefcase, Wallet, HouseHeart, HeartPulse, Brain, Settings, Wand2 } from "lucide-react";
 
-export function Sidebar({ onSendMessage }) {
-  const [input, setInput] = useState('');
-  const [messages, setMessages] = useState([
-    { id: 1, sender: 'system', text: 'Online. Awaiting protocols, sir.' }
-  ]);
+const ITEMS = [
+  { id: "home",   label: "Home",      Icon: Home },
+  { id: "today",  label: "Today",     Icon: CalendarClock },
+  { id: "work",   label: "Work",      Icon: Briefcase },
+  { id: "money",  label: "Money",     Icon: Wallet },
+  { id: "life",   label: "Home Life", Icon: HouseHeart },
+  { id: "health", label: "Health",    Icon: HeartPulse },
+  { id: "brain",  label: "Brain",     Icon: Brain },
+  { id: "skills", label: "Skills",    Icon: Wand2 },
+];
 
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    if (!input.trim()) return;
-    
-    // Add user message
-    setMessages(prev => [...prev, { id: Date.now(), sender: 'user', text: input }]);
-    
-    // Trigger action in parent
-    onSendMessage(input);
-    
-    // Add system response
-    setTimeout(() => {
-       setMessages(prev => [...prev, { 
-         id: Date.now() + 1, 
-         sender: 'system', 
-         text: `Acknowledged. Deploying assets for: "${input}"` 
-       }]);
-    }, 600);
-    
-    setInput('');
-  };
-
+export function Sidebar({ active = "home", onSelect }) {
   return (
-    <aside className="w-80 h-full ui-shell flex flex-col z-20 relative rounded-none border-r border-hairline">
-      <div className="p-4 border-b border-hairline flex items-center gap-3">
-        <Terminal className="text-aurora-teal w-5 h-5" />
-        <span className="font-semibold text-aurora-teal uppercase tracking-widest text-sm">COM RELAY</span>
+    <aside className="flex flex-col items-stretch gap-1 w-[72px] md:w-56 p-3 border-r border-jarvis-border bg-jarvis-panel/40 backdrop-blur-xl">
+      <div className="flex items-center gap-2 px-2 py-3">
+        <div className="relative w-7 h-7 rounded-full bg-jarvis-cyan/15 shadow-glow-cyan grid place-items-center">
+          <div className="w-3 h-3 rounded-full bg-jarvis-cyan pulse-cyan" />
+        </div>
+        <div className="hidden md:block">
+          <div className="text-[13px] font-semibold tracking-wide text-jarvis-ink">JARVIS</div>
+          <div className="text-[10px] text-jarvis-muted">OS v0.0.1</div>
+        </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4 space-y-4 font-mono text-xs flex flex-col justify-end">
-        <AnimatePresence initial={false}>
-          {messages.map(msg => (
-             <motion.div 
-               key={msg.id}
-               initial={{ opacity: 0, x: -10 }}
-               animate={{ opacity: 1, x: 0 }}
-               className={`flex gap-2 ${msg.sender === 'user' ? 'text-text-primary' : 'text-aurora-teal/80'}`}
-             >
-               <span className="shrink-0">{msg.sender === 'user' ? '>' : 'SYS'}</span>
-               <p className="whitespace-pre-wrap">{msg.text}</p>
-             </motion.div>
-          ))}
-        </AnimatePresence>
-      </div>
+      <nav className="flex flex-col gap-1 mt-2">
+        {ITEMS.map(({ id, label, Icon }) => {
+          const isActive = id === active;
+          return (
+            <button
+              key={id}
+              onClick={() => onSelect?.(id)}
+              className={[
+                "group flex items-center gap-3 px-3 py-2 rounded-xl transition",
+                isActive
+                  ? "bg-jarvis-cyan/10 text-jarvis-cyan shadow-glow-cyan"
+                  : "text-jarvis-body hover:text-jarvis-ink hover:bg-white/5",
+              ].join(" ")}
+            >
+              <Icon size={18} strokeWidth={1.8} />
+              <span className="hidden md:inline text-sm font-medium">{label}</span>
+            </button>
+          );
+        })}
+      </nav>
 
-      <div className="p-4 border-t border-hairline bg-panel-soft/70">
-        <form onSubmit={handleSubmit} className="relative">
-          <input 
-            type="text" 
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder="Enter command..."
-            className="w-full bg-panel-soft border border-hairline text-text-primary font-mono text-sm rounded px-3 py-2 pl-8 focus:outline-none focus:border-aurora-teal focus:ring-1 focus:ring-aurora-teal transition-all"
-          />
-          <Command className="absolute left-2.5 top-2.5 w-4 h-4 text-aurora-blue/50" />
-          <button 
-            type="submit"
-            className="absolute right-1 top-1 bottom-1 px-2 text-aurora-teal hover:bg-aurora-blue/20 rounded transition-colors active:scale-95"
-          >
-            <Send className="w-4 h-4" />
-          </button>
-        </form>
+      <div className="mt-auto">
+        <button
+          onClick={() => onSelect?.("settings")}
+          className={[
+            "flex items-center gap-3 px-3 py-2 rounded-xl w-full transition",
+            active === "settings"
+              ? "bg-jarvis-cyan/10 text-jarvis-cyan shadow-glow-cyan"
+              : "text-jarvis-body hover:text-jarvis-ink hover:bg-white/5",
+          ].join(" ")}
+        >
+          <Settings size={18} strokeWidth={1.8} />
+          <span className="hidden md:inline text-sm">Settings</span>
+        </button>
       </div>
     </aside>
   );
