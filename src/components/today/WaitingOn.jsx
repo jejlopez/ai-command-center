@@ -12,7 +12,30 @@ function ageColor(days) {
   return "text-jarvis-green";
 }
 
-export function WaitingOn({ followUps, onRefresh }) {
+export function WaitingOn({ precomputed, followUps = [], onRefresh, onRecompute }) {
+  // Use precomputed data if available (from today_intelligence)
+  if (precomputed && precomputed.length > 0) {
+    return (
+      <div className="glass p-5">
+        <div className="label mb-3">Waiting On</div>
+        <div className="space-y-2">
+          {precomputed.map((item) => (
+            <div key={item.id} className="flex items-center gap-3 px-3 py-2 rounded-xl border border-jarvis-border bg-white/[0.02]">
+              <div className="flex-1 min-w-0">
+                <div className="text-sm text-jarvis-ink truncate">{item.action}</div>
+                <div className="text-[10px] text-jarvis-muted mt-0.5">
+                  {[item.contact, item.company].filter(Boolean).join(" · ")}
+                  {" · "}
+                  <span className={ageColor(item.days)}>{item.days}d waiting</span>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
   const waiting = followUps.filter((f) => f.status === "waiting");
 
   const nudge = async (fu) => {

@@ -1,5 +1,7 @@
 import { Phone, TrendingUp, Clock, Heart, Check, BellOff } from "lucide-react";
 
+const ICON_MAP = { Phone, TrendingUp, Clock, Heart };
+
 function ActionCard({ icon: Icon, iconColor, text, age, onDone, onSnooze }) {
   const isOverdue = age && age > 2;
   return (
@@ -32,7 +34,31 @@ function daysSince(ts) {
   return Math.floor((Date.now() - new Date(ts).getTime()) / 86400000);
 }
 
-export function NextBestActions({ deals, positions, habits, calendarGaps, onFollowUpDone, onFollowUpSnooze }) {
+export function NextBestActions({ precomputed, deals = [], positions = [], habits = [], calendarGaps = 0, onFollowUpDone, onFollowUpSnooze, onRecompute }) {
+  // Use precomputed data if available (from today_intelligence)
+  if (precomputed && precomputed.length > 0) {
+    return (
+      <div className="glass p-5">
+        <div className="label mb-3">Next Best Move</div>
+        <div className="space-y-2">
+          {precomputed.map((a) => {
+            const Icon = ICON_MAP[a.icon] ?? Clock;
+            return (
+              <div key={a.id}>
+                <ActionCard
+                  icon={Icon}
+                  iconColor={a.iconColor ?? "bg-cyan-500/15 text-jarvis-cyan"}
+                  text={a.text}
+                  age={a.age ?? null}
+                />
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+
   const actions = [];
 
   for (const d of deals) {

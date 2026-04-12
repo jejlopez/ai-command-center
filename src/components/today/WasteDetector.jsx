@@ -1,11 +1,35 @@
 import { AlertTriangle, Shield, Calendar, TrendingDown, CreditCard, Flame } from "lucide-react";
 
+const TYPE_ICON = { stale_deals: TrendingDown, expense_due: CreditCard, no_stoploss: TrendingDown, broken_streak: Flame, no_agenda: Calendar };
+const SEVERITY_COLOR = { high: "text-jarvis-red", medium: "text-jarvis-amber", low: "text-jarvis-body" };
+
 function daysSince(ts) {
   if (!ts) return 999;
   return Math.floor((Date.now() - new Date(ts).getTime()) / 86400000);
 }
 
-export function WasteDetector({ deals, positions, expenses, habits, calendarItems }) {
+export function WasteDetector({ precomputed, deals = [], positions = [], expenses = [], habits = [], calendarItems = [] }) {
+  // Use precomputed data if available (from today_intelligence)
+  if (precomputed && precomputed.length > 0) {
+    return (
+      <div className="glass p-5">
+        <div className="label mb-3">Waste Detector</div>
+        <div className="space-y-2">
+          {precomputed.map((a) => {
+            const Icon = TYPE_ICON[a.type] ?? AlertTriangle;
+            const colorClass = SEVERITY_COLOR[a.severity] ?? "text-jarvis-body";
+            return (
+              <div key={a.id} className="flex items-center gap-3 px-3 py-2 rounded-xl border border-jarvis-border bg-white/[0.02]">
+                <Icon size={14} className={colorClass} />
+                <span className="text-sm text-jarvis-body">{a.text}</span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+
   const alerts = [];
 
   const emptyMeetings = (calendarItems ?? []).filter((e) => e.kind !== "focus" && !e.notes && !e.description);

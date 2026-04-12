@@ -2,10 +2,10 @@ import { useState } from "react";
 import { Moon, Send, Loader2 } from "lucide-react";
 import { supabase } from "../../lib/supabase.js";
 
-export function EndOfDayReview({ tradeJournal, onSaved }) {
+export function EndOfDayReview({ onSaved }) {
   const [energy, setEnergy] = useState(null);
   const [sleep, setSleep] = useState("");
-  const [tradingNotes, setTradingNotes] = useState(tradeJournal?.notes ?? "");
+  const [tradingNotes, setTradingNotes] = useState("");
   const [wins, setWins] = useState("");
   const [workout, setWorkout] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -34,9 +34,9 @@ export function EndOfDayReview({ tradeJournal, onSaved }) {
         await supabase.from("trade_journal").upsert({
           date: today,
           notes: tradingNotes,
-          pnl_usd: tradeJournal?.pnl_usd ?? 0,
-          wins: tradeJournal?.wins ?? 0,
-          losses: tradeJournal?.losses ?? 0,
+          pnl_usd: 0,
+          wins: 0,
+          losses: 0,
         }, { onConflict: "user_id,date" });
       }
 

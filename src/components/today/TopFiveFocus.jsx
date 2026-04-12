@@ -17,8 +17,38 @@ function scoreItem(item) {
   return 0;
 }
 
-export function TopFiveFocus({ deals, positions, followUps }) {
+export function TopFiveFocus({ precomputed, deals = [], positions = [], followUps = [] }) {
   const [expanded, setExpanded] = useState(null);
+
+  // Use precomputed data if available (from today_intelligence)
+  if (precomputed && precomputed.length > 0) {
+    const items = precomputed;
+    return (
+      <div className="glass p-5">
+        <div className="label mb-3">Today's Focus</div>
+        <div className="space-y-2">
+          {items.map((item, i) => (
+            <div key={item.id} className="rounded-xl border border-jarvis-border bg-white/[0.02] overflow-hidden">
+              <button
+                type="button"
+                onClick={() => setExpanded(expanded === item.id ? null : item.id)}
+                className="w-full flex items-center gap-3 px-3 py-2.5 text-left"
+              >
+                <span className="text-jarvis-cyan font-semibold text-sm w-5 text-center">{i + 1}</span>
+                <span className="text-sm text-jarvis-ink truncate flex-1">{item.label}</span>
+                {roleBadge(item.type)}
+                <span className="text-xs text-jarvis-body font-semibold tabular-nums">{item.value}</span>
+                {expanded === item.id ? <ChevronUp size={12} className="text-jarvis-muted" /> : <ChevronDown size={12} className="text-jarvis-muted" />}
+              </button>
+              {expanded === item.id && item.notes && (
+                <div className="px-3 pb-3 text-xs text-jarvis-body">{item.notes}</div>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
 
   const items = [
     ...deals.slice(0, 5).map((d) => ({ type: "deal", id: d.id, label: `${d.company} — ${d.stage}`, value: `$${(d.value_usd ?? 0).toLocaleString()}`, notes: d.notes, value_usd: d.value_usd, probability: d.probability })),
