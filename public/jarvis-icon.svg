@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#0a0f1a"/>
+      <stop offset="100%" stop-color="#05070d"/>
+    </radialGradient>
+    <radialGradient id="glow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#5de8ff" stop-opacity="0.4"/>
+      <stop offset="60%" stop-color="#5de8ff" stop-opacity="0.08"/>
+      <stop offset="100%" stop-color="#5de8ff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="core" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="30%" stop-color="#5de8ff"/>
+      <stop offset="100%" stop-color="#2fd4c2"/>
+    </radialGradient>
+  </defs>
+  <!-- Background -->
+  <rect width="512" height="512" rx="108" fill="url(#bg)"/>
+  <!-- Outer glow -->
+  <circle cx="256" cy="256" r="180" fill="url(#glow)"/>
+  <!-- Outer ring -->
+  <circle cx="256" cy="256" r="120" fill="none" stroke="#5de8ff" stroke-width="2" stroke-opacity="0.3"/>
+  <!-- Middle ring -->
+  <circle cx="256" cy="256" r="90" fill="none" stroke="#5de8ff" stroke-width="1.5" stroke-opacity="0.2"/>
+  <!-- Inner ring -->
+  <circle cx="256" cy="256" r="60" fill="none" stroke="#5de8ff" stroke-width="1" stroke-opacity="0.15"/>
+  <!-- Core orb -->
+  <circle cx="256" cy="256" r="32" fill="url(#core)"/>
+  <!-- Core highlight -->
+  <circle cx="248" cy="248" r="10" fill="white" fill-opacity="0.4"/>
+  <!-- Arc accents -->
+  <path d="M 256 136 A 120 120 0 0 1 376 256" fill="none" stroke="#5de8ff" stroke-width="3" stroke-opacity="0.5" stroke-linecap="round"/>
+  <path d="M 256 376 A 120 120 0 0 1 136 256" fill="none" stroke="#2fd4c2" stroke-width="3" stroke-opacity="0.4" stroke-linecap="round"/>
+  <!-- Dot accents on rings -->
+  <circle cx="376" cy="256" r="4" fill="#5de8ff" fill-opacity="0.6"/>
+  <circle cx="136" cy="256" r="4" fill="#2fd4c2" fill-opacity="0.5"/>
+  <circle cx="256" cy="136" r="3" fill="#5de8ff" fill-opacity="0.4"/>
+  <circle cx="256" cy="376" r="3" fill="#2fd4c2" fill-opacity="0.35"/>
+</svg>

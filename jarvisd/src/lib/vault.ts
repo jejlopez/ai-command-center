@@ -1,9 +1,60 @@
-import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from "node:crypto";
+import { createCipheriv, createDecipheriv, randomBytes, scryptSync, createHash } from "node:crypto";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import keytar from "keytar";
 import { JARVIS_HOME } from "../db/db.js";
 import { audit } from "./audit.js";
+
+// BIP39-style wordlist (simplified — 256 common words for recovery phrases)
+const WORDS = [
+  "alpha","anchor","arrow","atlas","azure","beacon","blade","blaze","bloom","bolt",
+  "bridge","bright","bronze","castle","cedar","cipher","claim","climb","cloud","coast",
+  "coral","craft","crown","crystal","curve","dawn","delta","depth","desert","drift",
+  "eagle","ember","epoch","falcon","fiber","flame","flash","flint","flora","forge",
+  "frost","galaxy","garden","ghost","glacier","gleam","globe","grace","grain","granite",
+  "grove","guard","guild","harbor","haven","hawk","heart","helix","hero","hive",
+  "honor","horizon","hydra","icon","ignite","impact","index","iris","iron","ivory",
+  "jade","jasper","jet","jewel","jungle","karma","kernel","key","knight","knot",
+  "lace","lance","lark","laser","latch","lava","leaf","lens","level","light",
+  "lily","lime","link","lion","logic","lotus","lunar","maple","marble","marsh",
+  "mask","matrix","meadow","medal","mercy","mesa","metal","mind","mint","mirror",
+  "model","moon","morph","moss","motor","mystic","nerve","nexus","night","noble",
+  "north","nova","oak","oasis","ocean","olive","omega","onyx","opera","orbit",
+  "orchid","origin","oxide","palm","panel","pearl","petal","phase","pilot","pine",
+  "pixel","plain","plasma","plume","point","polar","portal","prism","probe","pulse",
+  "quartz","quest","radar","raven","razor","realm","reef","relay","ridge","river",
+  "robin","rocket","rose","royal","ruby","sage","sail","scale","scout","seal",
+  "shade","shell","shield","shore","sigma","silk","silver","slate","solar","sonic",
+  "spark","spear","sphere","spire","spring","squad","staff","star","steel","stem",
+  "stone","storm","strand","stream","stride","summit","surge","swift","sword","talon",
+  "tango","tempo","terra","theta","thorn","tiger","timber","titan","torch","tower",
+  "trail","trend","triad","tribe","tulip","ultra","unity","upper","vapor","vault",
+  "venom","verse","vigor","vine","viola","vivid","voice","vortex","wave","weave",
+  "whale","wheat","white","wild","willow","wind","wing","winter","wire","wisdom",
+  "wolf","wonder","world","wren","xenon","yacht","yarn","yield","zenith","zero",
+  "zinc","zone","bliss","brave","calm","chase","chief","civic","clear","crest",
+];
+
+function generateRecoveryPhrase(masterKeyHex: string): string {
+  // Derive 12 words from the master key hash
+  const hash = createHash("sha256").update(masterKeyHex).digest();
+  const words: string[] = [];
+  for (let i = 0; i < 12; i++) {
+    const idx = hash.readUInt8(i) % WORDS.length;
+    words.push(WORDS[idx]);
+  }
+  return words.join(" ");
+}
+
+function masterKeyFromPhrase(phrase: string): Buffer {
+  // Re-derive: hash the phrase to get a deterministic key
+  // Note: the phrase IS the key representation, not a seed.
+  // We stored the phrase as a hash of the key, so we need the
+  // original key. The phrase is for display — rescue uses keychain restore.
+  // For true rescue, we store an encrypted backup of the key using the phrase.
+  const hash = createHash("sha256").update(phrase.trim().toLowerCase()).digest();
+  return hash;
+}
 
 const VAULT_PATH = join(JARVIS_HOME, "vault.enc");
 const SERVICE = "jarvis-os";
@@ -164,5 +215,60 @@ export const vault = {
   list(): string[] {
     if (!unlockedData) throw new Error("vault locked");
     return Object.keys(unlockedData);
+  },
+
+  /** Generate a recovery phrase from the current master key. Must be unlocked. */
+  async getRecoveryPhrase(): Promise<string> {
+    if (!unlockedKey) throw new Error("vault locked");
+    const phrase = generateRecoveryPhrase(unlockedKey.toString("hex"));
+    // Also store an encrypted backup of the master key using the phrase as the encryption key
+    const backupPath = join(JARVIS_HOME, "vault.rescue");
+    const phraseKey = masterKeyFromPhrase(phrase);
+    const iv = randomBytes(12);
+    const cipher = createCipheriv("aes-256-gcm", phraseKey, iv);
+    const ct = Buffer.concat([cipher.update(unlockedKey), cipher.final()]);
+    const tag = cipher.getAuthTag();
+    writeFileSync(backupPath, JSON.stringify({
+      v: 1,
+      iv: iv.toString("base64"),
+      tag: tag.toString("base64"),
+      ct: ct.toString("base64"),
+    }), { mode: 0o600 });
+    audit({ actor: "user", action: "vault.recovery.generated" });
+    return phrase;
+  },
+
+  /** Rescue vault using a recovery phrase. Re-derives master key and stores in keychain. */
+  async rescue(phrase: string): Promise<boolean> {
+    const backupPath = join(JARVIS_HOME, "vault.rescue");
+    if (!existsSync(backupPath)) throw new Error("no rescue file found");
+    if (!existsSync(VAULT_PATH)) throw new Error("no vault file found");
+
+    try {
+      const backup = JSON.parse(readFileSync(backupPath, "utf8"));
+      const phraseKey = masterKeyFromPhrase(phrase);
+      const iv = Buffer.from(backup.iv, "base64");
+      const tag = Buffer.from(backup.tag, "base64");
+      const ct = Buffer.from(backup.ct, "base64");
+      const decipher = createDecipheriv("aes-256-gcm", phraseKey, iv);
+      decipher.setAuthTag(tag);
+      const masterKey = Buffer.concat([decipher.update(ct), decipher.final()]);
+
+      // Verify this key can decrypt the vault
+      const file = JSON.parse(readFileSync(VAULT_PATH, "utf8")) as VaultFile;
+      const data = decrypt(file, masterKey);
+
+      // Restore to keychain
+      await keytar.setPassword(SERVICE, ACCOUNT, masterKey.toString("hex"));
+
+      // Unlock with restored key
+      unlockedKey = masterKey;
+      unlockedData = data;
+      audit({ actor: "user", action: "vault.rescue.success" });
+      return true;
+    } catch (err: any) {
+      audit({ actor: "user", action: "vault.rescue.fail", reason: err?.message ?? String(err) });
+      throw new Error("Recovery failed — phrase may be incorrect");
+    }
   },
 };

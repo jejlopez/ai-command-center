@@ -1,63 +1,61 @@
-import { Home, CalendarClock, Briefcase, Wallet, HouseHeart, HeartPulse, Brain, Settings, Wand2 } from "lucide-react";
+import { Home, CalendarClock, Briefcase, Wallet, Heart, HeartPulse, Brain, Settings, Wand2 } from "lucide-react";
 
 const ITEMS = [
   { id: "home",   label: "Home",      Icon: Home },
   { id: "today",  label: "Today",     Icon: CalendarClock },
   { id: "work",   label: "Work",      Icon: Briefcase },
   { id: "money",  label: "Money",     Icon: Wallet },
-  { id: "life",   label: "Home Life", Icon: HouseHeart },
+  { id: "life",   label: "Home Life", Icon: Heart },
   { id: "health", label: "Health",    Icon: HeartPulse },
   { id: "brain",  label: "Brain",     Icon: Brain },
   { id: "skills", label: "Skills",    Icon: Wand2 },
 ];
 
+function NavButton({ id, label, Icon, isActive, onSelect }) {
+  return (
+    <button
+      onClick={() => onSelect?.(id)}
+      className={[
+        "group relative flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-200",
+        isActive
+          ? "bg-jarvis-cyan/8 text-jarvis-cyan"
+          : "text-jarvis-muted hover:text-jarvis-ink hover:bg-white/[0.04]",
+      ].join(" ")}
+    >
+      {isActive && (
+        <div className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-5 rounded-r-full bg-jarvis-cyan" />
+      )}
+      <Icon size={18} strokeWidth={isActive ? 2 : 1.6} className="transition-all duration-200" />
+      <span className="hidden md:inline text-[13px] font-medium tracking-[-0.01em]">{label}</span>
+    </button>
+  );
+}
+
 export function Sidebar({ active = "home", onSelect }) {
   return (
-    <aside className="flex flex-col items-stretch gap-1 w-[72px] md:w-56 p-3 border-r border-jarvis-border bg-jarvis-panel/40 backdrop-blur-xl">
-      <div className="flex items-center gap-2 px-2 py-3">
-        <div className="relative w-7 h-7 rounded-full bg-jarvis-cyan/15 shadow-glow-cyan grid place-items-center">
-          <div className="w-3 h-3 rounded-full bg-jarvis-cyan pulse-cyan" />
+    <aside className="flex flex-col items-stretch w-[72px] md:w-52 py-4 px-2.5 border-r border-jarvis-border/60 bg-jarvis-panel/30 backdrop-blur-2xl">
+      {/* Brand */}
+      <div className="flex items-center gap-2.5 px-3 pb-5 mb-1 border-b border-jarvis-border/40">
+        <div className="relative w-8 h-8 rounded-full bg-jarvis-cyan/10 grid place-items-center">
+          <div className="w-3.5 h-3.5 rounded-full bg-jarvis-cyan pulse-cyan" />
+          <div className="absolute inset-0 rounded-full border border-jarvis-cyan/25" />
         </div>
         <div className="hidden md:block">
-          <div className="text-[13px] font-semibold tracking-wide text-jarvis-ink">JARVIS</div>
-          <div className="text-[10px] text-jarvis-muted">OS v0.0.1</div>
+          <div className="text-[13px] font-semibold tracking-[0.04em] text-jarvis-ink">J.A.R.V.I.S</div>
+          <div className="text-[10px] text-jarvis-muted font-medium">Operating System</div>
         </div>
       </div>
 
-      <nav className="flex flex-col gap-1 mt-2">
-        {ITEMS.map(({ id, label, Icon }) => {
-          const isActive = id === active;
-          return (
-            <button
-              key={id}
-              onClick={() => onSelect?.(id)}
-              className={[
-                "group flex items-center gap-3 px-3 py-2 rounded-xl transition",
-                isActive
-                  ? "bg-jarvis-cyan/10 text-jarvis-cyan shadow-glow-cyan"
-                  : "text-jarvis-body hover:text-jarvis-ink hover:bg-white/5",
-              ].join(" ")}
-            >
-              <Icon size={18} strokeWidth={1.8} />
-              <span className="hidden md:inline text-sm font-medium">{label}</span>
-            </button>
-          );
-        })}
+      {/* Navigation */}
+      <nav className="flex flex-col gap-0.5 mt-3">
+        {ITEMS.map(({ id, label, Icon }) => (
+          <NavButton key={id} id={id} label={label} Icon={Icon} isActive={id === active} onSelect={onSelect} />
+        ))}
       </nav>
 
-      <div className="mt-auto">
-        <button
-          onClick={() => onSelect?.("settings")}
-          className={[
-            "flex items-center gap-3 px-3 py-2 rounded-xl w-full transition",
-            active === "settings"
-              ? "bg-jarvis-cyan/10 text-jarvis-cyan shadow-glow-cyan"
-              : "text-jarvis-body hover:text-jarvis-ink hover:bg-white/5",
-          ].join(" ")}
-        >
-          <Settings size={18} strokeWidth={1.8} />
-          <span className="hidden md:inline text-sm">Settings</span>
-        </button>
+      {/* Settings — pinned bottom */}
+      <div className="mt-auto pt-3 border-t border-jarvis-border/30">
+        <NavButton id="settings" label="Settings" Icon={Settings} isActive={active === "settings"} onSelect={onSelect} />
       </div>
     </aside>
   );
