@@ -7,6 +7,16 @@ import { WeeklyTrends } from "../components/health/WeeklyTrends.jsx";
 import { RiskAlerts } from "../components/health/RiskAlerts.jsx";
 import { RecoveryScore } from "../components/health/RecoveryScore.jsx";
 import { QuickLog } from "../components/health/QuickLog.jsx";
+import { BurnoutRiskScore } from "../components/health/BurnoutRiskScore.jsx";
+import { SleepDebtCalculator } from "../components/health/SleepDebtCalculator.jsx";
+import { ConsistencyScore } from "../components/health/ConsistencyScore.jsx";
+import { NonNegotiables } from "../components/health/NonNegotiables.jsx";
+import { PerformanceCorrelation } from "../components/health/PerformanceCorrelation.jsx";
+import { HealthROI } from "../components/health/HealthROI.jsx";
+import { PeakHoursMap } from "../components/health/PeakHoursMap.jsx";
+import { RecoveryProtocol } from "../components/health/RecoveryProtocol.jsx";
+import { TrajectoryView } from "../components/health/TrajectoryView.jsx";
+import { MinimumEffectiveDose } from "../components/health/MinimumEffectiveDose.jsx";
 
 export default function Health() {
   const { intelligence, recompute } = useHealthSupa();
@@ -24,13 +34,38 @@ export default function Health() {
             <EnergyHero energyHero={intelligence?.energy_hero} />
           </motion.div>
 
+          <motion.div variants={stagger.item} className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <BurnoutRiskScore />
+            <SleepDebtCalculator />
+            <ConsistencyScore />
+          </motion.div>
+
           <motion.div variants={stagger.item} className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <HabitTracker habitTracker={intelligence?.habit_tracker} onRefresh={recompute} />
-            <RiskAlerts riskAlerts={intelligence?.risk_alerts} />
+            <NonNegotiables />
+          </motion.div>
+
+          <motion.div variants={stagger.item} className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <PerformanceCorrelation />
+            <HealthROI />
+          </motion.div>
+
+          <motion.div variants={stagger.item} className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <PeakHoursMap />
+            <RecoveryProtocol />
           </motion.div>
 
           <motion.div variants={stagger.item} className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <WeeklyTrends weeklyTrends={intelligence?.weekly_trends} />
+            <TrajectoryView />
+          </motion.div>
+
+          <motion.div variants={stagger.item} className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <MinimumEffectiveDose />
+            <RiskAlerts riskAlerts={intelligence?.risk_alerts} />
+          </motion.div>
+
+          <motion.div variants={stagger.item}>
             <RecoveryScore recoveryScore={intelligence?.recovery_score} />
           </motion.div>
         </motion.div>
