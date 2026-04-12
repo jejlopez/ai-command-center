@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { KeyRound, Wallet, ShieldCheck, Lock, Info, Plug, ScrollText, LogOut } from "lucide-react";
+import { KeyRound, Wallet, ShieldCheck, Lock, Info, Plug, ScrollText, LogOut, Palette } from "lucide-react";
 import { ProvidersPanel } from "../components/settings/ProvidersPanel.jsx";
 import { ConnectorsPanel } from "../components/settings/ConnectorsPanel.jsx";
 import { BudgetPanel } from "../components/settings/BudgetPanel.jsx";
@@ -7,6 +7,7 @@ import { PrivacyPanel } from "../components/settings/PrivacyPanel.jsx";
 import { VaultPanel } from "../components/settings/VaultPanel.jsx";
 import { AuditPanel } from "../components/settings/AuditPanel.jsx";
 import { AboutPanel } from "../components/settings/AboutPanel.jsx";
+import { ThemePanel } from "../components/settings/ThemePanel.jsx";
 import { useAuth } from "../hooks/useAuth.js";
 
 const TABS = [
@@ -16,6 +17,7 @@ const TABS = [
  { id: "privacy", label: "Privacy", Icon: ShieldCheck, Component: PrivacyPanel },
  { id: "vault", label: "Vault", Icon: Lock, Component: VaultPanel },
  { id: "audit", label: "Audit Log", Icon: ScrollText, Component: AuditPanel },
+ { id: "theme", label: "Theme", Icon: Palette, Component: ThemePanel },
  { id: "about", label: "About", Icon: Info, Component: AboutPanel },
 ];
 
