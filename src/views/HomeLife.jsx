@@ -1,41 +1,103 @@
-import { useCallback, useState } from "react";
-import { HouseHeart, Search, Loader2, RefreshCcw } from "lucide-react";
-import { useMemoryFiltered } from "../hooks/useJarvis.js";
+import { useCallback, useEffect, useState } from "react";
+import { Loader2, RefreshCcw, HouseHeart } from "lucide-react";
 import { jarvis } from "../lib/jarvis.js";
-import NodeList from "../components/shared/NodeList.jsx";
-import QuickNoteForm from "../components/shared/QuickNoteForm.jsx";
+import { useHomeSupa } from "../hooks/useHomeSupa.js";
+import { HomeHero } from "../components/home/HomeHero.jsx";
+import { TaskQueue } from "../components/home/TaskQueue.jsx";
+import { RecurringExpenses } from "../components/home/RecurringExpenses.jsx";
+import { MaintenanceCalendar } from "../components/home/MaintenanceCalendar.jsx";
+import { QuickAdd } from "../components/home/QuickAdd.jsx";
+
+function useHomeTasks() {
+  const [nodes, setNodes] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const refresh = useCallback(async () => {
+    setLoading(true);
+    try {
+      // Fetch tasks and events from memory
+      const [tasks, events] = await Promise.all([
+        jarvis.memoryList("task").catch(() => []),
+        jarvis.memoryList("event").catch(() => []),
+      ]);
+      const all = [
+        ...(Array.isArray(tasks) ? tasks : []),
+        ...(Array.isArray(events) ? events : []),
+      ];
+      setNodes(all);
+    } catch {
+      setNodes([]);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { refresh(); }, [refresh]);
+
+  return { nodes, loading, refresh };
+}
 
 export default function HomeLife() {
-  const [filter, setFilter] = useState("home");
-  const { nodes, loading, refresh } = useMemoryFiltered("fact", filter);
-  const [forgettingId, setForgettingId] = useState(null);
+  const { nodes, loading: tasksLoading, refresh: refreshTasks } = useHomeTasks();
+  const {
+    expenses,
+    overdueCount: overdueExpenses,
+    loading: expensesLoading,
+    refresh: refreshExpenses,
+    addExpense,
+    isDueThisWeek,
+  } = useHomeSupa();
 
-  const handleSave = async ({ kind, label, body, trust }) => {
-    await jarvis.memoryRemember({ kind, label, body, trust });
-    await refresh();
-  };
+  const loading = tasksLoading && expensesLoading;
 
-  const handleForget = useCallback(async (id) => {
-    setForgettingId(id);
-    try {
-      await jarvis.memoryForget(id);
-      await refresh();
-    } finally {
-      setForgettingId(null);
-    }
-  }, [refresh]);
+  const refresh = useCallback(async () => {
+    await Promise.all([refreshTasks(), refreshExpenses()]);
+  }, [refreshTasks, refreshExpenses]);
+
+  // Derive summary counts
+  const homeTasks = nodes.filter((n) => {
+    const l = (n.label ?? "").toLowerCase();
+    return n.kind === "task" && (l.includes("home") || l.includes("household"));
+  });
+
+  const today = new Date().toISOString().slice(0, 10);
+  const overdueTaskCount = homeTasks.filter((n) => {
+    if (!n.created_at) return false;
+    const age = (Date.now() - new Date(n.created_at).getTime()) / 86_400_000;
+    return age > 7;
+  }).length;
+
+  const dueThisWeekCount = expenses.filter((e) => isDueThisWeek(e.next_due)).length;
+
+  // Next maintenance from event nodes
+  const maintenanceItems = nodes
+    .filter((n) => {
+      const l = (n.label ?? "").toLowerCase();
+      return n.kind === "event" || l.includes("maintenance") || l.includes("service");
+    })
+    .filter((n) => n.body?.trim())
+    .sort((a, b) => (a.body ?? "").localeCompare(b.body ?? ""));
+
+  const nextMaintenance = maintenanceItems.length > 0
+    ? (() => {
+        const item = maintenanceItems[0];
+        const d = new Date(item.body.trim() + "T00:00:00");
+        return `${item.label} — ${d.toLocaleDateString("en-US", { month: "short", day: "numeric" })}`;
+      })()
+    : null;
 
   return (
     <div className="h-full w-full flex flex-col min-h-0">
-      <div className="flex items-center justify-between px-6 py-4 border-b border-jarvis-border">
+      {/* Header */}
+      <div className="flex items-center justify-between px-6 py-4 border-b border-jarvis-border shrink-0">
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-jarvis-cyan/10 border border-jarvis-cyan/20 grid place-items-center">
-            <HouseHeart size={16} className="text-jarvis-cyan" />
+          <div className="w-9 h-9 rounded-xl bg-jarvis-purple/10 border border-jarvis-purple/20 grid place-items-center">
+            <HouseHeart size={16} className="text-jarvis-purple" />
           </div>
           <div>
-            <div className="label text-jarvis-cyan">Home Life</div>
+            <div className="label text-jarvis-purple">Home Life</div>
             <div className="text-[12px] text-jarvis-body">
-              Household tasks, notes, and routines · {nodes.length} shown
+              Tasks, expenses, and maintenance
             </div>
           </div>
         </div>
@@ -50,42 +112,41 @@ export default function HomeLife() {
         </button>
       </div>
 
-      <div className="flex-1 min-h-0 overflow-y-auto">
-        <div className="max-w-3xl mx-auto px-6 py-6 space-y-5">
-          <div className="relative">
-            <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-jarvis-muted" />
-            <input
-              value={filter}
-              onChange={(e) => setFilter(e.target.value)}
-              placeholder="Filter household memory (e.g. home, kitchen, utility)…"
-              className="w-full bg-jarvis-panel/40 border border-jarvis-border rounded-xl pl-9 pr-3 py-2 text-sm text-jarvis-ink placeholder:text-jarvis-muted focus:border-jarvis-cyan/50 outline-none"
+      {/* Scrollable content */}
+      <div className="flex-1 min-h-0 overflow-y-auto pb-20">
+        <div className="space-y-6 p-6 max-w-6xl mx-auto">
+          <HomeHero
+            taskCount={overdueTaskCount}
+            overdueExpenses={overdueExpenses}
+            dueThisWeek={dueThisWeekCount}
+            nextMaintenance={nextMaintenance}
+          />
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <TaskQueue
+              nodes={nodes}
+              loading={tasksLoading}
+              refresh={refreshTasks}
+            />
+            <RecurringExpenses
+              expenses={expenses}
+              loading={expensesLoading}
             />
           </div>
 
-          {loading ? (
-            <div className="glass p-5 flex items-center gap-2 text-[12px] text-jarvis-muted">
-              <Loader2 size={12} className="animate-spin" /> Loading memory…
-            </div>
-          ) : (
-            <NodeList
-              nodes={nodes}
-              onForget={handleForget}
-              forgettingId={forgettingId}
-              emptyLabel={filter ? `No matches for "${filter}"` : "No facts yet."}
-            />
-          )}
-
-          <QuickNoteForm
-            kinds={["fact", "task", "event"]}
-            onSave={handleSave}
-            title="Log household item"
-            placeholder="wifi router IP"
-            bodyPlaceholder="Details (optional)"
-            suggestedPrefix="home: "
-            defaultKind="fact"
+          <MaintenanceCalendar
+            nodes={nodes}
+            loading={tasksLoading}
+            refresh={refreshTasks}
           />
         </div>
       </div>
+
+      {/* Sticky bottom bar */}
+      <QuickAdd
+        addExpense={addExpense}
+        onSaved={refresh}
+      />
     </div>
   );
 }
