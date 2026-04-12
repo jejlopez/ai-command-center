@@ -396,7 +396,125 @@ async function computeForUser(supabase: ReturnType<typeof createClient>, userId:
     computed_at: new Date().toISOString(),
   }, { onConflict: 'user_id,date' });
 
-  return { heroStats, topFive: topFive.length, nextActions: nextActions.length, wasteAlerts: wasteAlerts.length, suggestions: newSuggestions.length, money: { velocity: velocity.daily_net, leaks: moneyLeaks.length, deploys: deployRecs.length }, work: { pipeline_value: workPipelineStats.total_value, active_deals: workPipelineStats.active_deals, follow_ups: workFollowUpQueue.length } };
+  // ---- Health Intelligence ----
+
+  const sevenDaysAgo = new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10);
+  const threeDaysAgo = new Date(Date.now() - 3 * 86400000).toISOString().slice(0, 10);
+
+  const [todayHealthRes, health7dRes, allHabitsRes] = await Promise.all([
+    supabase.from('health_log').select('*').eq('user_id', userId).eq('date', today).maybeSingle(),
+    supabase.from('health_log').select('date, energy, sleep_hours, workout').eq('user_id', userId).gte('date', sevenDaysAgo).order('date'),
+    supabase.from('habits').select('*').eq('user_id', userId).eq('active', true),
+  ]);
+
+  const todayHealth = todayHealthRes.data;
+  const health7d: any[] = health7dRes.data ?? [];
+  const allHabits: any[] = allHabitsRes.data ?? [];
+
+  // Energy hero
+  const energyHero = {
+    energy: todayHealth?.energy ?? null,
+    sleep_hours: todayHealth?.sleep_hours ?? null,
+    workout: todayHealth?.workout ?? false,
+    workout_type: todayHealth?.workout_type ?? null,
+    sparkline_7d: health7d.map((h: any) => h.energy ?? 0),
+    dates_7d: health7d.map((h: any) => h.date),
+  };
+
+  // Habit tracker
+  const habitTracker = allHabits.map((h: any) => {
+    const doneTodayFlag = h.last_done === today;
+    const daysSinceDone = h.last_done ? Math.floor((Date.now() - new Date(h.last_done + 'T00:00:00').getTime()) / 86400000) : 999;
+    const broken = !doneTodayFlag && daysSinceDone >= 2;
+    const status = doneTodayFlag ? 'done' : broken ? 'broken' : 'due';
+    return {
+      id: h.id,
+      name: h.name,
+      current_streak: h.current_streak ?? 0,
+      best_streak: h.best_streak ?? 0,
+      last_done: h.last_done ?? null,
+      done_today: doneTodayFlag,
+      status,
+    };
+  });
+
+  // Weekly trends — last 7 days
+  const weeklyTrends = health7d.map((h: any) => ({
+    date: h.date,
+    energy: h.energy ?? null,
+    sleep_hours: h.sleep_hours ?? null,
+    workout: h.workout ?? false,
+  }));
+
+  // Risk alerts
+  const riskAlerts: any[] = [];
+
+  if (todayHealth?.sleep_hours != null && todayHealth.sleep_hours < 6) {
+    riskAlerts.push({ id: 'low-sleep', type: 'low_sleep', text: `Only ${todayHealth.sleep_hours}h sleep logged — below 6h minimum`, severity: 'high' });
+  }
+
+  const workoutDays = health7d.filter((h: any) => h.workout).map((h: any) => h.date);
+  const lastWorkout = workoutDays.length > 0 ? workoutDays[workoutDays.length - 1] : null;
+  const daysSinceWorkout = lastWorkout ? Math.floor((Date.now() - new Date(lastWorkout + 'T00:00:00').getTime()) / 86400000) : 999;
+  if (daysSinceWorkout >= 3) {
+    riskAlerts.push({ id: 'no-workout', type: 'no_workout', text: `No workout in ${daysSinceWorkout === 999 ? '7+' : daysSinceWorkout} days`, severity: daysSinceWorkout >= 5 ? 'high' : 'medium' });
+  }
+
+  const last3dEnergy = health7d.filter((h: any) => h.date >= threeDaysAgo && h.energy != null);
+  if (last3dEnergy.length >= 2 && todayHealth?.energy != null) {
+    const avgLast3 = last3dEnergy.slice(0, -1).reduce((s: number, h: any) => s + h.energy, 0) / Math.max(1, last3dEnergy.length - 1);
+    if (todayHealth.energy < avgLast3 - 1.5) {
+      riskAlerts.push({ id: 'energy-decline', type: 'energy_decline', text: `Energy declining — today ${todayHealth.energy} vs avg ${Math.round(avgLast3 * 10) / 10} last 3 days`, severity: 'medium' });
+    }
+  }
+
+  for (const h of allHabits) {
+    if (h.current_streak > 0 && h.last_done && h.last_done < today && daysSince(h.last_done + 'T00:00:00') >= 2) {
+      riskAlerts.push({ id: `streak-${h.id}`, type: 'broken_streak', text: `${h.name} streak broken after ${h.current_streak} day${h.current_streak !== 1 ? 's' : ''}`, severity: 'medium' });
+    }
+  }
+
+  // Recovery score (0–100 composite)
+  const energyLast3 = health7d.filter((h: any) => h.date >= threeDaysAgo && h.energy != null);
+  const avgEnergy3d = energyLast3.length > 0 ? energyLast3.reduce((s: number, h: any) => s + h.energy, 0) / energyLast3.length : 0;
+
+  const sleepLogs = health7d.filter((h: any) => h.sleep_hours != null);
+  const avgSleep = sleepLogs.length > 0 ? sleepLogs.reduce((s: number, h: any) => s + h.sleep_hours, 0) / sleepLogs.length : 0;
+  const sleepVariance = sleepLogs.length > 1
+    ? sleepLogs.reduce((s: number, h: any) => s + Math.pow(h.sleep_hours - avgSleep, 2), 0) / sleepLogs.length
+    : 0;
+  const sleepConsistencyBonus = Math.max(0, 20 - sleepVariance * 5);
+
+  const workoutCount7d = health7d.filter((h: any) => h.workout).length;
+  const workoutFrequencyBonus = Math.min(30, workoutCount7d * 7.5);
+
+  const energyScore = Math.min(50, Math.round(avgEnergy3d * 5));
+  const sleepScore = Math.round(sleepConsistencyBonus);
+  const workoutScore = Math.round(workoutFrequencyBonus);
+  const totalScore = Math.min(100, energyScore + sleepScore + workoutScore);
+
+  const recoveryScore = {
+    score: totalScore,
+    avg_energy_3d: Math.round(avgEnergy3d * 10) / 10,
+    avg_sleep_7d: Math.round(avgSleep * 10) / 10,
+    workout_days_7d: workoutCount7d,
+    energy_score: energyScore,
+    sleep_score: sleepScore,
+    workout_score: workoutScore,
+  };
+
+  await supabase.from('health_intelligence').upsert({
+    user_id: userId,
+    date: today,
+    energy_hero: energyHero,
+    habit_tracker: habitTracker,
+    weekly_trends: weeklyTrends,
+    risk_alerts: riskAlerts,
+    recovery_score: recoveryScore,
+    computed_at: new Date().toISOString(),
+  }, { onConflict: 'user_id,date' });
+
+  return { heroStats, topFive: topFive.length, nextActions: nextActions.length, wasteAlerts: wasteAlerts.length, suggestions: newSuggestions.length, money: { velocity: velocity.daily_net, leaks: moneyLeaks.length, deploys: deployRecs.length }, work: { pipeline_value: workPipelineStats.total_value, active_deals: workPipelineStats.active_deals, follow_ups: workFollowUpQueue.length }, health: { energy: energyHero.energy, habits: habitTracker.length, risks: riskAlerts.length, recovery: recoveryScore.score } };
 }
 
 Deno.serve(async (req: Request) => {
