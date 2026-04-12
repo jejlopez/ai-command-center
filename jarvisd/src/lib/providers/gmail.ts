@@ -114,7 +114,7 @@ export function buildAuthUrl(): string {
     client_id: creds.client_id,
     redirect_uri: "http://127.0.0.1:8787/connectors/gmail/callback",
     response_type: "code",
-    scope: "https://www.googleapis.com/auth/gmail.readonly",
+    scope: "https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.compose https://www.googleapis.com/auth/gmail.modify",
     access_type: "offline",
     prompt: "consent",
   });
