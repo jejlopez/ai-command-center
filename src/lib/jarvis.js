@@ -173,4 +173,8 @@ export const jarvis = {
   recordSnooze:    (itemType, itemId, action, delayMs) => post("/learning/snooze", { itemType, itemId, action, delayMs }),
   snoozeStats:     (itemType) => get(`/learning/snooze/stats${itemType ? `?itemType=${encodeURIComponent(itemType)}` : ""}`),
   bestTiming:      (eventType) => get(`/learning/timing?eventType=${encodeURIComponent(eventType)}`),
+
+  // Orchestration
+  orchestrate:     (goal, steps, budgetUsd) => post("/orchestrate", { goal, steps, budgetUsd }),
+  dispatch:        (skill, instruction, payload, budgetUsd) => post("/dispatch", { skill, instruction, payload, budgetUsd }),
 };

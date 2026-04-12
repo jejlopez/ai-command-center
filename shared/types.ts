@@ -66,6 +66,64 @@ export interface RouteExplanation {
   memoryCited?: number;
 }
 
+// ---------------------------------------------------------------------------
+// Sub-Agent Orchestration — typed skill contracts
+// ---------------------------------------------------------------------------
+
+/** Every sub-agent skill declares its input/output schemas. */
+export interface SubAgentManifest extends SkillManifest {
+  role: "planner" | "coder" | "reviewer" | "researcher" | "operator";
+  inputSchema: Record<string, { type: string; required?: boolean; description: string }>;
+  outputSchema: Record<string, { type: string; description: string }>;
+  costTier: "cheap" | "standard" | "premium";  // default model tier
+  escalationTier?: "standard" | "premium";      // escalate to on failure
+  maxRetries?: number;
+  timeoutMs?: number;
+}
+
+/** Typed payload sent to a sub-agent. */
+export interface SubAgentInput {
+  taskId: string;
+  parentRunId?: string;
+  instruction: string;
+  payload: Record<string, unknown>;
+  costBudgetUsd?: number;
+  modelOverride?: string;
+}
+
+/** Typed result from a sub-agent. */
+export interface SubAgentOutput {
+  taskId: string;
+  status: "completed" | "failed" | "escalated";
+  result: Record<string, unknown>;
+  model: string;
+  costUsd: number;
+  tokensIn: number;
+  tokensOut: number;
+  durationMs: number;
+  escalated?: boolean;
+  escalationReason?: string;
+}
+
+/** Orchestration plan — how JARVIS decomposes a task. */
+export interface OrchestrationPlan {
+  id: string;
+  goal: string;
+  steps: OrchestrationStep[];
+  totalBudgetUsd?: number;
+  createdAt: string;
+}
+
+export interface OrchestrationStep {
+  id: string;
+  skill: string;
+  instruction: string;
+  payload: Record<string, unknown>;
+  dependsOn?: string[];  // step IDs that must complete first
+  status: "pending" | "running" | "completed" | "failed" | "skipped";
+  output?: SubAgentOutput;
+}
+
 export type TrustLevel = "low" | "medium" | "high" | "verified";
 export type Priority = "critical" | "high" | "normal" | "low";
 
