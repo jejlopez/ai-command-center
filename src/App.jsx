@@ -8,6 +8,7 @@ import { Composer } from "./components/Composer.jsx";
 import { ConversationThread } from "./components/ConversationThread.jsx";
 import { JarvisHalo } from "./components/JarvisHalo.jsx";
 import Onboarding from "./views/Onboarding.jsx";
+import Login from "./views/Login.jsx";
 import Settings from "./views/Settings.jsx";
 import Today from "./views/Today.jsx";
 import Brain from "./views/Brain.jsx";
@@ -19,12 +20,15 @@ import Skills from "./views/Skills.jsx";
 import { VaultLockedOverlay } from "./components/VaultLockedOverlay.jsx";
 import { RefreshCcw, Loader2 } from "lucide-react";
 import { useJarvisBrief, useOnboarding, useCostToday } from "./hooks/useJarvis.js";
+import { useAuth } from "./hooks/useAuth.js";
 import { jarvis } from "./lib/jarvis.js";
 
 export default function App() {
   const [active, setActive] = useState("home");
   const [mode, setMode] = useState("brief");
   const [health, setHealth] = useState(null);
+  const [localMode, setLocalMode] = useState(() => localStorage.getItem("jarvis_local_mode") === "true");
+  const auth = useAuth();
   const { brief, rail, recentRuns, error, loading, decide, regenerateBrief } = useJarvisBrief();
   const { status: onboardingStatus, loading: onboardingLoading, refresh: refreshOnboarding } = useOnboarding();
   const { cost } = useCostToday();
@@ -32,6 +36,29 @@ export default function App() {
   useEffect(() => {
     jarvis.health().then(setHealth).catch(() => setHealth(null));
   }, [onboardingStatus?.complete]);
+
+  // Auth gate — show login unless authenticated or in local mode
+  if (auth.loading) {
+    return (
+      <div className="h-full w-full grid place-items-center">
+        <JarvisHalo size={64} />
+      </div>
+    );
+  }
+
+  if (!auth.authenticated && !localMode) {
+    return (
+      <Login
+        onAuth={{
+          ...auth,
+          skipAuth: () => {
+            setLocalMode(true);
+            localStorage.setItem("jarvis_local_mode", "true");
+          },
+        }}
+      />
+    );
+  }
 
   const refreshHealth = async () => {
     const h = await jarvis.health().catch(() => null);
