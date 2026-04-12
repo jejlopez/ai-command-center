@@ -22,7 +22,7 @@ import type {
   ProviderTestResult,
 } from "../../../shared/types.js";
 
-const PROVIDER_IDS: ProviderId[] = ["anthropic", "openai", "google", "groq", "ollama"];
+const PROVIDER_IDS: ProviderId[] = ["anthropic", "openai", "google", "groq", "ollama", "claude-code", "pandadoc", "pipedrive"];
 
 function isProviderId(id: string): id is ProviderId {
   return (PROVIDER_IDS as string[]).includes(id);

@@ -223,7 +223,7 @@ export interface HealthResponse {
 // Onboarding + Settings contract (M1)
 // -----------------------------------------------------------------------------
 
-export type ProviderId = "anthropic" | "openai" | "google" | "groq" | "ollama";
+export type ProviderId = "anthropic" | "openai" | "google" | "groq" | "ollama" | "claude-code" | "pandadoc" | "pipedrive";
 
 export interface ProviderStatus {
   id: ProviderId;

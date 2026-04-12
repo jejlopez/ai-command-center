@@ -199,9 +199,27 @@ export const providerRegistry: Record<ProviderId, ProviderRegistryEntry> = {
     vaultKey: "",
     testFn: testOllama,
   },
+  "claude-code": {
+    id: "claude-code",
+    kind: "cloud",
+    vaultKey: "claude_code_api_key",
+    testFn: testAnthropic, // uses same Anthropic API
+  },
+  pandadoc: {
+    id: "pandadoc",
+    kind: "cloud",
+    vaultKey: "pandadoc_api_key",
+    testFn: async () => ({ ok: true, latencyMs: 0 }), // no test endpoint yet
+  },
+  pipedrive: {
+    id: "pipedrive",
+    kind: "cloud",
+    vaultKey: "pipedrive_api_key",
+    testFn: async () => ({ ok: true, latencyMs: 0 }), // no test endpoint yet
+  },
 };
 
-export const CLOUD_PROVIDER_IDS: ProviderId[] = ["anthropic", "openai", "google", "groq"];
+export const CLOUD_PROVIDER_IDS: ProviderId[] = ["anthropic", "openai", "google", "groq", "claude-code", "pandadoc", "pipedrive"];
 
 export async function detectOllama(): Promise<{ up: boolean; models: string[] }> {
   try {
