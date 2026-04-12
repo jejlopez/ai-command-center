@@ -8,7 +8,7 @@ export function JarvisHalo({ size = 44 }) {
       {/* Ambient glow */}
       <div
         className="absolute inset-0 rounded-full bg-jarvis-primary/8 pulse-primary"
-        style={{ boxShadow: "0 0 40px rgba(93,232,255,0.25), inset 0 0 20px rgba(93,232,255,0.15)" }}
+        style={{ boxShadow: "0 0 40px rgba(0,224,208,0.25), inset 0 0 20px rgba(0,224,208,0.15)" }}
       />
       {/* Outer ring */}
       <div className="absolute inset-[2px] rounded-full border border-jarvis-primary/30" />
@@ -20,7 +20,7 @@ export function JarvisHalo({ size = 44 }) {
         style={{
           width: inner,
           height: inner,
-          boxShadow: "0 0 12px rgba(93,232,255,0.5), 0 0 4px rgba(93,232,255,0.8)",
+          boxShadow: "0 0 12px rgba(0,224,208,0.5), 0 0 4px rgba(0,224,208,0.8)",
         }}
       />
     </div>
