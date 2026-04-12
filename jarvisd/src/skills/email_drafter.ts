@@ -4,7 +4,6 @@
 
 import { db } from "../db/db.js";
 import { createDraft } from "../lib/providers/gmail_actions.js";
-import { listMessages } from "../lib/providers/gmail_actions.js";
 import { resetRunLimits } from "../lib/limits.js";
 import type { Skill } from "../lib/skills.js";
 import type { SkillManifest } from "../../../shared/types.js";
@@ -39,7 +38,7 @@ export const emailDrafter: Skill = {
     const triaged = db.prepare(
       `SELECT * FROM email_triage
        WHERE category IN (${placeholders})
-       AND draft_id IS NULL
+       AND (draft_id IS NULL OR draft_id = '')
        AND action_taken = 0
        ORDER BY created_at DESC LIMIT ?`
     ).all(...categories, maxDrafts) as any[];
@@ -48,25 +47,19 @@ export const emailDrafter: Skill = {
       return { draftsCreated: 0, message: "No emails need drafting" };
     }
 
-    // Fetch full message bodies for context
-    let fullMessages: any[] = [];
-    try {
-      fullMessages = await listMessages(50, "is:unread");
-    } catch (err: any) {
-      return { error: `Gmail read failed: ${err.message}` };
-    }
-
-    const messageMap = new Map(fullMessages.map(m => [m.id, m]));
     const draftsCreated: Array<{ to: string; subject: string; draftId: string }> = [];
+    const errors: string[] = [];
 
     for (const item of triaged) {
-      const fullMsg = messageMap.get(item.message_id);
-      if (!fullMsg) continue;
+      // Use triage data directly — no need to re-fetch
+      const from = item.from_addr;
+      const subject = item.subject || "(no subject)";
+      const snippet = item.snippet || "";
 
       // Get memory context about this sender
       let memoryContext = "";
       try {
-        const recalled = await ctx.memory.recall({ q: `${item.from_addr} ${item.subject}`, limit: 3 });
+        const recalled = await ctx.memory.recall({ q: `${from} ${subject}`, limit: 3 });
         memoryContext = recalled.compiled || "";
       } catch { /* best effort */ }
 
@@ -74,9 +67,9 @@ export const emailDrafter: Skill = {
       const prompt = [
         `Draft a ${tone} reply to this email:`,
         "",
-        `From: ${fullMsg.from}`,
-        `Subject: ${fullMsg.subject}`,
-        `Body: ${fullMsg.body?.slice(0, 2000) || fullMsg.snippet}`,
+        `From: ${from}`,
+        `Subject: ${subject}`,
+        `Body: ${snippet}`,
         "",
         memoryContext ? `Context from memory about this person/topic:\n${memoryContext}\n` : "",
         "Write ONLY the reply body. No subject line, no greeting preamble like 'Here\'s a draft'. Just the actual email text ready to send.",
@@ -93,29 +86,31 @@ export const emailDrafter: Skill = {
         });
         draftBody = out.text.trim();
       } catch (err: any) {
-        ctx.log("email_drafter.model_fail", { error: err.message, messageId: item.message_id });
+        errors.push(`model_fail for ${from}: ${err.message}`);
+        ctx.log("email_drafter.model_fail", { error: err.message, from });
         continue;
       }
 
       // Create Gmail draft
-      const replySubject = fullMsg.subject.startsWith("Re:") ? fullMsg.subject : `Re: ${fullMsg.subject}`;
+      const replySubject = subject.startsWith("Re:") ? subject : `Re: ${subject}`;
       try {
-        const gmail = await createDraft(fullMsg.from, replySubject, draftBody, fullMsg.threadId);
+        const gmail = await createDraft(from, replySubject, draftBody, item.thread_id);
 
         // Store in our drafts table
         const draftId = crypto.randomUUID();
         db.prepare(
           `INSERT INTO email_drafts(id, gmail_draft_id, thread_id, to_addr, subject, body_original, status)
            VALUES (?, ?, ?, ?, ?, ?, 'review_needed')`
-        ).run(draftId, gmail.draftId, fullMsg.threadId, fullMsg.from, replySubject, draftBody);
+        ).run(draftId, gmail.draftId, item.thread_id ?? null, from, replySubject, draftBody);
 
         // Link triage entry to draft
         db.prepare("UPDATE email_triage SET draft_id = ? WHERE id = ?").run(draftId, item.id);
 
-        draftsCreated.push({ to: fullMsg.from, subject: replySubject, draftId });
-        ctx.log("email_drafter.draft_created", { to: fullMsg.from, subject: replySubject });
+        draftsCreated.push({ to: from, subject: replySubject, draftId });
+        ctx.log("email_drafter.draft_created", { to: from, subject: replySubject });
       } catch (err: any) {
-        ctx.log("email_drafter.draft_fail", { error: err.message, to: fullMsg.from });
+        errors.push(`draft_fail for ${from}: ${err.message}`);
+        ctx.log("email_drafter.draft_fail", { error: err.message, to: from });
       }
     }
 
@@ -124,6 +119,8 @@ export const emailDrafter: Skill = {
       drafts: draftsCreated,
       categoriesChecked: categories,
       tone,
+      errors: errors.length > 0 ? errors : undefined,
+      triageFound: triaged.length,
     };
   },
 };

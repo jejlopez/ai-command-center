@@ -16,7 +16,7 @@
 
 import { memory } from "./memory.js";
 import * as apple from "./providers/apple.js";
-import { route, estimateCostUsd, type TaskKind, type Privacy } from "./router.js";
+import { route, estimateCostUsd, type TaskKind, type Privacy, type RouteDecision } from "./router.js";
 import { callAnthropic } from "./providers/anthropic.js";
 import { callOpenAI } from "./providers/openai.js";
 import { callOllama } from "./providers/ollama.js";
@@ -150,52 +150,60 @@ export async function callModel(
     };
   }
 
-  let text: string;
-  let tokensIn: number;
-  let tokensOut: number;
+  let text: string = "";
+  let tokensIn: number = 0;
+  let tokensOut: number = 0;
 
-  if (decision.provider === "anthropic") {
-    const out = await callAnthropic({
-      model: decision.model,
-      prompt: opts.prompt,
-      system: opts.system,
-      maxTokens: opts.maxTokens,
-    });
-    text = out.text;
-    tokensIn = out.tokensIn;
-    tokensOut = out.tokensOut;
-  } else if (decision.provider === "ollama") {
-    const out = await callOllama({
-      model: decision.model,
-      prompt: opts.prompt,
-      system: opts.system,
-      maxTokens: opts.maxTokens,
-    });
-    text = out.text;
-    tokensIn = out.tokensIn;
-    tokensOut = out.tokensOut;
-  } else if (decision.provider === "openai") {
-    const out = await callOpenAI({
-      model: decision.model,
-      prompt: opts.prompt,
-      system: opts.system,
-      maxTokens: opts.maxTokens,
-    });
-    text = out.text;
-    tokensIn = out.tokensIn;
-    tokensOut = out.tokensOut;
-  } else {
-    // google not implemented yet — degrade to local.
-    const out = await callOllama({
-      model: "jarvis:latest",
-      prompt: opts.prompt,
-      system: opts.system,
-      maxTokens: opts.maxTokens,
-    });
-    text = out.text;
-    tokensIn = out.tokensIn;
-    tokensOut = out.tokensOut;
+  // Fallback chain: try primary provider, then next available
+  const callArgs = { prompt: opts.prompt, system: opts.system, maxTokens: opts.maxTokens };
+
+  const providerCall = async (provider: string, model: string) => {
+    if (provider === "anthropic") return callAnthropic({ model, ...callArgs });
+    if (provider === "openai") return callOpenAI({ model, ...callArgs });
+    if (provider === "ollama") return callOllama({ model, ...callArgs });
+    return callOllama({ model: "jarvis:latest", ...callArgs });
+  };
+
+  // Build fallback order: primary → openai → ollama
+  const fallbackOrder: Array<{ provider: RouteDecision["provider"]; model: string }> = [
+    { provider: decision.provider, model: decision.model },
+  ];
+  if (decision.provider !== "openai" && cloudProviderAvailable("openai")) {
+    fallbackOrder.push({ provider: "openai", model: "gpt-4o" });
   }
+  if (decision.provider !== "ollama") {
+    fallbackOrder.push({ provider: "ollama", model: "jarvis:latest" });
+  }
+
+  let lastError: Error | null = null;
+  let usedProvider: RouteDecision["provider"] = decision.provider;
+  let usedModel = decision.model;
+
+  for (const fb of fallbackOrder) {
+    try {
+      const out = await providerCall(fb.provider, fb.model);
+      text = out.text;
+      tokensIn = out.tokensIn;
+      tokensOut = out.tokensOut;
+      usedProvider = fb.provider;
+      usedModel = fb.model;
+      lastError = null;
+      break;
+    } catch (err: any) {
+      lastError = err;
+      // Log the fallback
+      if (fb !== fallbackOrder[fallbackOrder.length - 1]) {
+        console.warn(`[callModel] ${fb.provider}/${fb.model} failed: ${err.message} — trying next`);
+      }
+    }
+  }
+
+  if (lastError) {
+    throw lastError; // all providers failed
+  }
+
+  // Update decision to reflect what actually ran
+  decision = { provider: usedProvider as RouteDecision["provider"], model: usedModel, reason: decision.reason };
 
   const costUsd = estimateCostUsd(decision.model, tokensIn, tokensOut);
   recordCost({
