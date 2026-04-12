@@ -237,7 +237,166 @@ async function computeForUser(supabase: ReturnType<typeof createClient>, userId:
     computed_at: new Date().toISOString(),
   }, { onConflict: 'user_id,date' });
 
-  return { heroStats, topFive: topFive.length, nextActions: nextActions.length, wasteAlerts: wasteAlerts.length, suggestions: newSuggestions.length, money: { velocity: velocity.daily_net, leaks: moneyLeaks.length, deploys: deployRecs.length } };
+  // ---- Work Intelligence ----
+
+  const [allDealsRes, allContactsRes, closedWonRes, closedLostRes] = await Promise.all([
+    supabase.from('deals').select('*, contacts(name)').eq('user_id', userId),
+    supabase.from('contacts').select('*, deals(id, value_usd, stage, last_touch)').eq('user_id', userId),
+    supabase.from('deals').select('*').eq('user_id', userId).eq('stage', 'closed_won')
+      .gte('updated_at', new Date(Date.now() - 90 * 86400000).toISOString()),
+    supabase.from('deals').select('*').eq('user_id', userId).eq('stage', 'closed_lost')
+      .gte('updated_at', new Date(Date.now() - 30 * 86400000).toISOString()),
+  ]);
+
+  const allDeals: any[] = allDealsRes.data ?? [];
+  const allContacts: any[] = allContactsRes.data ?? [];
+  const closedWonDeals: any[] = closedWonRes.data ?? [];
+  const closedLostDeals: any[] = closedLostRes.data ?? [];
+
+  const activeDeals = allDeals.filter((d: any) => !['closed_won', 'closed_lost'].includes(d.stage));
+  const stages = ['prospect', 'quoted', 'negotiating', 'closed_won'];
+
+  // Pipeline stats
+  const totalValue = activeDeals.reduce((s: number, d: any) => s + (d.value_usd ?? 0), 0);
+  const closingThisWeek = activeDeals.filter((d: any) => {
+    if (!d.close_date) return false;
+    const daysToClose = Math.floor((new Date(d.close_date).getTime() - Date.now()) / 86400000);
+    return daysToClose >= 0 && daysToClose <= 7;
+  }).length;
+
+  const won30d = allDeals.filter((d: any) => d.stage === 'closed_won' && d.updated_at >= new Date(Date.now() - 30 * 86400000).toISOString()).length;
+  const started30d = allDeals.filter((d: any) => d.created_at >= new Date(Date.now() - 30 * 86400000).toISOString()).length;
+  const conversionRate = started30d > 0 ? Math.round((won30d / started30d) * 100) : 0;
+
+  const cycleDeals = closedWonDeals.filter((d: any) => d.created_at && d.updated_at);
+  const avgCycleDays = cycleDeals.length > 0
+    ? Math.round(cycleDeals.reduce((s: number, d: any) => s + Math.floor((new Date(d.updated_at).getTime() - new Date(d.created_at).getTime()) / 86400000), 0) / cycleDeals.length)
+    : 0;
+
+  const won30dPrev = allDeals.filter((d: any) => d.stage === 'closed_won' && d.updated_at >= new Date(Date.now() - 60 * 86400000).toISOString() && d.updated_at < new Date(Date.now() - 30 * 86400000).toISOString()).length;
+  const velocityVsLastMonthPct = won30dPrev > 0 ? Math.round(((won30d - won30dPrev) / won30dPrev) * 100) : 0;
+
+  const funnel = stages.map((stage: string) => {
+    const stageDeals = allDeals.filter((d: any) => d.stage === stage);
+    return { stage, count: stageDeals.length, value: stageDeals.reduce((s: number, d: any) => s + (d.value_usd ?? 0), 0) };
+  });
+
+  const workPipelineStats = {
+    total_value: Math.round(totalValue),
+    active_deals: activeDeals.length,
+    closing_this_week: closingThisWeek,
+    conversion_rate: conversionRate,
+    avg_cycle_days: avgCycleDays,
+    velocity_vs_last_month_pct: velocityVsLastMonthPct,
+    funnel,
+  };
+
+  // Deal board
+  const dealBoard: Record<string, any[]> = { prospect: [], quoted: [], negotiating: [], closed_won: [] };
+  for (const stage of stages) {
+    dealBoard[stage] = allDeals
+      .filter((d: any) => d.stage === stage)
+      .map((d: any) => ({
+        id: d.id,
+        company: d.company,
+        value_usd: d.value_usd ?? 0,
+        contact_name: d.contacts?.name ?? null,
+        days_in_stage: daysSince(d.updated_at),
+        last_touch_days: daysSince(d.last_touch),
+        probability: d.probability ?? 50,
+        close_date: d.close_date ?? null,
+        notes: d.notes ?? null,
+      }));
+  }
+
+  // Follow-up queue (reuse followUps already fetched; add pending from all statuses)
+  const allFollowUps = fuRes.data ?? [];
+  const workFollowUpQueue = allFollowUps
+    .map((f: any) => ({
+      id: f.id,
+      action: f.action,
+      contact: f.contacts?.name ?? null,
+      company: f.deals?.company ?? null,
+      deal_id: f.deal_id ?? null,
+      due_date: f.due_date ?? null,
+      days_overdue: f.due_date && f.due_date < today ? Math.floor((Date.now() - new Date(f.due_date).getTime()) / 86400000) : 0,
+      priority: f.priority ?? 'medium',
+      status: f.status,
+    }))
+    .sort((a: any, b: any) => {
+      const aOverdue = a.days_overdue > 0 ? 1 : 0;
+      const bOverdue = b.days_overdue > 0 ? 1 : 0;
+      if (aOverdue !== bOverdue) return bOverdue - aOverdue;
+      const aToday = a.due_date === today ? 1 : 0;
+      const bToday = b.due_date === today ? 1 : 0;
+      if (aToday !== bToday) return bToday - aToday;
+      return (a.due_date ?? '').localeCompare(b.due_date ?? '');
+    });
+
+  // Contacts summary
+  const workContactsSummary = allContacts
+    .map((c: any) => {
+      const linkedDeals = Array.isArray(c.deals) ? c.deals : [];
+      const dealValue = linkedDeals.reduce((s: number, d: any) => s + (d.value_usd ?? 0), 0);
+      const lastTouches = linkedDeals.map((d: any) => d.last_touch).filter(Boolean);
+      const mostRecentTouch = lastTouches.length > 0 ? lastTouches.sort().reverse()[0] : null;
+      const lastInteractionDays = daysSince(mostRecentTouch ?? c.updated_at);
+      return {
+        id: c.id,
+        name: c.name,
+        company: c.company ?? null,
+        role: c.role ?? null,
+        last_interaction_days: lastInteractionDays,
+        deal_value: dealValue,
+        going_cold: lastInteractionDays >= 5,
+      };
+    })
+    .filter((c: any) => c.deal_value > 0 || c.last_interaction_days < 30)
+    .sort((a: any, b: any) => b.deal_value - a.deal_value)
+    .slice(0, 20);
+
+  // Deal velocity
+  const won90dDeals = closedWonDeals.filter((d: any) => d.created_at && d.updated_at);
+  const totalCycle = won90dDeals.length > 0
+    ? Math.round(won90dDeals.reduce((s: number, d: any) => s + Math.floor((new Date(d.updated_at).getTime() - new Date(d.created_at).getTime()) / 86400000), 0) / won90dDeals.length)
+    : 0;
+
+  // Rough stage split: 3 stages, apportion total cycle by heuristic ratio until stage_transitions table exists
+  const prospectToQuoted = Math.round(totalCycle * 0.25);
+  const quotedToNegotiating = Math.round(totalCycle * 0.45);
+  const negotiatingToClosed = totalCycle - prospectToQuoted - quotedToNegotiating;
+
+  const stageAvgs: Record<string, number> = {
+    prospect_to_quoted: prospectToQuoted,
+    quoted_to_negotiating: quotedToNegotiating,
+    negotiating_to_closed: negotiatingToClosed,
+  };
+  const bottleneckStage = Object.entries(stageAvgs).sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
+
+  const won30dCount = allDeals.filter((d: any) => d.stage === 'closed_won' && d.updated_at >= new Date(Date.now() - 30 * 86400000).toISOString()).length;
+  const lost30dCount = closedLostDeals.length;
+  const winRate30d = (won30dCount + lost30dCount) > 0 ? Math.round((won30dCount / (won30dCount + lost30dCount)) * 100) : 0;
+
+  const workDealVelocity = {
+    avg_days: { ...stageAvgs, total_cycle: totalCycle },
+    vs_last_30d_days: 0,
+    bottleneck_stage: bottleneckStage,
+    deals_closed_30d: won30dCount,
+    win_rate_30d: winRate30d,
+  };
+
+  await supabase.from('work_intelligence').upsert({
+    user_id: userId,
+    date: today,
+    pipeline_stats: workPipelineStats,
+    deal_board: dealBoard,
+    follow_up_queue: workFollowUpQueue,
+    contacts_summary: workContactsSummary,
+    deal_velocity: workDealVelocity,
+    computed_at: new Date().toISOString(),
+  }, { onConflict: 'user_id,date' });
+
+  return { heroStats, topFive: topFive.length, nextActions: nextActions.length, wasteAlerts: wasteAlerts.length, suggestions: newSuggestions.length, money: { velocity: velocity.daily_net, leaks: moneyLeaks.length, deploys: deployRecs.length }, work: { pipeline_value: workPipelineStats.total_value, active_deals: workPipelineStats.active_deals, follow_ups: workFollowUpQueue.length } };
 }
 
 Deno.serve(async (req: Request) => {
