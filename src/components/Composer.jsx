@@ -13,8 +13,8 @@ export function Composer({ onSend }) {
   return (
     <div
       className={[
-        "glass flex items-center gap-2 px-2 py-2 transition",
-        focused ? "shadow-glow-cyan ring-1 ring-jarvis-cyan/40" : "",
+        "surface flex items-center gap-2 px-2 py-2 transition",
+        focused ? "ring-1 ring-jarvis-primary/40" : "",
       ].join(" ")}
     >
       <button className="p-2 rounded-lg hover:bg-white/5 text-jarvis-muted transition">
@@ -27,14 +27,14 @@ export function Composer({ onSend }) {
         onBlur={() => setFocused(false)}
         onKeyDown={(e) => e.key === "Enter" && submit()}
         placeholder="Ask JARVIS anything…"
-        className="flex-1 bg-transparent outline-none text-[14px] text-jarvis-ink placeholder:text-jarvis-muted px-2"
+        className="flex-1 bg-jarvis-surface border border-jarvis-border rounded-xl outline-none text-[14px] text-jarvis-ink placeholder:text-jarvis-muted px-2"
       />
-      <button className="p-2 rounded-lg hover:bg-white/5 text-jarvis-cyan transition">
+      <button className="p-2 rounded-lg hover:bg-white/5 text-jarvis-primary transition">
         <Mic size={16} />
       </button>
       <button
         onClick={submit}
-        className="px-3 py-2 rounded-lg bg-jarvis-cyan/15 text-jarvis-cyan hover:bg-jarvis-cyan/25 transition flex items-center gap-1.5"
+        className="px-3 py-2 rounded-lg bg-jarvis-primary/15 text-jarvis-primary hover:bg-jarvis-primary/25 transition flex items-center gap-1.5"
       >
         <SendHorizontal size={15} />
       </button>

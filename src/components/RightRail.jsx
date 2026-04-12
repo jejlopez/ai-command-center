@@ -1,16 +1,17 @@
+import { motion } from "framer-motion";
 import { ShieldAlert, BellRing, Ban, CheckCircle2 } from "lucide-react";
+import { stagger } from "../lib/motion.js";
 import SkillsRailWidget from "./skills/SkillsRailWidget.jsx";
 
-function Card({ Icon, title, tone = "cyan", count, children }) {
+function Card({ Icon, title, tone = "primary", count, children }) {
   const toneClass = {
     amber: "text-jarvis-amber",
     red: "text-jarvis-red",
     green: "text-jarvis-green",
-    cyan: "text-jarvis-cyan",
-    blue: "text-jarvis-blue",
+    primary: "text-jarvis-primary",
   }[tone];
   return (
-    <div className="glass p-4">
+    <motion.div variants={stagger.item} className="surface p-4">
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
           <Icon size={14} className={toneClass} />
@@ -21,14 +22,19 @@ function Card({ Icon, title, tone = "cyan", count, children }) {
         )}
       </div>
       <div className="space-y-2.5">{children}</div>
-    </div>
+    </motion.div>
   );
 }
 
 export function RightRail({ rail, onDecide, recentRuns = [] }) {
   if (!rail) return null;
   return (
-    <div className="w-[300px] space-y-4 shrink-0">
+    <motion.div
+      variants={stagger.container}
+      initial="hidden"
+      animate="show"
+      className="w-[300px] space-y-4 shrink-0"
+    >
       <Card Icon={ShieldAlert} title="Pending Approvals" tone="amber" count={rail.approvals.length}>
         {rail.approvals.length === 0 && (
           <div className="text-[11px] text-jarvis-muted italic">No approvals pending.</div>
@@ -55,7 +61,7 @@ export function RightRail({ rail, onDecide, recentRuns = [] }) {
         ))}
       </Card>
 
-      <Card Icon={BellRing} title="Reminders" tone="cyan" count={rail.reminders.length}>
+      <Card Icon={BellRing} title="Reminders" tone="primary" count={rail.reminders.length}>
         {rail.reminders.map((r) => (
           <div key={r.id} className="text-[12px] text-jarvis-body">
             <span className="text-jarvis-ink">{r.title}</span>
@@ -81,6 +87,6 @@ export function RightRail({ rail, onDecide, recentRuns = [] }) {
       </Card>
 
       <SkillsRailWidget runs={recentRuns} />
-    </div>
+    </motion.div>
   );
 }
