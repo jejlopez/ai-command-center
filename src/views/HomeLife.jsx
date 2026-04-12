@@ -9,6 +9,16 @@ import { TaskQueue } from "../components/home/TaskQueue.jsx";
 import { RecurringExpenses } from "../components/home/RecurringExpenses.jsx";
 import { MaintenanceCalendar } from "../components/home/MaintenanceCalendar.jsx";
 import { QuickAdd } from "../components/home/QuickAdd.jsx";
+import { SimplificationScore } from "../components/home/SimplificationScore.jsx";
+import { DecisionBacklog } from "../components/home/DecisionBacklog.jsx";
+import { HomeSystemsStatus } from "../components/home/HomeSystemsStatus.jsx";
+import { SubscriptionAudit } from "../components/home/SubscriptionAudit.jsx";
+import { VendorManager } from "../components/home/VendorManager.jsx";
+import { HomeAssetTracker } from "../components/home/HomeAssetTracker.jsx";
+import { AnnualHomeBudget } from "../components/home/AnnualHomeBudget.jsx";
+import { AutomationOpportunities } from "../components/home/AutomationOpportunities.jsx";
+import { TimeSavingsCalculator } from "../components/home/TimeSavingsCalculator.jsx";
+import { MaintenanceCompound } from "../components/home/MaintenanceCompound.jsx";
 
 function useHomeTasks() {
   const [nodes, setNodes] = useState([]);
@@ -17,16 +27,14 @@ function useHomeTasks() {
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
-      // Fetch tasks and events from memory
       const [tasks, events] = await Promise.all([
         jarvis.memoryList("task").catch(() => []),
         jarvis.memoryList("event").catch(() => []),
       ]);
-      const all = [
+      setNodes([
         ...(Array.isArray(tasks) ? tasks : []),
         ...(Array.isArray(events) ? events : []),
-      ];
-      setNodes(all);
+      ]);
     } catch {
       setNodes([]);
     } finally {
@@ -35,18 +43,18 @@ function useHomeTasks() {
   }, []);
 
   useEffect(() => { refresh(); }, [refresh]);
-
   return { nodes, loading, refresh };
 }
 
 export default function HomeLife() {
   const { nodes, loading: tasksLoading, refresh: refreshTasks } = useHomeTasks();
   const {
-    expenses,
+    expenses, vendors, decisions, assets,
     overdueCount: overdueExpenses,
     loading: expensesLoading,
     refresh: refreshExpenses,
-    addExpense,
+    addExpense, addVendor, deleteVendor,
+    addDecision, resolveDecision, addAsset,
     isDueThisWeek,
   } = useHomeSupa();
 
@@ -56,22 +64,18 @@ export default function HomeLife() {
     await Promise.all([refreshTasks(), refreshExpenses()]);
   }, [refreshTasks, refreshExpenses]);
 
-  // Derive summary counts
   const homeTasks = nodes.filter((n) => {
     const l = (n.label ?? "").toLowerCase();
     return n.kind === "task" && (l.includes("home") || l.includes("household"));
   });
 
-  const today = new Date().toISOString().slice(0, 10);
   const overdueTaskCount = homeTasks.filter((n) => {
     if (!n.created_at) return false;
-    const age = (Date.now() - new Date(n.created_at).getTime()) / 86_400_000;
-    return age > 7;
+    return (Date.now() - new Date(n.created_at).getTime()) / 86_400_000 > 7;
   }).length;
 
   const dueThisWeekCount = expenses.filter((e) => isDueThisWeek(e.next_due)).length;
 
-  // Next maintenance from event nodes
   const maintenanceItems = nodes
     .filter((n) => {
       const l = (n.label ?? "").toLowerCase();
@@ -98,9 +102,7 @@ export default function HomeLife() {
           </div>
           <div>
             <div className="label text-jarvis-purple">Home Life</div>
-            <div className="text-[12px] text-jarvis-body">
-              Tasks, expenses, and maintenance
-            </div>
+            <div className="text-[12px] text-jarvis-body">Tasks, expenses, and maintenance</div>
           </div>
         </div>
         <button
@@ -122,6 +124,7 @@ export default function HomeLife() {
           initial="hidden"
           animate="show"
         >
+          {/* Hero */}
           <motion.div variants={stagger.item}>
             <HomeHero
               taskCount={overdueTaskCount}
@@ -131,33 +134,67 @@ export default function HomeLife() {
             />
           </motion.div>
 
-          <motion.div variants={stagger.item} className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <TaskQueue
-              nodes={nodes}
-              loading={tasksLoading}
-              refresh={refreshTasks}
-            />
-            <RecurringExpenses
+          {/* Row 1: Score + Decisions + Systems */}
+          <motion.div variants={stagger.item} className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <SimplificationScore
+              vendors={vendors}
+              decisions={decisions}
               expenses={expenses}
-              loading={expensesLoading}
+              nodes={nodes}
             />
+            <DecisionBacklog
+              decisions={decisions}
+              loading={expensesLoading}
+              onAdd={addDecision}
+              onDecide={(id) => resolveDecision(id, "decided")}
+              onDefer={(id) => resolveDecision(id, "deferred")}
+            />
+            <HomeSystemsStatus assets={assets} loading={expensesLoading} />
           </motion.div>
 
-          <motion.div variants={stagger.item}>
-            <MaintenanceCalendar
-              nodes={nodes}
-              loading={tasksLoading}
-              refresh={refreshTasks}
+          {/* Row 2: Task Queue + Subscription Audit */}
+          <motion.div variants={stagger.item} className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <TaskQueue nodes={nodes} loading={tasksLoading} refresh={refreshTasks} />
+            <SubscriptionAudit expenses={expenses} loading={expensesLoading} />
+          </motion.div>
+
+          {/* Row 3: Vendor Manager + Asset Tracker */}
+          <motion.div variants={stagger.item} className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <VendorManager
+              vendors={vendors}
+              loading={expensesLoading}
+              onAdd={addVendor}
+              onDelete={deleteVendor}
             />
+            <HomeAssetTracker assets={assets} loading={expensesLoading} onAdd={addAsset} />
+          </motion.div>
+
+          {/* Row 4: Recurring Expenses + Annual Budget */}
+          <motion.div variants={stagger.item} className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <RecurringExpenses expenses={expenses} loading={expensesLoading} />
+            <AnnualHomeBudget expenses={expenses} loading={expensesLoading} />
+          </motion.div>
+
+          {/* Row 5: Automation Opportunities + Time Savings */}
+          <motion.div variants={stagger.item} className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <AutomationOpportunities nodes={nodes} />
+            <TimeSavingsCalculator />
+          </motion.div>
+
+          {/* Full-width: Maintenance Compound */}
+          <motion.div variants={stagger.item}>
+            <MaintenanceCompound nodes={nodes} />
+          </motion.div>
+
+          {/* Full-width: Maintenance Calendar */}
+          <motion.div variants={stagger.item}>
+            <MaintenanceCalendar nodes={nodes} loading={tasksLoading} refresh={refreshTasks} />
           </motion.div>
         </motion.div>
       </div>
 
       {/* Sticky bottom bar */}
-      <QuickAdd
-        addExpense={addExpense}
-        onSaved={refresh}
-      />
+      <QuickAdd addExpense={addExpense} onSaved={refresh} />
     </div>
   );
 }
