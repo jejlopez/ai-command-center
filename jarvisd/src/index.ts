@@ -37,8 +37,10 @@ import { inboxSummarySkill } from "./skills/inbox_summary.js";
 import { browserAgent } from "./skills/browser_agent.js";
 import { coderAgent } from "./skills/coder_agent.js";
 import { reviewerAgent } from "./skills/reviewer_agent.js";
+import { emailTriage } from "./skills/email_triage.js";
 import { learningRoutes } from "./routes/learning.js";
 import { orchestrateRoutes } from "./routes/orchestrate.js";
+import { emailRoutes } from "./routes/email.js";
 import { vault } from "./lib/vault.js";
 import { policyEngine } from "./lib/policy.js";
 import { policyRoutes } from "./routes/policy.js";
@@ -92,6 +94,7 @@ async function main() {
   await policyRoutes(app);
   await learningRoutes(app);
   await orchestrateRoutes(app);
+  await emailRoutes(app);
   await panicRoutes(app);
   await auditRoutes(app);
 
@@ -117,6 +120,7 @@ async function main() {
   registry.register(browserAgent);
   registry.register(coderAgent);
   registry.register(reviewerAgent);
+  registry.register(emailTriage);
 
   // Wire the event bus after skills are registered so subscriptions pick up
   // every manifest with an event trigger.
