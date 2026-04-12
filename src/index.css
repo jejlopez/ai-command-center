@@ -11,30 +11,44 @@ html, body, #root {
 }
 
 body {
-  background:
-    radial-gradient(1200px 600px at 20% 0%, rgba(93,232,255,0.06), transparent 60%),
-    radial-gradient(1000px 500px at 100% 100%, rgba(75,157,255,0.05), transparent 60%),
-    #05070d;
-  color: #e6f2ff;
+  background: #08080a;
+  color: rgba(255,255,255,0.85);
   font-family: Inter, system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
 }
 
 @layer components {
-  .glass {
-    @apply bg-jarvis-glass backdrop-blur-xl border border-jarvis-border rounded-2xl shadow-panel;
+  .surface {
+    @apply bg-jarvis-surface border border-jarvis-border rounded-[14px];
+  }
+  .surface-hover {
+    @apply hover:bg-jarvis-surface-hover hover:border-jarvis-border-hover transition-all duration-200;
   }
   .chip {
-    @apply inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium tracking-wide;
+    @apply inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[9px] font-medium tracking-[0.12em] uppercase;
   }
   .label {
-    @apply text-[10px] uppercase tracking-[0.18em] text-jarvis-muted font-semibold;
+    @apply text-[9px] uppercase tracking-[0.18em] text-jarvis-muted font-medium;
+  }
+  .metric {
+    @apply text-2xl font-light tracking-tight text-jarvis-ink;
   }
 }
 
-/* Subtle scanline / aurora animation for the JARVIS halo */
-@keyframes pulse-cyan {
-  0%, 100% { opacity: 0.45; }
-  50%      { opacity: 1; }
+/* Shimmer loading animation */
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
 }
-.pulse-cyan { animation: pulse-cyan 2.8s ease-in-out infinite; }
+.shimmer {
+  background: linear-gradient(90deg, rgba(255,255,255,0.01) 25%, rgba(255,255,255,0.03) 50%, rgba(255,255,255,0.01) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+}
+
+/* Pulse for orb */
+@keyframes pulse-primary {
+  0%, 100% { opacity: 0.5; }
+  50% { opacity: 1; }
+}
+.pulse-primary { animation: pulse-primary 2.8s ease-in-out infinite; }
