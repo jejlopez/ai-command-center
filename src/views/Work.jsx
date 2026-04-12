@@ -1,44 +1,75 @@
-import { motion } from "framer-motion";
-import { stagger } from "../lib/motion.js";
-import { useWorkSupa } from "../hooks/useWorkSupa.js";
-import { PipelineHero } from "../components/work/PipelineHero.jsx";
-import { DealBoard } from "../components/work/DealBoard.jsx";
-import { FollowUpQueue } from "../components/work/FollowUpQueue.jsx";
-import { ContactsPanel } from "../components/work/ContactsPanel.jsx";
-import { DealVelocity } from "../components/work/DealVelocity.jsx";
-import { QuickAddBar } from "../components/work/QuickAddBar.jsx";
+import { useState } from "react";
+import { useOpsSupa } from "../hooks/useOpsSupa.js";
+import { ModeBar } from "../components/ops/ModeBar.jsx";
+import { CalendarRail } from "../components/ops/CalendarRail.jsx";
+import { ContextStrip } from "../components/ops/ContextStrip.jsx";
+import { QuickAddOps } from "../components/ops/QuickAddOps.jsx";
+import { SalesDashboard } from "../components/ops/SalesDashboard.jsx";
+import { TradingDashboard } from "../components/ops/TradingDashboard.jsx";
+import { BuildDashboard } from "../components/ops/BuildDashboard.jsx";
 
 export default function Work() {
-  const { intelligence } = useWorkSupa();
+  const [mode, setMode] = useState("sales");
+
+  const {
+    deals, followUps, proposals, comms, docs,
+    positions, watchlist, tradeJournal,
+    projects, ships, tasks,
+    calendarEvents, intelligence,
+    loading, refresh,
+    salesCtx, tradingCtx, buildCtx, badges,
+  } = useOpsSupa();
+
+  const ops = {
+    deals, followUps, proposals, comms, docs,
+    positions, watchlist, tradeJournal,
+    projects, ships, tasks,
+    intelligence,
+  };
 
   return (
-    <div className="flex flex-col h-full">
-      <div className="flex-1 overflow-y-auto">
-        <motion.div
-          className="space-y-6 p-6 max-w-7xl mx-auto"
-          variants={stagger.container}
-          initial="hidden"
-          animate="show"
-        >
-          <motion.div variants={stagger.item}>
-            <PipelineHero pipelineStats={intelligence?.pipeline_stats} />
-          </motion.div>
+    <div className="flex flex-col h-full w-full overflow-hidden">
+      {/* Mode bar */}
+      <ModeBar mode={mode} setMode={setMode} badges={badges} />
 
-          <motion.div variants={stagger.item} className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <div className="lg:col-span-2">
-              <DealBoard dealBoard={intelligence?.deal_board} />
+      {/* Main area: [main panel] + [calendar rail] */}
+      <div className="flex flex-1 overflow-hidden">
+        {/* Main content */}
+        <div className="flex-1 flex flex-col overflow-hidden">
+          {loading && (
+            <div className="flex items-center justify-center flex-1">
+              <div className="text-xs text-jarvis-muted animate-pulse">Loading operations hub…</div>
             </div>
-            <FollowUpQueue followUpQueue={intelligence?.follow_up_queue} />
-          </motion.div>
+          )}
 
-          <motion.div variants={stagger.item} className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <ContactsPanel contactsSummary={intelligence?.contacts_summary} />
-            <DealVelocity dealVelocity={intelligence?.deal_velocity} />
-          </motion.div>
-        </motion.div>
+          {!loading && mode === "sales" && (
+            <SalesDashboard ops={ops} onRefresh={refresh} />
+          )}
+          {!loading && mode === "trading" && (
+            <TradingDashboard ops={ops} onRefresh={refresh} />
+          )}
+          {!loading && mode === "build" && (
+            <BuildDashboard ops={ops} onRefresh={refresh} />
+          )}
+
+          {/* Quick add bar */}
+          <QuickAddOps mode={mode} onRefresh={refresh} />
+
+          {/* Context strip */}
+          <ContextStrip
+            mode={mode}
+            sales={salesCtx}
+            trading={tradingCtx}
+            build={buildCtx}
+          />
+        </div>
+
+        {/* Calendar rail — always visible */}
+        <CalendarRail
+          followUps={followUps}
+          calendarEvents={calendarEvents}
+        />
       </div>
-
-      <QuickAddBar />
     </div>
   );
 }
