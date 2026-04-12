@@ -8,17 +8,18 @@ export default {
     extend: {
       colors: {
         jarvis: {
-          bg:      '#08080a',
-          surface: 'rgba(255,255,255,0.015)',
-          'surface-hover': 'rgba(255,255,255,0.03)',
-          border:  'rgba(255,255,255,0.04)',
-          'border-hover': 'rgba(255,255,255,0.08)',
+          bg:      'var(--jarvis-bg)',
+          surface: 'var(--jarvis-surface)',
+          'surface-hover': 'var(--jarvis-surface-hover)',
+          border:  'var(--jarvis-border)',
+          'border-hover': 'var(--jarvis-border-hover)',
+          ink:     'var(--jarvis-ink)',
+          body:    'var(--jarvis-body)',
+          muted:   'var(--jarvis-muted)',
+          ghost:   'var(--jarvis-ghost)',
+          // These stay the same in both themes:
           primary: '#00E0D0',
           'primary-muted': 'rgba(0,224,208,0.15)',
-          ink:     'rgba(255,255,255,0.85)',
-          body:    'rgba(255,255,255,0.45)',
-          muted:   'rgba(255,255,255,0.2)',
-          ghost:   'rgba(255,255,255,0.08)',
           success: '#00E0A0',
           warning: '#FFB340',
           danger:  '#FF5577',
