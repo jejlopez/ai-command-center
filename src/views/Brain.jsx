@@ -22,15 +22,27 @@ import {
   ZapOff,
   GitBranch,
   List,
+  BookOpen,
 } from "lucide-react";
 import { useMemory } from "../hooks/useJarvis.js";
 import { jarvis } from "../lib/jarvis.js";
+import { useBrainSupa } from "../hooks/useBrainSupa.js";
 import SearchHitRow from "../components/brain/SearchHitRow.jsx";
 import ObsidianImportDialog from "../components/brain/ObsidianImportDialog.jsx";
 import GraphView from "../components/brain/GraphView.jsx";
 import StaleNodes from "../components/brain/StaleNodes.jsx";
 import ConnectionSuggestions from "../components/brain/ConnectionSuggestions.jsx";
 import KnowledgeStats from "../components/brain/KnowledgeStats.jsx";
+import KnowledgeVelocity from "../components/brain/KnowledgeVelocity.jsx";
+import SkillGapRadar from "../components/brain/SkillGapRadar.jsx";
+import DecisionJournal from "../components/brain/DecisionJournal.jsx";
+import MentalModelsLibrary from "../components/brain/MentalModelsLibrary.jsx";
+import InfoDietScore from "../components/brain/InfoDietScore.jsx";
+import CircleOfCompetence from "../components/brain/CircleOfCompetence.jsx";
+import MistakeJournal from "../components/brain/MistakeJournal.jsx";
+import ReadingLog from "../components/brain/ReadingLog.jsx";
+import WisdomCompounder from "../components/brain/WisdomCompounder.jsx";
+import AnnualKnowledgeReview from "../components/brain/AnnualKnowledgeReview.jsx";
 
 const KIND_META = {
   person:  { label: "People",    Icon: User,        tone: "cyan" },
@@ -371,7 +383,8 @@ export default function Brain() {
   const [importOpen, setImportOpen] = useState(false);
   const [forgetting, setForgetting] = useState(false);
   const [embedStatus, setEmbedStatus] = useState(null);
-  const [activeTab, setActiveTab] = useState("explorer"); // "explorer" | "graph"
+  const [activeTab, setActiveTab] = useState("explorer"); // "explorer" | "graph" | "journal"
+  const brainSupa = useBrainSupa();
 
   // Derive edges from node.related arrays
   const edges = useMemo(() => {
@@ -569,6 +582,19 @@ export default function Brain() {
             <GitBranch size={12} />
             Graph
           </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab("journal")}
+            className={[
+              "flex items-center gap-1.5 px-3 py-1.5 rounded-[10px] text-[11px] font-semibold transition",
+              activeTab === "journal"
+                ? "bg-jarvis-purple/20 text-jarvis-purple border border-jarvis-purple/30"
+                : "text-jarvis-muted hover:text-jarvis-body",
+            ].join(" ")}
+          >
+            <BookOpen size={12} />
+            Journal
+          </button>
         </div>
       </div>
 
@@ -670,6 +696,56 @@ export default function Brain() {
             <StaleNodes nodes={nodes} onRefreshed={refresh} />
             <ConnectionSuggestions nodes={nodes} edges={edges} onLinked={refresh} />
           </div>
+        </motion.div>
+      )}
+
+      {/* Journal tab */}
+      {activeTab === "journal" && (
+        <motion.div variants={stagger.item} className="flex-1 min-h-0 overflow-y-auto p-6 flex flex-col gap-4">
+          <KnowledgeVelocity nodes={nodes} />
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <DecisionJournal
+              decisions={brainSupa.decisions}
+              onAdd={brainSupa.addDecision}
+              onReview={brainSupa.reviewDecision}
+            />
+            <MistakeJournal
+              mistakes={brainSupa.mistakes}
+              onAdd={brainSupa.addMistake}
+              onTogglePrevented={brainSupa.togglePrevented}
+            />
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <MentalModelsLibrary
+              models={brainSupa.models}
+              onAdd={brainSupa.addModel}
+              onBump={brainSupa.bumpModel}
+            />
+            <ReadingLog
+              readings={brainSupa.readings}
+              onAdd={brainSupa.addReading}
+            />
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <CircleOfCompetence nodes={nodes} />
+            <SkillGapRadar nodes={nodes} />
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <InfoDietScore readings={brainSupa.readings} />
+            <WisdomCompounder decisions={brainSupa.decisions} mistakes={brainSupa.mistakes} />
+          </div>
+
+          <AnnualKnowledgeReview
+            nodes={nodes}
+            decisions={brainSupa.decisions}
+            mistakes={brainSupa.mistakes}
+            readings={brainSupa.readings}
+            models={brainSupa.models}
+          />
         </motion.div>
       )}
 
