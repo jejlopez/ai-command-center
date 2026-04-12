@@ -143,7 +143,7 @@ export function AboutPanel() {
  </Card>
 
  {/* Providers + Memory */}
- <Card icon={Cpu} iconColor="text-jarvis-primary bg-jarvis-blue/15" glowClass="" title="Intelligence" subtitle="Models + memory">
+ <Card icon={Cpu} iconColor="text-jarvis-primary bg-jarvis-primary/15" glowClass="" title="Intelligence" subtitle="Models + memory">
  <dl className="space-y-0.5">
  <InfoRow label="Linked providers" value={`${linkedProviders.length} / ${providers.length}`} />
  {linkedProviders.map(p => (

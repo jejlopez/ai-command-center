@@ -63,7 +63,7 @@ export function RecurringExpenses({ expenses, loading }) {
       <div className="flex items-center justify-between mb-4">
         <div className="label">Recurring Expenses</div>
         {expenses.length > 0 && (
-          <span className="chip bg-jarvis-panel/40 border border-jarvis-border text-[11px]">
+          <span className="chip bg-jarvis-surface/40 border border-jarvis-border text-[11px]">
             <DollarSign size={10} className="text-jarvis-muted" />
             <span className="text-jarvis-muted">monthly</span>
             <span className="font-semibold text-jarvis-ink">${monthlyTotal.toFixed(0)}</span>

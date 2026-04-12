@@ -88,7 +88,7 @@ function SleepForm({ onClose, onSaved }) {
         onChange={(e) => setHours(e.target.value)}
         onKeyDown={(e) => e.key === "Enter" && save()}
         placeholder="7.5"
-        className="w-20 bg-jarvis-panel/40 border border-jarvis-border rounded-lg px-2 py-1 text-sm text-jarvis-ink placeholder:text-jarvis-muted focus:border-jarvis-purple/50 outline-none"
+        className="w-20 bg-jarvis-surface/40 border border-jarvis-border rounded-lg px-2 py-1 text-sm text-jarvis-ink placeholder:text-jarvis-muted focus:border-jarvis-purple/50 outline-none"
         autoFocus
       />
       <button
@@ -130,7 +130,7 @@ function WorkoutForm({ onClose, onSaved }) {
         onChange={(e) => setType(e.target.value)}
         onKeyDown={(e) => e.key === "Enter" && save()}
         placeholder="Run, lift, swim…"
-        className="w-36 bg-jarvis-panel/40 border border-jarvis-border rounded-lg px-2 py-1 text-sm text-jarvis-ink placeholder:text-jarvis-muted focus:border-jarvis-green/50 outline-none"
+        className="w-36 bg-jarvis-surface/40 border border-jarvis-border rounded-lg px-2 py-1 text-sm text-jarvis-ink placeholder:text-jarvis-muted focus:border-jarvis-green/50 outline-none"
         autoFocus
       />
       <button
@@ -177,7 +177,7 @@ export function QuickLog({ onSaved }) {
             <button
               type="button"
               onClick={() => setOpen("sleep")}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-jarvis-panel/40 text-jarvis-body border border-jarvis-border hover:text-jarvis-ink hover:bg-white/5 transition"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-jarvis-surface/40 text-jarvis-body border border-jarvis-border hover:text-jarvis-ink hover:bg-white/5 transition"
             >
               <Moon size={12} /> Log Sleep
             </button>

@@ -89,7 +89,7 @@ export function UnifiedGoogleCard({ status, onLinked }) {
  };
 
  return (
- <div className="rounded-2xl border border-jarvis-primary/25 bg-gradient-to-b from-jarvis-cyan/[0.04] to-transparent p-5 relative overflow-hidden">
+ <div className="rounded-2xl border border-jarvis-primary/25 bg-gradient-to-b from-jarvis-primary/[0.04] to-transparent p-5 relative overflow-hidden">
  <div className="absolute -top-16 left-1/2 -translate-x-1/2 w-[420px] h-[180px] rounded-full bg-jarvis-primary/10 blur-[80px] pointer-events-none" />
 
  <div className="relative flex items-start justify-between gap-3 mb-4">

@@ -17,9 +17,9 @@ function VelocityBar({ label, days, maxDays, isBottleneck }) {
         </span>
         <span className="text-[11px] text-jarvis-ink tabular-nums font-semibold">{days}d</span>
       </div>
-      <div className="h-2 bg-jarvis-panel/60 rounded-full overflow-hidden">
+      <div className="h-2 bg-jarvis-surface/60 rounded-full overflow-hidden">
         <div
-          className={`h-full rounded-full transition-all ${isBottleneck ? "bg-jarvis-red/60" : "bg-jarvis-cyan/50"}`}
+          className={`h-full rounded-full transition-all ${isBottleneck ? "bg-jarvis-red/60" : "bg-jarvis-primary/50"}`}
           style={{ width: `${pct}%` }}
         />
       </div>
@@ -82,7 +82,7 @@ export function DealVelocity({ dealVelocity }) {
           )}
         </div>
         <div className="flex items-center gap-2">
-          <span className="chip text-jarvis-blue">{deals_closed_30d} closed 30d</span>
+          <span className="chip text-jarvis-primary">{deals_closed_30d} closed 30d</span>
           <span className="chip text-jarvis-green">{win_rate_30d}% win rate</span>
         </div>
       </div>

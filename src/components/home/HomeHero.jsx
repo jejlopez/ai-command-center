@@ -2,7 +2,7 @@ import { Home, AlertTriangle, CheckCircle2, Calendar, DollarSign } from "lucide-
 
 function Chip({ icon: Icon, label, value, color }) {
   return (
-    <div className={`chip bg-jarvis-panel/40 border ${color} gap-2 px-3 py-1.5`}>
+    <div className={`chip bg-jarvis-surface/40 border ${color} gap-2 px-3 py-1.5`}>
       <Icon size={12} className={color.replace("border-", "text-")} />
       <span className="text-jarvis-muted">{label}</span>
       <span className={`font-semibold ${color.replace("border-", "text-")}`}>{value}</span>

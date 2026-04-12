@@ -8,7 +8,7 @@ function fmtDate() {
   });
 }
 
-function StatChip({ label, value, color = "text-jarvis-cyan" }) {
+function StatChip({ label, value, color = "text-jarvis-primary" }) {
   return (
     <span className="chip">
       <span className="text-jarvis-muted">{label}</span>{" "}
@@ -31,13 +31,13 @@ export function MorningBriefHero({
   const fmtUsd = (n) => n == null ? "--" : `$${Math.abs(n).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
 
   return (
-    <div className="glass p-6 border border-jarvis-cyan/20 shadow-glow-cyan animate-fadeIn">
+    <div className="glass p-6 border border-jarvis-primary/20 animate-fadeIn">
       <div className="flex items-start justify-between gap-4">
         <div>
           <h1 className="font-display text-3xl text-jarvis-ink">{fmtDate()}</h1>
           <div className="flex flex-wrap items-center gap-2 mt-3">
             <StatChip label="Meetings" value={meetingCount ?? 0} />
-            <StatChip label="Pipeline" value={fmtUsd(pipelineValue)} color="text-jarvis-blue" />
+            <StatChip label="Pipeline" value={fmtUsd(pipelineValue)} color="text-jarvis-primary" />
             <StatChip label="P&L" value={`${tradingPnl >= 0 ? "+" : ""}${fmtUsd(tradingPnl)}`} color={pnlColor} />
             <StatChip label="Follow-ups" value={followUpsDue ?? 0} color={followUpsDue > 0 ? "text-jarvis-amber" : "text-jarvis-green"} />
             <StatChip label="Budget" value={fmtUsd(budgetRemaining)} />

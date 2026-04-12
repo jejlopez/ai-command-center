@@ -215,7 +215,7 @@ export function ProvidersPanel() {
  Which brains JARVIS thinks with. Keys live in the macOS Keychain. Remove to fully wipe.
  </p>
  </div>
- <div className="mb-4 rounded-xl border border-jarvis-blue/25 bg-jarvis-primary/5 px-3 py-2.5 text-[11px] text-jarvis-body flex items-start gap-2">
+ <div className="mb-4 rounded-xl border border-jarvis-primary/25 bg-jarvis-primary/5 px-3 py-2.5 text-[11px] text-jarvis-body flex items-start gap-2">
  <AlertTriangle size={13} className="text-jarvis-primary mt-0.5 shrink-0" />
  <div>
  This is separate from <strong className="text-jarvis-ink">Connectors → Google data</strong>.

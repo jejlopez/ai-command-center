@@ -3,8 +3,8 @@ import { RefreshCw, Trash2, Loader2 } from "lucide-react";
 import { jarvis } from "../../lib/jarvis.js";
 
 const KIND_COLOR = {
-  person:  "bg-jarvis-cyan/10   text-jarvis-cyan   border-jarvis-cyan/20",
-  project: "bg-jarvis-blue/10   text-jarvis-blue   border-jarvis-blue/20",
+  person:  "bg-jarvis-primary/10   text-jarvis-primary   border-jarvis-primary/20",
+  project: "bg-jarvis-primary/10   text-jarvis-primary   border-jarvis-primary/20",
   task:    "bg-jarvis-amber/10  text-jarvis-amber  border-jarvis-amber/20",
   fact:    "bg-jarvis-purple/10 text-jarvis-purple border-jarvis-purple/20",
   event:   "bg-jarvis-green/10  text-jarvis-green  border-jarvis-green/20",
@@ -24,7 +24,7 @@ function TrustBar({ trust }) {
   return (
     <div className="flex items-center gap-1.5 w-16">
       <div className="flex-1 h-1 rounded-full bg-white/5 overflow-hidden">
-        <div className="h-full bg-jarvis-cyan/60" style={{ width: `${pct}%` }} />
+        <div className="h-full bg-jarvis-primary/60" style={{ width: `${pct}%` }} />
       </div>
       <span className="text-[9px] text-jarvis-muted tabular-nums">{pct}%</span>
     </div>
@@ -117,7 +117,7 @@ export default function StaleNodes({ nodes = [], onRefreshed }) {
                 disabled={!!isBusy}
                 onClick={() => handleRefresh(n)}
                 title="Refresh timestamp"
-                className="p-1 rounded text-jarvis-muted hover:text-jarvis-cyan hover:bg-jarvis-cyan/10 disabled:opacity-40 transition"
+                className="p-1 rounded text-jarvis-muted hover:text-jarvis-primary hover:bg-jarvis-primary/10 disabled:opacity-40 transition"
               >
                 {isBusy === "refresh"
                   ? <Loader2 size={12} className="animate-spin" />

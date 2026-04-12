@@ -3,7 +3,7 @@ import { ChevronDown, ChevronUp } from "lucide-react";
 
 const STAGES = [
   { key: "prospect", label: "Prospect", color: "text-jarvis-muted", border: "border-jarvis-muted/30" },
-  { key: "quoted", label: "Quoted", color: "text-jarvis-cyan", border: "border-jarvis-cyan/30" },
+  { key: "quoted", label: "Quoted", color: "text-jarvis-primary", border: "border-jarvis-primary/30" },
   { key: "negotiating", label: "Negotiating", color: "text-jarvis-amber", border: "border-jarvis-amber/30" },
   { key: "closed_won", label: "Closed Won", color: "text-jarvis-green", border: "border-jarvis-green/30" },
 ];
@@ -20,7 +20,7 @@ function DealCard({ deal }) {
 
   return (
     <div
-      className={`rounded-xl bg-jarvis-panel/40 border border-jarvis-border px-3 py-2 cursor-pointer transition hover:bg-jarvis-panel/60 ${touchBorder(last_touch_days ?? 0)}`}
+      className={`rounded-xl bg-jarvis-surface/40 border border-jarvis-border px-3 py-2 cursor-pointer transition hover:bg-jarvis-surface/60 ${touchBorder(last_touch_days ?? 0)}`}
       onClick={() => setExpanded((v) => !v)}
     >
       <div className="flex items-start justify-between gap-2">

@@ -44,7 +44,7 @@ function FollowUpRow({ fu, onDone, onSnooze }) {
         <button
           type="button"
           onClick={() => onSnooze(fu)}
-          className="p-1 rounded-lg text-jarvis-muted hover:text-jarvis-cyan hover:bg-jarvis-cyan/10 transition"
+          className="p-1 rounded-lg text-jarvis-muted hover:text-jarvis-primary hover:bg-jarvis-primary/10 transition"
           title="Snooze +1d"
         >
           <Clock size={13} />

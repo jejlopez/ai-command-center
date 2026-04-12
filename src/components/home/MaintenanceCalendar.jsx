@@ -40,7 +40,7 @@ function MaintenanceRow({ node, onRemove, removing }) {
         )}
       </div>
       {days !== null && (
-        <span className={`chip bg-jarvis-panel/40 border border-jarvis-border text-[10px] ${badge}`}>
+        <span className={`chip bg-jarvis-surface/40 border border-jarvis-border text-[10px] ${badge}`}>
           <Calendar size={9} />
           {text}
         </span>
@@ -147,14 +147,14 @@ export function MaintenanceCalendar({ nodes, loading, refresh }) {
             value={label}
             onChange={(e) => setLabel(e.target.value)}
             placeholder="e.g. Oil change, HVAC filter…"
-            className="w-full bg-jarvis-panel/40 border border-jarvis-border rounded-xl px-3 py-1.5 text-sm text-jarvis-ink placeholder:text-jarvis-muted focus:border-jarvis-purple/50 outline-none"
+            className="w-full bg-jarvis-surface/40 border border-jarvis-border rounded-xl px-3 py-1.5 text-sm text-jarvis-ink placeholder:text-jarvis-muted focus:border-jarvis-purple/50 outline-none"
           />
           <div className="flex gap-2">
             <input
               type="date"
               value={dueDate}
               onChange={(e) => setDueDate(e.target.value)}
-              className="flex-1 bg-jarvis-panel/40 border border-jarvis-border rounded-xl px-3 py-1.5 text-sm text-jarvis-ink focus:border-jarvis-purple/50 outline-none"
+              className="flex-1 bg-jarvis-surface/40 border border-jarvis-border rounded-xl px-3 py-1.5 text-sm text-jarvis-ink focus:border-jarvis-purple/50 outline-none"
             />
             <button
               type="submit"

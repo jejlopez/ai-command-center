@@ -1,0 +1,152 @@
+<h2>Layout & Navigation</h2>
+<p class="subtitle">How should the sidebar and content area feel? This affects every view.</p>
+
+<div class="cards">
+  <!-- Option A: Icon Rail -->
+  <div class="card" data-choice="icon-rail" onclick="toggleSelect(this)">
+    <div class="card-image" style="height:300px;background:#08080a;padding:0;display:flex;font-family:Inter,system-ui,sans-serif;overflow:hidden;">
+      <!-- Thin icon rail -->
+      <div style="width:56px;background:rgba(255,255,255,0.015);border-right:1px solid rgba(255,255,255,0.04);display:flex;flex-direction:column;align-items:center;padding:16px 0;gap:2px;">
+        <div style="width:28px;height:28px;border-radius:50%;background:rgba(0,224,208,0.1);border:1px solid rgba(0,224,208,0.2);margin-bottom:16px;display:flex;align-items:center;justify-content:center;">
+          <div style="width:8px;height:8px;border-radius:50%;background:rgba(0,224,208,0.7);"></div>
+        </div>
+        <div style="width:36px;height:36px;border-radius:10px;background:rgba(0,224,208,0.08);display:flex;align-items:center;justify-content:center;">
+          <div style="width:14px;height:14px;border-radius:3px;background:rgba(0,224,208,0.4);"></div>
+        </div>
+        <div style="width:36px;height:36px;border-radius:10px;display:flex;align-items:center;justify-content:center;">
+          <div style="width:14px;height:14px;border-radius:3px;background:rgba(255,255,255,0.12);"></div>
+        </div>
+        <div style="width:36px;height:36px;border-radius:10px;display:flex;align-items:center;justify-content:center;">
+          <div style="width:14px;height:14px;border-radius:3px;background:rgba(255,255,255,0.08);"></div>
+        </div>
+        <div style="width:36px;height:36px;border-radius:10px;display:flex;align-items:center;justify-content:center;">
+          <div style="width:14px;height:14px;border-radius:3px;background:rgba(255,255,255,0.08);"></div>
+        </div>
+        <div style="width:36px;height:36px;border-radius:10px;display:flex;align-items:center;justify-content:center;">
+          <div style="width:14px;height:14px;border-radius:3px;background:rgba(255,255,255,0.06);"></div>
+        </div>
+        <div style="width:36px;height:36px;border-radius:10px;display:flex;align-items:center;justify-content:center;">
+          <div style="width:14px;height:14px;border-radius:3px;background:rgba(255,255,255,0.06);"></div>
+        </div>
+        <div style="flex:1;"></div>
+        <div style="width:36px;height:36px;border-radius:10px;display:flex;align-items:center;justify-content:center;">
+          <div style="width:14px;height:14px;border-radius:3px;background:rgba(255,255,255,0.06);"></div>
+        </div>
+      </div>
+      <!-- Content -->
+      <div style="flex:1;padding:20px;display:flex;flex-direction:column;gap:12px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;">
+          <span style="color:rgba(255,255,255,0.85);font-size:18px;font-weight:600;">Home</span>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <span style="color:rgba(0,224,208,0.5);font-size:9px;padding:3px 10px;border:1px solid rgba(0,224,208,0.12);border-radius:20px;">$4.20 / $20</span>
+            <div style="width:6px;height:6px;border-radius:50%;background:rgba(0,224,160,0.5);"></div>
+          </div>
+        </div>
+        <div style="padding:16px;background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.04);border-radius:14px;flex:1;">
+          <div style="color:rgba(255,255,255,0.5);font-size:10px;text-transform:uppercase;letter-spacing:0.15em;margin-bottom:8px;">Morning Brief</div>
+          <div style="color:rgba(240,240,240,0.75);font-size:12px;line-height:1.7;">Good morning. 3 items need your attention today. Your 10am is confirmed, markets are pre-open, and the weekly review is ready.</div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>A: Thin Icon Rail (56px)</h3>
+      <p>Icons only, always visible. Tooltip on hover shows the label. Maximum content space. Clean and modern — like Linear, Raycast, Arc browser.</p>
+    </div>
+  </div>
+
+  <!-- Option B: Expanding Sidebar -->
+  <div class="card" data-choice="expanding" onclick="toggleSelect(this)">
+    <div class="card-image" style="height:300px;background:#08080a;padding:0;display:flex;font-family:Inter,system-ui,sans-serif;overflow:hidden;">
+      <!-- Expanded sidebar -->
+      <div style="width:180px;background:rgba(255,255,255,0.015);border-right:1px solid rgba(255,255,255,0.04);display:flex;flex-direction:column;padding:16px 10px;gap:2px;">
+        <div style="display:flex;align-items:center;gap:8px;padding:6px 8px;margin-bottom:12px;">
+          <div style="width:24px;height:24px;border-radius:50%;background:rgba(0,224,208,0.1);border:1px solid rgba(0,224,208,0.2);display:flex;align-items:center;justify-content:center;">
+            <div style="width:7px;height:7px;border-radius:50%;background:rgba(0,224,208,0.7);"></div>
+          </div>
+          <div>
+            <div style="color:rgba(255,255,255,0.8);font-size:11px;font-weight:600;letter-spacing:0.06em;">JARVIS</div>
+            <div style="color:rgba(255,255,255,0.2);font-size:8px;">v0.1.0</div>
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;padding:7px 10px;border-radius:8px;background:rgba(0,224,208,0.06);">
+          <div style="width:12px;height:12px;border-radius:2px;background:rgba(0,224,208,0.35);"></div>
+          <span style="color:rgba(0,224,208,0.8);font-size:11px;font-weight:500;">Home</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;padding:7px 10px;border-radius:8px;">
+          <div style="width:12px;height:12px;border-radius:2px;background:rgba(255,255,255,0.1);"></div>
+          <span style="color:rgba(255,255,255,0.35);font-size:11px;">Today</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;padding:7px 10px;border-radius:8px;">
+          <div style="width:12px;height:12px;border-radius:2px;background:rgba(255,255,255,0.1);"></div>
+          <span style="color:rgba(255,255,255,0.35);font-size:11px;">Work</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;padding:7px 10px;border-radius:8px;">
+          <div style="width:12px;height:12px;border-radius:2px;background:rgba(255,255,255,0.1);"></div>
+          <span style="color:rgba(255,255,255,0.35);font-size:11px;">Money</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;padding:7px 10px;border-radius:8px;">
+          <div style="width:12px;height:12px;border-radius:2px;background:rgba(255,255,255,0.08);"></div>
+          <span style="color:rgba(255,255,255,0.25);font-size:11px;">Brain</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;padding:7px 10px;border-radius:8px;">
+          <div style="width:12px;height:12px;border-radius:2px;background:rgba(255,255,255,0.08);"></div>
+          <span style="color:rgba(255,255,255,0.25);font-size:11px;">Skills</span>
+        </div>
+        <div style="flex:1;"></div>
+        <div style="display:flex;align-items:center;gap:10px;padding:7px 10px;border-radius:8px;border-top:1px solid rgba(255,255,255,0.03);margin-top:8px;padding-top:14px;">
+          <div style="width:12px;height:12px;border-radius:2px;background:rgba(255,255,255,0.06);"></div>
+          <span style="color:rgba(255,255,255,0.2);font-size:11px;">Settings</span>
+        </div>
+      </div>
+      <!-- Content -->
+      <div style="flex:1;padding:20px;display:flex;flex-direction:column;gap:12px;">
+        <div style="color:rgba(255,255,255,0.85);font-size:18px;font-weight:600;">Home</div>
+        <div style="padding:16px;background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.04);border-radius:14px;flex:1;">
+          <div style="color:rgba(255,255,255,0.5);font-size:10px;text-transform:uppercase;letter-spacing:0.15em;margin-bottom:8px;">Morning Brief</div>
+          <div style="color:rgba(240,240,240,0.75);font-size:12px;line-height:1.7;">Good morning. 3 items need your attention today.</div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>B: Always-Open Sidebar (180px)</h3>
+      <p>Labels always visible. Familiar, easy to scan. Like Notion, Slack, Discord. Clear at a glance — you always know where you are.</p>
+    </div>
+  </div>
+
+  <!-- Option C: Collapsible -->
+  <div class="card" data-choice="collapsible" onclick="toggleSelect(this)">
+    <div class="card-image" style="height:300px;background:#08080a;padding:0;display:flex;font-family:Inter,system-ui,sans-serif;overflow:hidden;">
+      <!-- Collapsed state shown -->
+      <div style="width:56px;background:rgba(255,255,255,0.015);border-right:1px solid rgba(255,255,255,0.04);display:flex;flex-direction:column;align-items:center;padding:16px 0;gap:2px;position:relative;">
+        <div style="width:28px;height:28px;border-radius:50%;background:rgba(0,224,208,0.1);border:1px solid rgba(0,224,208,0.2);margin-bottom:16px;display:flex;align-items:center;justify-content:center;">
+          <div style="width:8px;height:8px;border-radius:50%;background:rgba(0,224,208,0.7);"></div>
+        </div>
+        <div style="width:36px;height:36px;border-radius:10px;background:rgba(0,224,208,0.08);display:flex;align-items:center;justify-content:center;">
+          <div style="width:14px;height:14px;border-radius:3px;background:rgba(0,224,208,0.4);"></div>
+        </div>
+        <div style="width:36px;height:36px;border-radius:10px;display:flex;align-items:center;justify-content:center;">
+          <div style="width:14px;height:14px;border-radius:3px;background:rgba(255,255,255,0.12);"></div>
+        </div>
+        <div style="width:36px;height:36px;border-radius:10px;display:flex;align-items:center;justify-content:center;">
+          <div style="width:14px;height:14px;border-radius:3px;background:rgba(255,255,255,0.08);"></div>
+        </div>
+        <!-- Expand arrow -->
+        <div style="position:absolute;right:-8px;top:50%;width:16px;height:16px;border-radius:50%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.08);display:flex;align-items:center;justify-content:center;">
+          <span style="color:rgba(255,255,255,0.3);font-size:8px;">›</span>
+        </div>
+      </div>
+      <!-- Content -->
+      <div style="flex:1;padding:20px;display:flex;flex-direction:column;gap:12px;">
+        <div style="color:rgba(255,255,255,0.85);font-size:18px;font-weight:600;">Home</div>
+        <div style="padding:16px;background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.04);border-radius:14px;flex:1;">
+          <div style="color:rgba(255,255,255,0.5);font-size:10px;text-transform:uppercase;letter-spacing:0.15em;margin-bottom:8px;">Morning Brief</div>
+          <div style="color:rgba(240,240,240,0.75);font-size:12px;line-height:1.7;">Good morning. Maximum content space when collapsed. Hover to expand and see labels.</div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>C: Collapsible (56px ↔ 180px)</h3>
+      <p>Icons by default, expands on hover or toggle. Best of both worlds — max content space when focused, labels when navigating. Like VS Code's sidebar.</p>
+    </div>
+  </div>
+</div>

@@ -130,7 +130,7 @@ export default function ObsidianImportDialog({ open, onClose, onCompleted }) {
  step={0.05}
  value={defaultTrust}
  onChange={(e) => setDefaultTrust(parseFloat(e.target.value))}
- className="mt-2 w-full accent-jarvis-cyan"
+ className="mt-2 w-full accent-jarvis-primary"
  />
  </div>
 
@@ -139,7 +139,7 @@ export default function ObsidianImportDialog({ open, onClose, onCompleted }) {
  type="checkbox"
  checked={dryRun}
  onChange={(e) => setDryRun(e.target.checked)}
- className="accent-jarvis-cyan"
+ className="accent-jarvis-primary"
  />
  Dry run (don't write anything; just show counts)
  </label>

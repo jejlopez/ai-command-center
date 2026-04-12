@@ -1,8 +1,8 @@
 import { Zap, ZapOff } from "lucide-react";
 
 const KIND_COLORS = {
-  person:  "bg-jarvis-cyan/15   text-jarvis-cyan",
-  project: "bg-jarvis-blue/15   text-jarvis-blue",
+  person:  "bg-jarvis-primary/15   text-jarvis-primary",
+  project: "bg-jarvis-primary/15   text-jarvis-primary",
   task:    "bg-jarvis-amber/15  text-jarvis-amber",
   fact:    "bg-jarvis-purple/15 text-jarvis-purple",
   event:   "bg-jarvis-green/15  text-jarvis-green",
@@ -17,7 +17,7 @@ export default function KnowledgeStats({ nodes = [], edges = [], embedStatus }) 
   for (const n of nodes) { if (byKind[n.kind] !== undefined) byKind[n.kind]++; }
 
   return (
-    <div className="flex flex-wrap items-center gap-3 px-4 py-2.5 border-b border-jarvis-border bg-jarvis-panel/20">
+    <div className="flex flex-wrap items-center gap-3 px-4 py-2.5 border-b border-jarvis-border bg-jarvis-surface/20">
       {/* Totals */}
       <div className="flex items-center gap-1.5 text-[11px]">
         <span className="text-jarvis-muted">Nodes</span>

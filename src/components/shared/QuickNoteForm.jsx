@@ -90,7 +90,7 @@ export default function QuickNoteForm({
  step={0.05}
  value={trust}
  onChange={(e) => setTrust(parseFloat(e.target.value))}
- className="flex-1 accent-jarvis-cyan"
+ className="flex-1 accent-jarvis-primary"
  />
  <span className="text-[11px] text-jarvis-primary tabular-nums w-10 text-right">
  {trust.toFixed(2)}

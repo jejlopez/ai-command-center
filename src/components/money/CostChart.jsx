@@ -107,7 +107,7 @@ export default function CostChart({ points = [] }) {
               width={barW}
               height={Math.max(0, h)}
               rx={2}
-              className="fill-jarvis-cyan/70"
+              className="fill-jarvis-primary/70"
             >
               <title>{`${p.day}: ${fmtUsd(p.costUsd ?? 0)}`}</title>
             </rect>

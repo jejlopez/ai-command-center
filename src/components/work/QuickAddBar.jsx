@@ -34,7 +34,7 @@ function DealForm({ onClose }) {
   };
 
   return (
-    <form onSubmit={submit} className="flex flex-wrap gap-2 items-end p-3 bg-jarvis-panel/60 border-t border-jarvis-border">
+    <form onSubmit={submit} className="flex flex-wrap gap-2 items-end p-3 bg-jarvis-surface/60 border-t border-jarvis-border">
       <input value={f.company} onChange={(e) => setF((v) => ({ ...v, company: e.target.value }))} placeholder="Company *" className="input-sm w-36" />
       <input value={f.value} onChange={(e) => setF((v) => ({ ...v, value: e.target.value }))} placeholder="Value $" type="number" className="input-sm w-24" />
       <select value={f.stage} onChange={(e) => setF((v) => ({ ...v, stage: e.target.value }))} className="input-sm w-32">
@@ -76,7 +76,7 @@ function FollowUpForm({ onClose }) {
   };
 
   return (
-    <form onSubmit={submit} className="flex flex-wrap gap-2 items-end p-3 bg-jarvis-panel/60 border-t border-jarvis-border">
+    <form onSubmit={submit} className="flex flex-wrap gap-2 items-end p-3 bg-jarvis-surface/60 border-t border-jarvis-border">
       <input value={f.action} onChange={(e) => setF((v) => ({ ...v, action: e.target.value }))} placeholder="Action *" className="input-sm w-48" />
       <input value={f.due_date} onChange={(e) => setF((v) => ({ ...v, due_date: e.target.value }))} type="date" className="input-sm w-36" />
       <select value={f.priority} onChange={(e) => setF((v) => ({ ...v, priority: e.target.value }))} className="input-sm w-28">
@@ -117,7 +117,7 @@ function ContactForm({ onClose }) {
   };
 
   return (
-    <form onSubmit={submit} className="flex flex-wrap gap-2 items-end p-3 bg-jarvis-panel/60 border-t border-jarvis-border">
+    <form onSubmit={submit} className="flex flex-wrap gap-2 items-end p-3 bg-jarvis-surface/60 border-t border-jarvis-border">
       <input value={f.name} onChange={(e) => setF((v) => ({ ...v, name: e.target.value }))} placeholder="Name *" className="input-sm w-36" />
       <input value={f.company} onChange={(e) => setF((v) => ({ ...v, company: e.target.value }))} placeholder="Company" className="input-sm w-36" />
       <input value={f.role} onChange={(e) => setF((v) => ({ ...v, role: e.target.value }))} placeholder="Role" className="input-sm w-28" />
@@ -145,9 +145,9 @@ export function QuickAddBar() {
       <div className="flex items-center gap-2 px-6 py-3">
         <span className="text-[10px] text-jarvis-muted uppercase tracking-wider mr-1">Quick Add</span>
         {[
-          { key: "deal", label: "+ Deal", color: "text-jarvis-blue border-jarvis-blue/30 hover:bg-jarvis-blue/10" },
+          { key: "deal", label: "+ Deal", color: "text-jarvis-primary border-jarvis-primary/30 hover:bg-jarvis-primary/10" },
           { key: "followup", label: "+ Follow-up", color: "text-jarvis-amber border-jarvis-amber/30 hover:bg-jarvis-amber/10" },
-          { key: "contact", label: "+ Contact", color: "text-jarvis-cyan border-jarvis-cyan/30 hover:bg-jarvis-cyan/10" },
+          { key: "contact", label: "+ Contact", color: "text-jarvis-primary border-jarvis-primary/30 hover:bg-jarvis-primary/10" },
         ].map(({ key, label, color }) => (
           <button
             key={key}

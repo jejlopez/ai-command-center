@@ -49,11 +49,11 @@ export function NotificationToast() {
       {toasts.map((t) => (
         <div
           key={t.id}
-          className="glass border border-jarvis-cyan/30 shadow-glow-cyan p-4 rounded-2xl flex items-start gap-3 animate-slideUp"
+          className="glass border border-jarvis-primary/30 p-4 rounded-2xl flex items-start gap-3 animate-slideUp"
         >
-          <Zap size={16} className="text-jarvis-cyan shrink-0 mt-0.5" />
+          <Zap size={16} className="text-jarvis-primary shrink-0 mt-0.5" />
           <div className="flex-1 min-w-0">
-            <div className="text-[10px] text-jarvis-cyan font-semibold uppercase tracking-wide">JARVIS</div>
+            <div className="text-[10px] text-jarvis-primary font-semibold uppercase tracking-wide">JARVIS</div>
             <div className="text-sm text-jarvis-ink mt-0.5">{t.text}</div>
           </div>
           <button

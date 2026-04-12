@@ -2,7 +2,7 @@ import { TrendingUp, TrendingDown } from "lucide-react";
 
 const STAGE_COLORS = {
   prospect: "bg-jarvis-muted/30",
-  quoted: "bg-jarvis-cyan/60",
+  quoted: "bg-jarvis-primary/60",
   negotiating: "bg-jarvis-amber/60",
   closed_won: "bg-jarvis-green/60",
 };
@@ -63,12 +63,12 @@ export function PipelineHero({ pipelineStats }) {
   const VelocityIcon = isPositive ? TrendingUp : TrendingDown;
 
   return (
-    <div className="glass p-6 border border-jarvis-blue/20 shadow-glow-blue animate-fadeIn">
+    <div className="glass p-6 border border-jarvis-primary/20 animate-fadeIn">
       <div className="flex items-start justify-between gap-6 flex-wrap">
         <div className="flex-1 min-w-0">
           <div className="label">Pipeline</div>
           <div className="flex items-baseline gap-3 mt-2">
-            <span className="font-display text-3xl text-jarvis-blue tabular-nums">
+            <span className="font-display text-3xl text-jarvis-primary tabular-nums">
               ${total_value.toLocaleString()}
             </span>
             <div className="flex items-center gap-1">
@@ -79,10 +79,10 @@ export function PipelineHero({ pipelineStats }) {
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2 mt-3">
-            <StatChip label="Deals" value={active_deals} color="text-jarvis-blue" />
+            <StatChip label="Deals" value={active_deals} color="text-jarvis-primary" />
             <StatChip label="Closing" value={closing_this_week} color="text-jarvis-amber" />
             <StatChip label="Conv." value={`${conversion_rate}%`} color="text-jarvis-green" />
-            <StatChip label="Avg cycle" value={`${avg_cycle_days}d`} color="text-jarvis-cyan" />
+            <StatChip label="Avg cycle" value={`${avg_cycle_days}d`} color="text-jarvis-primary" />
           </div>
           {funnel.length > 0 && <FunnelBar funnel={funnel} />}
           {funnel.length > 0 && (

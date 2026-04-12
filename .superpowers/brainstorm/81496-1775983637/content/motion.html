@@ -1,0 +1,43 @@
+<h2>Motion & Interaction</h2>
+<p class="subtitle">How should things move? This sets the personality — every hover, transition, and page change.</p>
+
+<div class="options">
+  <div class="option" data-choice="precise" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>Precise & Snappy</h3>
+      <p>Fast transitions (150-200ms). Spring physics with low bounce. Hover states are instant. Page transitions are a quick fade+slide (200ms). Feels like a responsive instrument — every click has immediate feedback. <strong>Think: Linear, Vercel dashboard.</strong></p>
+      <div style="margin-top:8px;color:rgba(255,255,255,0.3);font-size:11px;">
+        Easing: cubic-bezier(0.22, 1, 0.36, 1)<br>
+        Duration: 120-250ms<br>
+        Spring: stiffness 400, damping 30
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="fluid" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>Fluid & Graceful</h3>
+      <p>Smooth transitions (300-500ms). Elements ease in with deceleration. Page transitions have a gentle fade+scale. Hover states bloom softly. Feels like things are breathing — alive but calm. <strong>Think: Apple's interfaces, Stripe.</strong></p>
+      <div style="margin-top:8px;color:rgba(255,255,255,0.3);font-size:11px;">
+        Easing: cubic-bezier(0.16, 1, 0.3, 1)<br>
+        Duration: 250-500ms<br>
+        Spring: stiffness 150, damping 20
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="cinematic" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>Cinematic & Theatrical</h3>
+      <p>Staggered entrance animations. Cards cascade in sequence. Numbers count up. Page transitions are choreographed (element-by-element). Feels like the UI is performing for you. <strong>Think: Iron Man HUD, Minority Report.</strong></p>
+      <div style="margin-top:8px;color:rgba(255,255,255,0.3);font-size:11px;">
+        Easing: cubic-bezier(0.22, 1, 0.36, 1)<br>
+        Duration: 300-800ms, staggered 50-80ms per item<br>
+        Spring: stiffness 200, damping 25
+      </div>
+    </div>
+  </div>
+</div>

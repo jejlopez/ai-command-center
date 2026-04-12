@@ -1,0 +1,103 @@
+<h2>Surface & Card Treatment</h2>
+<p class="subtitle">How should panels, cards, and containers feel? This defines the visual texture of every view.</p>
+
+<div class="cards">
+  <!-- Option A: Ghost -->
+  <div class="card" data-choice="ghost" onclick="toggleSelect(this)">
+    <div class="card-image" style="height:320px;background:#08080a;padding:24px;display:flex;flex-direction:column;gap:14px;font-family:Inter,system-ui,sans-serif;">
+      <!-- Card 1 — barely there -->
+      <div style="padding:18px;border:1px solid rgba(255,255,255,0.03);border-radius:14px;background:rgba(255,255,255,0.01);">
+        <div style="color:rgba(255,255,255,0.3);font-size:9px;text-transform:uppercase;letter-spacing:0.18em;margin-bottom:10px;">Morning Brief</div>
+        <div style="color:rgba(240,240,240,0.8);font-size:13px;line-height:1.7;font-weight:400;">Good morning. 3 items need your attention. Markets pre-open, meeting at 10am confirmed.</div>
+      </div>
+      <!-- Stats row -->
+      <div style="display:flex;gap:10px;">
+        <div style="flex:1;padding:14px;border:1px solid rgba(255,255,255,0.03);border-radius:12px;background:rgba(255,255,255,0.008);">
+          <div style="color:rgba(255,255,255,0.2);font-size:8px;text-transform:uppercase;letter-spacing:0.18em;margin-bottom:6px;">Spend</div>
+          <div style="color:rgba(240,240,240,0.85);font-size:20px;font-weight:300;letter-spacing:-0.02em;">$4.20</div>
+          <div style="color:rgba(0,224,160,0.4);font-size:9px;margin-top:4px;">21% of daily</div>
+        </div>
+        <div style="flex:1;padding:14px;border:1px solid rgba(255,255,255,0.03);border-radius:12px;background:rgba(255,255,255,0.008);">
+          <div style="color:rgba(255,255,255,0.2);font-size:8px;text-transform:uppercase;letter-spacing:0.18em;margin-bottom:6px;">Memory</div>
+          <div style="color:rgba(240,240,240,0.85);font-size:20px;font-weight:300;letter-spacing:-0.02em;">247</div>
+          <div style="color:rgba(0,224,208,0.4);font-size:9px;margin-top:4px;">nodes active</div>
+        </div>
+        <div style="flex:1;padding:14px;border:1px solid rgba(255,255,255,0.03);border-radius:12px;background:rgba(255,255,255,0.008);">
+          <div style="color:rgba(255,255,255,0.2);font-size:8px;text-transform:uppercase;letter-spacing:0.18em;margin-bottom:6px;">Skills</div>
+          <div style="color:rgba(240,240,240,0.85);font-size:20px;font-weight:300;letter-spacing:-0.02em;">13</div>
+          <div style="color:rgba(0,224,208,0.4);font-size:9px;margin-top:4px;">5 cron active</div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>A: Ghost Surfaces</h3>
+      <p>Panels barely exist — 1% white bg, hairline borders. Content floats on the dark background. Ultra clean. Numbers are light-weight (300). Small caps labels. Feels like data projected onto glass.</p>
+    </div>
+  </div>
+
+  <!-- Option B: Soft Glass -->
+  <div class="card" data-choice="soft-glass" onclick="toggleSelect(this)">
+    <div class="card-image" style="height:320px;background:#08080a;padding:24px;display:flex;flex-direction:column;gap:14px;font-family:Inter,system-ui,sans-serif;">
+      <!-- Card 1 — subtle glass -->
+      <div style="padding:18px;border:1px solid rgba(255,255,255,0.06);border-radius:16px;background:rgba(255,255,255,0.03);backdrop-filter:blur(20px);box-shadow:0 2px 12px rgba(0,0,0,0.2),inset 0 1px 0 rgba(255,255,255,0.03);">
+        <div style="color:rgba(0,224,208,0.5);font-size:9px;text-transform:uppercase;letter-spacing:0.18em;margin-bottom:10px;">Morning Brief</div>
+        <div style="color:rgba(240,240,240,0.85);font-size:13px;line-height:1.7;font-weight:400;">Good morning. 3 items need your attention. Markets pre-open, meeting at 10am confirmed.</div>
+      </div>
+      <!-- Stats row -->
+      <div style="display:flex;gap:10px;">
+        <div style="flex:1;padding:14px;border:1px solid rgba(255,255,255,0.05);border-radius:14px;background:rgba(255,255,255,0.025);box-shadow:0 2px 8px rgba(0,0,0,0.15),inset 0 1px 0 rgba(255,255,255,0.02);">
+          <div style="color:rgba(255,255,255,0.25);font-size:8px;text-transform:uppercase;letter-spacing:0.18em;margin-bottom:6px;">Spend</div>
+          <div style="color:rgba(240,240,240,0.9);font-size:20px;font-weight:500;letter-spacing:-0.02em;">$4.20</div>
+          <div style="color:rgba(0,224,160,0.5);font-size:9px;margin-top:4px;">21% of daily</div>
+        </div>
+        <div style="flex:1;padding:14px;border:1px solid rgba(255,255,255,0.05);border-radius:14px;background:rgba(255,255,255,0.025);box-shadow:0 2px 8px rgba(0,0,0,0.15),inset 0 1px 0 rgba(255,255,255,0.02);">
+          <div style="color:rgba(255,255,255,0.25);font-size:8px;text-transform:uppercase;letter-spacing:0.18em;margin-bottom:6px;">Memory</div>
+          <div style="color:rgba(240,240,240,0.9);font-size:20px;font-weight:500;letter-spacing:-0.02em;">247</div>
+          <div style="color:rgba(0,224,208,0.5);font-size:9px;margin-top:4px;">nodes active</div>
+        </div>
+        <div style="flex:1;padding:14px;border:1px solid rgba(255,255,255,0.05);border-radius:14px;background:rgba(255,255,255,0.025);box-shadow:0 2px 8px rgba(0,0,0,0.15),inset 0 1px 0 rgba(255,255,255,0.02);">
+          <div style="color:rgba(255,255,255,0.25);font-size:8px;text-transform:uppercase;letter-spacing:0.18em;margin-bottom:6px;">Skills</div>
+          <div style="color:rgba(240,240,240,0.9);font-size:20px;font-weight:500;letter-spacing:-0.02em;">13</div>
+          <div style="color:rgba(0,224,208,0.5);font-size:9px;margin-top:4px;">5 cron active</div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>B: Soft Glass</h3>
+      <p>Subtle glassmorphism — 3% white bg with blur, soft inset highlights, gentle shadows. Cards have physical presence but stay translucent. Numbers are medium-weight (500). Teal labels. Premium but warm.</p>
+    </div>
+  </div>
+
+  <!-- Option C: Layered -->
+  <div class="card" data-choice="layered" onclick="toggleSelect(this)">
+    <div class="card-image" style="height:320px;background:#08080a;padding:24px;display:flex;flex-direction:column;gap:14px;font-family:Inter,system-ui,sans-serif;">
+      <!-- Card 1 — clear layered -->
+      <div style="padding:18px;border-radius:16px;background:rgba(14,16,22,0.9);border:1px solid rgba(255,255,255,0.05);box-shadow:0 4px 20px rgba(0,0,0,0.3);">
+        <div style="color:rgba(0,224,208,0.6);font-size:9px;text-transform:uppercase;letter-spacing:0.18em;margin-bottom:10px;font-weight:600;">Morning Brief</div>
+        <div style="color:rgba(240,240,240,0.9);font-size:13px;line-height:1.7;font-weight:400;">Good morning. 3 items need your attention. Markets pre-open, meeting at 10am confirmed.</div>
+      </div>
+      <!-- Stats row -->
+      <div style="display:flex;gap:10px;">
+        <div style="flex:1;padding:14px;border-radius:14px;background:rgba(14,16,22,0.8);border:1px solid rgba(255,255,255,0.04);box-shadow:0 2px 12px rgba(0,0,0,0.25);">
+          <div style="color:rgba(255,255,255,0.3);font-size:8px;text-transform:uppercase;letter-spacing:0.18em;margin-bottom:6px;">Spend</div>
+          <div style="color:rgba(240,240,240,0.95);font-size:20px;font-weight:600;letter-spacing:-0.02em;">$4.20</div>
+          <div style="color:rgba(0,224,160,0.5);font-size:9px;margin-top:4px;">21% of daily</div>
+        </div>
+        <div style="flex:1;padding:14px;border-radius:14px;background:rgba(14,16,22,0.8);border:1px solid rgba(255,255,255,0.04);box-shadow:0 2px 12px rgba(0,0,0,0.25);">
+          <div style="color:rgba(255,255,255,0.3);font-size:8px;text-transform:uppercase;letter-spacing:0.18em;margin-bottom:6px;">Memory</div>
+          <div style="color:rgba(240,240,240,0.95);font-size:20px;font-weight:600;letter-spacing:-0.02em;">247</div>
+          <div style="color:rgba(0,224,208,0.5);font-size:9px;margin-top:4px;">nodes active</div>
+        </div>
+        <div style="flex:1;padding:14px;border-radius:14px;background:rgba(14,16,22,0.8);border:1px solid rgba(255,255,255,0.04);box-shadow:0 2px 12px rgba(0,0,0,0.25);">
+          <div style="color:rgba(255,255,255,0.3);font-size:8px;text-transform:uppercase;letter-spacing:0.18em;margin-bottom:6px;">Skills</div>
+          <div style="color:rgba(240,240,240,0.95);font-size:20px;font-weight:600;letter-spacing:-0.02em;">13</div>
+          <div style="color:rgba(0,224,208,0.5);font-size:9px;margin-top:4px;">5 cron active</div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>C: Layered Solid</h3>
+      <p>Opaque elevated panels on dark base. Clear separation between layers with shadow depth. Numbers are bold (600). Strongest hierarchy — each card feels like a distinct surface. Like a stacked cockpit display.</p>
+    </div>
+  </div>
+</div>

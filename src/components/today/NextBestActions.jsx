@@ -5,7 +5,7 @@ const ICON_MAP = { Phone, TrendingUp, Clock, Heart };
 function ActionCard({ icon: Icon, iconColor, text, age, onDone, onSnooze }) {
   const isOverdue = age && age > 2;
   return (
-    <div className={`rounded-xl border bg-white/[0.02] p-3 flex items-start gap-3 ${isOverdue ? "border-jarvis-amber/40 shadow-glow-amber" : "border-jarvis-border"}`}>
+    <div className={`rounded-xl border bg-white/[0.02] p-3 flex items-start gap-3 ${isOverdue ? "border-jarvis-amber/40" : "border-jarvis-border"}`}>
       <div className={`w-8 h-8 rounded-lg grid place-items-center shrink-0 ${iconColor}`}>
         <Icon size={14} />
       </div>
@@ -47,7 +47,7 @@ export function NextBestActions({ precomputed, deals = [], positions = [], habit
               <div key={a.id}>
                 <ActionCard
                   icon={Icon}
-                  iconColor={a.iconColor ?? "bg-cyan-500/15 text-jarvis-cyan"}
+                  iconColor={a.iconColor ?? "bg-jarvis-primary/15 text-jarvis-primary"}
                   text={a.text}
                   age={a.age ?? null}
                 />
@@ -64,7 +64,7 @@ export function NextBestActions({ precomputed, deals = [], positions = [], habit
   for (const d of deals) {
     const age = daysSince(d.last_touch);
     if (age != null && age >= 3) {
-      actions.push({ id: `deal-${d.id}`, icon: Phone, iconColor: "bg-blue-500/15 text-jarvis-blue", text: `Follow up with ${d.company}`, age, dealId: d.id });
+      actions.push({ id: `deal-${d.id}`, icon: Phone, iconColor: "bg-jarvis-primary/15 text-jarvis-primary", text: `Follow up with ${d.company}`, age, dealId: d.id });
     }
   }
 
@@ -75,7 +75,7 @@ export function NextBestActions({ precomputed, deals = [], positions = [], habit
   }
 
   if (calendarGaps > 0) {
-    actions.push({ id: "cal-gap", icon: Clock, iconColor: "bg-cyan-500/15 text-jarvis-cyan", text: `${calendarGaps} open hour${calendarGaps > 1 ? "s" : ""} — block for deep work`, age: null });
+    actions.push({ id: "cal-gap", icon: Clock, iconColor: "bg-jarvis-primary/15 text-jarvis-primary", text: `${calendarGaps} open hour${calendarGaps > 1 ? "s" : ""} — block for deep work`, age: null });
   }
 
   const today = new Date().toISOString().slice(0, 10);

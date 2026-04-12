@@ -9,7 +9,7 @@ function Sparkline({ data, width = 200, height = 40 }) {
   return (
     <svg width={width} height={height} className="overflow-visible">
       <line x1={0} y1={mid} x2={width} y2={mid} stroke="currentColor" strokeOpacity={0.1} />
-      <polyline fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" points={points} className="text-jarvis-cyan" />
+      <polyline fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" points={points} className="text-jarvis-primary" />
     </svg>
   );
 }
@@ -27,7 +27,7 @@ export function CapitalVelocityHero({ velocity }) {
   const net = velocity?.daily_net ?? 0;
   const isPositive = net >= 0;
   const color = isPositive ? "text-jarvis-green" : "text-jarvis-red";
-  const glowClass = isPositive ? "border-jarvis-green/20 shadow-glow-green" : "border-jarvis-red/20 shadow-glow-red";
+  const glowClass = isPositive ? "border-jarvis-green/20" : "border-jarvis-red/20";
   const Icon = isPositive ? TrendingUp : TrendingDown;
   const vsPct = velocity?.vs_last_week_pct ?? 0;
   const fmtUsd = (n) => `${n >= 0 ? "+" : "-"}$${Math.abs(n).toLocaleString()}`;
@@ -57,7 +57,7 @@ export function CapitalVelocityHero({ velocity }) {
             </span>
           </div>
           <div className="flex flex-wrap items-center gap-2 mt-3">
-            <StatChip label="Sales" value={fmtUsd(velocity.sales_contribution ?? 0)} color="text-jarvis-blue" />
+            <StatChip label="Sales" value={fmtUsd(velocity.sales_contribution ?? 0)} color="text-jarvis-primary" />
             <StatChip label="Trading" value={fmtUsd(velocity.trading_contribution ?? 0)} color="text-jarvis-purple" />
             <StatChip label="Costs" value={fmtUsd(velocity.cost_drag ?? 0)} color="text-jarvis-red" />
           </div>

@@ -1,0 +1,154 @@
+<h2>JARVIS OS — Design Direction</h2>
+<p class="subtitle">Pick the overall vibe. This sets the color palette, typography weight, and surface treatment for every view.</p>
+
+<div class="cards">
+  <!-- Option A: Obsidian -->
+  <div class="card" data-choice="obsidian" onclick="toggleSelect(this)">
+    <div class="card-image" style="height:280px;background:#000;padding:20px;display:flex;flex-direction:column;gap:12px;font-family:Inter,system-ui,sans-serif;">
+      <!-- Mini mockup -->
+      <div style="display:flex;gap:12px;height:100%;">
+        <!-- Sidebar -->
+        <div style="width:48px;background:rgba(255,255,255,0.02);border-right:1px solid rgba(255,255,255,0.04);display:flex;flex-direction:column;align-items:center;padding-top:16px;gap:14px;border-radius:0;">
+          <div style="width:20px;height:20px;border-radius:50%;background:rgba(201,168,76,0.2);border:1px solid rgba(201,168,76,0.3);"></div>
+          <div style="width:16px;height:2px;background:rgba(255,255,255,0.06);border-radius:1px;"></div>
+          <div style="width:14px;height:14px;border-radius:3px;background:rgba(201,168,76,0.15);"></div>
+          <div style="width:14px;height:14px;border-radius:3px;background:rgba(255,255,255,0.04);"></div>
+          <div style="width:14px;height:14px;border-radius:3px;background:rgba(255,255,255,0.04);"></div>
+          <div style="width:14px;height:14px;border-radius:3px;background:rgba(255,255,255,0.04);"></div>
+        </div>
+        <!-- Main -->
+        <div style="flex:1;display:flex;flex-direction:column;gap:10px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;border-bottom:1px solid rgba(255,255,255,0.04);">
+            <span style="color:rgba(255,255,255,0.85);font-size:13px;font-weight:600;letter-spacing:0.08em;">JARVIS</span>
+            <div style="display:flex;gap:6px;">
+              <span style="color:rgba(201,168,76,0.6);font-size:9px;padding:3px 8px;border:1px solid rgba(201,168,76,0.15);border-radius:6px;">2 pending</span>
+            </div>
+          </div>
+          <div style="padding:14px;background:rgba(255,255,255,0.015);border:1px solid rgba(255,255,255,0.03);border-radius:12px;">
+            <div style="color:rgba(232,220,200,0.7);font-size:11px;margin-bottom:6px;letter-spacing:0.04em;">Good morning, Samuele</div>
+            <div style="color:rgba(255,255,255,0.4);font-size:9px;line-height:1.6;">3 items need attention. Markets open in 2h. Your 10am with Alex is confirmed.</div>
+          </div>
+          <div style="display:flex;gap:8px;">
+            <div style="flex:1;padding:10px;background:rgba(255,255,255,0.01);border:1px solid rgba(255,255,255,0.03);border-radius:10px;">
+              <div style="color:rgba(201,168,76,0.5);font-size:8px;text-transform:uppercase;letter-spacing:0.15em;margin-bottom:4px;">Budget</div>
+              <div style="color:rgba(255,255,255,0.7);font-size:12px;">$4.20</div>
+            </div>
+            <div style="flex:1;padding:10px;background:rgba(255,255,255,0.01);border:1px solid rgba(255,255,255,0.03);border-radius:10px;">
+              <div style="color:rgba(122,230,160,0.5);font-size:8px;text-transform:uppercase;letter-spacing:0.15em;margin-bottom:4px;">Skills</div>
+              <div style="color:rgba(255,255,255,0.7);font-size:12px;">13 active</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>Obsidian — White & Gold on Black</h3>
+      <p>Pure black background. Gold accents for active states. Panels barely exist — content floats. Feels like a luxury instrument panel. Apple Watch Ultra energy.</p>
+      <div style="display:flex;gap:6px;margin-top:8px;">
+        <div style="width:24px;height:24px;border-radius:50%;background:#000;border:1px solid #333;"></div>
+        <div style="width:24px;height:24px;border-radius:50%;background:#C9A84C;"></div>
+        <div style="width:24px;height:24px;border-radius:50%;background:#E8DCC8;"></div>
+        <div style="width:24px;height:24px;border-radius:50%;background:#7AE6A0;"></div>
+        <div style="width:24px;height:24px;border-radius:50%;background:#E85D6F;"></div>
+        <div style="width:24px;height:24px;border-radius:50%;background:rgba(255,255,255,0.85);"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Option B: Titanium -->
+  <div class="card" data-choice="titanium" onclick="toggleSelect(this)">
+    <div class="card-image" style="height:280px;background:#08080a;padding:20px;display:flex;flex-direction:column;gap:12px;font-family:Inter,system-ui,sans-serif;">
+      <div style="display:flex;gap:12px;height:100%;">
+        <div style="width:48px;background:rgba(255,255,255,0.02);border-right:1px solid rgba(255,255,255,0.05);display:flex;flex-direction:column;align-items:center;padding-top:16px;gap:14px;">
+          <div style="width:20px;height:20px;border-radius:50%;background:rgba(0,224,208,0.15);border:1px solid rgba(0,224,208,0.25);"></div>
+          <div style="width:16px;height:2px;background:rgba(255,255,255,0.06);border-radius:1px;"></div>
+          <div style="width:14px;height:14px;border-radius:3px;background:rgba(0,224,208,0.12);"></div>
+          <div style="width:14px;height:14px;border-radius:3px;background:rgba(255,255,255,0.04);"></div>
+          <div style="width:14px;height:14px;border-radius:3px;background:rgba(255,255,255,0.04);"></div>
+          <div style="width:14px;height:14px;border-radius:3px;background:rgba(255,255,255,0.04);"></div>
+        </div>
+        <div style="flex:1;display:flex;flex-direction:column;gap:10px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;border-bottom:1px solid rgba(255,255,255,0.05);">
+            <span style="color:rgba(0,224,208,0.7);font-size:13px;font-weight:600;letter-spacing:0.08em;">JARVIS</span>
+            <div style="display:flex;gap:6px;">
+              <span style="color:rgba(0,224,208,0.5);font-size:9px;padding:3px 8px;border:1px solid rgba(0,224,208,0.12);border-radius:6px;">online</span>
+            </div>
+          </div>
+          <div style="padding:14px;background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.04);border-radius:12px;">
+            <div style="color:rgba(240,240,240,0.75);font-size:11px;margin-bottom:6px;">Good morning, Samuele</div>
+            <div style="color:rgba(255,255,255,0.35);font-size:9px;line-height:1.6;">3 items need attention. Markets open in 2h. Your 10am with Alex is confirmed.</div>
+          </div>
+          <div style="display:flex;gap:8px;">
+            <div style="flex:1;padding:10px;background:rgba(255,255,255,0.015);border:1px solid rgba(255,255,255,0.04);border-radius:10px;">
+              <div style="color:rgba(0,224,208,0.4);font-size:8px;text-transform:uppercase;letter-spacing:0.15em;margin-bottom:4px;">Budget</div>
+              <div style="color:rgba(255,255,255,0.75);font-size:12px;">$4.20</div>
+            </div>
+            <div style="flex:1;padding:10px;background:rgba(255,255,255,0.015);border:1px solid rgba(255,255,255,0.04);border-radius:10px;">
+              <div style="color:rgba(0,224,160,0.4);font-size:8px;text-transform:uppercase;letter-spacing:0.15em;margin-bottom:4px;">Skills</div>
+              <div style="color:rgba(255,255,255,0.75);font-size:12px;">13 active</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>Titanium — Teal & White on Charcoal</h3>
+      <p>Warm near-black. Teal replaces blue — feels more organic and alive. White for emphasis. Like the current JARVIS but evolved: cleaner, warmer, less neon.</p>
+      <div style="display:flex;gap:6px;margin-top:8px;">
+        <div style="width:24px;height:24px;border-radius:50%;background:#08080a;border:1px solid #333;"></div>
+        <div style="width:24px;height:24px;border-radius:50%;background:#00E0D0;"></div>
+        <div style="width:24px;height:24px;border-radius:50%;background:#FFFFFF;"></div>
+        <div style="width:24px;height:24px;border-radius:50%;background:#00E0A0;"></div>
+        <div style="width:24px;height:24px;border-radius:50%;background:#FF5577;"></div>
+        <div style="width:24px;height:24px;border-radius:50%;background:#5A5A65;"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Option C: Arc -->
+  <div class="card" data-choice="arc" onclick="toggleSelect(this)">
+    <div class="card-image" style="height:280px;background:#040404;padding:20px;display:flex;flex-direction:column;gap:12px;font-family:Inter,system-ui,sans-serif;">
+      <div style="display:flex;gap:12px;height:100%;">
+        <div style="width:48px;background:rgba(255,255,255,0.015);border-right:1px solid rgba(255,255,255,0.03);display:flex;flex-direction:column;align-items:center;padding-top:16px;gap:14px;">
+          <div style="width:20px;height:20px;border-radius:50%;background:rgba(255,107,53,0.15);border:1px solid rgba(255,107,53,0.2);"></div>
+          <div style="width:16px;height:2px;background:rgba(255,255,255,0.04);border-radius:1px;"></div>
+          <div style="width:14px;height:14px;border-radius:3px;background:rgba(255,107,53,0.1);"></div>
+          <div style="width:14px;height:14px;border-radius:3px;background:rgba(255,255,255,0.03);"></div>
+          <div style="width:14px;height:14px;border-radius:3px;background:rgba(255,255,255,0.03);"></div>
+          <div style="width:14px;height:14px;border-radius:3px;background:rgba(255,255,255,0.03);"></div>
+        </div>
+        <div style="flex:1;display:flex;flex-direction:column;gap:10px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;border-bottom:1px solid rgba(255,255,255,0.03);">
+            <span style="color:rgba(255,255,255,0.9);font-size:13px;font-weight:600;letter-spacing:0.06em;">JARVIS</span>
+          </div>
+          <div style="padding:14px;background:rgba(255,255,255,0.01);border:1px solid rgba(255,255,255,0.025);border-radius:12px;">
+            <div style="color:rgba(255,255,255,0.8);font-size:11px;margin-bottom:6px;">Good morning, Samuele</div>
+            <div style="color:rgba(255,255,255,0.3);font-size:9px;line-height:1.6;">3 items need attention. Markets open in 2h. Your 10am with Alex is confirmed.</div>
+          </div>
+          <div style="display:flex;gap:8px;">
+            <div style="flex:1;padding:10px;background:rgba(255,255,255,0.008);border:1px solid rgba(255,255,255,0.025);border-radius:10px;">
+              <div style="color:rgba(255,255,255,0.25);font-size:8px;text-transform:uppercase;letter-spacing:0.15em;margin-bottom:4px;">Budget</div>
+              <div style="color:rgba(255,255,255,0.8);font-size:12px;">$4.20</div>
+            </div>
+            <div style="flex:1;padding:10px;background:rgba(255,255,255,0.008);border:1px solid rgba(255,255,255,0.025);border-radius:10px;">
+              <div style="color:rgba(255,107,53,0.4);font-size:8px;text-transform:uppercase;letter-spacing:0.15em;margin-bottom:4px;">Skills</div>
+              <div style="color:rgba(255,255,255,0.8);font-size:12px;">13 active</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>Arc — Monochrome + Hot Orange</h3>
+      <p>Almost pure black & white. One single accent color (orange) used sparingly — only for active/important elements. When color appears, it means something. Porsche dashboard energy.</p>
+      <div style="display:flex;gap:6px;margin-top:8px;">
+        <div style="width:24px;height:24px;border-radius:50%;background:#040404;border:1px solid #333;"></div>
+        <div style="width:24px;height:24px;border-radius:50%;background:#FF6B35;"></div>
+        <div style="width:24px;height:24px;border-radius:50%;background:rgba(255,255,255,0.9);"></div>
+        <div style="width:24px;height:24px;border-radius:50%;background:#4ADE80;"></div>
+        <div style="width:24px;height:24px;border-radius:50%;background:#FF4D6D;"></div>
+        <div style="width:24px;height:24px;border-radius:50%;background:rgba(255,255,255,0.25);"></div>
+      </div>
+    </div>
+  </div>
+</div>

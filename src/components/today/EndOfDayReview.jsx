@@ -71,7 +71,7 @@ export function EndOfDayReview({ onSaved }) {
             <button
               key={n}
               onClick={() => setEnergy(n)}
-              className={`w-8 h-8 rounded-lg text-xs font-semibold transition ${energy === n ? "bg-jarvis-cyan/20 text-jarvis-cyan border border-jarvis-cyan/40" : "bg-white/5 text-jarvis-muted hover:bg-white/10 border border-transparent"}`}
+              className={`w-8 h-8 rounded-lg text-xs font-semibold transition ${energy === n ? "bg-jarvis-primary/20 text-jarvis-primary border border-jarvis-primary/40" : "bg-white/5 text-jarvis-muted hover:bg-white/10 border border-transparent"}`}
             >
               {n}
             </button>
@@ -90,7 +90,7 @@ export function EndOfDayReview({ onSaved }) {
             value={sleep}
             onChange={(e) => setSleep(e.target.value)}
             placeholder="7.5"
-            className="w-full px-3 py-2 rounded-xl bg-white/5 border border-jarvis-border text-sm text-jarvis-ink placeholder-jarvis-muted focus:outline-none focus:border-jarvis-cyan/50"
+            className="w-full px-3 py-2 rounded-xl bg-white/5 border border-jarvis-border text-sm text-jarvis-ink placeholder-jarvis-muted focus:outline-none focus:border-jarvis-primary/50"
           />
         </div>
         <div>
@@ -111,7 +111,7 @@ export function EndOfDayReview({ onSaved }) {
           onChange={(e) => setTradingNotes(e.target.value)}
           placeholder="What worked? What didn't?"
           rows={2}
-          className="w-full px-3 py-2 rounded-xl bg-white/5 border border-jarvis-border text-sm text-jarvis-ink placeholder-jarvis-muted focus:outline-none focus:border-jarvis-cyan/50 resize-none"
+          className="w-full px-3 py-2 rounded-xl bg-white/5 border border-jarvis-border text-sm text-jarvis-ink placeholder-jarvis-muted focus:outline-none focus:border-jarvis-primary/50 resize-none"
         />
       </div>
 
@@ -122,7 +122,7 @@ export function EndOfDayReview({ onSaved }) {
           onChange={(e) => setWins(e.target.value)}
           placeholder="What went well?"
           rows={2}
-          className="w-full px-3 py-2 rounded-xl bg-white/5 border border-jarvis-border text-sm text-jarvis-ink placeholder-jarvis-muted focus:outline-none focus:border-jarvis-cyan/50 resize-none"
+          className="w-full px-3 py-2 rounded-xl bg-white/5 border border-jarvis-border text-sm text-jarvis-ink placeholder-jarvis-muted focus:outline-none focus:border-jarvis-primary/50 resize-none"
         />
       </div>
 

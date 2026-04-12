@@ -26,7 +26,7 @@ const TONE = {
 
 const VIA_STYLE = {
  vector: "bg-jarvis-primary/10 text-jarvis-primary border-jarvis-primary/30",
- fts: "bg-jarvis-blue/10 text-jarvis-primary border-jarvis-blue/30",
+ fts: "bg-jarvis-primary/10 text-jarvis-primary border-jarvis-primary/30",
  graph: "bg-jarvis-purple/10 text-jarvis-purple border-jarvis-purple/30",
  hybrid: "bg-jarvis-green/10 text-jarvis-green border-jarvis-green/30",
 };

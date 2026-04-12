@@ -30,7 +30,7 @@ function TaskRow({ node, onDone, forgetting }) {
       </div>
 
       {age !== null && (
-        <div className={`chip shrink-0 text-[10px] ${isOverdue ? "bg-red-500/10 border-red-500/30 text-red-400" : "bg-jarvis-panel/40 border-jarvis-border text-jarvis-muted"}`}>
+        <div className={`chip shrink-0 text-[10px] ${isOverdue ? "bg-red-500/10 border-red-500/30 text-red-400" : "bg-jarvis-surface/40 border-jarvis-border text-jarvis-muted"}`}>
           <Clock size={9} />
           {age === 0 ? "today" : `${age}d ago`}
         </div>
@@ -118,7 +118,7 @@ export function TaskQueue({ nodes, loading, refresh }) {
             value={newLabel}
             onChange={(e) => setNewLabel(e.target.value)}
             placeholder="Task description…"
-            className="flex-1 bg-jarvis-panel/40 border border-jarvis-border rounded-xl px-3 py-1.5 text-sm text-jarvis-ink placeholder:text-jarvis-muted focus:border-jarvis-purple/50 outline-none"
+            className="flex-1 bg-jarvis-surface/40 border border-jarvis-border rounded-xl px-3 py-1.5 text-sm text-jarvis-ink placeholder:text-jarvis-muted focus:border-jarvis-purple/50 outline-none"
           />
           <button
             type="submit"

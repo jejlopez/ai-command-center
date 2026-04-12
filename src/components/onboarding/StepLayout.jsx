@@ -21,7 +21,7 @@ export function StepLayout({
  {/* Ambient cyan wash */}
  <div className="absolute inset-0 pointer-events-none">
  <div className="absolute -top-24 -left-24 w-[360px] h-[360px] rounded-full bg-jarvis-primary/10 blur-[120px]" />
- <div className="absolute -bottom-24 -right-24 w-[360px] h-[360px] rounded-full bg-jarvis-blue/10 blur-[120px]" />
+ <div className="absolute -bottom-24 -right-24 w-[360px] h-[360px] rounded-full bg-jarvis-primary/[0.06] blur-[120px]" />
  </div>
 
  {/* Progress pips */}

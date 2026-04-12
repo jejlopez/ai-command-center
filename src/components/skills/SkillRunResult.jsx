@@ -5,7 +5,7 @@ function StatusPill({ status }) {
  const map = {
  completed: { Icon: CheckCircle2, cls: "bg-jarvis-green/10 text-jarvis-green border-jarvis-green/30" },
  running: { Icon: Loader2, cls: "bg-jarvis-primary/10 text-jarvis-primary border-jarvis-primary/30", spin: true },
- queued: { Icon: Clock, cls: "bg-jarvis-blue/10 text-jarvis-primary border-jarvis-blue/30" },
+ queued: { Icon: Clock, cls: "bg-jarvis-primary/10 text-jarvis-primary border-jarvis-primary/30" },
  failed: { Icon: XCircle, cls: "bg-jarvis-red/10 text-jarvis-red border-jarvis-red/30" },
  cancelled: { Icon: AlertTriangle, cls: "bg-jarvis-amber/10 text-jarvis-amber border-jarvis-amber/30" },
  };

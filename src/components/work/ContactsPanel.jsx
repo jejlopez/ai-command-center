@@ -54,7 +54,7 @@ export function ContactsPanel({ contactsSummary }) {
               <div className="flex items-center gap-2 shrink-0">
                 {coldBadge(c.last_interaction_days ?? 0)}
                 {c.deal_value > 0 && (
-                  <span className="text-[10px] text-jarvis-blue tabular-nums font-semibold">
+                  <span className="text-[10px] text-jarvis-primary tabular-nums font-semibold">
                     ${c.deal_value.toLocaleString()}
                   </span>
                 )}
@@ -68,7 +68,7 @@ export function ContactsPanel({ contactsSummary }) {
         <button
           type="button"
           onClick={() => setForm((f) => ({ ...f, open: true }))}
-          className="flex items-center gap-1.5 text-[11px] text-jarvis-muted hover:text-jarvis-cyan transition mt-auto"
+          className="flex items-center gap-1.5 text-[11px] text-jarvis-muted hover:text-jarvis-primary transition mt-auto"
         >
           <Plus size={12} /> Add contact
         </button>
@@ -80,25 +80,25 @@ export function ContactsPanel({ contactsSummary }) {
             value={form.name}
             onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
             placeholder="Name *"
-            className="w-full bg-jarvis-panel/40 border border-jarvis-border rounded-xl px-3 py-1.5 text-sm text-jarvis-ink placeholder:text-jarvis-muted focus:border-jarvis-cyan/50 outline-none"
+            className="w-full bg-jarvis-surface/40 border border-jarvis-border rounded-xl px-3 py-1.5 text-sm text-jarvis-ink placeholder:text-jarvis-muted focus:border-jarvis-primary/50 outline-none"
           />
           <input
             value={form.company}
             onChange={(e) => setForm((f) => ({ ...f, company: e.target.value }))}
             placeholder="Company"
-            className="w-full bg-jarvis-panel/40 border border-jarvis-border rounded-xl px-3 py-1.5 text-sm text-jarvis-ink placeholder:text-jarvis-muted focus:border-jarvis-cyan/50 outline-none"
+            className="w-full bg-jarvis-surface/40 border border-jarvis-border rounded-xl px-3 py-1.5 text-sm text-jarvis-ink placeholder:text-jarvis-muted focus:border-jarvis-primary/50 outline-none"
           />
           <input
             value={form.role}
             onChange={(e) => setForm((f) => ({ ...f, role: e.target.value }))}
             placeholder="Role"
-            className="w-full bg-jarvis-panel/40 border border-jarvis-border rounded-xl px-3 py-1.5 text-sm text-jarvis-ink placeholder:text-jarvis-muted focus:border-jarvis-cyan/50 outline-none"
+            className="w-full bg-jarvis-surface/40 border border-jarvis-border rounded-xl px-3 py-1.5 text-sm text-jarvis-ink placeholder:text-jarvis-muted focus:border-jarvis-primary/50 outline-none"
           />
           <div className="flex gap-2">
             <button
               type="submit"
               disabled={saving || !form.name.trim()}
-              className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-jarvis-cyan/10 text-jarvis-cyan border border-jarvis-cyan/30 hover:bg-jarvis-cyan/20 disabled:opacity-40 transition"
+              className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-jarvis-primary/10 text-jarvis-primary border border-jarvis-primary/30 hover:bg-jarvis-primary/20 disabled:opacity-40 transition"
             >
               {saving ? "Saving…" : "Add"}
             </button>

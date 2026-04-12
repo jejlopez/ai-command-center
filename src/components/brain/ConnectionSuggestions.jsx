@@ -108,11 +108,11 @@ export default function ConnectionSuggestions({ nodes = [], edges = [], onLinked
             >
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-1.5 text-[12px]">
-                  <span className="text-jarvis-cyan truncate max-w-[80px]" title={a.label}>
+                  <span className="text-jarvis-primary truncate max-w-[80px]" title={a.label}>
                     {a.label}
                   </span>
                   <span className="text-jarvis-muted">↔</span>
-                  <span className="text-jarvis-blue truncate max-w-[80px]" title={b.label}>
+                  <span className="text-jarvis-primary truncate max-w-[80px]" title={b.label}>
                     {b.label}
                   </span>
                 </div>

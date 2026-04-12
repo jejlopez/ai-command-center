@@ -7,7 +7,7 @@ function scoreColor(score) {
 }
 
 function scoreGlow(score) {
-  if (score >= 70) return "border-jarvis-green/20 shadow-glow-green";
+  if (score >= 70) return "border-jarvis-green/20";
   if (score >= 40) return "border-jarvis-amber/20";
   return "border-jarvis-red/20";
 }

@@ -10,11 +10,11 @@ export default function ComingSoon({ title, description, icon: Icon }) {
         </div>
         <div className="relative flex flex-col items-center gap-4 pt-10">
           {Icon && (
-            <div className="w-14 h-14 rounded-2xl bg-jarvis-cyan/10 border border-jarvis-cyan/30 grid place-items-center shadow-glow-cyan">
-              <Icon size={24} className="text-jarvis-cyan" strokeWidth={1.8} />
+            <div className="w-14 h-14 rounded-2xl bg-jarvis-primary/10 border border-jarvis-primary/30 grid place-items-center">
+              <Icon size={24} className="text-jarvis-primary" strokeWidth={1.8} />
             </div>
           )}
-          <div className="label text-jarvis-cyan">Surface</div>
+          <div className="label text-jarvis-primary">Surface</div>
           <h1 className="text-2xl font-semibold text-jarvis-ink tracking-wide">{title}</h1>
           <p className="text-jarvis-body text-sm leading-relaxed max-w-sm">{description}</p>
           <span className="chip mt-2 text-jarvis-amber border-jarvis-amber/30 bg-jarvis-amber/5">

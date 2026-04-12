@@ -21,7 +21,7 @@ export function ExpenseRadar({ expenseRadar }) {
             <div key={e.category} className="flex items-center gap-3">
               <span className="text-xs text-jarvis-body w-28 shrink-0 truncate">{e.category}</span>
               <div className="flex-1 h-2 rounded-full bg-white/5 overflow-hidden">
-                <div className="h-full rounded-full bg-jarvis-cyan/60" style={{ width: `${pct}%` }} />
+                <div className="h-full rounded-full bg-jarvis-primary/60" style={{ width: `${pct}%` }} />
               </div>
               <span className="text-xs text-jarvis-ink font-semibold tabular-nums w-16 text-right">${e.amount}</span>
               <span className="text-[10px] text-jarvis-muted w-8 text-right">{e.count}</span>

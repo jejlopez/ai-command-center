@@ -90,8 +90,8 @@ export default function App() {
       <main className="flex-1 flex flex-col min-w-0 relative">
         {/* Ambient background */}
         <div className="absolute inset-0 pointer-events-none">
-          <div className="absolute -top-20 left-1/3 w-[500px] h-[500px] rounded-full bg-jarvis-cyan/10 blur-[120px]" />
-          <div className="absolute bottom-0 right-0 w-[400px] h-[400px] rounded-full bg-jarvis-blue/10 blur-[120px]" />
+          <div className="absolute -top-20 left-1/3 w-[500px] h-[500px] rounded-full bg-jarvis-primary/[0.04] blur-[150px]" />
+          <div className="absolute bottom-0 right-0 w-[400px] h-[400px] rounded-full bg-jarvis-purple/[0.03] blur-[120px]" />
         </div>
 
         <header className="relative flex items-center justify-between gap-4 px-6 py-3 border-b border-jarvis-border">
@@ -118,7 +118,7 @@ export default function App() {
                       <div className="rounded-2xl border border-jarvis-red/30 bg-jarvis-red/5 p-6">
                         <div className="text-jarvis-red text-sm font-semibold">Daemon unreachable</div>
                         <div className="text-jarvis-body text-xs mt-1">
-                          Start it with <code className="text-jarvis-cyan">cd jarvisd && npm run dev</code>
+                          Start it with <code className="text-jarvis-primary">cd jarvisd && npm run dev</code>
                         </div>
                       </div>
                     )}
@@ -128,7 +128,7 @@ export default function App() {
                   </div>
 
                   {/* Sticky composer */}
-                  <div className="sticky bottom-0 left-0 right-0 px-6 pb-5 pt-3 bg-gradient-to-t from-[#05070d] via-[#05070d]/90 to-transparent">
+                  <div className="sticky bottom-0 left-0 right-0 px-6 pb-5 pt-3 bg-gradient-to-t from-[#08080a] via-[#08080a]/90 to-transparent">
                     <Composer onSend={(t) => console.log("ask:", t)} />
                   </div>
                 </>
@@ -143,7 +143,7 @@ export default function App() {
               {active === "skills" && <Skills />}
             </section>
 
-            <aside className="p-6 border-l border-jarvis-border overflow-y-auto bg-jarvis-panel/20">
+            <aside className="p-6 border-l border-jarvis-border overflow-y-auto bg-jarvis-surface/20">
               <RightRail rail={rail} recentRuns={recentRuns} onDecide={decide} />
             </aside>
           </div>

@@ -3,9 +3,9 @@ import { ChevronDown, ChevronUp } from "lucide-react";
 
 function roleBadge(type) {
   switch (type) {
-    case "deal": return <span className="chip text-[10px] bg-blue-500/15 text-jarvis-blue">Sales</span>;
+    case "deal": return <span className="chip text-[10px] bg-jarvis-primary/15 text-jarvis-primary">Sales</span>;
     case "position": return <span className="chip text-[10px] bg-purple-500/15 text-jarvis-purple">Trading</span>;
-    case "followup": return <span className="chip text-[10px] bg-cyan-500/15 text-jarvis-cyan">Action</span>;
+    case "followup": return <span className="chip text-[10px] bg-jarvis-primary/15 text-jarvis-primary">Action</span>;
     default: return null;
   }
 }
@@ -34,7 +34,7 @@ export function TopFiveFocus({ precomputed, deals = [], positions = [], followUp
                 onClick={() => setExpanded(expanded === item.id ? null : item.id)}
                 className="w-full flex items-center gap-3 px-3 py-2.5 text-left"
               >
-                <span className="text-jarvis-cyan font-semibold text-sm w-5 text-center">{i + 1}</span>
+                <span className="text-jarvis-primary font-semibold text-sm w-5 text-center">{i + 1}</span>
                 <span className="text-sm text-jarvis-ink truncate flex-1">{item.label}</span>
                 {roleBadge(item.type)}
                 <span className="text-xs text-jarvis-body font-semibold tabular-nums">{item.value}</span>
@@ -78,7 +78,7 @@ export function TopFiveFocus({ precomputed, deals = [], positions = [], followUp
               onClick={() => setExpanded(expanded === item.id ? null : item.id)}
               className="w-full flex items-center gap-3 px-3 py-2.5 text-left"
             >
-              <span className="text-jarvis-cyan font-semibold text-sm w-5 text-center">{i + 1}</span>
+              <span className="text-jarvis-primary font-semibold text-sm w-5 text-center">{i + 1}</span>
               <span className="text-sm text-jarvis-ink truncate flex-1">{item.label}</span>
               {roleBadge(item.type)}
               <span className="text-xs text-jarvis-body font-semibold tabular-nums">{item.value}</span>

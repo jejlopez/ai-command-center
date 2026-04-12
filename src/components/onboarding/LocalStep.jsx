@@ -117,7 +117,7 @@ export function LocalStep({ stepIndex, totalSteps, onNext, onBack }) {
  type="checkbox"
  checked={checked}
  onChange={() => toggle(m)}
- className="accent-jarvis-cyan"
+ className="accent-jarvis-primary"
  />
  <span className="text-xs font-mono text-jarvis-ink">{m}</span>
  </label>

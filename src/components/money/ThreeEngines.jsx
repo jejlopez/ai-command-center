@@ -1,9 +1,9 @@
 import { Briefcase, TrendingUp, CreditCard } from "lucide-react";
 
 const ENGINE_CONFIG = [
-  { key: "sales", label: "Sales Pipeline", Icon: Briefcase, color: "text-jarvis-blue", bgColor: "bg-blue-500/15" },
+  { key: "sales", label: "Sales Pipeline", Icon: Briefcase, color: "text-jarvis-primary", bgColor: "bg-jarvis-primary/15" },
   { key: "trading", label: "Trading", Icon: TrendingUp, color: "text-jarvis-purple", bgColor: "bg-purple-500/15" },
-  { key: "ops", label: "Operations", Icon: CreditCard, color: "text-jarvis-cyan", bgColor: "bg-cyan-500/15" },
+  { key: "ops", label: "Operations", Icon: CreditCard, color: "text-jarvis-primary", bgColor: "bg-jarvis-primary/15" },
 ];
 
 function fmtUsd(n) { return n == null ? "--" : `$${Math.abs(n).toLocaleString()}`; }

@@ -36,7 +36,7 @@ function TaskForm({ onClose, onSaved }) {
         value={label}
         onChange={(e) => setLabel(e.target.value)}
         placeholder="Task description…"
-        className="bg-jarvis-panel/40 border border-jarvis-border rounded-xl px-3 py-1.5 text-sm text-jarvis-ink placeholder:text-jarvis-muted focus:border-jarvis-purple/50 outline-none"
+        className="bg-jarvis-surface/40 border border-jarvis-border rounded-xl px-3 py-1.5 text-sm text-jarvis-ink placeholder:text-jarvis-muted focus:border-jarvis-purple/50 outline-none"
       />
       {err && <p className="text-[11px] text-red-400">{err}</p>}
       <button
@@ -93,7 +93,7 @@ function ExpenseForm({ onClose, onSaved, addExpense }) {
         value={name}
         onChange={(e) => setName(e.target.value)}
         placeholder="Expense name (e.g. Electric bill)"
-        className="bg-jarvis-panel/40 border border-jarvis-border rounded-xl px-3 py-1.5 text-sm text-jarvis-ink placeholder:text-jarvis-muted focus:border-jarvis-purple/50 outline-none"
+        className="bg-jarvis-surface/40 border border-jarvis-border rounded-xl px-3 py-1.5 text-sm text-jarvis-ink placeholder:text-jarvis-muted focus:border-jarvis-purple/50 outline-none"
       />
       <div className="flex gap-2">
         <input
@@ -103,12 +103,12 @@ function ExpenseForm({ onClose, onSaved, addExpense }) {
           value={amount}
           onChange={(e) => setAmount(e.target.value)}
           placeholder="Amount ($)"
-          className="flex-1 bg-jarvis-panel/40 border border-jarvis-border rounded-xl px-3 py-1.5 text-sm text-jarvis-ink placeholder:text-jarvis-muted focus:border-jarvis-purple/50 outline-none"
+          className="flex-1 bg-jarvis-surface/40 border border-jarvis-border rounded-xl px-3 py-1.5 text-sm text-jarvis-ink placeholder:text-jarvis-muted focus:border-jarvis-purple/50 outline-none"
         />
         <select
           value={freq}
           onChange={(e) => setFreq(e.target.value)}
-          className="bg-jarvis-panel/40 border border-jarvis-border rounded-xl px-3 py-1.5 text-sm text-jarvis-ink focus:border-jarvis-purple/50 outline-none"
+          className="bg-jarvis-surface/40 border border-jarvis-border rounded-xl px-3 py-1.5 text-sm text-jarvis-ink focus:border-jarvis-purple/50 outline-none"
         >
           <option value="daily">Daily</option>
           <option value="weekly">Weekly</option>
@@ -121,7 +121,7 @@ function ExpenseForm({ onClose, onSaved, addExpense }) {
         type="date"
         value={nextDue}
         onChange={(e) => setNextDue(e.target.value)}
-        className="bg-jarvis-panel/40 border border-jarvis-border rounded-xl px-3 py-1.5 text-sm text-jarvis-ink focus:border-jarvis-purple/50 outline-none"
+        className="bg-jarvis-surface/40 border border-jarvis-border rounded-xl px-3 py-1.5 text-sm text-jarvis-ink focus:border-jarvis-purple/50 outline-none"
       />
       {err && <p className="text-[11px] text-red-400">{err}</p>}
       <button
@@ -142,7 +142,7 @@ export function QuickAdd({ addExpense, onSaved }) {
 
   return (
     <div className="sticky bottom-0 z-10">
-      <div className="bg-jarvis-glass/80 backdrop-blur-xl border-t border-jarvis-border px-6 py-3">
+      <div className="bg-jarvis-surface/80 backdrop-blur-xl border-t border-jarvis-border px-6 py-3">
         {active ? (
           <div className="max-w-lg mx-auto">
             {active === "task" && (
@@ -164,7 +164,7 @@ export function QuickAdd({ addExpense, onSaved }) {
             <button
               type="button"
               onClick={() => setActive("expense")}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold bg-jarvis-panel/40 border border-jarvis-border text-jarvis-body hover:text-jarvis-ink hover:bg-white/5 transition"
+              className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold bg-jarvis-surface/20 border border-jarvis-border text-jarvis-body hover:text-jarvis-ink hover:bg-white/5 transition"
             >
               <Plus size={12} /> Expense
             </button>

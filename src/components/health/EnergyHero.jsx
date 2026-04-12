@@ -22,9 +22,9 @@ function energyColor(score) {
 
 function energyGlow(score) {
   if (score == null) return "border-jarvis-border";
-  if (score >= 7) return "border-jarvis-green/20 shadow-glow-green";
+  if (score >= 7) return "border-jarvis-green/20";
   if (score >= 4) return "border-jarvis-amber/20";
-  return "border-jarvis-red/20 shadow-glow-red";
+  return "border-jarvis-red/20";
 }
 
 export function EnergyHero({ energyHero }) {

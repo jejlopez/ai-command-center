@@ -39,8 +39,8 @@ export function TimeBlocks({ items, onRefresh }) {
     <div className="glass p-5">
       <div className="label mb-3">Schedule</div>
       <div className="relative h-1.5 rounded-full bg-white/5 mb-4">
-        <div className="absolute top-0 left-0 h-full rounded-full bg-jarvis-cyan/30" style={{ width: `${pct}%` }} />
-        <div className="absolute top-1/2 -translate-y-1/2 w-2.5 h-2.5 rounded-full bg-jarvis-cyan shadow-glow-cyan animate-pulse" style={{ left: `${pct}%` }} />
+        <div className="absolute top-0 left-0 h-full rounded-full bg-jarvis-primary/30" style={{ width: `${pct}%` }} />
+        <div className="absolute top-1/2 -translate-y-1/2 w-2.5 h-2.5 rounded-full bg-jarvis-primary animate-pulse" style={{ left: `${pct}%` }} />
       </div>
       <div className="space-y-2">
         {items.map((item) => {
@@ -54,7 +54,7 @@ export function TimeBlocks({ items, onRefresh }) {
               </div>
               <div className="w-px h-8 bg-jarvis-border" />
               <div className="flex-1 min-w-0 flex items-center gap-2">
-                {isFocus ? <Target size={12} className="text-jarvis-cyan shrink-0" /> : <CalendarClock size={12} className="text-jarvis-body shrink-0" />}
+                {isFocus ? <Target size={12} className="text-jarvis-primary shrink-0" /> : <CalendarClock size={12} className="text-jarvis-body shrink-0" />}
                 <span className="text-sm text-jarvis-ink truncate">{item.title}</span>
                 {item.location && <span className="text-[10px] text-jarvis-muted flex items-center gap-0.5"><MapPin size={9} />{item.location}</span>}
                 {hasConflict && <AlertTriangle size={11} className="text-jarvis-red shrink-0" />}

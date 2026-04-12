@@ -41,7 +41,7 @@ export default function Onboarding({ onComplete }) {
  return (
  <div className="h-full w-full overflow-y-auto text-jarvis-ink relative">
  <div className="absolute inset-0 pointer-events-none">
- <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-jarvis-cyan/40 to-transparent" />
+ <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-jarvis-primary/40 to-transparent" />
  <div className="absolute inset-0 bg-jarvis-grid opacity-[0.05] [background-size:40px_40px]" />
  </div>
  <div className="relative min-h-full">

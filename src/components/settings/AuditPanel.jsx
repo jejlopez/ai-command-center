@@ -9,7 +9,7 @@ const ACTION_COLORS = {
   "vault.lock":        "text-jarvis-amber",
   "vault.unlock":      "text-jarvis-green",
   "vault.unlock.fail": "text-jarvis-red",
-  "daemon.start":      "text-jarvis-cyan",
+  "daemon.start":      "text-jarvis-primary",
 };
 
 function ActionBadge({ action }) {
@@ -102,11 +102,11 @@ export function AuditPanel() {
       <div className="rounded-2xl border border-jarvis-border bg-white/[0.02] p-5 flex items-center justify-between gap-4 mb-5">
         <div className="flex items-center gap-3">
           {chainOk === true ? (
-            <div className="w-10 h-10 rounded-full bg-jarvis-green/15 shadow-glow-green grid place-items-center">
+            <div className="w-10 h-10 rounded-full bg-jarvis-green/15 grid place-items-center">
               <ShieldCheck size={18} className="text-jarvis-green" />
             </div>
           ) : chainOk === false ? (
-            <div className="w-10 h-10 rounded-full bg-jarvis-red/15 shadow-glow-red grid place-items-center">
+            <div className="w-10 h-10 rounded-full bg-jarvis-red/15 grid place-items-center">
               <ShieldAlert size={18} className="text-jarvis-red" />
             </div>
           ) : (
@@ -158,7 +158,7 @@ export function AuditPanel() {
           value={filter}
           onChange={(e) => { setFilter(e.target.value); setPage(0); }}
           placeholder="e.g. policy, vault, panic"
-          className="flex-1 px-3 py-1.5 rounded-xl bg-white/5 border border-jarvis-border text-xs text-jarvis-ink placeholder-jarvis-muted focus:outline-none focus:border-jarvis-cyan/50"
+          className="flex-1 px-3 py-1.5 rounded-xl bg-white/5 border border-jarvis-border text-xs text-jarvis-ink placeholder-jarvis-muted focus:outline-none focus:border-jarvis-primary/50"
         />
       </div>
 
