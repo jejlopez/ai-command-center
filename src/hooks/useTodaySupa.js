@@ -5,9 +5,19 @@ function todayIso() {
   return new Date().toISOString().slice(0, 10);
 }
 
+function sevenDaysAgo() {
+  const d = new Date();
+  d.setDate(d.getDate() - 7);
+  return d.toISOString().slice(0, 10);
+}
+
 export function useTodaySupa() {
   const [data, setData] = useState({
     intelligence: null,
+    decisions: [],
+    timeBlocksActual: [],
+    compoundImprovements: [],
+    notToDo: [],
     loading: true,
     error: null,
   });
@@ -15,21 +25,34 @@ export function useTodaySupa() {
 
   const refresh = useCallback(async () => {
     if (!supabase) {
-      setData({ intelligence: null, loading: false, error: "Supabase not configured" });
+      setData((d) => ({ ...d, loading: false, error: "Supabase not configured" }));
       return;
     }
     try {
-      const { data: row, error } = await supabase
-        .from("today_intelligence")
-        .select("*")
-        .eq("date", todayIso())
-        .maybeSingle();
+      const today = todayIso();
+      const weekAgo = sevenDaysAgo();
 
-      if (error) throw error;
+      const [intelRes, decisionsRes, timeRes, compoundRes, ntdRes] = await Promise.all([
+        supabase.from("today_intelligence").select("*").eq("date", today).maybeSingle(),
+        supabase.from("decisions").select("*").eq("status", "pending").order("cost_per_day", { ascending: false }),
+        supabase.from("time_blocks_actual").select("*").eq("date", today).order("created_at"),
+        supabase.from("compound_tracker").select("*").gte("date", weekAgo).order("date", { ascending: false }),
+        supabase.from("not_to_do").select("*").eq("active", true).order("added_at", { ascending: false }),
+      ]);
 
-      setData({ intelligence: row, loading: false, error: null });
+      if (intelRes.error) throw intelRes.error;
+
+      setData({
+        intelligence: intelRes.data,
+        decisions: decisionsRes.data ?? [],
+        timeBlocksActual: timeRes.data ?? [],
+        compoundImprovements: compoundRes.data ?? [],
+        notToDo: ntdRes.data ?? [],
+        loading: false,
+        error: null,
+      });
     } catch (e) {
-      setData({ intelligence: null, loading: false, error: e.message });
+      setData((d) => ({ ...d, loading: false, error: e.message }));
     }
   }, []);
 
@@ -39,11 +62,9 @@ export function useTodaySupa() {
     if (supabase) {
       const channel = supabase
         .channel("today-intel")
-        .on(
-          "postgres_changes",
-          { event: "*", schema: "public", table: "today_intelligence" },
-          () => refresh()
-        )
+        .on("postgres_changes", { event: "*", schema: "public", table: "today_intelligence" }, () => refresh())
+        .on("postgres_changes", { event: "*", schema: "public", table: "decisions" }, () => refresh())
+        .on("postgres_changes", { event: "*", schema: "public", table: "compound_tracker" }, () => refresh())
         .subscribe();
 
       channelRef.current = channel;
