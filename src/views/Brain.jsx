@@ -18,11 +18,17 @@ import {
   FolderInput,
   Zap,
   ZapOff,
+  GitBranch,
+  List,
 } from "lucide-react";
 import { useMemory } from "../hooks/useJarvis.js";
 import { jarvis } from "../lib/jarvis.js";
 import SearchHitRow from "../components/brain/SearchHitRow.jsx";
 import ObsidianImportDialog from "../components/brain/ObsidianImportDialog.jsx";
+import GraphView from "../components/brain/GraphView.jsx";
+import StaleNodes from "../components/brain/StaleNodes.jsx";
+import ConnectionSuggestions from "../components/brain/ConnectionSuggestions.jsx";
+import KnowledgeStats from "../components/brain/KnowledgeStats.jsx";
 
 const KIND_META = {
   person:  { label: "People",    Icon: User,        tone: "cyan" },
@@ -363,6 +369,19 @@ export default function Brain() {
   const [importOpen, setImportOpen] = useState(false);
   const [forgetting, setForgetting] = useState(false);
   const [embedStatus, setEmbedStatus] = useState(null);
+  const [activeTab, setActiveTab] = useState("explorer"); // "explorer" | "graph"
+
+  // Derive edges from node.related arrays
+  const edges = useMemo(() => {
+    const out = [];
+    for (const n of nodes) {
+      if (!Array.isArray(n.related)) continue;
+      for (const r of n.related) {
+        if (r.dst) out.push({ src_id: n.id, dst_id: r.dst, relation: r.relation ?? "related_to" });
+      }
+    }
+    return out;
+  }, [nodes]);
 
   // Group nodes by kind for the rail
   const grouped = useMemo(() => {
@@ -468,13 +487,14 @@ export default function Brain() {
 
   return (
     <div className="h-full w-full flex flex-col min-h-0">
+      {/* Header */}
       <div className="flex items-center justify-between px-6 py-4 border-b border-jarvis-border">
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-jarvis-cyan/10 border border-jarvis-cyan/20 grid place-items-center">
-            <BrainIcon size={16} className="text-jarvis-cyan" />
+          <div className="w-9 h-9 rounded-xl bg-jarvis-purple/10 border border-jarvis-purple/20 grid place-items-center">
+            <BrainIcon size={16} className="text-jarvis-purple" />
           </div>
           <div>
-            <div className="label text-jarvis-cyan">Brain</div>
+            <div className="label text-jarvis-purple">Brain</div>
             <div className="text-[12px] text-jarvis-body">Memory graph · {nodes.length} nodes</div>
           </div>
         </div>
@@ -510,7 +530,7 @@ export default function Brain() {
           <button
             type="button"
             onClick={() => setModalOpen(true)}
-            className="flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-semibold bg-jarvis-cyan/10 text-jarvis-cyan border border-jarvis-cyan/30 shadow-glow-cyan hover:bg-jarvis-cyan/20 transition"
+            className="flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-semibold bg-jarvis-purple/10 text-jarvis-purple border border-jarvis-purple/30 hover:bg-jarvis-purple/20 transition"
           >
             <Plus size={14} />
             Remember
@@ -518,6 +538,43 @@ export default function Brain() {
         </div>
       </div>
 
+      {/* Tab segmented control + KnowledgeStats */}
+      <div className="flex items-center gap-0 px-6 pt-3 pb-0 border-b border-jarvis-border">
+        <div className="flex items-center gap-1 bg-jarvis-panel/40 border border-jarvis-border rounded-xl p-0.5">
+          <button
+            type="button"
+            onClick={() => setActiveTab("explorer")}
+            className={[
+              "flex items-center gap-1.5 px-3 py-1.5 rounded-[10px] text-[11px] font-semibold transition",
+              activeTab === "explorer"
+                ? "bg-jarvis-purple/20 text-jarvis-purple border border-jarvis-purple/30"
+                : "text-jarvis-muted hover:text-jarvis-body",
+            ].join(" ")}
+          >
+            <List size={12} />
+            Explorer
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab("graph")}
+            className={[
+              "flex items-center gap-1.5 px-3 py-1.5 rounded-[10px] text-[11px] font-semibold transition",
+              activeTab === "graph"
+                ? "bg-jarvis-purple/20 text-jarvis-purple border border-jarvis-purple/30"
+                : "text-jarvis-muted hover:text-jarvis-body",
+            ].join(" ")}
+          >
+            <GitBranch size={12} />
+            Graph
+          </button>
+        </div>
+      </div>
+
+      {/* KnowledgeStats bar */}
+      <KnowledgeStats nodes={nodes} edges={edges} embedStatus={embedStatus} />
+
+      {/* Content area — Explorer tab */}
+      {activeTab === "explorer" && (
       <div className="flex-1 min-h-0 flex">
         {/* Left rail */}
         <div className="w-72 shrink-0 border-r border-jarvis-border bg-jarvis-panel/20 flex flex-col min-h-0">
@@ -594,6 +651,25 @@ export default function Brain() {
           </div>
         </div>
       </div>
+      )}
+
+      {/* Graph tab */}
+      {activeTab === "graph" && (
+        <div className="flex-1 min-h-0 overflow-y-auto p-6 flex flex-col gap-4">
+          <GraphView
+            nodes={nodes}
+            edges={edges}
+            onSelect={(id) => {
+              setSelectedId(id);
+              setActiveTab("explorer");
+            }}
+          />
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <StaleNodes nodes={nodes} onRefreshed={refresh} />
+            <ConnectionSuggestions nodes={nodes} edges={edges} onLinked={refresh} />
+          </div>
+        </div>
+      )}
 
       <RememberModal
         open={modalOpen}
