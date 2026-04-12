@@ -4,26 +4,26 @@
 
 :root {
   color-scheme: dark;
-  --jarvis-bg: #08080a;
-  --jarvis-surface: rgba(255,255,255,0.015);
-  --jarvis-surface-hover: rgba(255,255,255,0.03);
-  --jarvis-border: rgba(255,255,255,0.04);
-  --jarvis-border-hover: rgba(255,255,255,0.08);
+  --jarvis-bg: #0f1117;
+  --jarvis-surface: rgba(255,255,255,0.03);
+  --jarvis-surface-hover: rgba(255,255,255,0.05);
+  --jarvis-border: rgba(255,255,255,0.06);
+  --jarvis-border-hover: rgba(255,255,255,0.1);
   --jarvis-ink: rgba(255,255,255,0.85);
-  --jarvis-body: rgba(255,255,255,0.45);
-  --jarvis-muted: rgba(255,255,255,0.2);
+  --jarvis-body: rgba(255,255,255,0.55);
+  --jarvis-muted: rgba(255,255,255,0.3);
   --jarvis-ghost: rgba(255,255,255,0.08);
 }
 
 [data-theme="light"] {
   color-scheme: light;
-  --jarvis-bg: #f8f9fc;
-  --jarvis-surface: rgba(0,0,0,0.02);
-  --jarvis-surface-hover: rgba(0,0,0,0.04);
-  --jarvis-border: rgba(0,0,0,0.06);
-  --jarvis-border-hover: rgba(0,0,0,0.12);
+  --jarvis-bg: #eef0f4;
+  --jarvis-surface: rgba(255,255,255,0.7);
+  --jarvis-surface-hover: rgba(255,255,255,0.85);
+  --jarvis-border: rgba(0,0,0,0.08);
+  --jarvis-border-hover: rgba(0,0,0,0.14);
   --jarvis-ink: rgba(0,0,0,0.85);
-  --jarvis-body: rgba(0,0,0,0.55);
+  --jarvis-body: rgba(0,0,0,0.6);
   --jarvis-muted: rgba(0,0,0,0.25);
   --jarvis-ghost: rgba(0,0,0,0.06);
 }
@@ -33,7 +33,7 @@ html, body, #root {
 }
 
 body {
-  background: #08080a;
+  background: #0f1117;
   background-image: radial-gradient(ellipse at 30% 0%, rgba(0,224,208,0.03) 0%, transparent 50%),
                     radial-gradient(ellipse at 70% 100%, rgba(167,139,250,0.02) 0%, transparent 50%);
   background-attachment: fixed;
@@ -43,7 +43,7 @@ body {
 }
 
 [data-theme="light"] body {
-  background: #f8f9fc;
+  background: #eef0f4;
   background-image: radial-gradient(ellipse at 30% 0%, rgba(0,224,208,0.05) 0%, transparent 50%),
                     radial-gradient(ellipse at 70% 100%, rgba(167,139,250,0.04) 0%, transparent 50%);
   color: rgba(0,0,0,0.85);
@@ -73,7 +73,7 @@ body {
 }
 
 [data-theme="light"] .glass {
-  background: rgba(255,255,255,0.6);
+  background: rgba(255,255,255,0.75);
   border-color: rgba(0,0,0,0.06);
   box-shadow: 0 1px 3px rgba(0,0,0,0.04);
 }
