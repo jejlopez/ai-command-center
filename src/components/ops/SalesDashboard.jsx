@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { motion } from "framer-motion";
 import { stagger } from "../../lib/motion.js";
 import { ProposalList } from "./ProposalList.jsx";
@@ -6,9 +7,10 @@ import { WinLossJournal } from "./WinLossJournal.jsx";
 import { RevenueForecast } from "./RevenueForecast.jsx";
 import { CommunicationLog } from "./CommunicationLog.jsx";
 import { DocumentVault } from "./DocumentVault.jsx";
+import { DealRoom } from "./DealRoom.jsx";
 
 // Pipeline strip — compact horizontal funnel
-function PipelineStrip({ stats }) {
+function PipelineStrip({ stats, deals = [], onOpenDeal }) {
   if (!stats) return null;
   const stages = [
     { key: "prospect",    label: "Prospect",    color: "text-jarvis-muted"   },
@@ -23,14 +25,31 @@ function PipelineStrip({ stats }) {
         {stages.map((s, i) => {
           const count = stats[s.key + "_count"] ?? 0;
           const val   = stats[s.key + "_value"] ?? 0;
+          const stageDeals = deals.filter(d => d.stage === s.key);
           return (
             <div key={s.key} className="flex items-center gap-3 shrink-0">
               <div className="flex flex-col">
                 <span className="label">{s.label}</span>
                 <div className="flex items-baseline gap-1 mt-1">
-                  <span className={`text-lg font-bold tabular-nums ${s.color}`}>{count}</span>
+                  <button
+                    className={`text-lg font-bold tabular-nums ${s.color} hover:underline`}
+                    onClick={() => stageDeals[0] && onOpenDeal?.(stageDeals[0])}
+                    title={stageDeals.length > 0 ? `Open first ${s.label} deal` : undefined}
+                  >
+                    {count}
+                  </button>
                   <span className="text-[10px] text-jarvis-muted">${(val / 1000).toFixed(0)}k</span>
                 </div>
+                {stageDeals.length > 0 && (
+                  <div className="flex flex-col gap-0.5 mt-1">
+                    {stageDeals.slice(0, 2).map(d => (
+                      <button key={d.id} onClick={() => onOpenDeal?.(d)}
+                        className="text-[9px] text-jarvis-muted hover:text-jarvis-ink text-left truncate max-w-[80px] transition">
+                        {d.company}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
               {i < stages.length - 1 && (
                 <div className="text-jarvis-ghost/40 text-lg shrink-0">›</div>
@@ -50,7 +69,7 @@ function PipelineStrip({ stats }) {
 }
 
 // Follow-up queue — compact list
-function FollowUpStrip({ followUps = [] }) {
+function FollowUpStrip({ followUps = [], deals = [], onOpenDeal }) {
   if (followUps.length === 0) {
     return (
       <div className="glass p-3">
@@ -65,8 +84,13 @@ function FollowUpStrip({ followUps = [] }) {
       <div className="flex flex-col gap-1">
         {followUps.slice(0, 5).map((f, i) => {
           const isOverdue = f.due_date && new Date(f.due_date) < new Date();
+          const linkedDeal = f.deal_id ? deals.find(d => d.id === f.deal_id) : null;
           return (
-            <div key={f.id ?? i} className="flex items-center gap-2 py-1 border-b border-jarvis-border/50 last:border-0">
+            <div
+              key={f.id ?? i}
+              className={`flex items-center gap-2 py-1 border-b border-jarvis-border/50 last:border-0 ${linkedDeal ? "cursor-pointer hover:bg-jarvis-ghost/30 rounded px-1 -mx-1 transition" : ""}`}
+              onClick={() => linkedDeal && onOpenDeal?.(linkedDeal)}
+            >
               <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${isOverdue ? "bg-jarvis-danger" : "bg-blue-400"}`} />
               <span className="text-xs text-jarvis-ink flex-1 truncate">{f.contact_name || f.subject || "Follow-up"}</span>
               {f.due_date && (
@@ -84,6 +108,7 @@ function FollowUpStrip({ followUps = [] }) {
 
 export function SalesDashboard({ ops, onRefresh }) {
   const { deals = [], followUps = [], proposals = [], comms = [], docs = [], intelligence } = ops;
+  const [openDeal, setOpenDeal] = useState(null);
 
   return (
     <motion.div
@@ -94,12 +119,12 @@ export function SalesDashboard({ ops, onRefresh }) {
     >
       {/* Pipeline strip — full width */}
       <motion.div variants={stagger.item}>
-        <PipelineStrip stats={intelligence?.pipeline_stats} />
+        <PipelineStrip stats={intelligence?.pipeline_stats} deals={deals} onOpenDeal={setOpenDeal} />
       </motion.div>
 
       {/* Row 1: Follow-ups + Proposals */}
       <motion.div variants={stagger.item} className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <FollowUpStrip followUps={followUps} />
+        <FollowUpStrip followUps={followUps} deals={deals} onOpenDeal={setOpenDeal} />
         <ProposalList proposals={proposals} onRefresh={onRefresh} />
       </motion.div>
 
@@ -119,6 +144,10 @@ export function SalesDashboard({ ops, onRefresh }) {
       <motion.div variants={stagger.item}>
         <QuoteCalculator onRefresh={onRefresh} />
       </motion.div>
+
+      {openDeal && (
+        <DealRoom dealId={openDeal.id} deal={openDeal} onClose={() => setOpenDeal(null)} />
+      )}
     </motion.div>
   );
 }

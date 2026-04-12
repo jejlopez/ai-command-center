@@ -15,7 +15,6 @@ const EMPTY = {
   watchlist:    [],
   tradeJournal: [],
   projects:     [],
-  ships:        [],
   tasks:        [],
   calendarEvents: [],
   intelligence: null,
@@ -46,7 +45,6 @@ export function useOpsSupa() {
         { data: watchlist },
         { data: tradeJournal },
         { data: projects },
-        { data: ships },
         { data: workIntel },
       ] = await Promise.all([
         supabase.from("deals").select("*").order("updated_at", { ascending: false }).limit(50),
@@ -58,7 +56,6 @@ export function useOpsSupa() {
         supabase.from("watchlist").select("*").order("created_at", { ascending: false }).limit(20),
         supabase.from("trade_journal").select("*").eq("date", today).order("created_at", { ascending: false }).limit(10),
         supabase.from("projects").select("*").order("updated_at", { ascending: false }).limit(20),
-        supabase.from("ship_log").select("*").order("shipped_at", { ascending: false }).limit(30),
         supabase.from("work_intelligence").select("*").eq("date", today).maybeSingle(),
       ]);
 
@@ -96,7 +93,6 @@ export function useOpsSupa() {
         watchlist:      watchlist    ?? [],
         tradeJournal:   tradeJournal ?? [],
         projects:       projects     ?? [],
-        ships:          ships        ?? [],
         tasks,
         calendarEvents,
         intelligence:   workIntel,
@@ -114,7 +110,7 @@ export function useOpsSupa() {
     if (!supabase) return;
 
     // Subscribe to all relevant tables
-    const tables = ["deals","follow_ups","proposals","communications","documents","positions","watchlist","trade_journal","projects","ship_log","work_intelligence"];
+    const tables = ["deals","follow_ups","proposals","communications","documents","positions","watchlist","trade_journal","projects","work_intelligence"];
     const channels = tables.map((table, i) =>
       supabase
         .channel(`ops-${table}-${i}`)
@@ -143,7 +139,6 @@ export function useOpsSupa() {
     }, 0),
   };
   const buildCtx = {
-    shipsToday: data.ships.filter(s => new Date(s.shipped_at).toDateString() === today).length,
     tasksPending: data.tasks.filter(t => !t.done).length,
   };
 

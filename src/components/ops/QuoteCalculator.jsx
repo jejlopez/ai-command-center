@@ -11,6 +11,7 @@ export function QuoteCalculator({ onRefresh }) {
     miles: "",
     fuel_surcharge_pct: "15",
     accessorials: [],
+    monthly_shipments: "",
   });
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -19,6 +20,9 @@ export function QuoteCalculator({ onRefresh }) {
   const fuelCharge = linehaul * ((parseFloat(form.fuel_surcharge_pct) || 0) / 100);
   const accessTotal = form.accessorials.reduce((s, a) => s + (parseFloat(a.amount) || 0), 0);
   const total = linehaul + fuelCharge + accessTotal;
+  const monthlyShipments = parseFloat(form.monthly_shipments) || 0;
+  const monthly_cost = total * monthlyShipments;
+  const annual_projection = monthly_cost * 12;
 
   function addAccessorial() {
     setForm(v => ({ ...v, accessorials: [...v.accessorials, { name: "", amount: "" }] }));
@@ -42,7 +46,10 @@ export function QuoteCalculator({ onRefresh }) {
       miles: parseFloat(form.miles) || 0,
       fuel_surcharge_pct: parseFloat(form.fuel_surcharge_pct) || 0,
       accessorials: form.accessorials,
-      total,
+      total_per_shipment: total,
+      monthly_shipments: monthlyShipments,
+      monthly_cost,
+      annual_projection,
     };
     await supabase.from("proposals").insert({ name: form.name.trim(), status: "draft", pricing });
     setSaving(false);
@@ -151,9 +158,35 @@ export function QuoteCalculator({ onRefresh }) {
           </div>
         ))}
         <div className="border-t border-jarvis-border/50 pt-1 flex justify-between">
-          <span className="text-xs font-semibold text-jarvis-ink">Total</span>
+          <span className="text-xs font-semibold text-jarvis-ink">Total / Shipment</span>
           <span className="text-sm font-bold text-blue-400">{fmtUsd(total)}</span>
         </div>
+      </div>
+
+      {/* Monthly Projection */}
+      <div>
+        <div className="label mb-1">Monthly Projection</div>
+        <div className="flex items-center gap-2 mb-2">
+          <input
+            type="number" min="0"
+            className="w-full bg-white/[0.02] border border-jarvis-border rounded-lg px-2 py-1.5 text-xs text-jarvis-ink placeholder-jarvis-ghost outline-none focus:border-blue-400/50 transition-colors"
+            placeholder="Est. monthly shipments"
+            value={form.monthly_shipments}
+            onChange={e => setForm(v => ({ ...v, monthly_shipments: e.target.value }))}
+          />
+        </div>
+        {monthlyShipments > 0 && (
+          <div className="bg-white/[0.02] rounded-lg p-3 border border-jarvis-border/50 space-y-1">
+            <div className="flex justify-between text-[11px]">
+              <span className="text-jarvis-muted">Monthly Cost</span>
+              <span className="text-jarvis-body tabular-nums">{fmtUsd(monthly_cost)}</span>
+            </div>
+            <div className="flex justify-between text-[11px]">
+              <span className="text-jarvis-muted">Annual Projection</span>
+              <span className="text-blue-400 font-semibold tabular-nums">{fmtUsd(annual_projection)}</span>
+            </div>
+          </div>
+        )}
       </div>
 
       <button
