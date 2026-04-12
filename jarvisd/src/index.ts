@@ -38,6 +38,7 @@ import { browserAgent } from "./skills/browser_agent.js";
 import { coderAgent } from "./skills/coder_agent.js";
 import { reviewerAgent } from "./skills/reviewer_agent.js";
 import { emailTriage } from "./skills/email_triage.js";
+import { emailDrafter } from "./skills/email_drafter.js";
 import { learningRoutes } from "./routes/learning.js";
 import { orchestrateRoutes } from "./routes/orchestrate.js";
 import { emailRoutes } from "./routes/email.js";
@@ -121,6 +122,7 @@ async function main() {
   registry.register(coderAgent);
   registry.register(reviewerAgent);
   registry.register(emailTriage);
+  registry.register(emailDrafter);
 
   // Wire the event bus after skills are registered so subscriptions pick up
   // every manifest with an event trigger.
