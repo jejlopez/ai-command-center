@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Loader2, RefreshCcw, HouseHeart } from "lucide-react";
+import { motion } from "framer-motion";
+import { stagger } from "../lib/motion.js";
 import { jarvis } from "../lib/jarvis.js";
 import { useHomeSupa } from "../hooks/useHomeSupa.js";
 import { HomeHero } from "../components/home/HomeHero.jsx";
@@ -105,7 +107,7 @@ export default function HomeLife() {
           type="button"
           onClick={refresh}
           disabled={loading}
-          className="flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-semibold bg-jarvis-panel/40 text-jarvis-body border border-jarvis-border hover:text-jarvis-ink hover:bg-white/5 transition disabled:opacity-40"
+          className="flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-semibold bg-jarvis-surface/40 text-jarvis-body border border-jarvis-border hover:text-jarvis-ink hover:bg-white/5 transition disabled:opacity-40"
         >
           {loading ? <Loader2 size={13} className="animate-spin" /> : <RefreshCcw size={13} />}
           Refresh
@@ -114,15 +116,22 @@ export default function HomeLife() {
 
       {/* Scrollable content */}
       <div className="flex-1 min-h-0 overflow-y-auto pb-20">
-        <div className="space-y-6 p-6 max-w-6xl mx-auto">
-          <HomeHero
-            taskCount={overdueTaskCount}
-            overdueExpenses={overdueExpenses}
-            dueThisWeek={dueThisWeekCount}
-            nextMaintenance={nextMaintenance}
-          />
+        <motion.div
+          className="space-y-6 p-6 max-w-6xl mx-auto"
+          variants={stagger.container}
+          initial="hidden"
+          animate="show"
+        >
+          <motion.div variants={stagger.item}>
+            <HomeHero
+              taskCount={overdueTaskCount}
+              overdueExpenses={overdueExpenses}
+              dueThisWeek={dueThisWeekCount}
+              nextMaintenance={nextMaintenance}
+            />
+          </motion.div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <motion.div variants={stagger.item} className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <TaskQueue
               nodes={nodes}
               loading={tasksLoading}
@@ -132,14 +141,16 @@ export default function HomeLife() {
               expenses={expenses}
               loading={expensesLoading}
             />
-          </div>
+          </motion.div>
 
-          <MaintenanceCalendar
-            nodes={nodes}
-            loading={tasksLoading}
-            refresh={refreshTasks}
-          />
-        </div>
+          <motion.div variants={stagger.item}>
+            <MaintenanceCalendar
+              nodes={nodes}
+              loading={tasksLoading}
+              refresh={refreshTasks}
+            />
+          </motion.div>
+        </motion.div>
       </div>
 
       {/* Sticky bottom bar */}

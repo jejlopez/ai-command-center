@@ -1,3 +1,5 @@
+import { motion } from "framer-motion";
+import { stagger } from "../lib/motion.js";
 import { useHealthSupa } from "../hooks/useHealthSupa.js";
 import { EnergyHero } from "../components/health/EnergyHero.jsx";
 import { HabitTracker } from "../components/health/HabitTracker.jsx";
@@ -12,19 +14,26 @@ export default function Health() {
   return (
     <div className="h-full w-full flex flex-col min-h-0">
       <div className="flex-1 min-h-0 overflow-y-auto">
-        <div className="space-y-6 p-6 max-w-6xl mx-auto">
-          <EnergyHero energyHero={intelligence?.energy_hero} />
+        <motion.div
+          className="space-y-6 p-6 max-w-6xl mx-auto"
+          variants={stagger.container}
+          initial="hidden"
+          animate="show"
+        >
+          <motion.div variants={stagger.item}>
+            <EnergyHero energyHero={intelligence?.energy_hero} />
+          </motion.div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <motion.div variants={stagger.item} className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <HabitTracker habitTracker={intelligence?.habit_tracker} onRefresh={recompute} />
             <RiskAlerts riskAlerts={intelligence?.risk_alerts} />
-          </div>
+          </motion.div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <motion.div variants={stagger.item} className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <WeeklyTrends weeklyTrends={intelligence?.weekly_trends} />
             <RecoveryScore recoveryScore={intelligence?.recovery_score} />
-          </div>
-        </div>
+          </motion.div>
+        </motion.div>
       </div>
 
       <QuickLog onSaved={recompute} />
