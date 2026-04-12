@@ -1,10 +1,11 @@
 import { useState } from "react";
-import { KeyRound, Wallet, ShieldCheck, Lock, Info, Plug } from "lucide-react";
+import { KeyRound, Wallet, ShieldCheck, Lock, Info, Plug, ScrollText } from "lucide-react";
 import { ProvidersPanel } from "../components/settings/ProvidersPanel.jsx";
 import { ConnectorsPanel } from "../components/settings/ConnectorsPanel.jsx";
 import { BudgetPanel } from "../components/settings/BudgetPanel.jsx";
 import { PrivacyPanel } from "../components/settings/PrivacyPanel.jsx";
 import { VaultPanel } from "../components/settings/VaultPanel.jsx";
+import { AuditPanel } from "../components/settings/AuditPanel.jsx";
 import { AboutPanel } from "../components/settings/AboutPanel.jsx";
 
 const TABS = [
@@ -13,6 +14,7 @@ const TABS = [
   { id: "budget",     label: "Budget",     Icon: Wallet,      Component: BudgetPanel },
   { id: "privacy",    label: "Privacy",    Icon: ShieldCheck, Component: PrivacyPanel },
   { id: "vault",      label: "Vault",      Icon: Lock,        Component: VaultPanel },
+  { id: "audit",      label: "Audit Log",  Icon: ScrollText,  Component: AuditPanel },
   { id: "about",      label: "About",      Icon: Info,        Component: AboutPanel },
 ];
 

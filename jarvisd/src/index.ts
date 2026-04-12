@@ -31,7 +31,15 @@ import { weeklyReview } from "./skills/weekly_review.js";
 import { draftReply } from "./skills/draft_reply.js";
 import { followUpSuggest } from "./skills/follow_up_suggest.js";
 import { researchBrief } from "./skills/research_brief.js";
+import { codexAgent } from "./skills/codex_agent.js";
+import { briefGeneratorSkill } from "./skills/brief_generator.js";
+import { inboxSummarySkill } from "./skills/inbox_summary.js";
 import { vault } from "./lib/vault.js";
+import { policyEngine } from "./lib/policy.js";
+import { policyRoutes } from "./routes/policy.js";
+import { panicRoutes } from "./routes/panic.js";
+import { auditRoutes } from "./routes/audit.js";
+import { registerRateLimiter, registerRateLimitResetRoute } from "./lib/rate_limit.js";
 import type { HealthResponse } from "../../shared/types.js";
 
 const VERSION = "0.0.1";
@@ -39,6 +47,7 @@ const startedAt = Date.now();
 
 async function main() {
   runMigrations(); // idempotent; also ran at db module load
+  await policyEngine.init();
   audit({ actor: "system", action: "daemon.start", metadata: { version: VERSION, home: JARVIS_HOME } });
 
   const app = Fastify({ logger: { transport: { target: "pino-pretty" } } as any });
@@ -47,6 +56,7 @@ async function main() {
     origin: [/^http:\/\/localhost:\d+$/, /^http:\/\/127\.0\.0\.1:\d+$/]
   });
 
+  registerRateLimiter(app);
   await registerWebSocket(app);
 
   app.get("/health", async (): Promise<HealthResponse> => ({
@@ -74,6 +84,14 @@ async function main() {
   await skillsRoutes(app);
   await costRoutes(app);
   await feedbackRoutes(app);
+  await policyRoutes(app);
+  await panicRoutes(app);
+  await auditRoutes(app);
+
+  // Test-only helpers (safe — only exposed when tests set LOG_LEVEL=error).
+  if (process.env.LOG_LEVEL === "error") {
+    registerRateLimitResetRoute(app);
+  }
 
   // Register built-in skills before the scheduler starts.
   registry.register(dailyRecap);
@@ -86,6 +104,9 @@ async function main() {
   registry.register(draftReply);
   registry.register(followUpSuggest);
   registry.register(researchBrief);
+  registry.register(codexAgent);
+  registry.register(briefGeneratorSkill);
+  registry.register(inboxSummarySkill);
 
   // Wire the event bus after skills are registered so subscriptions pick up
   // every manifest with an event trigger.

@@ -1,4 +1,4 @@
-// Morning Brief generator — the first real skill.
+// Morning Brief generator — registered as a proper Skill.
 // Pulls structured items from the memory graph, then asks the router for a
 // short narrative. Falls back to a deterministic narrative if the model call
 // can't happen (vault locked, no key, budget exceeded, etc.).
@@ -13,6 +13,8 @@ import { recordCost, spentTodayUsd, dailyBudgetUsd } from "../lib/cost.js";
 import { vault } from "../lib/vault.js";
 import { episodic } from "../lib/episodic.js";
 import { bus } from "../lib/events.js";
+import type { Skill } from "../lib/skills.js";
+import type { SkillManifest } from "../../../shared/types.js";
 import { gcalStatus, listEvents as gcalListEvents } from "../lib/providers/gcal.js";
 import {
   calendarStatus as appleCalendarStatus,
@@ -284,3 +286,31 @@ export function latestBrief(): MorningBrief | null {
   if (!row) return null;
   return JSON.parse(row.body) as MorningBrief;
 }
+
+// Skill interface wrapper — so brief_generator appears in the registry.
+const briefManifest: SkillManifest = {
+  name: "brief_generator",
+  title: "Morning Brief",
+  description: "Generate the morning brief: calendar, mail, tasks, budget, and a narrative summary.",
+  version: "0.2.0",
+  scopes: ["memory.read", "llm.cloud", "gcal.read", "gmail.read"],
+  routerHint: "summary",
+  triggers: [
+    { kind: "cron", expr: "0 7 * * *" },  // 7am daily
+    { kind: "manual" },
+  ],
+};
+
+export const briefGeneratorSkill: Skill = {
+  manifest: briefManifest,
+  async run(_ctx) {
+    const brief = await generateBrief();
+    return {
+      text: brief.todayBriefing,
+      critical: brief.criticalItems.length,
+      followUps: brief.followUps.length,
+      schedule: brief.schedule.length,
+      waitingOn: brief.waitingOn.length,
+    };
+  },
+};

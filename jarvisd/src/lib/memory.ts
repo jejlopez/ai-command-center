@@ -5,6 +5,8 @@ import { db, JARVIS_HOME, vectorSupport, VEC_DIMS } from "../db/db.js";
 import { audit } from "./audit.js";
 import { bus } from "./events.js";
 import { embed, getEmbedStatus, type EmbedStatus } from "./embeddings.js";
+import { tagText, type SensitivityLevel } from "./tagger.js";
+import { assertPathWithin } from "./sanitize.js";
 
 const VAULT_DIR = join(JARVIS_HOME, "vault");
 mkdirSync(VAULT_DIR, { recursive: true });
@@ -18,6 +20,7 @@ export interface MemoryNode {
   body: string | null;
   filePath: string | null;
   trust: number;
+  sensitivity: SensitivityLevel;
   createdAt: string;
   updatedAt: string;
 }
@@ -91,6 +94,7 @@ function toNode(row: any): MemoryNode {
     body: row.body,
     filePath: row.file_path,
     trust: decayTrust(row.trust, row.updated_at),
+    sensitivity: (row.sensitivity as SensitivityLevel) ?? "none",
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -102,7 +106,7 @@ function estimateTokens(s: string): number {
 }
 
 function writeVaultFile(relPath: string, kind: NodeKind, label: string, body: string, trust: number): void {
-  const full = join(VAULT_DIR, relPath);
+  const full = assertPathWithin(VAULT_DIR, relPath);
   mkdirSync(dirname(full), { recursive: true });
   const frontmatter = [
     "---",
@@ -118,9 +122,10 @@ function writeVaultFile(relPath: string, kind: NodeKind, label: string, body: st
 
 function deleteVaultFile(relPath: string): void {
   try {
-    unlinkSync(join(VAULT_DIR, relPath));
+    const full = assertPathWithin(VAULT_DIR, relPath);
+    unlinkSync(full);
   } catch {
-    // tolerate missing file
+    // tolerate missing file or path traversal attempt
   }
 }
 
@@ -198,10 +203,14 @@ export const memory = {
     const now = new Date().toISOString();
     const trust = input.trust ?? DEFAULT_TRUST;
 
+    // Shield Protocol: auto-tag sensitivity from content.
+    const tag = tagText(`${input.label} ${input.body ?? ""}`);
+    const sensitivity = tag.level;
+
     db.prepare(
-      `INSERT INTO memory_nodes(id, kind, label, body, file_path, trust, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-    ).run(id, input.kind, input.label, input.body ?? null, input.file ?? null, trust, now, now);
+      `INSERT INTO memory_nodes(id, kind, label, body, file_path, trust, sensitivity, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(id, input.kind, input.label, input.body ?? null, input.file ?? null, trust, sensitivity, now, now);
 
     if (input.file && input.body) {
       writeVaultFile(input.file, input.kind, input.label, input.body, trust);

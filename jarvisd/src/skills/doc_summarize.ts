@@ -26,7 +26,7 @@ export const docSummarize: Skill = {
   async run(ctx) {
     const raw = ctx.inputs["text"];
     if (typeof raw !== "string" || raw.trim().length === 0) {
-      throw new Error("text input is required");
+      return { error: "text input is required", text: null };
     }
     const text = raw;
 

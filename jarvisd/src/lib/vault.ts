@@ -9,6 +9,40 @@ const VAULT_PATH = join(JARVIS_HOME, "vault.enc");
 const SERVICE = "jarvis-os";
 const ACCOUNT = "master-key";
 
+// ---------------------------------------------------------------------------
+// Pluggable auth provider interface (Gate Protocol)
+// ---------------------------------------------------------------------------
+// Ships with KeychainAuthProvider. Future providers: YubiKey (WebAuthn),
+// biometric, or passphrase-based. Swap via setAuthProvider().
+
+export interface VaultAuthProvider {
+  name: string;
+  /** Retrieve or create the master key bytes. */
+  getMasterKey(): Promise<Buffer>;
+}
+
+class KeychainAuthProvider implements VaultAuthProvider {
+  name = "keychain";
+  async getMasterKey(): Promise<Buffer> {
+    let hex = await keytar.getPassword(SERVICE, ACCOUNT);
+    if (!hex) {
+      const newKey = randomBytes(32).toString("hex");
+      await keytar.setPassword(SERVICE, ACCOUNT, newKey);
+      hex = newKey;
+      audit({ actor: "system", action: "vault.init", reason: "generated new master key in OS keychain" });
+    }
+    return Buffer.from(hex, "hex");
+  }
+}
+
+let authProvider: VaultAuthProvider = new KeychainAuthProvider();
+
+/** Swap the auth provider (e.g., for YubiKey). Call before vault.unlock(). */
+export function setAuthProvider(provider: VaultAuthProvider): void {
+  authProvider = provider;
+  audit({ actor: "system", action: "vault.auth_provider.set", metadata: { provider: provider.name } });
+}
+
 // Vault file format (on disk):
 // { v: 1, salt: base64, iv: base64, tag: base64, ct: base64 }
 interface VaultFile {
@@ -58,14 +92,7 @@ function decrypt(file: VaultFile, key: Buffer): VaultData {
 }
 
 async function getOrCreateMasterKey(): Promise<Buffer> {
-  let hex = await keytar.getPassword(SERVICE, ACCOUNT);
-  if (!hex) {
-    const newKey = randomBytes(32).toString("hex");
-    await keytar.setPassword(SERVICE, ACCOUNT, newKey);
-    hex = newKey;
-    audit({ actor: "system", action: "vault.init", reason: "generated new master key in OS keychain" });
-  }
-  return Buffer.from(hex, "hex");
+  return authProvider.getMasterKey();
 }
 
 function persist(): void {

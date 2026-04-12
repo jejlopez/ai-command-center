@@ -47,7 +47,10 @@ export function VaultPanel() {
   };
   const panic = async () => {
     setConfirmPanic(false);
-    await lock();
+    setBusy(true); setError(null);
+    try { await jarvis.panic("Manual panic from Settings"); setRevealed(new Set()); await refresh(); }
+    catch (e) { setError(String(e.message ?? e)); }
+    finally { setBusy(false); }
   };
 
   const toggleReveal = (k) => {

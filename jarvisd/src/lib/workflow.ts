@@ -253,31 +253,34 @@ export function getRun(id: string): SkillRun | null {
 // Cron parser + scheduler
 // ---------------------------------------------------------------------------
 
-// Parsed cron for the subset we support.
+// Parsed cron — supports: M H * * *, M H * * DOW, M * * * *
 interface ParsedCron {
   minute: number | "*";
   hour: number | "*";
+  dow: number | "*";   // 0=Sunday, 6=Saturday
   expr: string;
 }
 
 function parseCron(expr: string): ParsedCron | null {
   const parts = expr.trim().split(/\s+/);
   if (parts.length !== 5) return null;
-  const [m, h, dom, mon, dow] = parts;
-  // Only support wildcard day/month/dow.
-  if (dom !== "*" || mon !== "*" || dow !== "*") return null;
+  const [m, h, dom, mon, dowStr] = parts;
+  // Only support wildcard day-of-month and month.
+  if (dom !== "*" || mon !== "*") return null;
   const minute = m === "*" ? "*" : Number(m);
   const hour = h === "*" ? "*" : Number(h);
+  const dow = dowStr === "*" ? "*" : Number(dowStr);
   if (minute !== "*" && (!Number.isInteger(minute) || minute < 0 || minute > 59)) return null;
   if (hour !== "*" && (!Number.isInteger(hour) || hour < 0 || hour > 23)) return null;
-  // We only support "M H * * *" and "M * * * *".
+  if (dow !== "*" && (!Number.isInteger(dow) || dow < 0 || dow > 6)) return null;
   if (minute === "*") return null;
-  return { minute, hour, expr };
+  return { minute, hour, dow, expr };
 }
 
 function cronMatches(cron: ParsedCron, date: Date): boolean {
   if (cron.minute !== "*" && date.getMinutes() !== cron.minute) return false;
   if (cron.hour !== "*" && date.getHours() !== cron.hour) return false;
+  if (cron.dow !== "*" && date.getDay() !== cron.dow) return false;
   return true;
 }
 
@@ -285,8 +288,8 @@ function nextCronRun(cron: ParsedCron, from: Date = new Date()): Date {
   const next = new Date(from.getTime());
   next.setSeconds(0, 0);
   next.setMinutes(next.getMinutes() + 1);
-  // Walk up to 24*60 minutes.
-  for (let i = 0; i < 24 * 60 + 1; i++) {
+  // Walk up to 7 days (10080 minutes) to handle day-of-week.
+  for (let i = 0; i < 7 * 24 * 60 + 1; i++) {
     if (cronMatches(cron, next)) return next;
     next.setMinutes(next.getMinutes() + 1);
   }

@@ -18,9 +18,12 @@ import { memory } from "./memory.js";
 import * as apple from "./providers/apple.js";
 import { route, estimateCostUsd, type TaskKind, type Privacy } from "./router.js";
 import { callAnthropic } from "./providers/anthropic.js";
+import { callOpenAI } from "./providers/openai.js";
 import { callOllama } from "./providers/ollama.js";
 import { recordCost } from "./cost.js";
 import { vault } from "./vault.js";
+import { tagText, sensitivityToPrivacy } from "./tagger.js";
+import { policyEngine } from "./policy.js";
 import type { SkillManifest } from "../../../shared/types.js";
 
 export interface CallModelInput {
@@ -115,7 +118,28 @@ export async function callModel(
   opts: CallModelInput,
   meta: { skill?: string; runId?: string } = {}
 ): Promise<CallModelOutput> {
-  let decision = route({ kind: opts.kind, privacy: opts.privacy });
+  // --- Shield Protocol: tag prompt for PII/secrets, escalate privacy ---
+  const tag = tagText(opts.prompt + (opts.system ?? ""), opts.privacy as any);
+  const effectivePrivacy = sensitivityToPrivacy(tag.level, opts.privacy) as Privacy;
+
+  let decision = route({ kind: opts.kind, privacy: effectivePrivacy });
+
+  // --- Shield Protocol: policy engine check before routing ---
+  const policyCheck = await policyEngine.beforeRoute({
+    kind: opts.kind,
+    privacy: effectivePrivacy,
+    provider: decision.provider,
+    model: decision.model,
+    skill: meta.skill,
+  });
+  if (policyCheck.effect === "deny") {
+    // Policy denied this provider — force local.
+    decision = {
+      provider: "ollama",
+      model: "jarvis:latest",
+      reason: `Policy denied: ${policyCheck.reason} — forced local`,
+    };
+  }
 
   // Fallback to local if cloud key missing.
   if (decision.provider !== "ollama" && !cloudProviderAvailable(decision.provider)) {
@@ -150,8 +174,18 @@ export async function callModel(
     text = out.text;
     tokensIn = out.tokensIn;
     tokensOut = out.tokensOut;
+  } else if (decision.provider === "openai") {
+    const out = await callOpenAI({
+      model: decision.model,
+      prompt: opts.prompt,
+      system: opts.system,
+      maxTokens: opts.maxTokens,
+    });
+    text = out.text;
+    tokensIn = out.tokensIn;
+    tokensOut = out.tokensOut;
   } else {
-    // openai / google not implemented in batch 1 — degrade to local.
+    // google not implemented yet — degrade to local.
     const out = await callOllama({
       model: "jarvis:latest",
       prompt: opts.prompt,

@@ -29,6 +29,7 @@ const BRIDGED_EVENTS: Array<{ bus: string; ws: WsMessageType }> = [
   { bus: "approval.new",       ws: "approval.new" },
   { bus: "approval.decided",   ws: "approval.decided" },
   { bus: "memory.remembered",  ws: "memory.remembered" },
+  { bus: "panic",              ws: "panic" as any },
 ];
 
 export async function registerWebSocket(app: FastifyInstance): Promise<void> {

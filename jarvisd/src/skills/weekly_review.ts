@@ -1,7 +1,4 @@
 // weekly_review — Sunday 6pm retrospective of the past 7 days.
-//
-// The cron subset in the workflow engine doesn't support day-of-week yet,
-// so the trigger fires daily at 18:00 and the skill self-gates on Sunday.
 
 import { episodic } from "../lib/episodic.js";
 import type { Skill } from "../lib/skills.js";
@@ -12,11 +9,11 @@ const manifest: SkillManifest = {
   title: "Weekly review",
   description:
     "A 5-sentence Sunday review of the past week, drawn from episodic memory.",
-  version: "0.1.0",
+  version: "0.2.0",
   scopes: ["memory.read", "llm.cloud"],
   routerHint: "summary",
   triggers: [
-    { kind: "cron", expr: "0 18 * * *" },
+    { kind: "cron", expr: "0 18 * * 0" },  // Sunday 6pm
     { kind: "manual" },
   ],
 };
@@ -25,12 +22,6 @@ export const weeklyReview: Skill = {
   manifest,
   async run(ctx) {
     const now = new Date();
-    // Only actually run on Sunday for cron invocations. Manual runs still
-    // proceed so the user can preview any day.
-    if (ctx.triggeredBy === "cron" && now.getDay() !== 0) {
-      return { skipped: true, reason: "not sunday" };
-    }
-
     const since = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
     const snaps = episodic.list({ since, limit: 500 });
 

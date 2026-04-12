@@ -8,6 +8,9 @@ import { callAnthropic } from "../lib/providers/anthropic.js";
 import { callOllama } from "../lib/providers/ollama.js";
 import { assertBudgetAvailable, recordCost, spentTodayUsd, dailyBudgetUsd } from "../lib/cost.js";
 import { audit } from "../lib/audit.js";
+import { tagText, sensitivityToPrivacy } from "../lib/tagger.js";
+import { policyEngine } from "../lib/policy.js";
+import { sanitizeForContext } from "../lib/sanitize.js";
 
 const AskBody = z.object({
   prompt: z.string().min(1),
@@ -48,11 +51,42 @@ export async function askRoutes(app: FastifyInstance): Promise<void> {
       return { error: err.message };
     }
 
-    const { prompt, context, privacy, kind } = parsed.data;
-    const decision = route({
+    const { prompt: rawPrompt, context: rawContext, privacy, kind } = parsed.data;
+
+    // --- Red Team: sanitize external input for prompt injection ---
+    const { clean: prompt, stripped } = sanitizeForContext(rawPrompt);
+    const context = rawContext ? sanitizeForContext(rawContext).clean : undefined;
+    if (stripped.length > 0) {
+      audit({
+        actor: "user",
+        action: "prompt_injection.filtered",
+        metadata: { stripped, originalLength: rawPrompt.length },
+      });
+    }
+
+    // --- Shield Protocol: tag prompt for PII/secrets, escalate privacy ---
+    const tag = tagText(prompt + (context ?? ""));
+    const effectivePrivacy = sensitivityToPrivacy(tag.level, privacy) as Privacy;
+
+    let decision = route({
       kind: kind as TaskKind | undefined,
-      privacy: privacy as Privacy | undefined,
+      privacy: effectivePrivacy,
     });
+
+    // --- Shield Protocol: policy engine check ---
+    const policyCheck = await policyEngine.beforeRoute({
+      kind,
+      privacy: effectivePrivacy,
+      provider: decision.provider,
+      model: decision.model,
+    });
+    if (policyCheck.effect === "deny") {
+      decision = {
+        provider: "ollama" as const,
+        model: "jarvis:latest",
+        reason: `Policy denied: ${policyCheck.reason} — forced local`,
+      };
+    }
 
     // Only cloud providers need a key from the vault.
     if (decision.provider !== "ollama" && vault.isLocked()) {

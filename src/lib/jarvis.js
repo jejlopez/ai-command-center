@@ -145,6 +145,22 @@ export const jarvis = {
   getRun:        (id)                    => get(`/runs/${encodeURIComponent(id)}`),
   listWorkflows: ()                      => get("/workflows"),
 
+  // M5 — Security / Trust Protocol
+  auditLog:        ({ limit, offset, action, actor, since } = {}) => {
+    const p = new URLSearchParams();
+    if (limit != null) p.set("limit", String(limit));
+    if (offset != null) p.set("offset", String(offset));
+    if (action) p.set("action", action);
+    if (actor) p.set("actor", actor);
+    if (since) p.set("since", since);
+    const qs = p.toString();
+    return get(`/audit/log${qs ? `?${qs}` : ""}`);
+  },
+  auditSummary:    (hours = 24) => get(`/audit/summary?hours=${hours}`),
+  auditChain:      () => get("/audit/chain"),
+  panic:           (reason) => post("/panic", { reason }),
+  policyRules:     () => get("/policy/rules"),
+
   // Feedback + Learning Loops
   submitFeedback:  (body)                => post("/feedback", body),
   listFeedback:    (kind, limit)         => get(`/feedback${kind ? `?kind=${encodeURIComponent(kind)}&limit=${limit ?? 50}` : `?limit=${limit ?? 50}`}`),

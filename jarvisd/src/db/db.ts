@@ -79,6 +79,10 @@ function runMigrationsSync(): void {
 
     const sql = readFileSync(join(MIGRATIONS_DIR, file), "utf8");
     db.exec(sql);
+    // Some migrations self-register in schema_version; ensure the row exists either way.
+    db.prepare(
+      "INSERT OR IGNORE INTO schema_version(version, applied_at) VALUES (?, ?)"
+    ).run(version, new Date().toISOString());
     console.log(`[db] applied migration ${file}`);
   }
 
