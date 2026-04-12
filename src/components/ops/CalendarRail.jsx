@@ -23,14 +23,38 @@ function nowFrac() {
 
 // Sample event shape: { id, title, start_h, start_m, end_h, end_m, kind }
 // kind: followup | trading | focus | event
-const KIND_STYLE = {
-  followup: "bg-blue-500/20 border-blue-500/50 text-blue-300",
-  trading:  "bg-jarvis-purple/20 border-jarvis-purple/50 text-jarvis-purple",
-  focus:    "bg-cyan-500/20 border-cyan-500/50 text-cyan-300",
-  event:    "bg-jarvis-primary/15 border-jarvis-primary/40 text-jarvis-primary",
+const KIND_STYLE_DARK = {
+  followup: "bg-blue-500/20 border border-blue-500/50 text-blue-300 border-l-[3px] border-l-blue-400",
+  trading:  "bg-jarvis-purple/20 border border-jarvis-purple/50 text-jarvis-purple border-l-[3px] border-l-jarvis-purple",
+  focus:    "bg-cyan-500/20 border border-cyan-500/50 text-cyan-300 border-l-[3px] border-l-cyan-400",
+  event:    "bg-jarvis-primary/15 border border-jarvis-primary/40 text-jarvis-primary border-l-[3px] border-l-jarvis-primary",
 };
 
+const KIND_STYLE_LIGHT = {
+  followup: "bg-blue-600/10 border border-blue-600/35 text-blue-800 border-l-[3px] border-l-blue-600",
+  trading:  "bg-purple-600/10 border border-purple-600/35 text-purple-800 border-l-[3px] border-l-purple-600",
+  focus:    "bg-cyan-600/10 border border-cyan-600/35 text-cyan-800 border-l-[3px] border-l-cyan-600",
+  event:    "bg-teal-600/10 border border-teal-600/35 text-teal-800 border-l-[3px] border-l-teal-600",
+};
+
+function useKindStyle() {
+  const [isLight, setIsLight] = useState(
+    () => document.documentElement.getAttribute("data-theme") === "light"
+  );
+
+  useEffect(() => {
+    const obs = new MutationObserver(() => {
+      setIsLight(document.documentElement.getAttribute("data-theme") === "light");
+    });
+    obs.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+    return () => obs.disconnect();
+  }, []);
+
+  return isLight ? KIND_STYLE_LIGHT : KIND_STYLE_DARK;
+}
+
 export function CalendarRail({ followUps = [], calendarEvents = [] }) {
+  const kindStyle = useKindStyle();
   const [frac, setFrac] = useState(nowFrac());
   const scrollRef = useRef(null);
 
@@ -104,7 +128,7 @@ export function CalendarRail({ followUps = [], calendarEvents = [] }) {
             const endFrac   = timeToFrac(ev.end_h,   ev.end_m   ?? 0);
             const top    = startFrac * totalH;
             const height = Math.max(18, (endFrac - startFrac) * totalH);
-            const style  = KIND_STYLE[ev.kind] ?? KIND_STYLE.event;
+            const style  = kindStyle[ev.kind] ?? kindStyle.event;
             if (startFrac < 0 || startFrac > 1) return null;
             return (
               <div
