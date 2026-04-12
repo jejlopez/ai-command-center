@@ -1,7 +1,6 @@
 import { useState } from "react";
-import { KeyRound, Wallet, ShieldCheck, Lock, Info, Plug, ScrollText, LogOut, Palette } from "lucide-react";
-import { ProvidersPanel } from "../components/settings/ProvidersPanel.jsx";
-import { ConnectorsPanel } from "../components/settings/ConnectorsPanel.jsx";
+import { Wallet, ShieldCheck, Lock, Info, Plug, ScrollText, LogOut, Palette } from "lucide-react";
+import { ConnectionsPanel } from "../components/settings/ConnectionsPanel.jsx";
 import { BudgetPanel } from "../components/settings/BudgetPanel.jsx";
 import { PrivacyPanel } from "../components/settings/PrivacyPanel.jsx";
 import { VaultPanel } from "../components/settings/VaultPanel.jsx";
@@ -11,8 +10,7 @@ import { ThemePanel } from "../components/settings/ThemePanel.jsx";
 import { useAuth } from "../hooks/useAuth.js";
 
 const TABS = [
- { id: "providers", label: "Providers", Icon: KeyRound, Component: ProvidersPanel },
- { id: "connectors", label: "Connectors", Icon: Plug, Component: ConnectorsPanel },
+ { id: "connections", label: "Connections", Icon: Plug, Component: ConnectionsPanel },
  { id: "budget", label: "Budget", Icon: Wallet, Component: BudgetPanel },
  { id: "privacy", label: "Privacy", Icon: ShieldCheck, Component: PrivacyPanel },
  { id: "vault", label: "Vault", Icon: Lock, Component: VaultPanel },
@@ -22,7 +20,7 @@ const TABS = [
 ];
 
 export default function Settings() {
- const [tab, setTab] = useState("providers");
+ const [tab, setTab] = useState("connections");
  const auth = useAuth();
  const active = TABS.find((t) => t.id === tab) ?? TABS[0];
  const ActiveComponent = active.Component;
