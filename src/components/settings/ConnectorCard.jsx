@@ -248,7 +248,7 @@ export function ConnectorCard({ id, title, Icon, state, onRefresh }) {
  </div>
  )}
 
- <div className="rounded-xl border border-jarvis-border/60 bg-black/30 px-3 py-2 text-[11px] text-jarvis-muted flex items-center gap-2">
+ {!state?.linked && <div className="rounded-xl border border-jarvis-border/60 bg-black/30 px-3 py-2 text-[11px] text-jarvis-muted flex items-center gap-2">
  <span className="shrink-0">Redirect URI:</span>
  <code className="text-jarvis-primary truncate">{redirectUri}</code>
  <button
@@ -259,14 +259,14 @@ export function ConnectorCard({ id, title, Icon, state, onRefresh }) {
  >
  <Copy size={12} />
  </button>
- </div>
+ </div>}
 
- <button
+ {!state?.linked && <><button
  type="button"
  onClick={() => setHelpOpen((v) => !v)}
  className="flex items-center gap-1 text-[11px] text-jarvis-muted hover:text-jarvis-primary self-start"
  >
- {helpOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />} Help
+ {helpOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />} Setup help
  </button>
  {helpOpen && (
  <ol className="text-[11px] text-jarvis-body list-decimal pl-5 space-y-1">
@@ -303,7 +303,7 @@ export function ConnectorCard({ id, title, Icon, state, onRefresh }) {
  </li>
  <li>Paste the client_id and client_secret here, then click Save & Open OAuth.</li>
  </ol>
- )}
+ )}</>}
  </div>
  );
 }
