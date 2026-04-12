@@ -1,3 +1,9 @@
+// Initialize theme from localStorage
+const savedTheme = localStorage.getItem("jarvis-theme");
+if (savedTheme) {
+  document.documentElement.setAttribute("data-theme", savedTheme);
+}
+
 import { useEffect, useState } from "react";
 import { Sidebar } from "./components/Sidebar.jsx";
 import { StatusStrip } from "./components/StatusStrip.jsx";
@@ -128,7 +134,7 @@ export default function App() {
                   </div>
 
                   {/* Sticky composer */}
-                  <div className="sticky bottom-0 left-0 right-0 px-6 pb-5 pt-3 bg-gradient-to-t from-[#08080a] via-[#08080a]/90 to-transparent">
+                  <div className="sticky bottom-0 left-0 right-0 px-6 pb-5 pt-3 bg-gradient-to-t from-jarvis-bg via-jarvis-bg/90 to-transparent">
                     <Composer onSend={(t) => console.log("ask:", t)} />
                   </div>
                 </>
