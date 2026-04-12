@@ -1,54 +1,31 @@
-import { Activity, Clock, Wallet, ShieldCheck, Wifi, WifiOff } from "lucide-react";
 import { useSocketStatus } from "../hooks/useJarvisSocket.js";
 
-function Chip({ Icon, label, value, tone = "cyan" }) {
-  const toneClass = {
-    cyan:  "text-jarvis-cyan",
-    amber: "text-jarvis-amber",
-    green: "text-jarvis-green",
-    blue:  "text-jarvis-blue",
-    red:   "text-jarvis-red",
-    muted: "text-jarvis-muted",
-  }[tone];
+function Indicator({ label, value, color = "text-jarvis-muted" }) {
   return (
-    <div className="glass px-3 py-1.5 flex items-center gap-2 rounded-xl">
-      <Icon size={14} className={toneClass} />
-      <div className="flex items-center gap-1.5">
-        <span className="label">{label}</span>
-        <span className="text-[12px] text-jarvis-ink font-medium">{value}</span>
-      </div>
+    <div className="flex items-center gap-2 text-[11px]">
+      <span className="text-jarvis-muted">{label}</span>
+      <span className={`font-mono ${color}`}>{value}</span>
     </div>
   );
 }
 
-function costTone(cost) {
-  if (!cost || typeof cost.spentUsd !== "number" || typeof cost.budgetUsd !== "number" || cost.budgetUsd <= 0) {
-    return "muted";
-  }
-  const frac = cost.spentUsd / cost.budgetUsd;
-  if (frac < 0.5) return "green";
-  if (frac < 0.9) return "amber";
-  return "red";
-}
+export function StatusStrip({ vaultLocked, cost }) {
+  const connected = useSocketStatus();
+  const spent = cost?.spentUsd != null ? `$${cost.spentUsd.toFixed(2)}` : "—";
+  const budget = cost?.budgetUsd != null ? `$${cost.budgetUsd}` : "—";
+  const frac = (cost?.spentUsd && cost?.budgetUsd) ? cost.spentUsd / cost.budgetUsd : 0;
+  const costColor = frac < 0.5 ? "text-jarvis-success" : frac < 0.9 ? "text-jarvis-warning" : "text-jarvis-danger";
 
-function costValue(cost) {
-  if (!cost || typeof cost.spentUsd !== "number" || typeof cost.budgetUsd !== "number") {
-    return "—/—";
-  }
-  return `$${cost.spentUsd.toFixed(2)} / $${cost.budgetUsd}`;
-}
-
-export function StatusStrip({ vaultLocked, uptimeSec, cost }) {
-  const uptimeMin = Math.max(0, Math.floor((uptimeSec ?? 0) / 60));
-  const tone = costTone(cost);
-  const wsConnected = useSocketStatus();
   return (
-    <div className="flex items-center gap-2">
-      <Chip Icon={Activity} label="Mode"   value="Deep Work" tone="cyan" />
-      <Chip Icon={Clock}    label="Open"   value={`${uptimeMin}m`} tone="blue" />
-      <Chip Icon={Wallet}   label="Today"  value={costValue(cost)} tone={tone} />
-      <Chip Icon={ShieldCheck} label="Trust" value={vaultLocked ? "Locked" : "Open"} tone={vaultLocked ? "amber" : "green"} />
-      <Chip Icon={wsConnected ? Wifi : WifiOff} label="Live" value={wsConnected ? "On" : "Off"} tone={wsConnected ? "green" : "muted"} />
+    <div className="flex items-center gap-5">
+      <Indicator label="Spend" value={`${spent} / ${budget}`} color={costColor} />
+      <div className="flex items-center gap-1.5">
+        <div className={`w-1.5 h-1.5 rounded-full ${connected ? "bg-jarvis-success" : "bg-jarvis-danger"}`} />
+        <span className="text-[10px] text-jarvis-muted">{connected ? "Live" : "Off"}</span>
+      </div>
+      <span className={`text-[10px] ${vaultLocked ? "text-jarvis-warning" : "text-jarvis-muted"}`}>
+        {vaultLocked ? "Locked" : "Vault open"}
+      </span>
     </div>
   );
 }
