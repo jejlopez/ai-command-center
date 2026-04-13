@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useOpsSupa } from "../hooks/useOpsSupa.js";
+import { useCRM } from "../hooks/useCRM.js";
 import { ModeBar } from "../components/ops/ModeBar.jsx";
 import { CalendarRail } from "../components/ops/CalendarRail.jsx";
 import { ContextStrip } from "../components/ops/ContextStrip.jsx";
@@ -10,6 +11,7 @@ import { BuildDashboard } from "../components/ops/BuildDashboard.jsx";
 
 export default function Work() {
   const [mode, setMode] = useState("sales");
+  const crm = useCRM();
 
   const {
     deals, followUps, proposals, comms, docs,
@@ -20,11 +22,15 @@ export default function Work() {
     salesCtx, tradingCtx, buildCtx, badges,
   } = useOpsSupa();
 
+  // Merge CRM deals with Supabase deals — CRM takes priority
+  const mergedDeals = crm.deals.length > 0 ? crm.deals : deals;
+
   const ops = {
-    deals, followUps, proposals, comms, docs,
+    deals: mergedDeals, followUps, proposals, comms, docs,
     positions, watchlist, tradeJournal,
     projects, ships, tasks,
     intelligence,
+    crm,
   };
 
   return (
