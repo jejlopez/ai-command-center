@@ -151,9 +151,6 @@ async function narrativeFromModel(args: {
   waitingOn: BriefItem[];
   followUps: BriefItem[];
 }): Promise<{ text: string; model: string; costUsd: number } | null> {
-  if (vault.isLocked()) return null;
-  if (!vault.get("anthropic_api_key")) return null;
-
   const decision = route({ kind: "summary" });
   const facts = [
     `Critical: ${args.critical.map((i) => i.title).join(" · ") || "none"}`,
@@ -162,16 +159,26 @@ async function narrativeFromModel(args: {
   ].join("\n");
 
   try {
-    const result = await callAnthropic({
+    // Prefer CLI (subscription, $0) → fallback to API
+    const { isCliAvailable, callClaudeCli } = await import("../lib/providers/claude_cli.js");
+    const cliOk = await isCliAvailable();
+    const callFn = cliOk ? callClaudeCli : callAnthropic;
+    const provider = cliOk ? "claude-cli" : "anthropic";
+
+    if (!cliOk && (!vault.get("anthropic_api_key") || vault.isLocked())) {
+      return null; // no CLI and no API key — use fallback narrative
+    }
+
+    const result = await callFn({
       model: decision.model,
       maxTokens: 220,
       system:
         "You are JARVIS. Write a 2-sentence morning briefing for the user. Crisp, calm, no preamble, no bullet points. Address them directly.",
       prompt: facts,
     });
-    const costUsd = estimateCostUsd(decision.model, result.tokensIn, result.tokensOut);
+    const costUsd = cliOk ? 0 : estimateCostUsd(decision.model, result.tokensIn, result.tokensOut);
     recordCost({
-      provider: "anthropic",
+      provider,
       model: decision.model,
       taskKind: "summary",
       tokensIn: result.tokensIn,

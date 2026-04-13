@@ -26,7 +26,11 @@ export function resetCliCheck(): void {
   cliAvailable = null;
 }
 
-export async function callClaudeCli(input: ProviderCallInput): Promise<ProviderCallOutput> {
+export interface CliCallOptions extends ProviderCallInput {
+  allowWebSearch?: boolean;
+}
+
+export async function callClaudeCli(input: CliCallOptions): Promise<ProviderCallOutput> {
   const args = [
     "-p", buildPrompt(input),
     "--output-format", "text",
@@ -36,6 +40,10 @@ export async function callClaudeCli(input: ProviderCallInput): Promise<ProviderC
 
   if (input.maxTokens) {
     args.push("--max-tokens", String(input.maxTokens));
+  }
+
+  if (input.allowWebSearch) {
+    args.push("--allowedTools", "mcp__claude_ai_web_search__web_search");
   }
 
   const text = await exec(CLAUDE_BIN, args);

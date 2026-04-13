@@ -115,14 +115,9 @@ export async function askRoutes(app: FastifyInstance): Promise<void> {
 
     try {
       let result;
-      if (needsWeb && !vault.isLocked() && vault.get("anthropic_api_key")) {
-        // Web search requires the Anthropic API (tool_use), not CLI
-        audit({ actor: "system", action: "web_search.route", subject: runId });
-        result = await callWithWebSearch({ model: "claude-sonnet-4-6", prompt, system: context });
-        decision = { ...decision, provider: "anthropic", reason: "web search → API (tool_use)" };
-      } else if (decision.provider === "claude-cli") {
+      if (decision.provider === "claude-cli") {
         try {
-          result = await callClaudeCli({ model: decision.model, prompt, system: context });
+          result = await callClaudeCli({ model: decision.model, prompt, system: context, allowWebSearch: needsWeb });
         } catch (cliErr: any) {
           // CLI failed — fallback to Anthropic API
           audit({ actor: "system", action: "cli.fallback", subject: runId, reason: cliErr.message });
