@@ -52,6 +52,9 @@ body {
 @layer components {
   .surface {
     @apply bg-jarvis-surface border border-jarvis-border rounded-[14px];
+    background: color-mix(in srgb, var(--page-accent, transparent) 4%, var(--jarvis-surface));
+    border-color: color-mix(in srgb, var(--page-accent, transparent) 12%, var(--jarvis-border));
+    border-left: 3px solid color-mix(in srgb, var(--page-accent, transparent) 50%, transparent);
   }
   .surface-hover {
     @apply hover:bg-jarvis-surface-hover hover:border-jarvis-border-hover transition-all duration-200;
@@ -62,13 +65,17 @@ body {
     -webkit-backdrop-filter: blur(12px);
   }
   [data-theme="light"] .surface {
+    background: color-mix(in srgb, var(--page-accent, transparent) 5%, var(--jarvis-surface));
+    border-color: color-mix(in srgb, var(--page-accent, transparent) 15%, var(--jarvis-border));
+    border-left: 3px solid color-mix(in srgb, var(--page-accent, transparent) 40%, transparent);
     box-shadow: 0 1px 3px rgba(0,0,0,0.04);
   }
   .chip {
     @apply inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[9px] font-medium tracking-[0.12em] uppercase;
   }
   .label {
-    @apply text-[9px] uppercase tracking-[0.18em] text-jarvis-muted font-medium;
+    @apply text-[9px] uppercase tracking-[0.18em] font-semibold;
+    color: var(--page-accent, var(--jarvis-muted));
   }
   .metric {
     @apply text-2xl font-light tracking-tight text-jarvis-ink;

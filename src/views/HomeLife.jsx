@@ -93,7 +93,7 @@ export default function HomeLife() {
     : null;
 
   return (
-    <div className="h-full w-full flex flex-col min-h-0">
+    <div className="h-full w-full flex flex-col min-h-0" style={{ "--page-accent": "#F59E0B" }}>
       {/* Header */}
       <div className="flex items-center justify-between px-6 py-4 border-b border-jarvis-border shrink-0">
         <div className="flex items-center gap-3">

@@ -251,7 +251,7 @@ export default function Skills() {
   const detail = selectedDetail ?? skills.find((s) => s.name === selectedName) ?? null;
 
   return (
-    <motion.div variants={stagger.container} initial="hidden" animate="show" className="h-full w-full flex flex-col min-h-0">
+    <motion.div variants={stagger.container} initial="hidden" animate="show" className="h-full w-full flex flex-col min-h-0" style={{ "--page-accent": "#6366F1" }}>
       {/* Header */}
       <motion.div variants={stagger.item} className="flex items-center justify-between px-6 py-4 border-b border-jarvis-border">
         <div className="flex items-center gap-3">
