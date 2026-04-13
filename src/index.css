@@ -52,6 +52,7 @@ body {
 @layer components {
   .surface {
     @apply bg-jarvis-surface border border-jarvis-border rounded-[14px];
+    border-left: 3px solid rgba(0,224,208,0.25);
   }
   .surface-hover {
     @apply hover:bg-jarvis-surface-hover hover:border-jarvis-border-hover transition-all duration-200;
@@ -62,13 +63,14 @@ body {
     -webkit-backdrop-filter: blur(12px);
   }
   [data-theme="light"] .surface {
+    border-left: 3px solid rgba(0,180,168,0.3);
     box-shadow: 0 1px 3px rgba(0,0,0,0.04);
   }
   .chip {
     @apply inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[9px] font-medium tracking-[0.12em] uppercase;
   }
   .label {
-    @apply text-[9px] uppercase tracking-[0.18em] text-jarvis-muted font-medium;
+    @apply text-[9px] uppercase tracking-[0.18em] text-jarvis-primary font-semibold;
   }
   .metric {
     @apply text-2xl font-light tracking-tight text-jarvis-ink;
