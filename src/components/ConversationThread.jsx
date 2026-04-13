@@ -1,33 +1,5 @@
 import { JarvisHalo } from "./JarvisHalo.jsx";
 
-const STUB_THREAD = [
-  {
-    role: "jarvis",
-    text: "Morning. Brief generated. I flagged 2 critical items and 1 approval — want me to start on the Pipedrive push first?",
-    ts: "08:02",
-  },
-  {
-    role: "user",
-    text: "yes, and summarize what came in overnight",
-    ts: "08:02",
-  },
-  {
-    role: "jarvis",
-    text: "Scanning inbox now. Holding finance-related threads for review. I'll drop the top 5 in Jarvis Output in about 30s.",
-    ts: "08:03",
-  },
-  {
-    role: "user",
-    text: "is Alex still waiting on the contract?",
-    ts: "08:04",
-  },
-  {
-    role: "jarvis",
-    text: "Yes. Last touch was Tuesday. I drafted a reply and queued it for your review.",
-    ts: "08:04",
-  },
-];
-
 function JarvisBubble({ text, ts }) {
   return (
     <div className="flex items-start gap-3">
@@ -61,7 +33,20 @@ function UserBubble({ text, ts }) {
   );
 }
 
-export function ConversationThread({ messages = STUB_THREAD }) {
+export function ConversationThread({ messages = [] }) {
+  if (messages.length === 0) {
+    return (
+      <div className="glass p-5">
+        <div className="flex items-center gap-2 pb-2 border-b border-jarvis-border">
+          <div className="w-1.5 h-1.5 rounded-full bg-jarvis-primary pulse-primary" />
+          <div className="label">Conversation</div>
+        </div>
+        <div className="text-jarvis-muted text-sm text-center py-8">
+          Ask JARVIS anything below to start a conversation.
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="glass p-5 space-y-4">
       <div className="flex items-center gap-2 pb-2 border-b border-jarvis-border">

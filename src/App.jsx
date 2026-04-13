@@ -4,7 +4,7 @@ if (savedTheme) {
   document.documentElement.setAttribute("data-theme", savedTheme);
 }
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { Sidebar } from "./components/Sidebar.jsx";
 import { StatusStrip } from "./components/StatusStrip.jsx";
 import { MorningBrief } from "./components/MorningBrief.jsx";
@@ -24,6 +24,7 @@ import HomeLife from "./views/HomeLife.jsx";
 import Health from "./views/Health.jsx";
 import Skills from "./views/Skills.jsx";
 import { VaultLockedOverlay } from "./components/VaultLockedOverlay.jsx";
+import { VoiceButton } from "./components/VoiceButton.jsx";
 import { useNotifications } from "./hooks/useNotifications.js";
 import { useJarvisBrief, useOnboarding, useCostToday } from "./hooks/useJarvis.js";
 import { useAuth } from "./hooks/useAuth.js";
@@ -33,6 +34,8 @@ export default function App() {
   const [active, setActive] = useState("home");
   const [health, setHealth] = useState(null);
   const [localMode, setLocalMode] = useState(() => localStorage.getItem("jarvis_local_mode") === "true");
+  const [chatMessages, setChatMessages] = useState([]);
+  const [chatLoading, setChatLoading] = useState(false);
   const auth = useAuth();
   useNotifications();
   const { brief, rail, recentRuns, error, loading, decide, regenerateBrief } = useJarvisBrief();
@@ -107,7 +110,10 @@ export default function App() {
           <h1 className="font-display text-[18px] font-semibold tracking-[0.02em] text-jarvis-ink">
             {active === "home" ? "Home" : active === "today" ? "Today" : active === "work" ? "Work" : active === "money" ? "Money" : active === "life" ? "Home Life" : active === "health" ? "Health" : active === "brain" ? "Brain" : active === "skills" ? "Skills" : active === "settings" ? "Settings" : ""}
           </h1>
-          <StatusStrip vaultLocked={health?.vaultLocked ?? true} cost={cost} />
+          <div className="flex items-center gap-3">
+            <VoiceButton />
+            <StatusStrip vaultLocked={health?.vaultLocked ?? true} cost={cost} />
+          </div>
         </header>
 
         {active === "settings" ? (
@@ -133,12 +139,32 @@ export default function App() {
                     )}
                     {!loading && !error && <HomeStatusBoard brief={brief} />}
 
-                    {!loading && !error && <ConversationThread />}
+                    {!loading && !error && <ConversationThread messages={chatMessages} />}
+                    {chatLoading && (
+                      <div className="flex items-center gap-2 px-2 py-3 text-jarvis-muted text-sm">
+                        <div className="w-2 h-2 rounded-full bg-jarvis-primary animate-pulse" />
+                        JARVIS is thinking...
+                      </div>
+                    )}
                   </div>
 
                   {/* Sticky composer */}
                   <div className="sticky bottom-0 left-0 right-0 px-6 pb-5 pt-3 bg-gradient-to-t from-jarvis-bg via-jarvis-bg/90 to-transparent">
-                    <Composer onSend={(t) => console.log("ask:", t)} />
+                    <Composer onSend={async (text) => {
+                      const now = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+                      setChatMessages((prev) => [...prev, { role: "user", text, ts: now }]);
+                      setChatLoading(true);
+                      try {
+                        const res = await jarvis.ask(text, { kind: "chat" });
+                        const replyTime = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+                        setChatMessages((prev) => [...prev, { role: "jarvis", text: res.text, ts: replyTime }]);
+                      } catch (err) {
+                        const replyTime = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+                        setChatMessages((prev) => [...prev, { role: "jarvis", text: `Error: ${err.message}`, ts: replyTime }]);
+                      } finally {
+                        setChatLoading(false);
+                      }
+                    }} />
                   </div>
                 </>
               )}
