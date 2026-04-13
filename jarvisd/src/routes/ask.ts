@@ -7,6 +7,7 @@ import { route, estimateCostUsd, type TaskKind, type Privacy } from "../lib/rout
 import { callAnthropic } from "../lib/providers/anthropic.js";
 import { callOllama } from "../lib/providers/ollama.js";
 import { callClaudeCli } from "../lib/providers/claude_cli.js";
+import { callWithWebSearch } from "../lib/providers/web_search.js";
 import { assertBudgetAvailable, recordCost, spentTodayUsd, dailyBudgetUsd } from "../lib/cost.js";
 import { audit } from "../lib/audit.js";
 import { tagText, sensitivityToPrivacy } from "../lib/tagger.js";
@@ -28,6 +29,7 @@ const AskBody = z.object({
       "high_risk",
       "vision",
       "chat",
+      "web_search",
     ])
     .optional(),
 });
@@ -108,9 +110,17 @@ export async function askRoutes(app: FastifyInstance): Promise<void> {
       return { error: `provider ${decision.provider} not yet wired` };
     }
 
+    // Auto-detect web search need from prompt keywords
+    const needsWeb = kind === "web_search" || /\b(search|look up|google|news|price|stock|weather|latest|current|today's|what is .* right now)\b/i.test(prompt);
+
     try {
       let result;
-      if (decision.provider === "claude-cli") {
+      if (needsWeb && !vault.isLocked() && vault.get("anthropic_api_key")) {
+        // Web search requires the Anthropic API (tool_use), not CLI
+        audit({ actor: "system", action: "web_search.route", subject: runId });
+        result = await callWithWebSearch({ model: "claude-sonnet-4-6", prompt, system: context });
+        decision = { ...decision, provider: "anthropic", reason: "web search → API (tool_use)" };
+      } else if (decision.provider === "claude-cli") {
         try {
           result = await callClaudeCli({ model: decision.model, prompt, system: context });
         } catch (cliErr: any) {

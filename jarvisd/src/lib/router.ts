@@ -6,6 +6,7 @@ export type TaskKind =
   | "extraction"
   | "summary"
   | "routine_code"
+  | "web_search"
   | "complex_reasoning"
   | "long_context"
   | "high_risk"
