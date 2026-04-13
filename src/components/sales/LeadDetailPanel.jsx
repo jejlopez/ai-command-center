@@ -62,14 +62,10 @@ export function LeadDetailPanel({ lead, onClose, onRefresh }) {
   useEffect(() => {
     if (!lead?.contact_email) return;
     setLoadingEmails(true);
-    // Use email triage data to find related emails
-    jarvis.getJson?.(`/email/triage`).then(data => {
-      const domain = lead.contact_email.split("@")[1];
-      const matched = (data || []).filter(e =>
-        e.from_addr?.includes(domain) || e.from_addr?.includes(lead.contact_name)
-      );
-      setEmails(matched);
-    }).catch(() => {}).finally(() => setLoadingEmails(false));
+    jarvis.emailForContact(lead.contact_email)
+      .then(data => setEmails(Array.isArray(data) ? data : []))
+      .catch(() => setEmails([]))
+      .finally(() => setLoadingEmails(false));
   }, [lead?.contact_email]);
 
   const doResearch = async () => {
@@ -251,17 +247,13 @@ export function LeadDetailPanel({ lead, onClose, onRefresh }) {
               </div>
             )}
             {emails.map((e, i) => (
-              <div key={i} className="surface p-2.5">
+              <div key={e.id || i} className="surface p-2.5">
                 <div className="text-[10px] text-jarvis-ink truncate">{e.subject}</div>
-                <div className="text-[9px] text-jarvis-muted mt-0.5">From: {e.from_addr?.slice(0, 40)}</div>
-                <div className="flex items-center gap-2 mt-1">
-                  <span className={`text-[7px] uppercase tracking-wider ${
-                    e.category === "urgent" ? "text-jarvis-danger" :
-                    e.category === "action_needed" ? "text-jarvis-warning" :
-                    "text-jarvis-muted"
-                  }`}>{e.category}</span>
-                  <span className="text-[8px] text-jarvis-muted">{e.created_at?.slice(0, 10)}</span>
+                <div className="text-[9px] text-jarvis-muted mt-0.5">
+                  {e.from || e.from_addr ? `From: ${(e.from || e.from_addr).slice(0, 45)}` : ""}
                 </div>
+                {e.snippet && <div className="text-[9px] text-jarvis-muted/50 mt-1 truncate">{e.snippet.slice(0, 80)}</div>}
+                <div className="text-[8px] text-jarvis-muted/40 mt-1">{e.date?.slice(0, 22) || e.created_at?.slice(0, 10)}</div>
               </div>
             ))}
           </div>

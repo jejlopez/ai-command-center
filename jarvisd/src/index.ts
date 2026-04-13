@@ -46,6 +46,7 @@ import { webhookRoutes } from "./routes/webhooks.js";
 import { learningRoutes } from "./routes/learning.js";
 import { orchestrateRoutes } from "./routes/orchestrate.js";
 import { emailRoutes } from "./routes/email.js";
+import { emailSearchRoutes } from "./routes/email_search.js";
 import { vault } from "./lib/vault.js";
 import { policyEngine } from "./lib/policy.js";
 import { policyRoutes } from "./routes/policy.js";
@@ -100,6 +101,7 @@ async function main() {
   await learningRoutes(app);
   await orchestrateRoutes(app);
   await emailRoutes(app);
+  await emailSearchRoutes(app);
   await crmRoutes(app);
   await webhookRoutes(app);
   await panicRoutes(app);

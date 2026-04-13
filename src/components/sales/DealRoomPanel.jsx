@@ -90,8 +90,21 @@ function ProposalTab({ deal }) {
 }
 
 function EmailsTab({ deal }) {
-  const emails = deal.emails ?? [];
   const drafts = deal.drafts ?? [];
+  const [emails, setEmails] = useState(deal.emails ?? []);
+  const [loadingEmails, setLoadingEmails] = useState(false);
+
+  // Fetch real Gmail history for this contact
+  useEffect(() => {
+    if (!deal.contact_email) return;
+    setLoadingEmails(true);
+    jarvis.emailForContact(deal.contact_email)
+      .then(data => {
+        if (Array.isArray(data) && data.length > 0) setEmails(data);
+      })
+      .catch(() => {})
+      .finally(() => setLoadingEmails(false));
+  }, [deal.contact_email]);
 
   return (
     <div className="space-y-2">
@@ -111,23 +124,23 @@ function EmailsTab({ deal }) {
           ))}
         </>
       )}
+      {loadingEmails && <div className="text-[10px] text-jarvis-muted animate-pulse">Loading email history...</div>}
       {emails.length > 0 && (
         <>
-          <div className="label">Email Activity</div>
-          {emails.map((e) => (
-            <div key={e.id} className="surface p-2.5 text-[10px]">
+          <div className="label">Email History</div>
+          {emails.map((e, i) => (
+            <div key={e.id || i} className="surface p-2.5 text-[10px]">
               <div className="text-jarvis-ink truncate">{e.subject}</div>
-              <div className="text-jarvis-muted">From: {e.from_addr?.slice(0, 40)}</div>
-              <div className={`uppercase tracking-wider text-[8px] mt-1 ${
-                e.category === "urgent" ? "text-jarvis-danger" :
-                e.category === "action_needed" ? "text-jarvis-warning" :
-                "text-jarvis-muted"
-              }`}>{e.category}</div>
+              <div className="text-jarvis-muted mt-0.5">
+                {e.from || e.from_addr ? `From: ${(e.from || e.from_addr).slice(0, 45)}` : ""}
+              </div>
+              {e.snippet && <div className="text-jarvis-muted/60 text-[9px] mt-1 truncate">{e.snippet.slice(0, 80)}</div>}
+              <div className="text-[8px] text-jarvis-muted/40 mt-1">{e.date?.slice(0, 22) || e.created_at?.slice(0, 10)}</div>
             </div>
           ))}
         </>
       )}
-      {emails.length === 0 && drafts.length === 0 && (
+      {!loadingEmails && emails.length === 0 && drafts.length === 0 && (
         <div className="text-[11px] text-jarvis-muted">No email activity for this deal.</div>
       )}
     </div>

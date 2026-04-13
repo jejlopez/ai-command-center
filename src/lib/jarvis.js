@@ -178,6 +178,10 @@ export const jarvis = {
   orchestrate:     (goal, steps, budgetUsd) => post("/orchestrate", { goal, steps, budgetUsd }),
   dispatch:        (skill, instruction, payload, budgetUsd) => post("/dispatch", { skill, instruction, payload, budgetUsd }),
 
+  // Email search
+  emailSearch:     (q, max)            => get(`/email/search?q=${encodeURIComponent(q)}&max=${max ?? 10}`),
+  emailForContact: (email)             => get(`/email/for-contact?email=${encodeURIComponent(email)}&max=10`),
+
   // CRM / Sales
   crmStatus:       ()                  => get("/crm/status"),
   crmSync:         ()                  => post("/crm/sync"),
