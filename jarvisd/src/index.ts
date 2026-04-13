@@ -42,6 +42,7 @@ import { emailDrafter } from "./skills/email_drafter.js";
 import { leadResearch } from "./skills/lead_research.js";
 import { proposalGenerator } from "./skills/proposal_generator.js";
 import { crmRoutes } from "./routes/crm.js";
+import { webhookRoutes } from "./routes/webhooks.js";
 import { learningRoutes } from "./routes/learning.js";
 import { orchestrateRoutes } from "./routes/orchestrate.js";
 import { emailRoutes } from "./routes/email.js";
@@ -100,6 +101,7 @@ async function main() {
   await orchestrateRoutes(app);
   await emailRoutes(app);
   await crmRoutes(app);
+  await webhookRoutes(app);
   await panicRoutes(app);
   await auditRoutes(app);
 
