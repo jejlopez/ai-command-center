@@ -4,7 +4,20 @@
 import { execFile } from "node:child_process";
 import type { ProviderCallInput, ProviderCallOutput } from "./anthropic.js";
 
-const CLAUDE_BIN = process.env.CLAUDE_BIN ?? "claude";
+// Resolve claude binary — check common install locations if not in PATH
+const CLAUDE_BIN = process.env.CLAUDE_BIN
+  ?? (() => {
+    const { existsSync } = require("node:fs");
+    const home = process.env.HOME ?? "";
+    const candidates = [
+      `${home}/.local/bin/claude`,
+      `${home}/.claude/bin/claude`,
+      "/usr/local/bin/claude",
+      "/opt/homebrew/bin/claude",
+      "claude",
+    ];
+    return candidates.find(p => { try { return existsSync(p); } catch { return false; } }) ?? "claude";
+  })();
 const TIMEOUT_MS = 60_000;
 
 let cliAvailable: boolean | null = null;
