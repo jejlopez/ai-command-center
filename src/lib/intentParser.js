@@ -2,6 +2,21 @@
 // Tier 1: keyword pattern matching (instant, free)
 // Tier 2: Ollama classification (if no pattern match)
 
+// Questions and conversational inputs should go to the AI, not widget display.
+// If ANY of these match, it's a CONVERSATION, not a display command.
+const QUESTION_PATTERNS = [
+  /^(who|what|why|how|when|where|which|can you|could you|tell me|explain|describe|do you|is |are |was |were |will |would |should )/i,
+  /\?$/,                          // ends with question mark
+  /\b(search|look up|find out|google|research)\b/i,
+  /\b(help me|i need|i want to|please)\b/i,
+  /\b(write|draft|compose|create|generate|summarize|analyze)\b/i,
+  /\b(think|opinion|advice|suggest|recommend)\b/i,
+];
+
+export function isConversational(input) {
+  return QUESTION_PATTERNS.some(p => p.test(input.trim()));
+}
+
 const PATTERNS = [
   // Sales
   { match: /\b(pipeline|deals|funnel|sales)\b/i, widgets: ["pipeline"], intent: "show_data" },

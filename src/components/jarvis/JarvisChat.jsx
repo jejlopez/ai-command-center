@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { Send, Loader2, Zap } from "lucide-react";
 import { jarvis } from "../../lib/jarvis.js";
-import { parseIntent, classifyWithOllama } from "../../lib/intentParser.js";
+import { parseIntent, classifyWithOllama, isConversational } from "../../lib/intentParser.js";
 
 function Message({ msg }) {
   const isUser = msg.role === "user";
@@ -53,61 +53,59 @@ export function JarvisChat({ onDisplayUpdate }) {
     setLoading(true);
 
     try {
-      // Tier 1: Pattern match
-      let parsed = parseIntent(text);
-      let tier = 1;
+      // Step 1: Is this a QUESTION or CONVERSATION? → Send to AI directly
+      if (isConversational(text)) {
+        let responseText;
+        let tier = 3;
 
-      if (!parsed) {
-        // Tier 2: Ollama classification
-        try {
-          parsed = await classifyWithOllama(text, jarvis);
-          tier = parsed?.tier ?? 2;
-        } catch {
-          parsed = { intent: "show_data", widgets: ["needle_movers"], entities: {}, tier: 3 };
-          tier = 3;
-        }
-      }
-
-      // Update display panel with parsed widgets
-      if (parsed?.widgets?.length > 0) {
-        const widgetObjects = parsed.widgets.map(w =>
-          typeof w === "string" ? { widget: w, entities: parsed.entities } : w
-        );
-        onDisplayUpdate({ widgets: widgetObjects });
-      }
-
-      // Get JARVIS response
-      let responseText;
-
-      if (parsed.intent === "draft_content" || parsed.intent === "analyze") {
-        // Tier 3: Full AI response needed
         try {
           const result = await jarvis.ask(text, { kind: "chat" });
           responseText = result.text;
-          tier = 3;
-        } catch {
-          responseText =
-            "I need a language model connection to draft content. Check that Ollama is running or add a provider in Settings.";
+        } catch (e) {
+          responseText = `I couldn't process that right now. Make sure jarvisd is running and a model provider is available.\n\nError: ${e.message}`;
+          tier = 0;
         }
-      } else {
-        // Tier 1/2: Generate response from data
-        responseText = generateQuickResponse(parsed, text);
 
-        // If quick response is generic, try a better one from Ollama
-        if (responseText.includes("Here's what I found") && tier <= 2) {
+        // Also check if the question relates to data we can display
+        const parsed = parseIntent(text);
+        if (parsed?.widgets?.length > 0) {
+          const widgetObjects = parsed.widgets.map(w =>
+            typeof w === "string" ? { widget: w, entities: parsed.entities } : w
+          );
+          onDisplayUpdate({ widgets: widgetObjects });
+        }
+
+        setMessages(prev => [...prev, { role: "assistant", text: responseText, tier }]);
+      } else {
+        // Step 2: Not a question — it's a DISPLAY COMMAND → Pattern match first
+        let parsed = parseIntent(text);
+        let tier = 1;
+
+        if (!parsed) {
+          // No pattern match — send to AI as conversation
+          let responseText;
           try {
-            const result = await jarvis.ask(
-              `Briefly answer this question about the user's data. Be concise (2-3 sentences max): "${text}"`,
-              { kind: "chat" }
-            );
-            if (result.text) responseText = result.text;
-          } catch {
-            // Keep the quick response
+            const result = await jarvis.ask(text, { kind: "chat" });
+            responseText = result.text;
+            tier = 3;
+          } catch (e) {
+            responseText = `I couldn't process that. Error: ${e.message}`;
+            tier = 0;
           }
+          setMessages(prev => [...prev, { role: "assistant", text: responseText, tier }]);
+        } else {
+          // Pattern matched — update display + generate response
+          if (parsed.widgets?.length > 0) {
+            const widgetObjects = parsed.widgets.map(w =>
+              typeof w === "string" ? { widget: w, entities: parsed.entities } : w
+            );
+            onDisplayUpdate({ widgets: widgetObjects });
+          }
+
+          const responseText = generateQuickResponse(parsed, text);
+          setMessages(prev => [...prev, { role: "assistant", text: responseText, tier }]);
         }
       }
-
-      setMessages(prev => [...prev, { role: "assistant", text: responseText, tier }]);
     } catch (e) {
       setMessages(prev => [
         ...prev,
