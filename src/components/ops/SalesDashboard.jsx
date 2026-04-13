@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import { stagger } from "../../lib/motion.js";
 import { ProposalList } from "./ProposalList.jsx";
 import { QuoteCalculator } from "./QuoteCalculator.jsx";
@@ -8,6 +8,10 @@ import { RevenueForecast } from "./RevenueForecast.jsx";
 import { CommunicationLog } from "./CommunicationLog.jsx";
 import { DocumentVault } from "./DocumentVault.jsx";
 import { DealRoom } from "./DealRoom.jsx";
+import { CommandBriefing } from "../sales/CommandBriefing.jsx";
+import { PipelineBoard } from "../sales/PipelineBoard.jsx";
+import { DealRoomPanel } from "../sales/DealRoomPanel.jsx";
+import { LeadsSection } from "../sales/LeadsSection.jsx";
 
 // Pipeline strip — compact horizontal funnel
 function PipelineStrip({ stats, deals = [], onOpenDeal }) {
@@ -107,8 +111,11 @@ function FollowUpStrip({ followUps = [], deals = [], onOpenDeal }) {
 }
 
 export function SalesDashboard({ ops, onRefresh }) {
-  const { deals = [], followUps = [], proposals = [], comms = [], docs = [], intelligence } = ops;
+  const { deals = [], followUps = [], proposals = [], comms = [], docs = [], intelligence, crm } = ops;
   const [openDeal, setOpenDeal] = useState(null);
+  const [crmDealOpen, setCrmDealOpen] = useState(null);
+
+  const hasCRM = crm?.connected && (crm.deals?.length > 0 || crm.leads?.length > 0);
 
   return (
     <motion.div
@@ -117,9 +124,20 @@ export function SalesDashboard({ ops, onRefresh }) {
       initial="hidden"
       animate="show"
     >
-      {/* Pipeline strip — full width */}
+      {/* Command Briefing — today's actions (CRM-powered) */}
+      {crm?.command && (
+        <motion.div variants={stagger.item}>
+          <CommandBriefing command={crm.command} onOpenDeal={(d) => setCrmDealOpen(d)} />
+        </motion.div>
+      )}
+
+      {/* Pipeline Board — kanban (CRM) or strip (Supabase fallback) */}
       <motion.div variants={stagger.item}>
-        <PipelineStrip stats={intelligence?.pipeline_stats} deals={deals} onOpenDeal={setOpenDeal} />
+        {hasCRM ? (
+          <PipelineBoard pipeline={crm.pipeline} onOpenDeal={(d) => setCrmDealOpen(d)} />
+        ) : (
+          <PipelineStrip stats={intelligence?.pipeline_stats} deals={deals} onOpenDeal={setOpenDeal} />
+        )}
       </motion.div>
 
       {/* Row 1: Follow-ups + Proposals */}
@@ -140,14 +158,29 @@ export function SalesDashboard({ ops, onRefresh }) {
         <DocumentVault docs={docs} onRefresh={onRefresh} />
       </motion.div>
 
-      {/* Row 4: Quote Calculator — full width */}
+      {/* Row 4: Quote Calculator */}
       <motion.div variants={stagger.item}>
         <QuoteCalculator onRefresh={onRefresh} />
       </motion.div>
 
+      {/* Leads Section (CRM) */}
+      {crm?.leads?.length > 0 && (
+        <motion.div variants={stagger.item}>
+          <LeadsSection leads={crm.leads} onRefresh={crm.refresh} />
+        </motion.div>
+      )}
+
+      {/* Deal Room — old Supabase version */}
       {openDeal && (
         <DealRoom dealId={openDeal.id} deal={openDeal} onClose={() => setOpenDeal(null)} />
       )}
+
+      {/* Deal Room Panel — new CRM version (slide-out) */}
+      <AnimatePresence>
+        {crmDealOpen && (
+          <DealRoomPanel deal={crmDealOpen} onClose={() => setCrmDealOpen(null)} />
+        )}
+      </AnimatePresence>
     </motion.div>
   );
 }
