@@ -34,7 +34,7 @@ export default function Money() {
   } : null;
 
   return (
-    <div className="h-full w-full overflow-y-auto" style={{ "--page-accent": "#10B981" }}>
+    <div className="h-full w-full overflow-y-auto">
       <motion.div
         className="space-y-6 p-6 max-w-6xl mx-auto"
         variants={stagger.container}

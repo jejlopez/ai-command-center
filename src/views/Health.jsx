@@ -22,7 +22,7 @@ export default function Health() {
   const { intelligence, recompute } = useHealthSupa();
 
   return (
-    <div className="h-full w-full flex flex-col min-h-0" style={{ "--page-accent": "#F43F5E" }}>
+    <div className="h-full w-full flex flex-col min-h-0">
       <div className="flex-1 min-h-0 overflow-y-auto">
         <motion.div
           className="space-y-6 p-6 max-w-6xl mx-auto"

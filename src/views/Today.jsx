@@ -59,7 +59,7 @@ export default function Today() {
     : null;
 
   return (
-    <div className="h-full w-full overflow-y-auto" style={{ "--page-accent": "#00E0D0" }}>
+    <div className="h-full w-full overflow-y-auto">
       <motion.div variants={stagger.container} initial="hidden" animate="show" className="space-y-6 p-6 max-w-6xl mx-auto">
 
         {/* Hero */}

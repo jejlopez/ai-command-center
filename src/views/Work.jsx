@@ -28,7 +28,7 @@ export default function Work() {
   };
 
   return (
-    <div className="flex flex-col h-full w-full overflow-hidden" style={{ "--page-accent": "#3B82F6" }}>
+    <div className="flex flex-col h-full w-full overflow-hidden">
       {/* Mode bar */}
       <ModeBar mode={mode} setMode={setMode} badges={badges} />
 
