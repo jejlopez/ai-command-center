@@ -8,6 +8,7 @@ import { useEffect, useState } from "react";
 import { Sidebar } from "./components/Sidebar.jsx";
 import { StatusStrip } from "./components/StatusStrip.jsx";
 import { MorningBrief } from "./components/MorningBrief.jsx";
+import { HomeStatusBoard } from "./components/HomeStatusBoard.jsx";
 import { RightRail } from "./components/RightRail.jsx";
 import { Composer } from "./components/Composer.jsx";
 import { ConversationThread } from "./components/ConversationThread.jsx";
@@ -130,7 +131,7 @@ export default function App() {
                         </div>
                       </div>
                     )}
-                    {!loading && !error && <MorningBrief brief={brief} />}
+                    {!loading && !error && <HomeStatusBoard brief={brief} />}
 
                     {!loading && !error && <ConversationThread />}
                   </div>
