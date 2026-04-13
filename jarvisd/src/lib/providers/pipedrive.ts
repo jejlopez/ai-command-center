@@ -8,7 +8,7 @@ import { audit } from "../audit.js";
 const API_VERSION = "v1";
 
 function getApiToken(): string {
-  const token = vault.get("pipedrive_api_token");
+  const token = vault.get("pipedrive_api_token") ?? vault.get("pipedrive_api_key");
   if (!token) throw new Error("Pipedrive API token not set — add it in Settings > Providers");
   return token;
 }
@@ -235,7 +235,7 @@ export function getPipelineStats(): {
 export function isPipedriveConnected(): boolean {
   if (vault.isLocked()) return false;
   try {
-    return Boolean(vault.get("pipedrive_api_token"));
+    return Boolean(vault.get("pipedrive_api_token") ?? vault.get("pipedrive_api_key"));
   } catch {
     return false;
   }
