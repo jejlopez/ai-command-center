@@ -69,6 +69,13 @@ body {
     border-left: 3px solid rgba(0,180,168,0.3);
     box-shadow: 0 1px 3px rgba(0,0,0,0.04);
   }
+  .input-field {
+    @apply w-full rounded-xl bg-jarvis-ghost border border-jarvis-border px-3 py-2 text-jarvis-ink placeholder:text-jarvis-muted outline-none;
+    @apply focus:border-jarvis-primary/50 transition-colors;
+  }
+  select.input-field {
+    @apply appearance-none cursor-pointer;
+  }
   .chip {
     @apply inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[9px] font-medium tracking-[0.12em] uppercase;
   }
