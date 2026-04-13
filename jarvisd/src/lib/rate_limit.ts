@@ -54,9 +54,9 @@ export function registerRateLimiter(
 
     entry.count++;
 
-    // Tighter limit for vault routes: 20/min (brute-force protection).
+    // Tighter limit for vault routes: 60/min (brute-force protection).
     const url = req.url;
-    const effectiveMax = url.startsWith("/vault") ? Math.min(max, 20) : max;
+    const effectiveMax = url.startsWith("/vault") ? Math.min(max, 60) : max;
 
     reply.header("X-RateLimit-Limit", effectiveMax);
     reply.header("X-RateLimit-Remaining", Math.max(0, effectiveMax - entry.count));
