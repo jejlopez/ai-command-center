@@ -4,6 +4,7 @@ import { jarvis } from "../../lib/jarvis.js";
 import { ConnectorCard } from "./ConnectorCard.jsx";
 import { UnifiedGoogleCard } from "./UnifiedGoogleCard.jsx";
 import { AppleConnectCard } from "./AppleConnectCard.jsx";
+import { PipedriveCard } from "./PipedriveCard.jsx";
 
 const CONNECTORS = [
  { id: "gmail", title: "Gmail", Icon: Mail },
@@ -96,6 +97,14 @@ export function ConnectorsPanel() {
  </div>
  )}
  </div>
+
+ <div className="my-5 flex items-center gap-3 text-[10px] uppercase tracking-[0.18em] text-jarvis-muted">
+  <div className="flex-1 h-px bg-jarvis-border" />
+  CRM
+  <div className="flex-1 h-px bg-jarvis-border" />
+ </div>
+
+ <PipedriveCard />
  </div>
  );
 }
