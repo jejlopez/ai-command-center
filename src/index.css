@@ -5,13 +5,13 @@
 :root {
   color-scheme: dark;
   --jarvis-bg: #0f1117;
-  --jarvis-surface: rgba(255,255,255,0.03);
-  --jarvis-surface-hover: rgba(255,255,255,0.05);
-  --jarvis-border: rgba(255,255,255,0.06);
-  --jarvis-border-hover: rgba(255,255,255,0.1);
-  --jarvis-ink: rgba(255,255,255,0.85);
-  --jarvis-body: rgba(255,255,255,0.55);
-  --jarvis-muted: rgba(255,255,255,0.3);
+  --jarvis-surface: rgba(255,255,255,0.05);
+  --jarvis-surface-hover: rgba(255,255,255,0.08);
+  --jarvis-border: rgba(255,255,255,0.10);
+  --jarvis-border-hover: rgba(255,255,255,0.16);
+  --jarvis-ink: rgba(255,255,255,0.9);
+  --jarvis-body: rgba(255,255,255,0.65);
+  --jarvis-muted: rgba(255,255,255,0.38);
   --jarvis-ghost: rgba(255,255,255,0.08);
 }
 
@@ -34,8 +34,9 @@ html, body, #root {
 
 body {
   background: #0f1117;
-  background-image: radial-gradient(ellipse at 30% 0%, rgba(0,224,208,0.03) 0%, transparent 50%),
-                    radial-gradient(ellipse at 70% 100%, rgba(167,139,250,0.02) 0%, transparent 50%);
+  background-image: radial-gradient(ellipse at 30% 0%, rgba(0,224,208,0.06) 0%, transparent 50%),
+                    radial-gradient(ellipse at 70% 100%, rgba(167,139,250,0.04) 0%, transparent 50%),
+                    radial-gradient(ellipse at 50% 50%, rgba(0,224,208,0.02) 0%, transparent 70%);
   background-attachment: fixed;
   color: rgba(255,255,255,0.85);
   font-family: Inter, system-ui, sans-serif;
@@ -53,12 +54,14 @@ body {
   .surface {
     @apply bg-jarvis-surface border border-jarvis-border rounded-[14px];
     border-left: 3px solid rgba(0,224,208,0.25);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
   }
   .surface-hover {
     @apply hover:bg-jarvis-surface-hover hover:border-jarvis-border-hover transition-all duration-200;
   }
   .glass {
     @apply bg-jarvis-surface border border-jarvis-border rounded-[14px];
+    border-left: 3px solid rgba(0,224,208,0.25);
     backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
   }
