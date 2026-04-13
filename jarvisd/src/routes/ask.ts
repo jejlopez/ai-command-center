@@ -6,6 +6,7 @@ import { vault } from "../lib/vault.js";
 import { route, estimateCostUsd, type TaskKind, type Privacy } from "../lib/router.js";
 import { callAnthropic } from "../lib/providers/anthropic.js";
 import { callOllama } from "../lib/providers/ollama.js";
+import { callClaudeCli } from "../lib/providers/claude_cli.js";
 import { assertBudgetAvailable, recordCost, spentTodayUsd, dailyBudgetUsd } from "../lib/cost.js";
 import { audit } from "../lib/audit.js";
 import { tagText, sensitivityToPrivacy } from "../lib/tagger.js";
@@ -88,8 +89,8 @@ export async function askRoutes(app: FastifyInstance): Promise<void> {
       };
     }
 
-    // Only cloud providers need a key from the vault.
-    if (decision.provider !== "ollama" && vault.isLocked()) {
+    // CLI doesn't need vault, but API providers do.
+    if (decision.provider !== "ollama" && decision.provider !== "claude-cli" && vault.isLocked()) {
       reply.code(423);
       return { error: "vault locked — needed for cloud provider API key" };
     }
@@ -102,17 +103,28 @@ export async function askRoutes(app: FastifyInstance): Promise<void> {
       metadata: { kind, privacy, model: decision.model, reason: decision.reason },
     });
 
-    if (decision.provider !== "anthropic" && decision.provider !== "ollama") {
+    if (!["anthropic", "ollama", "claude-cli"].includes(decision.provider)) {
       reply.code(501);
       return { error: `provider ${decision.provider} not yet wired` };
     }
 
     try {
-      const result =
-        decision.provider === "ollama"
-          ? await callOllama({ model: decision.model, prompt, system: context })
-          : await callAnthropic({ model: decision.model, prompt, system: context });
-      const costUsd = estimateCostUsd(decision.model, result.tokensIn, result.tokensOut);
+      let result;
+      if (decision.provider === "claude-cli") {
+        try {
+          result = await callClaudeCli({ model: decision.model, prompt, system: context });
+        } catch (cliErr: any) {
+          // CLI failed — fallback to Anthropic API
+          audit({ actor: "system", action: "cli.fallback", subject: runId, reason: cliErr.message });
+          decision = { ...decision, provider: "anthropic", reason: `${decision.reason} → API fallback` };
+          result = await callAnthropic({ model: decision.model, prompt, system: context });
+        }
+      } else if (decision.provider === "ollama") {
+        result = await callOllama({ model: decision.model, prompt, system: context });
+      } else {
+        result = await callAnthropic({ model: decision.model, prompt, system: context });
+      }
+      const costUsd = decision.provider === "claude-cli" ? 0 : estimateCostUsd(decision.model, result.tokensIn, result.tokensOut);
       recordCost({
         provider: decision.provider,
         model: decision.model,

@@ -128,6 +128,17 @@ async function main() {
   // every manifest with an event trigger.
   initEventBus();
 
+  // Check Claude CLI availability and enable if found
+  const { isCliAvailable } = await import("./lib/providers/claude_cli.js");
+  const { setCliEnabled } = await import("./lib/router.js");
+  const cliOk = await isCliAvailable();
+  setCliEnabled(cliOk);
+  if (cliOk) {
+    app.log.info("Claude CLI detected — using subscription (CLI-first, API fallback)");
+  } else {
+    app.log.info("Claude CLI not found — using API keys only");
+  }
+
   const port = Number(process.env.JARVIS_PORT ?? 8787);
   await app.listen({ host: "127.0.0.1", port });
   app.log.info(`jarvisd v${VERSION} listening on http://127.0.0.1:${port}`);

@@ -1,0 +1,74 @@
+// Claude Code CLI provider — uses your subscription plan (no API cost).
+// Falls back gracefully if the CLI is not installed or times out.
+
+import { execFile } from "node:child_process";
+import type { ProviderCallInput, ProviderCallOutput } from "./anthropic.js";
+
+const CLAUDE_BIN = process.env.CLAUDE_BIN ?? "claude";
+const TIMEOUT_MS = 60_000;
+
+let cliAvailable: boolean | null = null;
+
+/** Check once if the claude CLI exists and is authenticated. */
+export async function isCliAvailable(): Promise<boolean> {
+  if (cliAvailable !== null) return cliAvailable;
+  try {
+    const version = await exec(CLAUDE_BIN, ["--version"]);
+    cliAvailable = version.trim().length > 0;
+  } catch {
+    cliAvailable = false;
+  }
+  return cliAvailable;
+}
+
+/** Reset the cached availability check (for testing). */
+export function resetCliCheck(): void {
+  cliAvailable = null;
+}
+
+export async function callClaudeCli(input: ProviderCallInput): Promise<ProviderCallOutput> {
+  const args = [
+    "-p", buildPrompt(input),
+    "--output-format", "text",
+    "--max-turns", "1",
+    "--model", mapModel(input.model),
+  ];
+
+  if (input.maxTokens) {
+    args.push("--max-tokens", String(input.maxTokens));
+  }
+
+  const text = await exec(CLAUDE_BIN, args);
+
+  return {
+    text: text.trim(),
+    tokensIn: 0,  // CLI doesn't report token counts
+    tokensOut: 0,
+  };
+}
+
+function buildPrompt(input: ProviderCallInput): string {
+  if (input.system) {
+    return `${input.system}\n\n${input.prompt}`;
+  }
+  return input.prompt;
+}
+
+/** Map internal model names to CLI-compatible model flags. */
+function mapModel(model: string): string {
+  if (model.includes("opus")) return "opus";
+  if (model.includes("haiku")) return "haiku";
+  return "sonnet"; // default
+}
+
+function exec(cmd: string, args: string[]): Promise<string> {
+  return new Promise((resolve, reject) => {
+    execFile(cmd, args, { timeout: TIMEOUT_MS, maxBuffer: 1024 * 1024 }, (err, stdout, stderr) => {
+      if (err) {
+        reject(new Error(`claude cli failed: ${err.message}${stderr ? ` — ${stderr}` : ""}`));
+        return;
+      }
+      resolve(stdout);
+    });
+  });
+}

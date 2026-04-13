@@ -22,7 +22,7 @@ export interface RouteInput {
 }
 
 export interface RouteDecision {
-  provider: "anthropic" | "openai" | "google" | "ollama";
+  provider: "claude-cli" | "anthropic" | "openai" | "google" | "ollama";
   model: string;
   reason: string;
 }
@@ -37,6 +37,20 @@ export const PRICING: Record<string, { in: number; out: number }> = {
   "jarvis:latest":           { in: 0,  out: 0  }, // local
 };
 
+// Whether to prefer Claude CLI (subscription) over API (pay-per-token).
+// Set by the dispatcher after checking CLI availability at startup.
+let cliEnabled = false;
+export function setCliEnabled(v: boolean): void { cliEnabled = v; }
+export function isCliEnabled(): boolean { return cliEnabled; }
+
+function claude(model: string, reason: string): RouteDecision {
+  // Prefer CLI (free on subscription) → fallback to API
+  if (cliEnabled) {
+    return { provider: "claude-cli", model, reason: `${reason} [CLI]` };
+  }
+  return { provider: "anthropic", model, reason: `${reason} [API]` };
+}
+
 export function route(input: RouteInput): RouteDecision {
   const kind = input.kind ?? "chat";
 
@@ -50,19 +64,19 @@ export function route(input: RouteInput): RouteDecision {
     case "extraction":
       return { provider: "ollama", model: "jarvis:latest", reason: "cheap classification → local" };
     case "summary":
-      return { provider: "anthropic", model: "claude-haiku-4-5-20251001", reason: "routine summary → Haiku" };
+      return claude("claude-haiku-4-5-20251001", "routine summary → Haiku");
     case "routine_code":
-      return { provider: "anthropic", model: "claude-sonnet-4-6", reason: "routine code → Sonnet" };
+      return claude("claude-sonnet-4-6", "routine code → Sonnet");
     case "long_context":
       return { provider: "google", model: "gemini-2.5-pro", reason: "long context → Gemini Pro" };
     case "high_risk":
     case "complex_reasoning":
-      return { provider: "anthropic", model: "claude-opus-4-6", reason: "complex reasoning → Opus" };
+      return claude("claude-opus-4-6", "complex reasoning → Opus");
     case "vision":
-      return { provider: "anthropic", model: "claude-sonnet-4-6", reason: "vision → Sonnet" };
+      return claude("claude-sonnet-4-6", "vision → Sonnet");
     case "chat":
     default:
-      return { provider: "anthropic", model: "claude-sonnet-4-6", reason: "default chat → Sonnet" };
+      return claude("claude-sonnet-4-6", "default chat → Sonnet");
   }
 }
 
