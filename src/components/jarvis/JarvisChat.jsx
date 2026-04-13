@@ -27,18 +27,37 @@ function Message({ msg }) {
   );
 }
 
+const STORAGE_KEY = "jarvis-chat-history";
+const MAX_HISTORY = 100;
+
+function loadHistory() {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    }
+  } catch {}
+  return [{ role: "assistant", text: "Good morning. I'm online and monitoring your systems. What would you like to see?", tier: 0 }];
+}
+
+function saveHistory(messages) {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(messages.slice(-MAX_HISTORY)));
+  } catch {}
+}
+
 export function JarvisChat({ onDisplayUpdate }) {
-  const [messages, setMessages] = useState([
-    {
-      role: "assistant",
-      text: "Good morning. I'm online and monitoring your systems. What would you like to see?",
-      tier: 0,
-    },
-  ]);
+  const [messages, setMessages] = useState(loadHistory);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const bottomRef = useRef(null);
   const inputRef = useRef(null);
+
+  // Persist on every message change
+  useEffect(() => {
+    saveHistory(messages);
+  }, [messages]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
