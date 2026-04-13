@@ -1,7 +1,7 @@
 // Pipedrive CRM connector — syncs deals, leads, activities.
 // Uses the Pipedrive REST API v1. Only polls for recent changes to stay cheap.
 
-import { db } from "../db/db.js";
+import { db } from "../../db/db.js";
 import { vault } from "../vault.js";
 import { audit } from "../audit.js";
 

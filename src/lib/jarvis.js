@@ -177,4 +177,15 @@ export const jarvis = {
   // Orchestration
   orchestrate:     (goal, steps, budgetUsd) => post("/orchestrate", { goal, steps, budgetUsd }),
   dispatch:        (skill, instruction, payload, budgetUsd) => post("/dispatch", { skill, instruction, payload, budgetUsd }),
+
+  // CRM / Sales
+  crmStatus:       ()                  => get("/crm/status"),
+  crmSync:         ()                  => post("/crm/sync"),
+  crmPipeline:     ()                  => get("/crm/pipeline"),
+  crmStats:        ()                  => get("/crm/stats"),
+  crmDeals:        (pipeline, status)  => get(`/crm/deals?pipeline=${encodeURIComponent(pipeline ?? "New pipeline")}&status=${status ?? "open"}`),
+  crmDeal:         (id)                => get(`/crm/deals/${encodeURIComponent(id)}`),
+  crmUpdateDeal:   (id, data)          => post(`/crm/deals/${encodeURIComponent(id)}`, data),
+  crmLeads:        (status)            => get(`/crm/leads?status=${status ?? "active"}`),
+  crmCommand:      ()                  => get("/crm/command"),
 };
