@@ -87,6 +87,13 @@ export function PipelineBoard({ pipeline, onOpenDeal }) {
     );
   }
 
+  // Normalize stage keys — Pipedrive sometimes adds trailing spaces
+  const normalized = {};
+  for (const [key, deals] of Object.entries(pipeline)) {
+    const trimmed = key.trim();
+    normalized[trimmed] = [...(normalized[trimmed] || []), ...(deals || [])];
+  }
+
   return (
     <motion.div
       variants={stagger.container}
@@ -96,7 +103,7 @@ export function PipelineBoard({ pipeline, onOpenDeal }) {
       style={{ scrollbarWidth: "thin" }}
     >
       {STAGE_ORDER.map((stage) => {
-        const deals = pipeline[stage.key] ?? [];
+        const deals = normalized[stage.key] ?? [];
         return (
           <motion.div key={stage.key} variants={stagger.item} className="flex-1 min-w-[160px]">
             <StageColumn stage={stage} deals={deals} onOpenDeal={onOpenDeal} />

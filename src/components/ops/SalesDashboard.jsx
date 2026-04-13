@@ -115,7 +115,7 @@ export function SalesDashboard({ ops, onRefresh }) {
   const [openDeal, setOpenDeal] = useState(null);
   const [crmDealOpen, setCrmDealOpen] = useState(null);
 
-  const hasCRM = crm?.connected && (crm.deals?.length > 0 || crm.leads?.length > 0);
+  const hasCRM = crm?.connected && (crm.deals?.length > 0 || crm.leads?.length > 0 || Object.keys(crm.pipeline || {}).length > 0);
 
   return (
     <motion.div
