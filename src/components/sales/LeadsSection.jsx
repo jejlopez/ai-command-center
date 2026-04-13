@@ -1,12 +1,13 @@
 // Leads section — auto-researched, scored, with draft email status.
 
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import { stagger } from "../../lib/motion.js";
 import { Search, Mail, Phone, ExternalLink, RefreshCcw } from "lucide-react";
 import { jarvis } from "../../lib/jarvis.js";
 import { useState } from "react";
+import { LeadDetailPanel } from "./LeadDetailPanel.jsx";
 
-function LeadRow({ lead, onResearch }) {
+function LeadRow({ lead, onResearch, onClick }) {
   const [researching, setResearching] = useState(false);
 
   const doResearch = async () => {
@@ -32,7 +33,7 @@ function LeadRow({ lead, onResearch }) {
   };
 
   return (
-    <motion.div variants={stagger.item} className="surface p-3 surface-hover">
+    <motion.div variants={stagger.item} className="surface p-3 surface-hover cursor-pointer" onClick={() => onClick?.(lead)}>
       <div className="flex items-start justify-between gap-2">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
@@ -75,6 +76,8 @@ function LeadRow({ lead, onResearch }) {
 }
 
 export function LeadsSection({ leads, onRefresh }) {
+  const [selectedLead, setSelectedLead] = useState(null);
+
   if (!leads || leads.length === 0) {
     return (
       <div className="surface p-4 text-center">
@@ -88,18 +91,30 @@ export function LeadsSection({ leads, onRefresh }) {
   const cold = leads.filter(l => l.fit_score === "cold" || l.fit_score === "unknown" || !l.fit_score);
 
   return (
-    <motion.div variants={stagger.container} initial="hidden" animate="show" className="space-y-2">
-      <div className="flex items-center justify-between">
-        <div className="label">Leads ({leads.length})</div>
-        <div className="flex gap-2 text-[8px]">
-          <span className="text-jarvis-success">{hot.length} hot</span>
-          <span className="text-jarvis-warning">{warm.length} warm</span>
-          <span className="text-jarvis-muted">{cold.length} cold</span>
+    <>
+      <motion.div variants={stagger.container} initial="hidden" animate="show" className="space-y-2">
+        <div className="flex items-center justify-between">
+          <div className="label">Leads ({leads.length})</div>
+          <div className="flex gap-2 text-[8px]">
+            <span className="text-jarvis-success">{hot.length} hot</span>
+            <span className="text-jarvis-warning">{warm.length} warm</span>
+            <span className="text-jarvis-muted">{cold.length} cold</span>
+          </div>
         </div>
-      </div>
-      {[...hot, ...warm, ...cold].map((lead) => (
-        <LeadRow key={lead.id} lead={lead} onResearch={onRefresh} />
-      ))}
-    </motion.div>
+        {[...hot, ...warm, ...cold].map((lead) => (
+          <LeadRow key={lead.id} lead={lead} onResearch={onRefresh} onClick={setSelectedLead} />
+        ))}
+      </motion.div>
+
+      <AnimatePresence>
+        {selectedLead && (
+          <LeadDetailPanel
+            lead={selectedLead}
+            onClose={() => setSelectedLead(null)}
+            onRefresh={onRefresh}
+          />
+        )}
+      </AnimatePresence>
+    </>
   );
 }
