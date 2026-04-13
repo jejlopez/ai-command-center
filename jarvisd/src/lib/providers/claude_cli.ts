@@ -61,7 +61,7 @@ export async function callClaudeCli(input: CliCallOptions): Promise<ProviderCall
   }
 
   if (input.allowWebSearch) {
-    args.push("--allowedTools", "mcp__claude_ai_web_search__web_search");
+    args.push("--allowedTools", "WebSearch", "--max-turns", "3");
   }
 
   const text = await exec(CLAUDE_BIN, args);
