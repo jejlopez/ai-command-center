@@ -12,6 +12,7 @@ import { HomeStatusBoard } from "./components/HomeStatusBoard.jsx";
 import { RightRail } from "./components/RightRail.jsx";
 import { Composer } from "./components/Composer.jsx";
 import { ConversationThread } from "./components/ConversationThread.jsx";
+import JarvisView from "./views/JarvisView.jsx";
 import { JarvisHalo } from "./components/JarvisHalo.jsx";
 import Onboarding from "./views/Onboarding.jsx";
 import Login from "./views/Login.jsx";
@@ -34,8 +35,6 @@ export default function App() {
   const [active, setActive] = useState("home");
   const [health, setHealth] = useState(null);
   const [localMode, setLocalMode] = useState(() => localStorage.getItem("jarvis_local_mode") === "true");
-  const [chatMessages, setChatMessages] = useState([]);
-  const [chatLoading, setChatLoading] = useState(false);
   const auth = useAuth();
   useNotifications();
   const { brief, rail, recentRuns, error, loading, decide, regenerateBrief } = useJarvisBrief();
@@ -120,55 +119,13 @@ export default function App() {
           <div className="relative flex flex-1 min-h-0">
             <Settings key={health?.vaultLocked ? "locked" : "unlocked"} />
           </div>
+        ) : active === "home" ? (
+          <div className="relative flex flex-1 min-h-0">
+            <JarvisView />
+          </div>
         ) : (
           <div className="relative flex flex-1 min-h-0">
             <section className="flex-1 min-w-0 overflow-y-auto">
-              {active === "home" && (
-                <>
-                  <div className="px-6 py-5 space-y-5 pb-36">
-                    {loading && (
-                      <div className="glass p-6 text-jarvis-body text-sm">Connecting to jarvisd…</div>
-                    )}
-                    {error && (
-                      <div className="rounded-2xl border border-jarvis-red/30 bg-jarvis-red/5 p-6">
-                        <div className="text-jarvis-red text-sm font-semibold">Daemon unreachable</div>
-                        <div className="text-jarvis-body text-xs mt-1">
-                          Start it with <code className="text-jarvis-primary">cd jarvisd && npm run dev</code>
-                        </div>
-                      </div>
-                    )}
-                    {!loading && !error && <HomeStatusBoard brief={brief} />}
-
-                    {!loading && !error && <ConversationThread messages={chatMessages} />}
-                    {chatLoading && (
-                      <div className="flex items-center gap-2 px-2 py-3 text-jarvis-muted text-sm">
-                        <div className="w-2 h-2 rounded-full bg-jarvis-primary animate-pulse" />
-                        JARVIS is thinking...
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Sticky composer */}
-                  <div className="sticky bottom-0 left-0 right-0 px-6 pb-5 pt-3 bg-gradient-to-t from-jarvis-bg via-jarvis-bg/90 to-transparent">
-                    <Composer onSend={async (text) => {
-                      const now = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-                      setChatMessages((prev) => [...prev, { role: "user", text, ts: now }]);
-                      setChatLoading(true);
-                      try {
-                        const res = await jarvis.ask(text, { kind: "chat" });
-                        const replyTime = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-                        setChatMessages((prev) => [...prev, { role: "jarvis", text: res.text, ts: replyTime }]);
-                      } catch (err) {
-                        const replyTime = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-                        setChatMessages((prev) => [...prev, { role: "jarvis", text: `Error: ${err.message}`, ts: replyTime }]);
-                      } finally {
-                        setChatLoading(false);
-                      }
-                    }} />
-                  </div>
-                </>
-              )}
-
               {active === "today"  && <Today />}
               {active === "brain"  && <Brain />}
               {active === "work"   && <Work />}
