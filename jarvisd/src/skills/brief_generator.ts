@@ -204,10 +204,14 @@ export async function generateBrief(): Promise<MorningBrief> {
   const criticalItems: BriefItem[] = critical.map((n) => toBriefItem(n, "critical"));
   const followUpItems: BriefItem[] = followUps.map((n) => toBriefItem(n, "normal"));
 
-  // Prefer Apple Calendar (zero-setup, reads Google through macOS) → gcal → memory.
+  // Try Apple Calendar first, then gcal, then memory.
+  // Use gcal if Apple returns empty (not just null).
   const appleSchedule = await scheduleFromAppleIfAvailable();
-  const gcalSchedule = appleSchedule ?? (await scheduleFromGcalIfLinked());
-  const schedule = gcalSchedule ?? scheduleFromEvents(events);
+  const gcalSchedule = await scheduleFromGcalIfLinked();
+  const schedule =
+    (appleSchedule && appleSchedule.length > 0) ? appleSchedule :
+    (gcalSchedule && gcalSchedule.length > 0) ? gcalSchedule :
+    scheduleFromEvents(events);
 
   // Unread mail becomes "waiting on" items.
   const waitingOn: BriefItem[] = await waitingOnFromAppleMail();
