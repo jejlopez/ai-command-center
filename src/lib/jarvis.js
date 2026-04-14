@@ -182,6 +182,10 @@ export const jarvis = {
   emailSearch:     (q, max)            => get(`/email/search?q=${encodeURIComponent(q)}&max=${max ?? 10}`),
   emailForContact: (email)             => get(`/email/for-contact?email=${encodeURIComponent(email)}&max=10`),
 
+  // Email intelligence
+  emailAiDraft:    (dealId, type, context) => post("/email/ai-draft", { deal_id: dealId, type, context }),
+  emailStyleLearn: (original, edited, dealId, contactId, context) => post("/email/style-learn", { original, edited, deal_id: dealId, contact_id: contactId, context }),
+
   // CRM / Sales
   crmStatus:       ()                  => get("/crm/status"),
   crmSync:         ()                  => post("/crm/sync"),

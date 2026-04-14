@@ -56,7 +56,7 @@ Deno.serve(async (req: Request) => {
   // POST — handle client response (accept / request changes / decline)
   if (req.method === 'POST') {
     const body = await req.json();
-    const { action, notes } = body;
+    const { action, notes, signature } = body;
 
     if (!['accepted', 'changes_requested', 'declined'].includes(action)) {
       return new Response(JSON.stringify({ error: 'Invalid action' }), {
@@ -78,20 +78,36 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    // Update proposal status
-    await supabase.from('proposals').update({
+    // Capture IP server-side and attach to signature record
+    const ipAddress = req.headers.get('x-forwarded-for') ?? req.headers.get('x-real-ip') ?? 'unknown';
+
+    const signatureRecord = action === 'accepted' && signature ? {
+      name: signature.name ?? '',
+      title: signature.title ?? '',
+      company: signature.company ?? proposal.company_name ?? '',
+      agreed: signature.agreed ?? false,
+      signed_at: signature.signed_at ?? new Date().toISOString(),
+      ip_address: ipAddress,
+    } : null;
+
+    // Build update payload
+    const updatePayload: Record<string, unknown> = {
       client_response: action,
       client_notes: notes ?? null,
       responded_at: new Date().toISOString(),
       status: action === 'accepted' ? 'accepted' : action === 'declined' ? 'rejected' : 'sent',
-    }).eq('id', proposal.id);
+    };
+    if (signatureRecord) updatePayload.signature = signatureRecord;
+
+    await supabase.from('proposals').update(updatePayload).eq('id', proposal.id);
 
     // Create a jarvis_suggestion to notify the user
+    const sigNote = signatureRecord ? ` (signed by ${signatureRecord.name}, ${signatureRecord.title})` : '';
     await supabase.from('jarvis_suggestions').insert({
       user_id: proposal.user_id,
       type: 'proposal_response',
-      suggestion: `${proposal.company_name} ${action === 'accepted' ? 'ACCEPTED' : action === 'declined' ? 'DECLINED' : 'requested changes on'} your proposal${notes ? `: "${notes}"` : ''}`,
-      context: { proposal_id: proposal.id, deal_id: proposal.deal_id, action, notes },
+      suggestion: `${proposal.company_name} ${action === 'accepted' ? 'ACCEPTED' : action === 'declined' ? 'DECLINED' : 'requested changes on'} your proposal${sigNote}${notes ? `: "${notes}"` : ''}`,
+      context: { proposal_id: proposal.id, deal_id: proposal.deal_id, action, notes, signature: signatureRecord },
     });
 
     // If accepted, update deal stage to closed_won
@@ -299,10 +315,82 @@ function renderProposal(p: any): string {
       cursor: pointer;
       font-family: 'Inter', sans-serif;
     }
+    .sig-form {
+      display: none;
+      margin-top: 20px;
+      padding: 24px;
+      border-radius: 16px;
+      background: rgba(0,224,208,0.04);
+      border: 1px solid rgba(0,224,208,0.15);
+    }
+    .sig-form h3 {
+      font-size: 15px;
+      font-weight: 600;
+      color: rgba(255,255,255,0.9);
+      margin-bottom: 4px;
+    }
+    .sig-form .sig-subtitle {
+      font-size: 12px;
+      color: rgba(255,255,255,0.4);
+      margin-bottom: 20px;
+    }
+    .sig-form input {
+      width: 100%;
+      padding: 11px 14px;
+      border-radius: 10px;
+      background: rgba(255,255,255,0.03);
+      border: 1px solid rgba(255,255,255,0.08);
+      color: rgba(255,255,255,0.85);
+      font-family: 'Inter', sans-serif;
+      font-size: 14px;
+      outline: none;
+      margin-bottom: 10px;
+    }
+    .sig-form input:focus { border-color: rgba(0,224,208,0.3); }
+    .sig-form .agree-row {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      margin: 16px 0;
+      padding: 14px;
+      border-radius: 10px;
+      background: rgba(255,255,255,0.02);
+      border: 1px solid rgba(255,255,255,0.06);
+    }
+    .sig-form .agree-row input[type=checkbox] {
+      width: 16px;
+      height: 16px;
+      min-width: 16px;
+      margin: 0;
+      margin-top: 1px;
+      cursor: pointer;
+      accent-color: #00E0D0;
+    }
+    .sig-form .agree-label {
+      font-size: 12px;
+      color: rgba(255,255,255,0.6);
+      line-height: 1.5;
+    }
+    .btn-sign {
+      width: 100%;
+      padding: 14px;
+      border-radius: 12px;
+      border: none;
+      background: rgba(0,224,208,0.15);
+      color: #00E0D0;
+      border: 1px solid rgba(0,224,208,0.3);
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      font-family: 'Inter', sans-serif;
+      transition: background 0.2s;
+    }
+    .btn-sign:hover { background: rgba(0,224,208,0.25); }
+    .btn-sign:disabled { opacity: 0.4; cursor: not-allowed; }
     .success-msg {
       display: none;
       text-align: center;
-      padding: 24px;
+      padding: 48px 24px;
       color: #00E0A0;
       font-size: 16px;
     }
@@ -410,15 +498,32 @@ function renderProposal(p: any): string {
     <div class="glass" id="response-section">
       <div class="section-label">Your Response</div>
       <div id="action-buttons" class="actions">
-        <button class="btn btn-accept" onclick="respond('accepted')">Accept Proposal</button>
-        <button class="btn btn-changes" onclick="showForm()">Request Changes</button>
+        <button class="btn btn-accept" onclick="showSignatureForm()">Accept Proposal</button>
+        <button class="btn btn-changes" onclick="showChangesForm()">Request Changes</button>
       </div>
+
+      <!-- Signature capture form — shown when "Accept Proposal" is clicked -->
+      <div id="sig-form" class="sig-form">
+        <h3>Sign & Accept Proposal</h3>
+        <div class="sig-subtitle">This constitutes a legally binding agreement under the ESIGN Act.</div>
+        <input type="text" id="sig-name" placeholder="Full legal name" autocomplete="name" />
+        <input type="text" id="sig-title" placeholder="Title / Role (e.g. VP Operations)" autocomplete="organization-title" />
+        <input type="text" id="sig-company" placeholder="Company" value="${p.company_name ?? ''}" autocomplete="organization" />
+        <div class="agree-row">
+          <input type="checkbox" id="sig-agree" onchange="updateSignBtn()" />
+          <label class="agree-label" for="sig-agree">
+            I agree to the terms outlined in this proposal and understand this constitutes a legally binding agreement under the ESIGN Act.
+          </label>
+        </div>
+        <button class="btn-sign" id="sign-btn" disabled onclick="submitSignature()">Sign &amp; Accept</button>
+      </div>
+
       <div id="changes-form" class="response-form">
         <textarea id="client-notes" placeholder="What changes would you like?"></textarea>
-        <button onclick="respond('changes_requested')">Submit Feedback</button>
+        <button onclick="respond('changes_requested', null)">Submit Feedback</button>
       </div>
       <div id="success" class="success-msg">
-        ✓ Thank you! Your response has been recorded.
+        <div id="success-content"></div>
       </div>
     </div>
 
@@ -428,23 +533,87 @@ function renderProposal(p: any): string {
   </div>
 
   <script>
-    function showForm() {
+    function showSignatureForm() {
+      document.getElementById('action-buttons').style.display = 'none';
+      document.getElementById('sig-form').style.display = 'block';
+    }
+
+    function showChangesForm() {
       document.getElementById('changes-form').style.display = 'block';
     }
 
-    async function respond(action) {
-      const notes = document.getElementById('client-notes')?.value ?? '';
+    function updateSignBtn() {
+      const agreed = document.getElementById('sig-agree').checked;
+      const name = document.getElementById('sig-name').value.trim();
+      document.getElementById('sign-btn').disabled = !(agreed && name.length > 0);
+    }
+
+    // Enable sign button when name is filled in too
+    document.addEventListener('DOMContentLoaded', () => {
+      document.getElementById('sig-name').addEventListener('input', updateSignBtn);
+    });
+
+    async function submitSignature() {
+      const name    = document.getElementById('sig-name').value.trim();
+      const title   = document.getElementById('sig-title').value.trim();
+      const company = document.getElementById('sig-company').value.trim();
+      const agreed  = document.getElementById('sig-agree').checked;
+
+      if (!name || !agreed) {
+        alert('Please enter your full legal name and check the agreement box.');
+        return;
+      }
+
+      const btn = document.getElementById('sign-btn');
+      btn.disabled = true;
+      btn.textContent = 'Signing...';
+
+      await respond('accepted', null, {
+        name,
+        title,
+        company,
+        agreed,
+        signed_at: new Date().toISOString(),
+        // ip_address captured server-side
+      });
+    }
+
+    async function respond(action, notes, signature) {
+      const clientNotes = notes ?? document.getElementById('client-notes')?.value ?? '';
+      const payload = { action, notes: clientNotes || null };
+      if (signature) payload.signature = signature;
+
       try {
         await fetch('${viewUrl}?token=${p.share_token}', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action, notes }),
+          body: JSON.stringify(payload),
         });
         document.getElementById('action-buttons').style.display = 'none';
+        document.getElementById('sig-form').style.display = 'none';
         document.getElementById('changes-form').style.display = 'none';
-        document.getElementById('success').style.display = 'block';
+
+        const successEl = document.getElementById('success');
+        const contentEl = document.getElementById('success-content');
+
+        if (action === 'accepted' && signature) {
+          const date = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+          contentEl.innerHTML = \`
+            <div style="font-size:48px;margin-bottom:16px;">✓</div>
+            <h2 style="font-size:20px;font-weight:700;color:#fff;margin-bottom:8px;">Proposal Accepted &amp; Signed</h2>
+            <p style="color:rgba(255,255,255,0.6);margin-bottom:4px;">Signed by \${signature.name}\${signature.title ? ', ' + signature.title : ''}\${signature.company ? ' at ' + signature.company : ''}</p>
+            <p style="color:rgba(255,255,255,0.4);font-size:13px;margin-bottom:16px;">\${date}</p>
+            <p style="font-size:12px;color:rgba(255,255,255,0.25);">A copy has been sent to your sales representative.</p>
+          \`;
+        } else {
+          contentEl.innerHTML = '<div style="font-size:32px;margin-bottom:12px;">✓</div><p>Thank you — your response has been recorded.</p>';
+        }
+
+        successEl.style.display = 'block';
       } catch (e) {
         alert('Failed to submit response. Please try again.');
+        const btn = document.getElementById('sign-btn');
+        if (btn) { btn.disabled = false; btn.textContent = 'Sign & Accept'; }
       }
     }
   </script>

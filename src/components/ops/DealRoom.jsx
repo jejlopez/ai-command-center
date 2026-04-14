@@ -3,8 +3,9 @@
 // contacts, follow-ups, timeline — everything linked to one deal
 
 import { useState, useEffect } from "react";
-import { X, FileText, MessageSquare, Users, Clock, DollarSign, Send } from "lucide-react";
+import { X, FileText, MessageSquare, Users, Clock, DollarSign, Send, Mail } from "lucide-react";
 import { supabase } from "../../lib/supabase.js";
+import { jarvis } from "../../lib/jarvis.js";
 import { ProposalGenerator } from "./ProposalGenerator.jsx";
 
 export function DealRoom({ dealId, deal, onClose }) {
@@ -14,6 +15,8 @@ export function DealRoom({ dealId, deal, onClose }) {
   const [comms, setComms] = useState([]);
   const [followUps, setFollowUps] = useState([]);
   const [showProposalGen, setShowProposalGen] = useState(false);
+  const [drafting, setDrafting] = useState(false);
+  const [emailDraft, setEmailDraft] = useState(null);
 
   useEffect(() => {
     if (!supabase || !dealId) return;
@@ -51,6 +54,17 @@ export function DealRoom({ dealId, deal, onClose }) {
 
   const fmtDate = (d) => new Date(d).toLocaleDateString([], { month: "short", day: "numeric" });
   const fmtUsd = (n) => `$${(n ?? 0).toLocaleString()}`;
+
+  const draftEmail = async () => {
+    setDrafting(true);
+    try {
+      const draft = await jarvis.emailAiDraft(dealId, "follow_up");
+      setEmailDraft({ ...draft, _original: draft.body });
+    } catch (e) {
+      console.error("Draft failed:", e);
+    }
+    setDrafting(false);
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-6">
@@ -124,13 +138,61 @@ export function DealRoom({ dealId, deal, onClose }) {
               )}
               <div className="flex items-center justify-between">
                 <div className="label">Proposals</div>
-                <button
-                  onClick={() => setShowProposalGen(true)}
-                  className="flex items-center gap-2 px-4 py-2 rounded-xl bg-jarvis-primary/15 text-jarvis-primary text-sm font-semibold hover:bg-jarvis-primary/25 transition"
-                >
-                  <FileText size={14} /> Create Proposal
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={draftEmail}
+                    disabled={drafting}
+                    className="flex items-center gap-2 px-4 py-2 rounded-xl bg-jarvis-ghost text-jarvis-body text-sm font-semibold hover:bg-jarvis-surface hover:text-jarvis-ink transition disabled:opacity-50"
+                  >
+                    <Mail size={14} /> {drafting ? "Drafting…" : "Draft Email"}
+                  </button>
+                  <button
+                    onClick={() => setShowProposalGen(true)}
+                    className="flex items-center gap-2 px-4 py-2 rounded-xl bg-jarvis-primary/15 text-jarvis-primary text-sm font-semibold hover:bg-jarvis-primary/25 transition"
+                  >
+                    <FileText size={14} /> Create Proposal
+                  </button>
+                </div>
               </div>
+
+              {emailDraft && (
+                <div className="rounded-xl border border-jarvis-border bg-jarvis-surface p-4">
+                  <div className="label mb-2">AI Draft Email</div>
+                  {emailDraft.to && <div className="text-xs text-jarvis-muted mb-1">To: {emailDraft.to}</div>}
+                  <div className="text-xs text-jarvis-ink font-semibold mb-3">Subject: {emailDraft.subject}</div>
+                  <textarea
+                    value={emailDraft.body}
+                    onChange={e => setEmailDraft({ ...emailDraft, body: e.target.value })}
+                    rows={6}
+                    className="w-full px-3 py-2 rounded-xl bg-jarvis-ghost border border-jarvis-border text-sm text-jarvis-ink outline-none resize-none focus:border-jarvis-primary/40"
+                  />
+                  <div className="flex gap-2 mt-3">
+                    <button
+                      onClick={async () => {
+                        // Save style edits if user changed the draft
+                        if (emailDraft._original && emailDraft.body !== emailDraft._original) {
+                          await jarvis.emailStyleLearn(emailDraft._original, emailDraft.body, dealId, null, "follow_up");
+                        }
+                        // Queue for approval via the ask route
+                        await jarvis.ask(
+                          `Send email to ${emailDraft.to}: Subject: ${emailDraft.subject}\n\n${emailDraft.body}`,
+                          { kind: "chat" }
+                        );
+                        setEmailDraft(null);
+                      }}
+                      className="px-4 py-2 rounded-xl bg-jarvis-primary/15 text-jarvis-primary text-xs font-semibold hover:bg-jarvis-primary/25 transition"
+                    >
+                      Send for Approval
+                    </button>
+                    <button
+                      onClick={() => setEmailDraft(null)}
+                      className="px-4 py-2 rounded-xl bg-jarvis-ghost text-jarvis-muted text-xs hover:text-jarvis-ink transition"
+                    >
+                      Discard
+                    </button>
+                  </div>
+                </div>
+              )}
 
               <div>
                 <div className="label mb-2">Pending Follow-ups</div>
