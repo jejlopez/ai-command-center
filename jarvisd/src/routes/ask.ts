@@ -9,6 +9,7 @@ import { callOllama } from "../lib/providers/ollama.js";
 import { callClaudeCli } from "../lib/providers/claude_cli.js";
 import { callWithWebSearch } from "../lib/providers/web_search.js";
 import { JARVIS_SYSTEM_PROMPT } from "../lib/jarvis_system_prompt.js";
+import { gatherContext } from "../lib/context_gatherer.js";
 import { parseActions, stripActionBlocks, executeActions } from "../lib/action_executor.js";
 import { assertBudgetAvailable, recordCost, spentTodayUsd, dailyBudgetUsd } from "../lib/cost.js";
 import { audit } from "../lib/audit.js";
@@ -69,8 +70,11 @@ export async function askRoutes(app: FastifyInstance): Promise<void> {
       });
     }
 
-    // Inject JARVIS system prompt so Claude knows what tools are available
-    const systemPrompt = context ? `${JARVIS_SYSTEM_PROMPT}\n\n${context}` : JARVIS_SYSTEM_PROMPT;
+    // Gather live data relevant to the user's question
+    const liveContext = await gatherContext(prompt);
+
+    // Inject JARVIS system prompt + live data
+    const systemPrompt = JARVIS_SYSTEM_PROMPT + liveContext + (context ? `\n\n${context}` : "");
 
     // --- Shield Protocol: tag prompt for PII/secrets, escalate privacy ---
     const tag = tagText(prompt + (systemPrompt ?? ""));
