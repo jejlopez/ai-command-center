@@ -109,8 +109,20 @@ async function computeForUser(supabase: ReturnType<typeof createClient>, userId:
   for (const d of staleDeals) newSuggestions.push({ type: 'follow_up', suggestion: `Follow up with ${d.company} — deal untouched for ${daysSince(d.last_touch)} days`, context: { deal_id: d.id, company: d.company } });
   for (const p of noStop) newSuggestions.push({ type: 'trade_alert', suggestion: `Set a stop-loss on ${p.ticker} (${p.side}, entry $${p.entry_price})`, context: { position_id: p.id, ticker: p.ticker } });
 
+  // Dedup: only insert suggestions that don't already exist today
   if (newSuggestions.length > 0) {
-    await supabase.from('jarvis_suggestions').insert(newSuggestions.map((s: any) => ({ user_id: userId, ...s })));
+    const { data: existingToday } = await supabase
+      .from('jarvis_suggestions')
+      .select('type, suggestion')
+      .eq('user_id', userId)
+      .gte('created_at', today + 'T00:00:00Z');
+
+    const existingSet = new Set((existingToday ?? []).map((e: any) => `${e.type}:${e.suggestion}`));
+    const deduped = newSuggestions.filter((s: any) => !existingSet.has(`${s.type}:${s.suggestion}`));
+
+    if (deduped.length > 0) {
+      await supabase.from('jarvis_suggestions').insert(deduped.map((s: any) => ({ user_id: userId, ...s })));
+    }
   }
 
   // Upsert intelligence
