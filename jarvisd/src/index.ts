@@ -43,6 +43,13 @@ import { leadResearch } from "./skills/lead_research.js";
 import { proposalGenerator } from "./skills/proposal_generator.js";
 import { proactiveAgent } from "./skills/proactive_agent.js";
 import { followUpNagger } from "./skills/follow_up_nagger.js";
+import { crmMorningBrief } from "./skills/crm_morning_brief.js";
+import { crmMiddayRecap } from "./skills/crm_midday_recap.js";
+import { crmEodRecap } from "./skills/crm_eod_recap.js";
+import { crmMeetingPrep } from "./skills/crm_meeting_prep.js";
+import { crmDealPlaybook } from "./skills/crm_deal_playbook.js";
+import { crmFollowupSequences } from "./skills/crm_followup_sequences.js";
+import { crmPipelineGap } from "./skills/crm_pipeline_gap.js";
 import { crmRoutes } from "./routes/crm.js";
 import { webhookRoutes } from "./routes/webhooks.js";
 import { learningRoutes } from "./routes/learning.js";
@@ -148,6 +155,13 @@ async function main() {
   registry.register(proposalGenerator);
   registry.register(proactiveAgent);
   registry.register(followUpNagger);
+  registry.register(crmMorningBrief);
+  registry.register(crmMiddayRecap);
+  registry.register(crmEodRecap);
+  registry.register(crmMeetingPrep);
+  registry.register(crmDealPlaybook);
+  registry.register(crmFollowupSequences);
+  registry.register(crmPipelineGap);
 
   // Wire the event bus after skills are registered so subscriptions pick up
   // every manifest with an event trigger.
