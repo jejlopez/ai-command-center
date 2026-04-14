@@ -52,6 +52,7 @@ import { emailSearchRoutes } from "./routes/email_search.js";
 import { emailActionsRoutes } from "./routes/email_actions.js";
 import { calendarActionRoutes } from "./routes/calendar_actions.js";
 import { crmActionsRoutes } from "./routes/crm_actions.js";
+import { browserActionsRoutes } from "./routes/browser_actions.js";
 import { vault } from "./lib/vault.js";
 import { policyEngine } from "./lib/policy.js";
 import { policyRoutes } from "./routes/policy.js";
@@ -110,6 +111,7 @@ async function main() {
   await emailActionsRoutes(app);
   await calendarActionRoutes(app);
   await crmActionsRoutes(app);
+  await browserActionsRoutes(app);
   await crmRoutes(app);
   await webhookRoutes(app);
   await panicRoutes(app);
