@@ -41,6 +41,8 @@ import { emailTriage } from "./skills/email_triage.js";
 import { emailDrafter } from "./skills/email_drafter.js";
 import { leadResearch } from "./skills/lead_research.js";
 import { proposalGenerator } from "./skills/proposal_generator.js";
+import { proactiveAgent } from "./skills/proactive_agent.js";
+import { followUpNagger } from "./skills/follow_up_nagger.js";
 import { crmRoutes } from "./routes/crm.js";
 import { webhookRoutes } from "./routes/webhooks.js";
 import { learningRoutes } from "./routes/learning.js";
@@ -139,6 +141,8 @@ async function main() {
   registry.register(emailDrafter);
   registry.register(leadResearch);
   registry.register(proposalGenerator);
+  registry.register(proactiveAgent);
+  registry.register(followUpNagger);
 
   // Wire the event bus after skills are registered so subscriptions pick up
   // every manifest with an event trigger.
