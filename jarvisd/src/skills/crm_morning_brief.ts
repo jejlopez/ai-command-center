@@ -81,9 +81,11 @@ Generate:
 3. RISK ALERTS — any deals at risk of going cold or being lost
 4. PIPELINE INSIGHT — one key observation about the overall pipeline
 
+For any action that involves following up with a contact, also draft a brief email (2-3 sentences) that could be sent. Include it as "email_draft" in the action object.
+
 Format as JSON with no markdown:
 {
-  "actions": [{"deal": "company", "action": "specific action", "reason": "why now", "urgency": "high|medium|low"}],
+  "actions": [{"deal": "company", "action": "specific action", "reason": "why now", "urgency": "high|medium|low", "email_draft": "Hi [Name], I wanted to follow up on..."}],
   "health_scores": [{"deal": "company", "score": 85, "reason": "active engagement"}],
   "risks": [{"deal": "company", "risk": "description"}],
   "insight": "one sentence about pipeline health"
@@ -111,6 +113,7 @@ Format as JSON with no markdown:
         title: `[${a.urgency?.toUpperCase() ?? 'ACTION'}] ${a.deal}: ${a.action}`,
         body: a.reason ?? '',
         metadata: a,
+        context: a.email_draft ? { email_draft: a.email_draft } : null,
         created_at: new Date().toISOString(),
         date: today,
       }));
