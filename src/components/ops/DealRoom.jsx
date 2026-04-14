@@ -5,6 +5,7 @@
 import { useState, useEffect } from "react";
 import { X, FileText, MessageSquare, Users, Clock, DollarSign, Send } from "lucide-react";
 import { supabase } from "../../lib/supabase.js";
+import { ProposalGenerator } from "./ProposalGenerator.jsx";
 
 export function DealRoom({ dealId, deal, onClose }) {
   const [tab, setTab] = useState("overview");
@@ -12,6 +13,7 @@ export function DealRoom({ dealId, deal, onClose }) {
   const [docs, setDocs] = useState([]);
   const [comms, setComms] = useState([]);
   const [followUps, setFollowUps] = useState([]);
+  const [showProposalGen, setShowProposalGen] = useState(false);
 
   useEffect(() => {
     if (!supabase || !dealId) return;
@@ -120,6 +122,16 @@ export function DealRoom({ dealId, deal, onClose }) {
                   </div>
                 </div>
               )}
+              <div className="flex items-center justify-between">
+                <div className="label">Proposals</div>
+                <button
+                  onClick={() => setShowProposalGen(true)}
+                  className="flex items-center gap-2 px-4 py-2 rounded-xl bg-jarvis-primary/15 text-jarvis-primary text-sm font-semibold hover:bg-jarvis-primary/25 transition"
+                >
+                  <FileText size={14} /> Create Proposal
+                </button>
+              </div>
+
               <div>
                 <div className="label mb-2">Pending Follow-ups</div>
                 {followUps.filter(f => f.status === "pending").length === 0 ? (
@@ -216,6 +228,20 @@ export function DealRoom({ dealId, deal, onClose }) {
           )}
         </div>
       </div>
+      {showProposalGen && (
+        <ProposalGenerator
+          deal={deal}
+          onClose={() => setShowProposalGen(false)}
+          onSaved={() => {
+            setShowProposalGen(false);
+            // Re-fetch proposals for this deal
+            if (supabase && dealId) {
+              supabase.from("proposals").select("*").eq("deal_id", dealId).order("created_at", { ascending: false })
+                .then(({ data }) => setProposals(data ?? []));
+            }
+          }}
+        />
+      )}
     </div>
   );
 }

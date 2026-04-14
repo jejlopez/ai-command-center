@@ -1,10 +1,10 @@
 import { useState } from "react";
-import { Plus, Briefcase, TrendingUp, Code } from "lucide-react";
+import { Plus, Briefcase, TrendingUp, Code, FileText } from "lucide-react";
 import { supabase } from "../../lib/supabase.js";
 
 const MODE_ACTIONS = {
   sales: [
-    { label: "+ Proposal",  table: "proposals",      fields: { status: "draft" },  placeholder: "Proposal name" },
+    { label: "+ Proposal",  isProposalGen: true },
     { label: "+ Note",      table: "communications", fields: { type: "note" },     placeholder: "Log a note…",  isBody: true },
     { label: "+ Document",  table: "documents",      fields: { type: "other" },    placeholder: "Document name" },
   ],
@@ -20,7 +20,7 @@ const MODE_ACTIONS = {
 const MODE_ICON = { sales: Briefcase, trading: TrendingUp, build: Code };
 const MODE_COLOR = { sales: "text-blue-400", trading: "text-jarvis-purple", build: "text-cyan-400" };
 
-export function QuickAddOps({ mode, onRefresh }) {
+export function QuickAddOps({ mode, onRefresh, onOpenProposalGen }) {
   const [activeAction, setActiveAction] = useState(null);
   const [value, setValue] = useState("");
   const [saving, setSaving] = useState(false);
@@ -28,6 +28,14 @@ export function QuickAddOps({ mode, onRefresh }) {
   const actions = MODE_ACTIONS[mode] ?? [];
   const Icon = MODE_ICON[mode] ?? Plus;
   const color = MODE_COLOR[mode] ?? "text-jarvis-primary";
+
+  function handleActionClick(a) {
+    if (a.isProposalGen) {
+      onOpenProposalGen?.();
+    } else {
+      setActiveAction(a);
+    }
+  }
 
   async function handleSave() {
     if (!supabase || !value.trim() || !activeAction) return;
@@ -78,9 +86,10 @@ export function QuickAddOps({ mode, onRefresh }) {
           {actions.map((a) => (
             <button
               key={a.label}
-              onClick={() => setActiveAction(a)}
-              className="chip bg-white/5 text-jarvis-muted hover:text-jarvis-body hover:bg-white/10 transition-all"
+              onClick={() => handleActionClick(a)}
+              className={`chip bg-white/5 hover:bg-white/10 transition-all ${a.isProposalGen ? "text-jarvis-primary hover:text-jarvis-primary" : "text-jarvis-muted hover:text-jarvis-body"}`}
             >
+              {a.isProposalGen && <FileText size={9} className="inline mr-0.5" />}
               {a.label}
             </button>
           ))}
