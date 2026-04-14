@@ -253,34 +253,124 @@ export function getRun(id: string): SkillRun | null {
 // Cron parser + scheduler
 // ---------------------------------------------------------------------------
 
-// Parsed cron — supports: M H * * *, M H * * DOW, M * * * *
+// Parsed cron — supports full 5-field standard cron syntax:
+//   minute hour dom month dow
+// Each field may be: * | number | comma-list | range (a-b) | step (*/n or a-b/n)
 interface ParsedCron {
-  minute: number | "*";
-  hour: number | "*";
-  dow: number | "*";   // 0=Sunday, 6=Saturday
+  minutes: Set<number>;  // null-Set means wildcard (all values match)
+  hours: Set<number>;
+  doms: Set<number>;
+  months: Set<number>;
+  dows: Set<number>;     // 0=Sunday, 6=Saturday; 7 is treated as Sunday
   expr: string;
+  domStar: boolean;      // true when dom field was "*" (for dom/dow interaction)
+  dowStar: boolean;      // true when dow field was "*"
+}
+
+/**
+ * Parse one cron field into a Set of matching integers.
+ * Returns null (wildcard) or a populated Set.
+ * Returns undefined on parse error.
+ */
+function parseCronField(
+  field: string,
+  min: number,
+  max: number
+): Set<number> | null | undefined {
+  if (field === "*") return null; // wildcard
+
+  const result = new Set<number>();
+
+  for (const part of field.split(",")) {
+    // step: */n or a-b/n
+    const stepMatch = part.match(/^(.+?)\/(\d+)$/);
+    if (stepMatch) {
+      const [, base, stepStr] = stepMatch;
+      const step = Number(stepStr);
+      if (!step || step < 1) return undefined;
+      const rangeMin = base === "*" ? min : Number(base.split("-")[0]);
+      const rangeMax = base === "*" ? max : (base.includes("-") ? Number(base.split("-")[1]) : Number(base));
+      if (isNaN(rangeMin) || isNaN(rangeMax)) return undefined;
+      for (let v = rangeMin; v <= rangeMax; v += step) result.add(v);
+      continue;
+    }
+
+    // range: a-b
+    const rangeMatch = part.match(/^(\d+)-(\d+)$/);
+    if (rangeMatch) {
+      const lo = Number(rangeMatch[1]);
+      const hi = Number(rangeMatch[2]);
+      if (isNaN(lo) || isNaN(hi) || lo > hi) return undefined;
+      for (let v = lo; v <= hi; v++) result.add(v);
+      continue;
+    }
+
+    // plain number
+    const n = Number(part);
+    if (!Number.isInteger(n) || n < min || n > max) return undefined;
+    result.add(n);
+  }
+
+  return result;
 }
 
 function parseCron(expr: string): ParsedCron | null {
   const parts = expr.trim().split(/\s+/);
   if (parts.length !== 5) return null;
-  const [m, h, dom, mon, dowStr] = parts;
-  // Only support wildcard day-of-month and month.
-  if (dom !== "*" || mon !== "*") return null;
-  const minute = m === "*" ? "*" : Number(m);
-  const hour = h === "*" ? "*" : Number(h);
-  const dow = dowStr === "*" ? "*" : Number(dowStr);
-  if (minute !== "*" && (!Number.isInteger(minute) || minute < 0 || minute > 59)) return null;
-  if (hour !== "*" && (!Number.isInteger(hour) || hour < 0 || hour > 23)) return null;
-  if (dow !== "*" && (!Number.isInteger(dow) || dow < 0 || dow > 6)) return null;
-  if (minute === "*") return null;
-  return { minute, hour, dow, expr };
+  const [mStr, hStr, domStr, monStr, dowStr] = parts;
+
+  const minutes = parseCronField(mStr, 0, 59);
+  if (minutes === undefined) return null;
+  // Require at least the minute field to not be a pure wildcard (same guard as before).
+  if (minutes === null) return null;
+
+  const hours = parseCronField(hStr, 0, 23);
+  if (hours === undefined) return null;
+
+  const doms = parseCronField(domStr, 1, 31);
+  if (doms === undefined) return null;
+
+  const months = parseCronField(monStr, 1, 12);
+  if (months === undefined) return null;
+
+  // day-of-week: 0-7 where both 0 and 7 = Sunday
+  const dowRaw = parseCronField(dowStr, 0, 7);
+  if (dowRaw === undefined) return null;
+  let dows: Set<number> | null = dowRaw;
+  if (dows !== null && dows.has(7)) {
+    dows.delete(7);
+    dows.add(0); // normalize 7 → 0
+  }
+
+  return {
+    minutes,
+    hours: hours ?? null as any,
+    doms: doms ?? null as any,
+    months: months ?? null as any,
+    dows: dows ?? null as any,
+    expr,
+    domStar: domStr === "*",
+    dowStar: dowStr === "*",
+  };
+}
+
+function fieldMatches(set: Set<number> | null, value: number): boolean {
+  return set === null || set.has(value);
 }
 
 function cronMatches(cron: ParsedCron, date: Date): boolean {
-  if (cron.minute !== "*" && date.getMinutes() !== cron.minute) return false;
-  if (cron.hour !== "*" && date.getHours() !== cron.hour) return false;
-  if (cron.dow !== "*" && date.getDay() !== cron.dow) return false;
+  if (!fieldMatches(cron.minutes, date.getMinutes())) return false;
+  if (!fieldMatches(cron.hours, date.getHours())) return false;
+  // month: getMonth() is 0-based, cron months are 1-based
+  if (!fieldMatches(cron.months, date.getMonth() + 1)) return false;
+  // dom/dow: if both specified, either must match (standard cron OR semantics)
+  const domMatch = fieldMatches(cron.doms, date.getDate());
+  const dowMatch = fieldMatches(cron.dows, date.getDay());
+  if (!cron.domStar && !cron.dowStar) {
+    if (!domMatch && !dowMatch) return false;
+  } else {
+    if (!domMatch || !dowMatch) return false;
+  }
   return true;
 }
 
