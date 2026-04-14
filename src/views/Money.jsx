@@ -1,6 +1,7 @@
 import { motion } from "framer-motion";
 import { stagger } from "../lib/motion.js";
 import { useMoneySupa } from "../hooks/useMoneySupa.js";
+import { CardSkeleton } from "../components/shared/LoadingSkeleton.jsx";
 import { CapitalVelocityHero } from "../components/money/CapitalVelocityHero.jsx";
 import { ThreeEngines } from "../components/money/ThreeEngines.jsx";
 import { MoneyLeaks } from "../components/money/MoneyLeaks.jsx";
@@ -19,7 +20,7 @@ import { CashAllocation } from "../components/money/CashAllocation.jsx";
 import { CompoundProjector } from "../components/money/CompoundProjector.jsx";
 
 export default function Money() {
-  const { intelligence, toolRoi, timeBlocks, refresh } = useMoneySupa();
+  const { intelligence, toolRoi, timeBlocks, refresh, loading } = useMoneySupa();
 
   const positions = intelligence?.positions ?? [];
   const deals = intelligence?.deals ?? [];
@@ -32,6 +33,20 @@ export default function Money() {
     sales_revenue: intelligence?.engines?.sales?.revenue ?? 0,
     trading_revenue: intelligence?.engines?.trading?.revenue ?? 0,
   } : null;
+
+  if (loading) {
+    return (
+      <div className="space-y-6 p-6">
+        <CardSkeleton />
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <CardSkeleton /><CardSkeleton /><CardSkeleton />
+        </div>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <CardSkeleton /><CardSkeleton />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="h-full w-full overflow-y-auto">

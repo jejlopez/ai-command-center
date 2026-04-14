@@ -41,6 +41,7 @@ export default {
       animation: {
         fadeIn: "fadeIn 200ms ease-out",
         slideUp: "slideUp 400ms cubic-bezier(0.34, 1.56, 0.64, 1)",
+        shimmer: "shimmer 1.5s infinite",
       },
       keyframes: {
         fadeIn: {
@@ -50,6 +51,11 @@ export default {
         slideUp: {
           from: { opacity: "0", transform: "translateY(24px)" },
           to: { opacity: "1", transform: "translateY(0)" },
+        },
+        shimmer: {
+          "0%": { opacity: "0.4" },
+          "50%": { opacity: "0.8" },
+          "100%": { opacity: "0.4" },
         },
       },
     },

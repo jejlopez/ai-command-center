@@ -2,6 +2,7 @@ import { motion } from "framer-motion";
 import { stagger } from "../lib/motion.js";
 import { useToday, useJarvisBrief, useCostToday } from "../hooks/useJarvis.js";
 import { useTodaySupa } from "../hooks/useTodaySupa.js";
+import { CardSkeleton } from "../components/shared/LoadingSkeleton.jsx";
 import { MorningBriefHero } from "../components/today/MorningBriefHero.jsx";
 import { TopFiveFocus } from "../components/today/TopFiveFocus.jsx";
 import { NextBestActions } from "../components/today/NextBestActions.jsx";
@@ -32,6 +33,7 @@ export default function Today() {
     compoundImprovements,
     notToDo,
     recompute,
+    loading: dataLoading,
   } = useTodaySupa();
 
   const hero = intelligence?.hero_stats ?? {};
@@ -57,6 +59,20 @@ export default function Today() {
   const topDeal = deals.length > 0
     ? deals.sort((a, b) => (b.value_usd ?? 0) - (a.value_usd ?? 0))[0]
     : null;
+
+  if (dataLoading) {
+    return (
+      <div className="space-y-6 p-6">
+        <CardSkeleton />
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <CardSkeleton /><CardSkeleton /><CardSkeleton />
+        </div>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <CardSkeleton /><CardSkeleton />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="h-full w-full overflow-y-auto">
