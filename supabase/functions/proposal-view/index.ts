@@ -406,6 +406,23 @@ function renderProposal(p: any): string {
       .terms-grid { grid-template-columns: 1fr; }
       .actions { flex-direction: column; }
     }
+    @media print {
+      body { background: white !important; color: black !important; }
+      .glass { background: white !important; border: 1px solid #ddd !important; box-shadow: none !important; backdrop-filter: none !important; }
+      .no-print { display: none !important; }
+      .container { max-width: 100% !important; padding: 20px !important; }
+      .hero { border-color: #00E0D0 !important; box-shadow: none !important; }
+      .total-row { background: #f0fffe !important; border-color: #00E0D0 !important; }
+      .total-value { color: #008F83 !important; }
+      .monthly-card { background: #f8f8f8 !important; border: 1px solid #ddd !important; }
+      .monthly-card .value { color: #008F83 !important; }
+      * { color: black !important; }
+      .section-label { color: #666 !important; }
+      .subtitle { color: #666 !important; }
+      .date { color: #999 !important; }
+      th { color: #666 !important; border-bottom: 1px solid #ddd !important; }
+      td { border-bottom: 1px solid #eee !important; }
+    }
   </style>
 </head>
 <body>
@@ -500,6 +517,7 @@ function renderProposal(p: any): string {
       <div id="action-buttons" class="actions">
         <button class="btn btn-accept" onclick="showSignatureForm()">Accept Proposal</button>
         <button class="btn btn-changes" onclick="showChangesForm()">Request Changes</button>
+        <button class="btn no-print" style="background:rgba(255,255,255,0.05);color:rgba(255,255,255,0.6);border:1px solid rgba(255,255,255,0.1);" onclick="window.print()">Download PDF</button>
       </div>
 
       <!-- Signature capture form — shown when "Accept Proposal" is clicked -->
