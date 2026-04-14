@@ -89,16 +89,13 @@ async function syncDeals(
           probability: d.probability ?? 50,
           close_date: d.expected_close_date ?? null,
           last_touch: d.update_time ?? new Date().toISOString(),
-          notes: d.title ? `${d.title}${d.status ? ` (${d.status})` : ''}` : null,
+          notes: [d.title, d.status ? `(${d.status})` : null, d.lost_reason ? `Lost: ${d.lost_reason}` : null].filter(Boolean).join(' — '),
           updated_at: new Date().toISOString(),
         };
 
         // Check if deal is won/lost
         if (d.status === 'won') mapped.stage = 'closed_won';
-        if (d.status === 'lost') {
-          mapped.stage = 'closed_lost';
-          mapped.notes = `${mapped.notes ?? ''} — Lost: ${d.lost_reason ?? 'unknown'}`.trim();
-        }
+        if (d.status === 'lost') mapped.stage = 'closed_lost';
 
         const { error } = await supabase
           .from('deals')
@@ -220,8 +217,156 @@ async function syncActivities(
             result.upserted++;
           }
         }
+
+        // Also store activity details as communications if they have notes
+        if (a.note || a.public_description) {
+          const commBody = [a.note, a.public_description].filter(Boolean).join('\n').replace(/<[^>]*>/g, '').trim();
+          if (commBody) {
+            let commDealId = null;
+            if (a.deal_id) {
+              const { data: deal } = await supabase
+                .from('deals')
+                .select('id')
+                .eq('user_id', userId)
+                .eq('pipedrive_id', a.deal_id)
+                .maybeSingle();
+              if (deal) commDealId = deal.id;
+            }
+
+            let commContactId = null;
+            if (a.person_id) {
+              const { data: contact } = await supabase
+                .from('contacts')
+                .select('id')
+                .eq('user_id', userId)
+                .eq('pipedrive_id', a.person_id)
+                .maybeSingle();
+              if (contact) commContactId = contact.id;
+            }
+
+            // Dedup check
+            const activityDate = a.due_date ? `${a.due_date}T${a.due_time ?? '00:00'}:00Z` : a.update_time ?? a.add_time;
+            const { data: existingComm } = await supabase
+              .from('communications')
+              .select('id')
+              .eq('user_id', userId)
+              .eq('type', a.type ?? 'activity')
+              .eq('occurred_at', activityDate)
+              .limit(1);
+
+            if (!existingComm || existingComm.length === 0) {
+              await supabase.from('communications').insert({
+                user_id: userId,
+                deal_id: commDealId,
+                contact_id: commContactId,
+                type: a.type ?? 'activity',
+                subject: a.subject ?? null,
+                body: commBody,
+                occurred_at: activityDate,
+              });
+            }
+          }
+        }
       } catch (e: any) {
         result.errors.push(`activity ${a.id}: ${e.message}`);
+      }
+    }
+  } catch (e: any) {
+    if (e.message === 'RATE_LIMITED') throw e;
+    result.errors.push(e.message);
+  }
+
+  return result;
+}
+
+async function syncNotes(
+  supabase: ReturnType<typeof createClient>,
+  userId: string,
+  domain: string,
+  apiToken: string,
+  since: string
+): Promise<SyncResult> {
+  const result: SyncResult = { resource: 'notes', fetched: 0, upserted: 0, errors: [] };
+
+  try {
+    const params = new URLSearchParams({
+      api_token: apiToken,
+      limit: '100',
+      sort: 'update_time DESC',
+      start: '0',
+    });
+    if (since !== '2000-01-01T00:00:00Z') {
+      params.set('since_timestamp', since);
+    }
+
+    const url = `https://${domain}.pipedrive.com/api/v1/notes?${params}`;
+    const res = await fetch(url);
+    if (res.status === 429) throw new Error('RATE_LIMITED');
+    if (!res.ok) throw new Error(`Pipedrive notes API ${res.status}`);
+
+    const json = await res.json();
+    const notes = json.data ?? [];
+    result.fetched = notes.length;
+
+    for (const n of notes) {
+      try {
+        // Find linked deal in our DB
+        let dealId = null;
+        if (n.deal_id) {
+          const { data: deal } = await supabase
+            .from('deals')
+            .select('id')
+            .eq('user_id', userId)
+            .eq('pipedrive_id', n.deal_id)
+            .maybeSingle();
+          if (deal) dealId = deal.id;
+        }
+
+        // Find linked contact
+        let contactId = null;
+        if (n.person_id) {
+          const { data: contact } = await supabase
+            .from('contacts')
+            .select('id')
+            .eq('user_id', userId)
+            .eq('pipedrive_id', n.person_id)
+            .maybeSingle();
+          if (contact) contactId = contact.id;
+        }
+
+        // Strip HTML from note content
+        const body = (n.content ?? '').replace(/<[^>]*>/g, '').trim();
+        if (!body) continue;
+
+        const mapped = {
+          user_id: userId,
+          deal_id: dealId,
+          contact_id: contactId,
+          type: 'note',
+          subject: n.org_name ?? n.person_name ?? null,
+          body: body,
+          occurred_at: n.update_time ?? n.add_time ?? new Date().toISOString(),
+        };
+
+        // Dedup: check if we already have this note by user_id + type + occurred_at
+        const { data: existing } = await supabase
+          .from('communications')
+          .select('id')
+          .eq('user_id', userId)
+          .eq('type', 'note')
+          .eq('occurred_at', mapped.occurred_at)
+          .limit(1);
+
+        if (existing && existing.length > 0) continue;
+
+        const { error } = await supabase.from('communications').insert(mapped);
+        if (error) {
+          result.errors.push(`note ${n.id}: ${error.message}`);
+        } else {
+          result.upserted++;
+        }
+      } catch (e: any) {
+        result.errors.push(`note ${n.id}: ${e.message}`);
       }
     }
   } catch (e: any) {
@@ -293,7 +438,7 @@ Deno.serve(async (req: Request) => {
 
       const results: SyncResult[] = [];
 
-      for (const resource of ['deals', 'persons', 'activities']) {
+      for (const resource of ['deals', 'persons', 'activities', 'notes']) {
         const state = stateMap[resource];
 
         // Circuit breaker: skip if in backoff
@@ -319,6 +464,8 @@ Deno.serve(async (req: Request) => {
             syncResult = await syncDeals(supabase, userId, domain, apiToken, since);
           } else if (resource === 'persons') {
             syncResult = await syncPersons(supabase, userId, domain, apiToken, since);
+          } else if (resource === 'notes') {
+            syncResult = await syncNotes(supabase, userId, domain, apiToken, since);
           } else {
             syncResult = await syncActivities(supabase, userId, domain, apiToken, since);
           }
