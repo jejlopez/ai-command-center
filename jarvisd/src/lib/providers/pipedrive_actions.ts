@@ -251,7 +251,7 @@ export async function searchDeals(query: string): Promise<
     term: query,
     limit: "20",
     fields: "title",
-    include_fields: "deal.stage_id,deal.value,deal.person_id",
+    include_fields: "deal.cc_email",
   });
 
   const items: any[] = result.data?.items ?? [];
