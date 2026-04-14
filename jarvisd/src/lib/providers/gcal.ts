@@ -10,7 +10,7 @@ import type { CalendarEvent, ConnectorStatus } from "../../../../shared/types.js
 
 const GCAL_API = "https://www.googleapis.com/calendar/v3";
 const REDIRECT_URI = "http://127.0.0.1:8787/connectors/gcal/callback";
-const SCOPE = "https://www.googleapis.com/auth/calendar.readonly";
+const SCOPE = "https://www.googleapis.com/auth/calendar.events";
 
 interface TokenBundle {
   access_token: string;

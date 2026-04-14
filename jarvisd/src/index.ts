@@ -58,6 +58,7 @@ import { policyEngine } from "./lib/policy.js";
 import { policyRoutes } from "./routes/policy.js";
 import { panicRoutes } from "./routes/panic.js";
 import { auditRoutes } from "./routes/audit.js";
+import { voiceRoutes } from "./routes/voice.js";
 import { registerRateLimiter, registerRateLimitResetRoute } from "./lib/rate_limit.js";
 import type { HealthResponse } from "../../shared/types.js";
 
@@ -74,6 +75,7 @@ async function main() {
   await app.register(cors, {
     origin: [/^http:\/\/localhost:\d+$/, /^http:\/\/127\.0\.0\.1:\d+$/]
   });
+  await app.register(import("@fastify/multipart"));
 
   registerRateLimiter(app);
   await registerWebSocket(app);
@@ -116,6 +118,7 @@ async function main() {
   await webhookRoutes(app);
   await panicRoutes(app);
   await auditRoutes(app);
+  await voiceRoutes(app);
 
   // Test-only helpers (safe — only exposed when tests set LOG_LEVEL=error).
   if (process.env.LOG_LEVEL === "error") {

@@ -1,7 +1,9 @@
 import { useState, useRef, useEffect } from "react";
-import { Send, Loader2, Zap } from "lucide-react";
+import { Send, Loader2, Zap, Mic, MicOff, Volume2, VolumeX } from "lucide-react";
 import { jarvis } from "../../lib/jarvis.js";
 import { parseIntent, classifyWithOllama, isConversational } from "../../lib/intentParser.js";
+import { speak, stopSpeaking } from "../../lib/tts.js";
+import { startListening, stopListening, isListening } from "../../lib/voiceInput.js";
 
 function Message({ msg }) {
   const isUser = msg.role === "user";
@@ -51,6 +53,10 @@ export function JarvisChat({ onDisplayUpdate }) {
   const [messages, setMessages] = useState(loadHistory);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [recording, setRecording] = useState(false);
+  const [ttsEnabled, setTtsEnabled] = useState(
+    () => localStorage.getItem('jarvis-tts') !== 'false'
+  );
   const bottomRef = useRef(null);
   const inputRef = useRef(null);
 
@@ -63,8 +69,19 @@ export function JarvisChat({ onDisplayUpdate }) {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  const send = async () => {
-    const text = input.trim();
+  // Stop speaking when TTS is toggled off
+  useEffect(() => {
+    localStorage.setItem('jarvis-tts', ttsEnabled ? 'true' : 'false');
+    if (!ttsEnabled) stopSpeaking();
+  }, [ttsEnabled]);
+
+  const addAssistantMessage = (text, tier) => {
+    setMessages(prev => [...prev, { role: "assistant", text, tier }]);
+    if (ttsEnabled) speak(text);
+  };
+
+  const send = async (textOverride) => {
+    const text = (textOverride ?? input).trim();
     if (!text || loading) return;
 
     setInput("");
@@ -94,7 +111,7 @@ export function JarvisChat({ onDisplayUpdate }) {
           onDisplayUpdate({ widgets: widgetObjects });
         }
 
-        setMessages(prev => [...prev, { role: "assistant", text: responseText, tier }]);
+        addAssistantMessage(responseText, tier);
       } else {
         // Step 2: Not a question — it's a DISPLAY COMMAND → Pattern match first
         let parsed = parseIntent(text);
@@ -111,7 +128,7 @@ export function JarvisChat({ onDisplayUpdate }) {
             responseText = `I couldn't process that. Error: ${e.message}`;
             tier = 0;
           }
-          setMessages(prev => [...prev, { role: "assistant", text: responseText, tier }]);
+          addAssistantMessage(responseText, tier);
         } else {
           // Pattern matched — update display + generate response
           if (parsed.widgets?.length > 0) {
@@ -122,14 +139,11 @@ export function JarvisChat({ onDisplayUpdate }) {
           }
 
           const responseText = generateQuickResponse(parsed, text);
-          setMessages(prev => [...prev, { role: "assistant", text: responseText, tier }]);
+          addAssistantMessage(responseText, tier);
         }
       }
     } catch (e) {
-      setMessages(prev => [
-        ...prev,
-        { role: "assistant", text: `Error: ${e.message}`, tier: 0 },
-      ]);
+      addAssistantMessage(`Error: ${e.message}`, 0);
     } finally {
       setLoading(false);
       inputRef.current?.focus();
@@ -141,6 +155,29 @@ export function JarvisChat({ onDisplayUpdate }) {
       e.preventDefault();
       send();
     }
+  };
+
+  const handleMicClick = async () => {
+    if (recording) {
+      // Stop recording → transcribe → auto-send
+      setRecording(false);
+      const transcribed = await stopListening();
+      if (transcribed) {
+        await send(transcribed);
+      }
+    } else {
+      // Start recording
+      try {
+        await startListening();
+        setRecording(true);
+      } catch (e) {
+        console.error("Mic access denied:", e);
+      }
+    }
+  };
+
+  const handleTtsToggle = () => {
+    setTtsEnabled(prev => !prev);
   };
 
   return (
@@ -167,6 +204,15 @@ export function JarvisChat({ onDisplayUpdate }) {
 
       <div className="px-4 pb-4 pt-2">
         <div className="flex items-center gap-2 glass p-2">
+          {/* TTS toggle */}
+          <button
+            onClick={handleTtsToggle}
+            title={ttsEnabled ? "Mute JARVIS voice" : "Unmute JARVIS voice"}
+            className="p-2 rounded-xl text-jarvis-muted hover:text-jarvis-primary hover:bg-jarvis-primary/10 transition"
+          >
+            {ttsEnabled ? <Volume2 size={14} /> : <VolumeX size={14} />}
+          </button>
+
           <input
             ref={inputRef}
             type="text"
@@ -176,8 +222,24 @@ export function JarvisChat({ onDisplayUpdate }) {
             placeholder="Ask JARVIS anything..."
             className="flex-1 bg-transparent text-sm text-jarvis-ink placeholder-jarvis-muted outline-none px-2"
           />
+
+          {/* Mic button */}
           <button
-            onClick={send}
+            onClick={handleMicClick}
+            disabled={loading}
+            title={recording ? "Stop recording" : "Start voice input"}
+            className={`p-2 rounded-xl transition ${
+              recording
+                ? "bg-red-500/20 text-red-400 animate-pulse"
+                : "bg-jarvis-primary/15 text-jarvis-primary hover:bg-jarvis-primary/25"
+            } disabled:opacity-30`}
+          >
+            {recording ? <MicOff size={14} /> : <Mic size={14} />}
+          </button>
+
+          {/* Send button */}
+          <button
+            onClick={() => send()}
             disabled={loading || !input.trim()}
             className="p-2 rounded-xl bg-jarvis-primary/15 text-jarvis-primary hover:bg-jarvis-primary/25 disabled:opacity-30 transition"
           >

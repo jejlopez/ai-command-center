@@ -11,7 +11,7 @@ const REDIRECT_URI = "http://127.0.0.1:8787/connectors/google/unified/callback";
 
 const SCOPES = [
   "https://www.googleapis.com/auth/gmail.readonly",
-  "https://www.googleapis.com/auth/calendar.readonly",
+  "https://www.googleapis.com/auth/calendar.events",
   "https://www.googleapis.com/auth/drive.readonly",
 ].join(" ");
 
