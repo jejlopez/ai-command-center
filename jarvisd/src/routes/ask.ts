@@ -115,24 +115,18 @@ export async function askRoutes(app: FastifyInstance): Promise<void> {
       return { error: `provider ${decision.provider} not yet wired` };
     }
 
-    // Auto-detect web search need from prompt keywords
-    const needsWeb = kind === "web_search" || /\b(search|look up|google|news|price|stock|weather|latest|current|today's|what is .* right now)\b/i.test(prompt);
+    // Always enable web search — let Claude decide when to use it
+    const needsWeb = true;
 
     try {
       let result;
       if (decision.provider === "claude-cli") {
-        try {
-          result = await callClaudeCli({ model: decision.model, prompt, system: systemPrompt, allowWebSearch: needsWeb });
-        } catch (cliErr: any) {
-          // CLI failed — fallback to Anthropic API
-          audit({ actor: "system", action: "cli.fallback", subject: runId, reason: cliErr.message });
-          decision = { ...decision, provider: "anthropic", reason: `${decision.reason} → API fallback` };
-          result = await callAnthropic({ model: decision.model, prompt, system: systemPrompt });
-        }
+        result = await callClaudeCli({ model: decision.model, prompt, system: systemPrompt, allowWebSearch: needsWeb });
       } else if (decision.provider === "ollama") {
         result = await callOllama({ model: decision.model, prompt, system: systemPrompt });
       } else {
-        result = await callAnthropic({ model: decision.model, prompt, system: systemPrompt });
+        // No API fallback — CLI only. If CLI isn't available, error clearly.
+        result = await callClaudeCli({ model: decision.model, prompt, system: systemPrompt, allowWebSearch: needsWeb });
       }
       const costUsd = decision.provider === "claude-cli" ? 0 : estimateCostUsd(decision.model, result.tokensIn, result.tokensOut);
       recordCost({
