@@ -8,6 +8,8 @@ import { callAnthropic } from "../lib/providers/anthropic.js";
 import { callOllama } from "../lib/providers/ollama.js";
 import { callClaudeCli } from "../lib/providers/claude_cli.js";
 import { callWithWebSearch } from "../lib/providers/web_search.js";
+import { JARVIS_SYSTEM_PROMPT } from "../lib/jarvis_system_prompt.js";
+import { parseActions, stripActionBlocks, executeActions } from "../lib/action_executor.js";
 import { assertBudgetAvailable, recordCost, spentTodayUsd, dailyBudgetUsd } from "../lib/cost.js";
 import { audit } from "../lib/audit.js";
 import { tagText, sensitivityToPrivacy } from "../lib/tagger.js";
@@ -67,8 +69,11 @@ export async function askRoutes(app: FastifyInstance): Promise<void> {
       });
     }
 
+    // Inject JARVIS system prompt so Claude knows what tools are available
+    const systemPrompt = context ? `${JARVIS_SYSTEM_PROMPT}\n\n${context}` : JARVIS_SYSTEM_PROMPT;
+
     // --- Shield Protocol: tag prompt for PII/secrets, escalate privacy ---
-    const tag = tagText(prompt + (context ?? ""));
+    const tag = tagText(prompt + (systemPrompt ?? ""));
     const effectivePrivacy = sensitivityToPrivacy(tag.level, privacy) as Privacy;
 
     let decision = route({
@@ -117,17 +122,17 @@ export async function askRoutes(app: FastifyInstance): Promise<void> {
       let result;
       if (decision.provider === "claude-cli") {
         try {
-          result = await callClaudeCli({ model: decision.model, prompt, system: context, allowWebSearch: needsWeb });
+          result = await callClaudeCli({ model: decision.model, prompt, system: systemPrompt, allowWebSearch: needsWeb });
         } catch (cliErr: any) {
           // CLI failed — fallback to Anthropic API
           audit({ actor: "system", action: "cli.fallback", subject: runId, reason: cliErr.message });
           decision = { ...decision, provider: "anthropic", reason: `${decision.reason} → API fallback` };
-          result = await callAnthropic({ model: decision.model, prompt, system: context });
+          result = await callAnthropic({ model: decision.model, prompt, system: systemPrompt });
         }
       } else if (decision.provider === "ollama") {
-        result = await callOllama({ model: decision.model, prompt, system: context });
+        result = await callOllama({ model: decision.model, prompt, system: systemPrompt });
       } else {
-        result = await callAnthropic({ model: decision.model, prompt, system: context });
+        result = await callAnthropic({ model: decision.model, prompt, system: systemPrompt });
       }
       const costUsd = decision.provider === "claude-cli" ? 0 : estimateCostUsd(decision.model, result.tokensIn, result.tokensOut);
       recordCost({
@@ -145,9 +150,22 @@ export async function askRoutes(app: FastifyInstance): Promise<void> {
         subject: runId,
         metadata: { tokensIn: result.tokensIn, tokensOut: result.tokensOut, costUsd },
       });
+      // Parse and execute any action blocks in Claude's response
+      const actions = parseActions(result.text);
+      let actionResults: any[] = [];
+      if (actions.length > 0) {
+        actionResults = await executeActions(actions);
+        audit({ actor: "jarvis", action: "actions.executed", subject: runId, metadata: { count: actions.length, results: actionResults } });
+      }
+
+      const cleanText = actions.length > 0 ? stripActionBlocks(result.text) : result.text;
+      const actionSummary = actionResults.length > 0
+        ? "\n\n" + actionResults.map(r => `${r.success ? "✓" : "✗"} ${r.message}`).join("\n")
+        : "";
+
       return {
         id: runId,
-        text: result.text,
+        text: cleanText + actionSummary,
         model: decision.model,
         tokensIn: result.tokensIn,
         tokensOut: result.tokensOut,
