@@ -49,35 +49,34 @@ export interface CliCallOptions extends ProviderCallInput {
 }
 
 export async function callClaudeCli(input: CliCallOptions): Promise<ProviderCallOutput> {
+  const maxTurns = input.allowWebSearch ? "3" : "1";
+
   const args = [
-    "-p", buildPrompt(input),
+    "-p", input.prompt,
     "--output-format", "text",
-    "--max-turns", "1",
+    "--max-turns", maxTurns,
     "--model", mapModel(input.model),
   ];
+
+  if (input.system) {
+    args.push("--append-system-prompt", input.system);
+  }
 
   if (input.maxTokens) {
     args.push("--max-tokens", String(input.maxTokens));
   }
 
   if (input.allowWebSearch) {
-    args.push("--allowedTools", "WebSearch", "--max-turns", "3");
+    args.push("--allowedTools", "WebSearch");
   }
 
   const text = await exec(CLAUDE_BIN, args);
 
   return {
     text: text.trim(),
-    tokensIn: 0,  // CLI doesn't report token counts
+    tokensIn: 0,
     tokensOut: 0,
   };
-}
-
-function buildPrompt(input: ProviderCallInput): string {
-  if (input.system) {
-    return `${input.system}\n\n${input.prompt}`;
-  }
-  return input.prompt;
 }
 
 /** Map internal model names to CLI-compatible model flags. */
