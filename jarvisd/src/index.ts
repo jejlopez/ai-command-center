@@ -52,6 +52,8 @@ import { crmMeetingPrep } from "./skills/crm_meeting_prep.js";
 import { crmDealPlaybook } from "./skills/crm_deal_playbook.js";
 import { crmFollowupSequences } from "./skills/crm_followup_sequences.js";
 import { crmPipelineGap } from "./skills/crm_pipeline_gap.js";
+import { proposalExpiry } from "./skills/proposal_expiry.js";
+import { dealStageAutomation } from "./skills/deal_stage_automation.js";
 import { crmRoutes } from "./routes/crm.js";
 import { webhookRoutes } from "./routes/webhooks.js";
 import { learningRoutes } from "./routes/learning.js";
@@ -168,6 +170,8 @@ async function main() {
   registry.register(crmDealPlaybook);
   registry.register(crmFollowupSequences);
   registry.register(crmPipelineGap);
+  registry.register(proposalExpiry);
+  registry.register(dealStageAutomation);
 
   // Wire the event bus after skills are registered so subscriptions pick up
   // every manifest with an event trigger.

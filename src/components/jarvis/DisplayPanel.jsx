@@ -405,6 +405,73 @@ function WidgetRenderer({ widget, data }) {
         </div>
       );
 
+    case "briefing": {
+      const briefs = (data?.suggestions ?? []).filter(s => s.type === "morning_action").slice(0, 5);
+      return (
+        <DataList
+          title="Morning Brief"
+          items={briefs.map(s => ({
+            label: s.title,
+            value: s.metadata?.urgency ?? "",
+            chip: s.metadata?.urgency,
+            chipColor: s.metadata?.urgency === "high"
+              ? "bg-jarvis-danger/10 text-jarvis-danger"
+              : "bg-jarvis-warning/10 text-jarvis-warning",
+          }))}
+          emptyText="No brief yet — runs at 7am daily"
+        />
+      );
+    }
+
+    case "email_inbox": {
+      const emails = (data?.comms ?? []).filter(c => c.type === "email").slice(0, 8);
+      return (
+        <DataList
+          title="Email Inbox"
+          items={emails.map(e => ({
+            label: e.subject ?? "(no subject)",
+            value: e.contact_name ?? "",
+            chip: new Date(e.occurred_at).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+          }))}
+          emptyText="Emails sync 3x daily from Gmail"
+        />
+      );
+    }
+
+    case "revenue_goal": {
+      const target = parseFloat(typeof localStorage !== "undefined" ? localStorage.getItem("revenue-target") || "100000" : "100000");
+      const now = new Date();
+      const start = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10);
+      const end = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().slice(0, 10);
+      const closed = (data?.deals ?? [])
+        .filter(d => d.stage === "closed_won" && d.close_date >= start && d.close_date <= end)
+        .reduce((s, d) => s + (Number(d.value_usd ?? d.value) || 0), 0);
+      const pct = target > 0 ? Math.min(100, (closed / target) * 100) : 0;
+      return (
+        <div className="space-y-2">
+          <MetricCard
+            label="Revenue Goal"
+            value={`${pct.toFixed(0)}%`}
+            color={pct >= 80 ? "text-jarvis-success" : pct >= 50 ? "text-jarvis-warning" : "text-jarvis-danger"}
+            sub={`$${closed.toLocaleString()} of $${target.toLocaleString()} target`}
+          />
+        </div>
+      );
+    }
+
+    case "email_templates":
+      return (
+        <DataList
+          title="Email Templates"
+          items={(data?.templates ?? []).slice(0, 8).map(t => ({
+            label: t.name,
+            value: t.times_used ? `${t.times_used}x` : "",
+            chip: t.type?.replace(/_/g, " "),
+          }))}
+          emptyText="No templates yet"
+        />
+      );
+
     default:
       return <MetricCard label={getWidgetMeta(name).label} value="—" sub="Widget loading..." />;
   }

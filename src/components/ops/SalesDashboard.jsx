@@ -12,6 +12,12 @@ import { CommandBriefing } from "../sales/CommandBriefing.jsx";
 import { PipelineBoard } from "../sales/PipelineBoard.jsx";
 import { DealRoomPanel } from "../sales/DealRoomPanel.jsx";
 import { LeadsSection } from "../sales/LeadsSection.jsx";
+import { BriefingsPanel } from "./BriefingsPanel.jsx";
+import { EmailInbox } from "./EmailInbox.jsx";
+import { RevenueGoal } from "./RevenueGoal.jsx";
+import { EmailTemplates } from "./EmailTemplates.jsx";
+import { ActivityScoring } from "./ActivityScoring.jsx";
+import { WeeklyReport } from "./WeeklyReport.jsx";
 
 // Pipeline strip — compact horizontal funnel
 function PipelineStrip({ stats, deals = [], onOpenDeal }) {
@@ -140,25 +146,47 @@ export function SalesDashboard({ ops, onRefresh }) {
         )}
       </motion.div>
 
-      {/* Row 1: Follow-ups + Proposals */}
-      <motion.div variants={stagger.item} className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <FollowUpStrip followUps={followUps} deals={deals} onOpenDeal={setOpenDeal} />
-        <ProposalList proposals={proposals} onRefresh={onRefresh} />
+      {/* JARVIS Briefings — persistent intelligence panel */}
+      <motion.div variants={stagger.item}>
+        <BriefingsPanel />
       </motion.div>
 
-      {/* Row 2: Forecast + Win/Loss */}
+      {/* Row 1: Follow-ups + Email Inbox */}
       <motion.div variants={stagger.item} className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <FollowUpStrip followUps={followUps} deals={deals} onOpenDeal={setOpenDeal} />
+        <EmailInbox deals={deals} />
+      </motion.div>
+
+      {/* Row 2: Revenue Goal + Activity Scoring */}
+      <motion.div variants={stagger.item} className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <RevenueGoal deals={deals} />
+        <ActivityScoring deals={deals} />
+      </motion.div>
+
+      {/* Row 3: Email Templates + Weekly Report */}
+      <motion.div variants={stagger.item} className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <EmailTemplates />
+        <WeeklyReport />
+      </motion.div>
+
+      {/* Row 4: Proposals + Forecast */}
+      <motion.div variants={stagger.item} className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <ProposalList proposals={proposals} onRefresh={onRefresh} />
         <RevenueForecast deals={deals} />
+      </motion.div>
+
+      {/* Row 5: Win/Loss Journal */}
+      <motion.div variants={stagger.item}>
         <WinLossJournal deals={deals} />
       </motion.div>
 
-      {/* Row 3: Comms + Docs */}
+      {/* Row 6: Comms + Docs */}
       <motion.div variants={stagger.item} className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <CommunicationLog comms={comms} onRefresh={onRefresh} />
         <DocumentVault docs={docs} onRefresh={onRefresh} />
       </motion.div>
 
-      {/* Row 4: Quote Calculator */}
+      {/* Row 7: Quote Calculator */}
       <motion.div variants={stagger.item}>
         <QuoteCalculator onRefresh={onRefresh} />
       </motion.div>

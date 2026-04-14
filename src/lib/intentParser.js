@@ -25,6 +25,10 @@ const PATTERNS = [
   { match: /\b(forecast|revenue|projection)\b/i, widgets: ["forecast"], intent: "show_data" },
   { match: /\b(contacts?|people|crm)\b/i, widgets: ["contacts"], intent: "show_data" },
   { match: /\bopen\s+(\w+)/i, widgets: ["deal_room"], intent: "open_deal", extract: "company" },
+  { match: /\b(brief|briefing|morning)\b/i, widgets: ["briefing"], intent: "show_data" },
+  { match: /\b(inbox|emails?|mail)\b/i, widgets: ["email_inbox"], intent: "show_data" },
+  { match: /\b(target|goal|quota)\b/i, widgets: ["revenue_goal"], intent: "show_data" },
+  { match: /\b(template)\b/i, widgets: ["email_templates"], intent: "show_data" },
 
   // Trading
   { match: /\b(positions?|trades?|p&?l|pnl)\b/i, widgets: ["positions"], intent: "show_data" },
@@ -94,7 +98,7 @@ export async function classifyWithOllama(input, jarvisClient) {
       `Classify this user request. Return ONLY a JSON object with no other text:
 {"intent": "show_data|ask_question|take_action|draft_content", "widgets": ["widget_name"], "entities": {}}
 
-Available widgets: pipeline, follow_ups, proposals, forecast, contacts, deal_room, positions, watchlist, scorecard, money_dashboard, velocity, expenses, tool_roi, calendar, needle_movers, decisions, waste_detector, health_dashboard, habits, burnout_risk, home_dashboard, brain_search, mistakes, mental_models, analysis
+Available widgets: pipeline, follow_ups, proposals, forecast, contacts, deal_room, briefing, email_inbox, revenue_goal, email_templates, positions, watchlist, scorecard, money_dashboard, velocity, expenses, tool_roi, calendar, needle_movers, decisions, waste_detector, health_dashboard, habits, burnout_risk, home_dashboard, brain_search, mistakes, mental_models, analysis
 
 User request: "${input}"`,
       { kind: "classification", privacy: "public" }

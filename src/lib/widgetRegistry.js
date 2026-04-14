@@ -8,6 +8,10 @@ export const WIDGET_REGISTRY = {
   forecast:        { label: "Revenue Forecast",  page: "work" },
   contacts:        { label: "Key Contacts",      page: "work" },
   deal_room:       { label: "Deal Room",         page: "work" },
+  briefing:        { label: "Morning Brief",     page: "work" },
+  email_inbox:     { label: "Email Inbox",       page: "work" },
+  revenue_goal:    { label: "Revenue Goal",      page: "work" },
+  email_templates: { label: "Email Templates",   page: "work" },
 
   // Trading
   positions:       { label: "Open Positions",    page: "money" },
