@@ -2,9 +2,11 @@
 // memory and writes any new facts back as `kind: "fact"` nodes linked to
 // the person. Triggered manually, or automatically when a new person
 // is remembered (via the memory.remembered event).
+// Also runs on cron to enrich new Supabase contacts with role/company context.
 
 import type { Skill } from "../lib/skills.js";
 import type { SkillManifest } from "../../../shared/types.js";
+import { supaFetch, supaUpsert } from "../lib/supabase_client.js";
 
 const manifest: SkillManifest = {
   name: "contact_enrich",
@@ -17,6 +19,7 @@ const manifest: SkillManifest = {
   triggers: [
     { kind: "manual" },
     { kind: "event", event: "memory.remembered" },
+    { kind: "cron", expr: "30 8 * * 1-5" },
   ],
   inputs: [{ name: "name", type: "string", required: true }],
 };
@@ -74,9 +77,71 @@ function tryParseFacts(text: string): ExtractedFact[] {
     .map((l) => ({ label: l.slice(0, 140) }));
 }
 
+async function enrichSupabaseContacts(ctx: any): Promise<{ enriched: number }> {
+  const contacts = await supaFetch('contacts', 'select=id,name,company,role,email,notes&role=is.null&order=created_at.desc&limit=5');
+
+  if (contacts.length === 0) {
+    ctx.log("contact_enrich.supabase.no_contacts");
+    return { enriched: 0 };
+  }
+
+  let enriched = 0;
+  for (const c of contacts) {
+    try {
+      const out = await ctx.callModel({
+        kind: "complex_reasoning",
+        privacy: "personal",
+        prompt: `Research this business contact for a 3PL/shipping sales context:
+Name: ${c.name}
+Company: ${c.company ?? 'unknown'}
+Email: ${c.email ?? 'unknown'}
+
+Based on the company name and email domain, provide:
+1. Likely role/title (if not obvious, say "unknown")
+2. What the company does (one sentence)
+3. Potential shipping/logistics needs
+4. Suggested approach for initial outreach
+
+Return as JSON:
+{"role": "...", "company_info": "...", "logistics_needs": "...", "approach": "..."}`,
+      });
+
+      const jsonMatch = out.text.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        const info = JSON.parse(jsonMatch[0]);
+
+        const enrichedNotes = [
+          c.notes,
+          info.company_info ? `Company: ${info.company_info}` : null,
+          info.logistics_needs ? `Needs: ${info.logistics_needs}` : null,
+          info.approach ? `Approach: ${info.approach}` : null,
+        ].filter(Boolean).join('\n');
+
+        await supaUpsert('contacts', {
+          id: c.id,
+          role: info.role !== 'unknown' ? info.role : c.role,
+          notes: enrichedNotes,
+        }, 'id');
+
+        enriched++;
+        ctx.log(`contact_enrich.supabase.enriched`, { name: c.name, company: c.company });
+      }
+    } catch (e: any) {
+      ctx.log(`contact_enrich.supabase.fail`, { name: c.name, error: e?.message ?? String(e) });
+    }
+  }
+
+  return { enriched };
+}
+
 export const contactEnrich: Skill = {
   manifest,
   async run(ctx) {
+    // Cron trigger — enrich new Supabase contacts
+    if (ctx.triggeredBy === "cron") {
+      return enrichSupabaseContacts(ctx);
+    }
+
     let name: string | null = null;
 
     if (ctx.triggeredBy === "event") {
