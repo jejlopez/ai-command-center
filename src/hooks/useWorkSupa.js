@@ -14,6 +14,11 @@ export function useWorkSupa() {
       setData({ intelligence: null, loading: false, error: "Supabase not configured" });
       return;
     }
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) {
+      setData((d) => ({ ...d, loading: false, error: "Not logged in" }));
+      return;
+    }
     try {
       const { data: row, error } = await supabase
         .from("work_intelligence")

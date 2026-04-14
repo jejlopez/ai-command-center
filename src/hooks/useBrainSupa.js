@@ -12,6 +12,11 @@ export function useBrainSupa() {
       setData({ ...EMPTY, loading: false, error: "Supabase not configured" });
       return;
     }
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) {
+      setData((d) => ({ ...d, loading: false, error: "Not logged in" }));
+      return;
+    }
     try {
       const [
         { data: decisions, error: e1 },

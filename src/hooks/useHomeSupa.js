@@ -37,6 +37,13 @@ export function useHomeSupa() {
       setError("Supabase not configured");
       return;
     }
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) {
+      setExpenses([]); setVendors([]); setDecisions([]); setAssets([]);
+      setOverdueCount(0); setLoading(false);
+      setError("Not logged in");
+      return;
+    }
     setLoading(true);
     try {
       const [expRes, vendRes, decRes, assetRes] = await Promise.all([

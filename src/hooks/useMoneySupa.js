@@ -14,6 +14,11 @@ export function useMoneySupa() {
       setData({ intelligence: null, toolRoi: [], timeBlocks: [], loading: false, error: "Supabase not configured" });
       return;
     }
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) {
+      setData((d) => ({ ...d, loading: false, error: "Not logged in" }));
+      return;
+    }
     try {
       const [{ data: row, error }, { data: toolRoi }, { data: timeBlocks }] = await Promise.all([
         supabase.from("money_intelligence").select("*").eq("date", todayIso()).maybeSingle(),
