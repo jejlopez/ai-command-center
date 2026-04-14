@@ -4,7 +4,7 @@ if (savedTheme) {
   document.documentElement.setAttribute("data-theme", savedTheme);
 }
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, lazy, Suspense } from "react";
 import { Sidebar } from "./components/Sidebar.jsx";
 import { StatusStrip } from "./components/StatusStrip.jsx";
 import { MorningBrief } from "./components/MorningBrief.jsx";
@@ -12,19 +12,22 @@ import { HomeStatusBoard } from "./components/HomeStatusBoard.jsx";
 import { RightRail } from "./components/RightRail.jsx";
 import { Composer } from "./components/Composer.jsx";
 import { ConversationThread } from "./components/ConversationThread.jsx";
-import JarvisView from "./views/JarvisView.jsx";
 import { JarvisHalo } from "./components/JarvisHalo.jsx";
+import { ErrorBoundary } from "./components/ErrorBoundary.jsx";
+import { Loader2 } from "lucide-react";
 import Onboarding from "./views/Onboarding.jsx";
 import Login from "./views/Login.jsx";
-import Settings from "./views/Settings.jsx";
-import Today from "./views/Today.jsx";
-import Brain from "./views/Brain.jsx";
-import Work from "./views/Work.jsx";
-import Money from "./views/Money.jsx";
-import HomeLife from "./views/HomeLife.jsx";
-import Health from "./views/Health.jsx";
-import Skills from "./views/Skills.jsx";
 import { VaultLockedOverlay } from "./components/VaultLockedOverlay.jsx";
+
+const JarvisView = lazy(() => import("./views/JarvisView.jsx"));
+const Settings   = lazy(() => import("./views/Settings.jsx"));
+const Today      = lazy(() => import("./views/Today.jsx"));
+const Brain      = lazy(() => import("./views/Brain.jsx"));
+const Work       = lazy(() => import("./views/Work.jsx"));
+const Money      = lazy(() => import("./views/Money.jsx"));
+const HomeLife   = lazy(() => import("./views/HomeLife.jsx"));
+const Health     = lazy(() => import("./views/Health.jsx"));
+const Skills     = lazy(() => import("./views/Skills.jsx"));
 import { VoiceButton } from "./components/VoiceButton.jsx";
 import { useNotifications } from "./hooks/useNotifications.js";
 import { useJarvisBrief, useOnboarding, useCostToday } from "./hooks/useJarvis.js";
@@ -115,31 +118,35 @@ export default function App() {
           </div>
         </header>
 
-        {active === "settings" ? (
-          <div className="relative flex flex-1 min-h-0">
-            <Settings key={health?.vaultLocked ? "locked" : "unlocked"} />
-          </div>
-        ) : active === "home" ? (
-          <div className="relative flex flex-1 min-h-0">
-            <JarvisView />
-          </div>
-        ) : (
-          <div className="relative flex flex-1 min-h-0">
-            <section className="flex-1 min-w-0 overflow-y-auto">
-              {active === "today"  && <Today />}
-              {active === "brain"  && <Brain />}
-              {active === "work"   && <Work />}
-              {active === "money"  && <Money />}
-              {active === "life"   && <HomeLife />}
-              {active === "health" && <Health />}
-              {active === "skills" && <Skills />}
-            </section>
+        <ErrorBoundary>
+          <Suspense fallback={<div className="h-full grid place-items-center"><Loader2 className="animate-spin text-jarvis-primary" size={24} /></div>}>
+            {active === "settings" ? (
+              <div className="relative flex flex-1 min-h-0">
+                <Settings key={health?.vaultLocked ? "locked" : "unlocked"} />
+              </div>
+            ) : active === "home" ? (
+              <div className="relative flex flex-1 min-h-0">
+                <JarvisView />
+              </div>
+            ) : (
+              <div className="relative flex flex-1 min-h-0">
+                <section className="flex-1 min-w-0 overflow-y-auto">
+                  {active === "today"  && <Today />}
+                  {active === "brain"  && <Brain />}
+                  {active === "work"   && <Work />}
+                  {active === "money"  && <Money />}
+                  {active === "life"   && <HomeLife />}
+                  {active === "health" && <Health />}
+                  {active === "skills" && <Skills />}
+                </section>
 
-            <aside className="p-6 border-l border-jarvis-border overflow-y-auto bg-jarvis-surface/20">
-              <RightRail rail={rail} recentRuns={recentRuns} onDecide={decide} />
-            </aside>
-          </div>
-        )}
+                <aside className="p-6 border-l border-jarvis-border overflow-y-auto bg-jarvis-surface/20">
+                  <RightRail rail={rail} recentRuns={recentRuns} onDecide={decide} />
+                </aside>
+              </div>
+            )}
+          </Suspense>
+        </ErrorBoundary>
       </main>
 
       {health?.vaultLocked && <VaultLockedOverlay onUnlocked={refreshHealth} />}
