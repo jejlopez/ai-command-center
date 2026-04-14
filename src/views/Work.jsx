@@ -70,11 +70,13 @@ export default function Work() {
           />
         </div>
 
-        {/* Calendar rail — always visible */}
-        <CalendarRail
-          followUps={followUps}
-          calendarEvents={calendarEvents}
-        />
+        {/* Calendar rail — hidden on mobile */}
+        <div className="hidden xl:contents">
+          <CalendarRail
+            followUps={followUps}
+            calendarEvents={calendarEvents}
+          />
+        </div>
       </div>
     </div>
   );

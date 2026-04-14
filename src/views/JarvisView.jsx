@@ -9,13 +9,13 @@ export default function JarvisView() {
 
   return (
     <div className="h-full flex">
-      {/* Left: Conversation */}
-      <div className="w-[420px] shrink-0 border-r border-jarvis-border">
+      {/* Chat — full width on mobile, fixed on desktop */}
+      <div className="w-full lg:w-[420px] shrink-0 lg:border-r border-jarvis-border">
         <JarvisChat onDisplayUpdate={pushDisplay} />
       </div>
 
-      {/* Right: Live Display */}
-      <div className="flex-1 min-w-0">
+      {/* Display — hidden on mobile */}
+      <div className="hidden lg:block flex-1 min-w-0">
         <DisplayPanel
           displayState={displayState}
           data={data}
