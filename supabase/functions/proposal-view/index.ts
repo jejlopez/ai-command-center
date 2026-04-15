@@ -5,6 +5,15 @@ const CORS_HEADERS = {
   'Access-Control-Allow-Headers': 'authorization, content-type',
 };
 
+function htmlResponse(html: string, status = 200): Response {
+  const headers = new Headers();
+  headers.set('content-type', 'text/html; charset=utf-8');
+  headers.set('access-control-allow-origin', '*');
+  headers.set('x-content-type-options', 'nosniff');
+  headers.set('cache-control', 'no-cache');
+  return new Response(new TextEncoder().encode(html), { status, headers });
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { status: 204, headers: CORS_HEADERS });
@@ -14,10 +23,7 @@ Deno.serve(async (req: Request) => {
   const token = url.searchParams.get('token');
 
   if (!token) {
-    return new Response(renderError('Missing token', 'No signing token was provided.'), {
-      status: 400,
-      headers: { 'Content-Type': 'text/html; charset=utf-8' },
-    });
+    return htmlResponse(renderError('Missing token', 'No signing token was provided.'), 400);
   }
 
   const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
@@ -37,24 +43,17 @@ Deno.serve(async (req: Request) => {
       .maybeSingle();
 
     if (!proposal) {
-      return new Response(renderError('Proposal Not Found', 'This proposal link is invalid or has been removed.'), {
-        status: 404,
-        headers: { 'Content-Type': 'text/html; charset=utf-8' },
-      });
+      return htmlResponse(renderError('Proposal Not Found', 'This proposal link is invalid or has been removed.'), 404);
     }
 
     // Voided check
     if (proposal.voided_at) {
-      return new Response(renderVoided(proposal), {
-        headers: { 'Content-Type': 'text/html; charset=utf-8' },
-      });
+      return htmlResponse(renderVoided(proposal));
     }
 
     // Expired check
     if (proposal.expires_at && new Date(proposal.expires_at) < new Date()) {
-      return new Response(renderExpired(proposal), {
-        headers: { 'Content-Type': 'text/html; charset=utf-8' },
-      });
+      return htmlResponse(renderExpired(proposal));
     }
 
     // Already executed — show executed record
@@ -67,9 +66,7 @@ Deno.serve(async (req: Request) => {
         user_agent: ua,
         metadata: { page: 'executed_record' },
       });
-      return new Response(renderExecuted(proposal, viewUrl), {
-        headers: { 'Content-Type': 'text/html; charset=utf-8' },
-      });
+      return htmlResponse(renderExecuted(proposal, viewUrl));
     }
 
     // Log view event
@@ -88,9 +85,7 @@ Deno.serve(async (req: Request) => {
     }).eq('id', proposal.id);
 
     const html = renderSigningPage(proposal, viewUrl, token);
-    return new Response(html, {
-      headers: { 'Content-Type': 'text/html; charset=utf-8' },
-    });
+    return htmlResponse(html);
   }
 
   // ─── POST ────────────────────────────────────────────────────────────────────
@@ -711,11 +706,12 @@ function renderSigningPage(p: any, viewUrl: string, token: string): string {
 
         <!-- Key terms summary -->
         <div class="terms-summary">
-          <div class="term-row"><span>Service</span><span>3PL Logistics</span></div>
-          <div class="term-row"><span>Monthly</span><span>${monthly > 0 ? '$' + monthly.toLocaleString() : '—'}</span></div>
-          <div class="term-row"><span>Annual</span><span>${annual > 0 ? '$' + annual.toLocaleString() : '—'}</span></div>
-          <div class="term-row"><span>Valid Until</span><span>${validUntil}</span></div>
-          <div class="term-row"><span>Payment</span><span>${payment}</span></div>
+          <div class="term-row"><span>Service</span><span>Warehousing &amp; Fulfillment</span></div>
+          <div class="term-row"><span>Provider</span><span>3PL Center LLC</span></div>
+          <div class="term-row"><span>Monthly Est.</span><span>${monthly > 0 ? '$' + monthly.toLocaleString() : '—'}</span></div>
+          <div class="term-row"><span>Annual Est.</span><span>${annual > 0 ? '$' + annual.toLocaleString() : '—'}</span></div>
+          <div class="term-row"><span>Payment Terms</span><span>Net 7 — end of month</span></div>
+          <div class="term-row"><span>Jurisdiction</span><span>NJ / Middlesex Co.</span></div>
         </div>
 
         <!-- Legal notice — large, readable -->
@@ -865,126 +861,283 @@ function renderSigningPage(p: any, viewUrl: string, token: string): string {
 </html>`;
 }
 
+// ─── Helper: price table row ────────────────────────────────────────────────
+function priceRow(label: string, value: string | number, last = false): string {
+  const border = last ? '' : 'border-bottom:1px solid rgba(255,255,255,0.045);';
+  const val = typeof value === 'number' ? (value === 0 ? '—' : `$${value.toFixed(2)}`) : String(value);
+  return `<tr>
+    <td style="padding:9px 16px;${border}font-size:13px;color:rgba(255,255,255,0.7);">${label}</td>
+    <td style="padding:9px 16px;${border}text-align:right;font-size:13px;font-weight:500;color:rgba(255,255,255,0.9);">${val}</td>
+  </tr>`;
+}
+
+function priceTable(section: string, rows: [string, string | number][]): string {
+  return `
+  <div style="margin-bottom:20px;">
+    <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.17em;color:rgba(255,255,255,0.3);font-weight:500;margin-bottom:6px;">${section}</div>
+    <table style="width:100%;border-collapse:collapse;background:rgba(255,255,255,0.015);border-radius:10px;overflow:hidden;border:1px solid rgba(255,255,255,0.06);">
+      <tbody>
+        ${rows.map(([l, v], i) => priceRow(l, v, i === rows.length - 1)).join('')}
+      </tbody>
+    </table>
+  </div>`;
+}
+
 // ─── Shared document content builder ────────────────────────────────────────
 
-function buildDocumentContent(p: any, pricing: any, lanes: any[], services: any[], terms: any): string {
-  const laneRows = lanes.map((l: any) => `
-    <tr>
-      <td style="padding:12px 16px;border-bottom:1px solid rgba(255,255,255,0.04);">${escapeHtml(l.origin ?? '')} → ${escapeHtml(l.destination ?? '')}</td>
-      <td style="padding:12px 16px;border-bottom:1px solid rgba(255,255,255,0.04);text-align:right;">${l.volume ?? '—'} shipments</td>
-      <td style="padding:12px 16px;border-bottom:1px solid rgba(255,255,255,0.04);text-align:right;">$${(l.rate ?? 0).toFixed(2)}/mi</td>
-      <td style="padding:12px 16px;border-bottom:1px solid rgba(255,255,255,0.04);text-align:right;">$${(l.per_shipment ?? 0).toLocaleString()}</td>
-    </tr>
-  `).join('');
+function buildDocumentContent(p: any, pricing: any, _lanes: any[], _services: any[], _terms: any): string {
+  // ── Destructure all 3PL pricing sections ────────────────────────────────
+  const storage = pricing.storage ?? {};
+  const recPal = pricing.receiving_palletized ?? {};
+  const recLoose = pricing.receiving_loose ?? {};
+  const container = pricing.container_unloading ?? {};
+  const outParcel = pricing.outbound_parcel ?? {};
+  const outPallet = pricing.outbound_pallet ?? {};
+  const special = pricing.special_projects ?? {};
+  const integrations = pricing.integrations ?? {};
+  const minimums = pricing.minimums ?? {};
+  const vol = pricing.estimated_monthly_volume ?? {};
 
-  const accessorialRows = (pricing.accessorials ?? []).map((a: any) => `
-    <tr>
-      <td style="padding:8px 16px;border-bottom:1px solid rgba(255,255,255,0.04);">${escapeHtml(a.name)}</td>
-      <td style="padding:8px 16px;border-bottom:1px solid rgba(255,255,255,0.04);text-align:right;">$${(a.amount ?? 0).toLocaleString()}</td>
-    </tr>
-  `).join('');
+  const rebill = pricing.rebill_per_tracking ?? 7.50;
+  const monthlyEst = pricing.monthly_estimate ?? pricing.monthly_cost ?? 0;
+  const annualEst = pricing.annual_estimate ?? pricing.annual_projection ?? 0;
 
-  const serviceList = services.map((s: any) => `
-    <div style="display:flex;align-items:center;gap:8px;padding:8px 0;">
-      <div style="width:20px;height:20px;border-radius:50%;background:rgba(0,224,208,0.12);display:grid;place-items:center;font-size:11px;color:#00E0D0;flex-shrink:0;">✓</div>
-      <span style="font-size:14px;">${escapeHtml(s)}</span>
-    </div>
-  `).join('');
+  const r = (v: any) => (v !== undefined && v !== null && v !== '' ? parseFloat(v) || 0 : 0);
+  const fmt = (v: number) => v > 0 ? `$${v.toFixed(2)}` : '—';
+  const fmtOrTbd = (v: any) => v === 'TBD' || v === 'tbd' ? 'TBD' : fmt(r(v));
 
   const createdDate = new Date(p.created_at).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
 
+  const acctContact = p.accounting_contact ?? {};
+
   return `
-    <!-- Hero -->
-    <div class="glass" style="text-align:center;padding:48px 32px;border-color:rgba(0,224,208,0.18);box-shadow:0 0 40px rgba(0,224,208,0.04);margin-bottom:24px;">
-      <div class="section-label">Logistics Proposal</div>
-      <h1 style="font-family:'Sora',sans-serif;font-size:26px;font-weight:700;color:#fff;margin-bottom:8px;">${escapeHtml(p.company_name ?? p.name ?? 'Proposal')}</h1>
-      <div style="font-size:15px;color:rgba(255,255,255,0.5);">Prepared for ${escapeHtml(p.client_name ?? p.company_name ?? 'Client')}</div>
-      <div style="font-size:11px;color:rgba(255,255,255,0.25);text-transform:uppercase;letter-spacing:0.15em;margin-top:14px;">${createdDate} · v${p.version ?? 1}</div>
+    <!-- ── Header ── -->
+    <div class="glass" style="padding:40px 36px 36px;border-color:rgba(0,224,208,0.18);box-shadow:0 0 40px rgba(0,224,208,0.04);margin-bottom:24px;">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:16px;">
+        <div>
+          <div class="section-label" style="margin-bottom:4px;">Warehousing &amp; Fulfillment Agreement</div>
+          <h1 style="font-family:'Sora',sans-serif;font-size:24px;font-weight:700;color:#fff;margin-bottom:6px;">3PL Center LLC</h1>
+          <div style="font-size:14px;color:rgba(255,255,255,0.5);">Prepared for <strong style="color:rgba(255,255,255,0.8);">${escapeHtml(p.company_name ?? 'Client')}</strong></div>
+        </div>
+        <div style="text-align:right;">
+          <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.12em;color:rgba(255,255,255,0.25);margin-bottom:4px;">Date</div>
+          <div style="font-size:14px;color:rgba(255,255,255,0.7);">${createdDate}</div>
+          <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.12em;color:rgba(255,255,255,0.25);margin-top:8px;margin-bottom:4px;">Document</div>
+          <div style="font-size:11px;color:rgba(255,255,255,0.4);font-family:monospace;">${p.share_token}</div>
+        </div>
+      </div>
+
+      <!-- Client Info block -->
+      <div style="margin-top:24px;padding-top:20px;border-top:1px solid rgba(255,255,255,0.06);display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:16px;">
+        ${p.client_name ? `<div><div style="font-size:10px;text-transform:uppercase;letter-spacing:0.12em;color:rgba(255,255,255,0.25);margin-bottom:3px;">Contact</div><div style="font-size:13px;color:rgba(255,255,255,0.75);">${escapeHtml(p.client_name)}</div></div>` : ''}
+        ${p.client_email ? `<div><div style="font-size:10px;text-transform:uppercase;letter-spacing:0.12em;color:rgba(255,255,255,0.25);margin-bottom:3px;">Email</div><div style="font-size:13px;color:rgba(255,255,255,0.75);">${escapeHtml(p.client_email)}</div></div>` : ''}
+        ${(p.client_phone || p.pricing?.client_phone) ? `<div><div style="font-size:10px;text-transform:uppercase;letter-spacing:0.12em;color:rgba(255,255,255,0.25);margin-bottom:3px;">Phone</div><div style="font-size:13px;color:rgba(255,255,255,0.75);">${escapeHtml(p.client_phone ?? '')}</div></div>` : ''}
+        ${p.business_address ? `<div><div style="font-size:10px;text-transform:uppercase;letter-spacing:0.12em;color:rgba(255,255,255,0.25);margin-bottom:3px;">Address</div><div style="font-size:13px;color:rgba(255,255,255,0.75);">${escapeHtml(p.business_address)}</div></div>` : ''}
+        ${acctContact?.name ? `<div><div style="font-size:10px;text-transform:uppercase;letter-spacing:0.12em;color:rgba(255,255,255,0.25);margin-bottom:3px;">Accounting</div><div style="font-size:13px;color:rgba(255,255,255,0.75);">${escapeHtml(acctContact.name)}${acctContact.email ? '<br><span style="font-size:11px;color:rgba(255,255,255,0.4);">' + escapeHtml(acctContact.email) + '</span>' : ''}</div></div>` : ''}
+      </div>
     </div>
 
     ${p.executive_summary ? `
-    <div class="glass" style="padding:28px 32px;margin-bottom:24px;">
+    <div class="glass" style="padding:24px 32px;margin-bottom:24px;">
       <div class="section-label">Executive Summary</div>
-      <div style="font-size:15px;line-height:1.75;color:rgba(255,255,255,0.65);">${escapeHtml(p.executive_summary)}</div>
+      <div style="font-size:14px;line-height:1.8;color:rgba(255,255,255,0.65);">${escapeHtml(p.executive_summary)}</div>
     </div>
     ` : ''}
 
-    ${lanes.length > 0 ? `
+    <!-- ── Rate Schedule ── -->
     <div class="glass" style="padding:28px 32px;margin-bottom:24px;">
-      <div class="section-label">Lane Pricing</div>
-      <table style="width:100%;border-collapse:collapse;font-size:14px;">
-        <thead>
-          <tr>
-            <th style="padding:10px 16px;text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:0.12em;color:rgba(255,255,255,0.25);border-bottom:1px solid rgba(255,255,255,0.07);">Lane</th>
-            <th style="padding:10px 16px;text-align:right;font-size:10px;text-transform:uppercase;letter-spacing:0.12em;color:rgba(255,255,255,0.25);border-bottom:1px solid rgba(255,255,255,0.07);">Volume</th>
-            <th style="padding:10px 16px;text-align:right;font-size:10px;text-transform:uppercase;letter-spacing:0.12em;color:rgba(255,255,255,0.25);border-bottom:1px solid rgba(255,255,255,0.07);">Rate</th>
-            <th style="padding:10px 16px;text-align:right;font-size:10px;text-transform:uppercase;letter-spacing:0.12em;color:rgba(255,255,255,0.25);border-bottom:1px solid rgba(255,255,255,0.07);">Per Shipment</th>
-          </tr>
-        </thead>
-        <tbody>${laneRows}</tbody>
-      </table>
-      ${pricing.fuel_surcharge_pct ? `<div style="margin-top:12px;font-size:12px;color:rgba(255,255,255,0.35);">Fuel surcharge: ${pricing.fuel_surcharge_pct}% included in rates</div>` : ''}
-    </div>
-    ` : ''}
+      <div class="section-label">Rate Schedule</div>
+      <p style="font-size:12px;color:rgba(255,255,255,0.35);margin-bottom:20px;line-height:1.6;">All rates are per-unit as listed. Storage billed upon receipt: goods received 1st–15th charged full month; 16th–31st charged half month.</p>
 
-    ${accessorialRows ? `
-    <div class="glass" style="padding:28px 32px;margin-bottom:24px;">
-      <div class="section-label">Accessorial Charges</div>
-      <table style="width:100%;border-collapse:collapse;font-size:14px;">
-        <thead><tr>
-          <th style="padding:10px 16px;text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:0.12em;color:rgba(255,255,255,0.25);border-bottom:1px solid rgba(255,255,255,0.07);">Service</th>
-          <th style="padding:10px 16px;text-align:right;font-size:10px;text-transform:uppercase;letter-spacing:0.12em;color:rgba(255,255,255,0.25);border-bottom:1px solid rgba(255,255,255,0.07);">Charge</th>
-        </tr></thead>
-        <tbody>${accessorialRows}</tbody>
-      </table>
-    </div>
-    ` : ''}
+      ${priceTable('Monthly Storage', [
+        ['30×36×24 (small pallet)', r(storage.small_30x36x24) || 6.00],
+        ['40×48×60 (standard)', r(storage.standard_40x48x60) || 14.75],
+        ['40×48×72 (tall)', r(storage.tall_40x48x72) || 25.00],
+        ['40×48×over 72 (oversized)', r(storage.oversized_40x48xover72) || 40.00],
+      ])}
 
-    <div class="glass" style="padding:28px 32px;margin-bottom:24px;">
-      <div class="section-label">Cost Summary</div>
-      <div style="display:flex;justify-content:space-between;align-items:center;padding:16px;border-radius:12px;background:rgba(0,224,208,0.07);border:1px solid rgba(0,224,208,0.14);">
-        <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.12em;color:rgba(255,255,255,0.4);">Per Shipment</div>
-        <div style="font-family:'Sora',sans-serif;font-size:26px;font-weight:700;color:#00E0D0;">$${(pricing.total_per_shipment ?? 0).toLocaleString()}</div>
+      ${priceTable('Receiving — Palletized', [
+        ['Per pallet (1 SKU)', r(recPal.single_sku) || 13.50],
+        ['Per pallet (2 SKUs)', r(recPal.two_sku) || 35.00],
+        ['Per pallet (Mixed SKU)', r(recPal.mixed_sku) || 75.00],
+      ])}
+
+      ${priceTable('Receiving — Loose Cartons', [
+        ['Per carton', r(recLoose.per_carton) || 2.50],
+        ['Counting pieces (per piece)', r(recLoose.count_per_piece) || 0.50],
+      ])}
+
+      ${priceTable('Container Unloading (floor loaded, includes 10 SKUs)', [
+        ["20' container (includes 500 cartons)", r(container.twenty_ft) || 425.00],
+        ["40' container (includes 1000 cartons)", r(container.forty_ft) || 650.00],
+        ["45' container (includes 1000 cartons)", r(container.fortyfive_ft) || 700.00],
+        ['Each additional 250 packages', r(container.additional_250_packages) || 45.00],
+        ['Each additional 10 SKUs', r(container.additional_10_skus) || 45.00],
+      ])}
+
+      ${priceTable('Outbound — Small Parcel (FedEx / UPS / USPS)', [
+        ['Order processing', r(outParcel.order_processing) || 3.50],
+        ['Per pick (under 30 lbs)', r(outParcel.per_pick) || 0.75],
+        ['Rush order fee', r(outParcel.rush_order) || 30.00],
+      ])}
+
+      ${priceTable('Outbound — Palletization (LTL / FTL)', [
+        ['Per pallet', r(outPallet.per_pallet) || 13.50],
+        ['Per pick (under 30 lbs)', r(outPallet.per_pick) || 0.75],
+        ['Bill of lading', r(outPallet.bol) || 4.50],
+        ['Rush order fee', r(outPallet.rush_order) || 30.00],
+      ])}
+
+      ${priceTable('Special Projects', [
+        ['Per man hour (standard)', r(special.man_hour) || 40.00],
+        ['Per man hour (forklift)', r(special.man_hour_forklift) || 45.00],
+        ['Per man hour (manager)', r(special.man_hour_manager) || 55.00],
+        ['Per carton / pallet label', r(special.label) || 0.50],
+        ['Scanning serial #', r(special.serial_scan) || 0.50],
+      ])}
+
+      ${priceTable('Integrations', [
+        ['Pre-built (Amazon, Shopify, etc.) — one-time setup', r(integrations.prebuilt) || 750.00],
+        ['Monthly integration fee', r(integrations.monthly) || 125.00],
+        ['Custom integration (per hour)', r(integrations.custom_per_hour) || 150.00],
+        ['EDI', fmtOrTbd(integrations.edi ?? 'TBD')],
+      ])}
+
+      ${priceTable('3PL Re-Bill & Monthly Minimums', [
+        ['3PL re-bill per tracking (FedEx / UPS / USPS / DHL)', r(rebill) || 7.50],
+        ['Monthly handling minimum', r(minimums.handling) || 2500],
+        ['Monthly storage minimum', r(minimums.storage) || 1000],
+      ])}
+
+      <div style="margin-top:8px;padding:14px 16px;border-radius:10px;background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.05);">
+        <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.15em;color:rgba(255,255,255,0.25);margin-bottom:6px;">Materials (Billed at Cost + Handling)</div>
+        <div style="font-size:13px;color:rgba(255,255,255,0.6);line-height:1.7;">
+          Pallet &amp; shrink wrap (Grade B, 40×48): <strong style="color:rgba(255,255,255,0.8);">$20.50</strong> &nbsp;·&nbsp;
+          Standard box (includes air pillows &amp; tape): <strong style="color:rgba(255,255,255,0.8);">varies by size</strong>
+        </div>
       </div>
-      ${pricing.monthly_cost ? `
-      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:16px;">
-        <div style="background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.04);border-radius:12px;padding:16px;text-align:center;">
-          <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.12em;color:rgba(255,255,255,0.25);margin-bottom:8px;">Monthly Volume</div>
-          <div style="font-family:'Sora',sans-serif;font-size:20px;font-weight:600;color:rgba(255,255,255,0.7);">${pricing.monthly_shipments ?? 0}</div>
-        </div>
-        <div style="background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.04);border-radius:12px;padding:16px;text-align:center;">
-          <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.12em;color:rgba(255,255,255,0.25);margin-bottom:8px;">Monthly Cost</div>
-          <div style="font-family:'Sora',sans-serif;font-size:20px;font-weight:600;color:#00E0D0;">$${(pricing.monthly_cost ?? 0).toLocaleString()}</div>
-        </div>
-        <div style="background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.04);border-radius:12px;padding:16px;text-align:center;">
-          <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.12em;color:rgba(255,255,255,0.25);margin-bottom:8px;">Annual Projection</div>
-          <div style="font-family:'Sora',sans-serif;font-size:20px;font-weight:600;color:#00E0A0;">$${(pricing.annual_projection ?? 0).toLocaleString()}</div>
-        </div>
-      </div>
-      ` : ''}
     </div>
 
-    ${services.length > 0 ? `
-    <div class="glass" style="padding:28px 32px;margin-bottom:24px;">
-      <div class="section-label">Services Included</div>
-      <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:4px;">${serviceList}</div>
+    <!-- ── Estimated Monthly Cost ── -->
+    ${(monthlyEst > 0 || (vol.pallets || vol.orders || vol.picks)) ? `
+    <div class="glass" style="padding:28px 32px;margin-bottom:24px;border-color:rgba(0,224,208,0.12);">
+      <div class="section-label">Estimated Monthly Cost</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:14px;margin-bottom:${monthlyEst > 0 ? '16px' : '0'};">
+        ${vol.pallets ? `<div style="background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.05);border-radius:12px;padding:14px;text-align:center;"><div style="font-size:10px;text-transform:uppercase;letter-spacing:0.12em;color:rgba(255,255,255,0.25);margin-bottom:6px;">Pallets / Mo</div><div style="font-size:20px;font-weight:600;color:rgba(255,255,255,0.7);">${vol.pallets}</div></div>` : ''}
+        ${vol.orders ? `<div style="background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.05);border-radius:12px;padding:14px;text-align:center;"><div style="font-size:10px;text-transform:uppercase;letter-spacing:0.12em;color:rgba(255,255,255,0.25);margin-bottom:6px;">Orders / Mo</div><div style="font-size:20px;font-weight:600;color:rgba(255,255,255,0.7);">${vol.orders}</div></div>` : ''}
+        ${vol.picks ? `<div style="background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.05);border-radius:12px;padding:14px;text-align:center;"><div style="font-size:10px;text-transform:uppercase;letter-spacing:0.12em;color:rgba(255,255,255,0.25);margin-bottom:6px;">Picks / Mo</div><div style="font-size:20px;font-weight:600;color:rgba(255,255,255,0.7);">${vol.picks}</div></div>` : ''}
+        ${monthlyEst > 0 ? `<div style="background:rgba(0,224,208,0.06);border:1px solid rgba(0,224,208,0.14);border-radius:12px;padding:14px;text-align:center;"><div style="font-size:10px;text-transform:uppercase;letter-spacing:0.12em;color:rgba(0,224,208,0.6);margin-bottom:6px;">Monthly Est.</div><div style="font-family:'Sora',sans-serif;font-size:22px;font-weight:700;color:#00E0D0;">$${monthlyEst.toLocaleString()}</div></div>` : ''}
+        ${annualEst > 0 ? `<div style="background:rgba(0,224,160,0.04);border:1px solid rgba(0,224,160,0.1);border-radius:12px;padding:14px;text-align:center;"><div style="font-size:10px;text-transform:uppercase;letter-spacing:0.12em;color:rgba(0,224,160,0.5);margin-bottom:6px;">Annual Est.</div><div style="font-family:'Sora',sans-serif;font-size:22px;font-weight:700;color:#00E0A0;">$${annualEst.toLocaleString()}</div></div>` : ''}
+      </div>
+      <div style="font-size:11px;color:rgba(255,255,255,0.25);line-height:1.6;">Estimate is based on projected volumes × rates above. Monthly minimums apply. Actual invoice may vary based on services utilized.</div>
     </div>
     ` : ''}
 
-    ${Object.keys(terms).length > 0 ? `
+    <!-- ── Legal Terms ── -->
     <div class="glass" style="padding:28px 32px;margin-bottom:24px;">
       <div class="section-label">Terms &amp; Conditions</div>
-      <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:16px;font-size:14px;">
-        ${terms.valid_until ? `<div><div style="font-size:10px;color:rgba(255,255,255,0.25);text-transform:uppercase;letter-spacing:0.1em;margin-bottom:4px;">Valid Until</div><div style="color:rgba(255,255,255,0.75);">${escapeHtml(terms.valid_until)}</div></div>` : ''}
-        ${terms.payment ? `<div><div style="font-size:10px;color:rgba(255,255,255,0.25);text-transform:uppercase;letter-spacing:0.1em;margin-bottom:4px;">Payment Terms</div><div style="color:rgba(255,255,255,0.75);">${escapeHtml(terms.payment)}</div></div>` : ''}
-        ${terms.minimum ? `<div><div style="font-size:10px;color:rgba(255,255,255,0.25);text-transform:uppercase;letter-spacing:0.1em;margin-bottom:4px;">Minimum Volume</div><div style="color:rgba(255,255,255,0.75);">${escapeHtml(terms.minimum)}</div></div>` : ''}
-        ${terms.contract_length ? `<div><div style="font-size:10px;color:rgba(255,255,255,0.25);text-transform:uppercase;letter-spacing:0.1em;margin-bottom:4px;">Contract Length</div><div style="color:rgba(255,255,255,0.75);">${escapeHtml(terms.contract_length)}</div></div>` : ''}
+
+      <div style="font-size:13px;line-height:1.8;color:rgba(255,255,255,0.65);">
+
+        <div style="margin-bottom:20px;">
+          <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.15em;color:rgba(255,255,255,0.3);font-weight:600;margin-bottom:8px;">Liability</div>
+          <p>Supplier's liability to Customer for loss, damage, destruction, or delay of goods shall be limited to the lesser of $0.50 per pound per article or $50.00 per shipment, unless a higher value is declared in writing and accepted by Supplier prior to receipt of goods. 3PL Center LLC shall not be liable for concealed damage, losses or delays resulting from acts of nature, acts beyond its reasonable control, or for any consequential, indirect, or special damages.</p>
+        </div>
+
+        <div style="margin-bottom:20px;">
+          <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.15em;color:rgba(255,255,255,0.3);font-weight:600;margin-bottom:8px;">Special Circumstances</div>
+          <p>When outbound volume in any given month exceeds 30% or more of the current inventory on hand, Customer agrees to make payment in full on the current balance prior to the release of any additional inventory. 3PL Center LLC reserves the right to hold shipments until all outstanding balances are satisfied.</p>
+        </div>
+
+        <div style="margin-bottom:20px;">
+          <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.15em;color:rgba(255,255,255,0.3);font-weight:600;margin-bottom:8px;">Confidentiality</div>
+          <p>Customer acknowledges that the rates, terms, processes, and procedures disclosed under this Agreement are proprietary and confidential. Customer agrees not to disclose any such information to any third party, including competitors, without the prior written consent of 3PL Center LLC. This obligation survives the termination of this Agreement.</p>
+        </div>
+
+        <div style="margin-bottom:20px;">
+          <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.15em;color:rgba(255,255,255,0.3);font-weight:600;margin-bottom:8px;">Inventory</div>
+          <p>3PL Center LLC will maintain accurate inventory counts using its warehouse management system. Monthly cycle counts will be conducted; an annual physical inventory will be performed. 3PL Center LLC maintains a 99% inventory accuracy threshold and allows a 1% shrinkage allowance per year. Discrepancies exceeding 1% will be investigated and reported to Customer.</p>
+        </div>
+
+        <div style="margin-bottom:20px;">
+          <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.15em;color:rgba(255,255,255,0.3);font-weight:600;margin-bottom:8px;">Non 3PL Center Personnel</div>
+          <p>All non-3PL Center LLC personnel visiting the facility must be accompanied by an authorized 3PL Center representative at all times. No outside labor, contractors, or Customer employees may perform work within the 3PL Center facility without prior written authorization from 3PL Center LLC management.</p>
+        </div>
+
+        <div style="margin-bottom:20px;">
+          <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.15em;color:rgba(255,255,255,0.3);font-weight:600;margin-bottom:8px;">Insurance</div>
+          <p>Customer is solely responsible for maintaining adequate insurance coverage for its goods while in storage or in transit. 3PL Center LLC does not provide cargo or property insurance on behalf of Customer. Customer is encouraged to obtain appropriate warehouse legal liability and cargo insurance. Evidence of such insurance may be requested by 3PL Center LLC at any time.</p>
+        </div>
+
+        <div style="margin-bottom:20px;">
+          <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.15em;color:rgba(255,255,255,0.3);font-weight:600;margin-bottom:8px;">Force Majeure</div>
+          <p>Neither party shall be liable for delays or failures in performance resulting from causes beyond its reasonable control, including but not limited to acts of God, acts of government, floods, fires, earthquakes, civil unrest, acts of terror, strikes, labor disputes, internet outages, or other events of force majeure. The affected party shall provide prompt written notice of such event and resume performance as soon as reasonably possible.</p>
+        </div>
+
+        <div style="margin-bottom:20px;">
+          <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.15em;color:rgba(255,255,255,0.3);font-weight:600;margin-bottom:8px;">Enforceability &amp; Governing Law</div>
+          <p>This Agreement shall be governed by and construed in accordance with the laws of the State of New Jersey. Any disputes arising under or related to this Agreement shall be resolved in the courts of Middlesex County, New Jersey. If any provision of this Agreement is found to be unenforceable, the remaining provisions shall remain in full force and effect.</p>
+        </div>
+
+        <div style="margin-bottom:20px;">
+          <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.15em;color:rgba(255,255,255,0.3);font-weight:600;margin-bottom:8px;">Standard Operating Procedures (SOPs)</div>
+          <p><strong>System Usage:</strong> Customer shall use the designated warehouse management system for all inventory transactions, order submissions, and reporting. <strong>SKU Setup:</strong> All SKUs must be set up in the system prior to receiving; Customer is responsible for providing accurate product data, dimensions, and weights. <strong>Receiving Rules:</strong> All inbound shipments require advance shipping notices (ASNs) at least 24 hours prior to arrival; pallets must be labeled per 3PL Center LLC specifications. <strong>Outbound Rules:</strong> All outbound orders must be submitted through the system by 12:00 PM EST for same-day processing; orders submitted after cutoff will be processed the following business day. <strong>Shipping Methods:</strong> Customer must specify carrier and service level for each shipment; 3PL Center LLC is not responsible for carrier selection errors made by Customer.</p>
+        </div>
+
+        <div style="margin-bottom:20px;">
+          <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.15em;color:rgba(255,255,255,0.3);font-weight:600;margin-bottom:8px;">Payment Terms</div>
+          <p>Invoices are issued at the end of each calendar month. Payment is due within 7 days of invoice date. Late payments are subject to a 1.5% monthly late fee on the outstanding balance. Credit card payments are subject to a 3% processing fee (4% for American Express). ACH / wire transfer payments are accepted at no additional charge. 3PL Center LLC reserves the right to suspend services for accounts more than 14 days past due.</p>
+        </div>
+
       </div>
     </div>
-    ` : ''}
 
-    <div style="text-align:center;padding:28px;font-size:11px;color:rgba(255,255,255,0.18);">
-      Powered by JARVIS Sign · Proposal ID: ${p.share_token}
+    <!-- ── Payment Authorization (informational) ── -->
+    <div class="glass" style="padding:24px 32px;margin-bottom:24px;border-color:rgba(255,179,64,0.1);">
+      <div class="section-label" style="color:rgba(255,179,64,0.6);">Payment Authorization (Informational)</div>
+      <div style="font-size:13px;color:rgba(255,255,255,0.55);line-height:1.8;">
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;">
+          <div style="padding:12px 14px;border-radius:10px;background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.05);">
+            <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.12em;color:rgba(255,255,255,0.25);margin-bottom:4px;">Credit Card</div>
+            <div style="font-size:13px;color:rgba(255,255,255,0.65);">+3% processing fee</div>
+          </div>
+          <div style="padding:12px 14px;border-radius:10px;background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.05);">
+            <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.12em;color:rgba(255,255,255,0.25);margin-bottom:4px;">American Express</div>
+            <div style="font-size:13px;color:rgba(255,255,255,0.65);">+4% processing fee</div>
+          </div>
+          <div style="padding:12px 14px;border-radius:10px;background:rgba(0,224,160,0.04);border:1px solid rgba(0,224,160,0.1);">
+            <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.12em;color:rgba(0,224,160,0.5);margin-bottom:4px;">ACH / Wire Transfer</div>
+            <div style="font-size:13px;color:rgba(255,255,255,0.65);">No fee — preferred</div>
+          </div>
+        </div>
+        <div style="margin-top:12px;font-size:11px;color:rgba(255,255,255,0.25);">Payment collection is handled separately. Signing this document does not authorize any charge. A payment method on file will be established separately by 3PL Center LLC.</div>
+      </div>
+    </div>
+
+    <!-- ── Signature Block ── -->
+    <div class="glass" style="padding:28px 32px;margin-bottom:24px;">
+      <div class="section-label">Signature Block</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;">
+        <div style="padding:20px;border-radius:12px;background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.07);">
+          <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.12em;color:rgba(255,255,255,0.25);margin-bottom:12px;">Client</div>
+          <div style="margin-bottom:14px;"><div style="font-size:11px;color:rgba(255,255,255,0.25);margin-bottom:4px;">Company</div><div style="font-size:13px;color:rgba(255,255,255,0.75);">${escapeHtml(p.company_name ?? '')}</div></div>
+          <div style="margin-bottom:14px;"><div style="font-size:11px;color:rgba(255,255,255,0.25);margin-bottom:4px;">By (signature)</div><div style="height:32px;border-bottom:1px solid rgba(255,255,255,0.12);"></div></div>
+          <div style="margin-bottom:14px;"><div style="font-size:11px;color:rgba(255,255,255,0.25);margin-bottom:4px;">Title</div><div style="height:24px;border-bottom:1px solid rgba(255,255,255,0.06);"></div></div>
+          <div style="margin-bottom:0;"><div style="font-size:11px;color:rgba(255,255,255,0.25);margin-bottom:4px;">Date</div><div style="height:24px;border-bottom:1px solid rgba(255,255,255,0.06);"></div></div>
+        </div>
+        <div style="padding:20px;border-radius:12px;background:rgba(0,224,208,0.03);border:1px solid rgba(0,224,208,0.1);">
+          <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.12em;color:rgba(0,224,208,0.5);margin-bottom:12px;">3PL Center LLC</div>
+          <div style="margin-bottom:14px;"><div style="font-size:11px;color:rgba(255,255,255,0.25);margin-bottom:4px;">Company</div><div style="font-size:13px;color:rgba(255,255,255,0.75);">3PL Center LLC</div></div>
+          <div style="margin-bottom:14px;"><div style="font-size:11px;color:rgba(255,255,255,0.25);margin-bottom:4px;">By</div><div style="font-size:13px;color:rgba(255,255,255,0.75);">Marcos Eddi</div></div>
+          <div style="margin-bottom:14px;"><div style="font-size:11px;color:rgba(255,255,255,0.25);margin-bottom:4px;">Title</div><div style="font-size:13px;color:rgba(255,255,255,0.75);">Chief Executive Officer</div></div>
+          <div style="margin-bottom:0;"><div style="font-size:11px;color:rgba(255,255,255,0.25);margin-bottom:4px;">Date</div><div style="height:24px;border-bottom:1px solid rgba(0,224,208,0.1);"></div></div>
+        </div>
+      </div>
+    </div>
+
+    <div style="text-align:center;padding:24px;font-size:11px;color:rgba(255,255,255,0.18);">
+      Powered by JARVIS Sign &nbsp;·&nbsp; Document ID: ${p.share_token} &nbsp;·&nbsp; v${p.version ?? 1}
+      <div style="margin-top:6px;font-size:10px;color:rgba(255,255,255,0.12);">3PL Center LLC · Middlesex County, New Jersey · Governing law: State of New Jersey</div>
     </div>
   `;
 }
