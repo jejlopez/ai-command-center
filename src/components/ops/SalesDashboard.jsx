@@ -119,7 +119,30 @@ export function SalesDashboard({ ops, onRefresh }) {
   const [compareOpen, setCompareOpen] = useState(false);
 
   const hasCRM = crm?.connected && (crm.deals?.length > 0 || Object.keys(crm.pipeline || {}).length > 0);
-  const allDeals = hasCRM ? crm.deals : deals;
+  const allDeals = deals.length > 0 ? deals : (hasCRM ? crm.deals : []);
+
+  // Build pipeline from Supabase deals (grouped by stage), normalizing field names
+  const supaPipeline = {};
+  if (deals.length > 0) {
+    for (const d of deals) {
+      const stage = (d.stage || "Unknown").trim();
+      // Skip closed deals from pipeline view
+      if (stage === "closed_won" || stage === "closed_lost") continue;
+      // Normalize Supabase field names to match what PipelineBoard/DealCard expects
+      const normalized = {
+        ...d,
+        title: d.company || d.title,
+        org_name: d.company || d.org_name,
+        value: d.value_usd || d.value || 0,
+        stage_name: stage,
+        person_name: d.contact_name,
+        add_time: d.created_at,
+        update_time: d.updated_at || d.last_touch,
+        last_activity_date: d.last_touch,
+      };
+      (supaPipeline[stage] ??= []).push(normalized);
+    }
+  }
   const calendarEvents = ops.calendarEvents || [];
 
   return (
@@ -140,7 +163,9 @@ export function SalesDashboard({ ops, onRefresh }) {
             </button>
           </div>
 
-          {hasCRM ? (
+          {Object.keys(supaPipeline).length > 0 ? (
+            <PipelineBoard pipeline={supaPipeline} onOpenDeal={setOpenDeal} />
+          ) : hasCRM ? (
             <PipelineBoard pipeline={crm.pipeline} onOpenDeal={setCrmDealOpen} />
           ) : (
             <div className="text-xs text-jarvis-muted text-center py-8">Connect Pipedrive to see pipeline.</div>

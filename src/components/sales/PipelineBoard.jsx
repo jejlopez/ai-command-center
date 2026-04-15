@@ -6,11 +6,13 @@ import { dealAge, ageColor, dealScore, scoreColor } from "../../lib/dealScore.js
 import { QUALITY_COLORS, QUALITY_LABELS, ATTENTION_COLORS, ATTENTION_LABELS } from "../../lib/badges.js";
 
 const STAGE_ORDER = [
-  { key: "Proposal",                  label: "Proposal",    color: "text-blue-400",        dot: "bg-blue-400"   },
-  { key: "Follow up on proposal",     label: "Follow-up",   color: "text-jarvis-warning",  dot: "bg-jarvis-warning" },
-  { key: "Negotiations Started",      label: "Negotiation", color: "text-yellow-400",      dot: "bg-yellow-400" },
-  { key: "Demo Scheduled/Site Visit", label: "Demo/Visit",  color: "text-green-400",       dot: "bg-green-400"  },
-  { key: "Signing Contract",          label: "Signing",     color: "text-jarvis-success",  dot: "bg-jarvis-success" },
+  { key: "Proposal",                          label: "Proposal",        color: "text-blue-400",        dot: "bg-blue-400"   },
+  { key: "Send Custom Proposal",              label: "Send Proposal",   color: "text-blue-400",        dot: "bg-blue-400"   },
+  { key: "Review Proposal & Get Feedback",    label: "Review",          color: "text-jarvis-purple",   dot: "bg-jarvis-purple" },
+  { key: "Follow up on proposal",             label: "Follow-up",       color: "text-jarvis-warning",  dot: "bg-jarvis-warning" },
+  { key: "Negotiations Started",              label: "Negotiation",     color: "text-yellow-400",      dot: "bg-yellow-400" },
+  { key: "Demo Scheduled/Site Visit",         label: "Demo/Visit",      color: "text-green-400",       dot: "bg-green-400"  },
+  { key: "Signing Contract",                  label: "Signing",         color: "text-jarvis-success",  dot: "bg-jarvis-success" },
 ];
 
 const COLOR_MAP = {
