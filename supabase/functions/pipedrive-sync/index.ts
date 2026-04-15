@@ -12,18 +12,10 @@ function corsResponse(body: unknown, status = 200): Response {
   });
 }
 
-// Pipedrive stage mapping
+// Keep the real Pipedrive stage name — the UI handles display
 function mapStage(stageId: number, stageName?: string): string {
-  const name = (stageName ?? '').toLowerCase();
-  if (name.includes('prospect') || name.includes('lead') || name.includes('new')) return 'prospect';
-  if (name.includes('quot') || name.includes('proposal')) return 'quoted';
-  if (name.includes('negot') || name.includes('review') || name.includes('pending')) return 'negotiating';
-  if (name.includes('won') || name.includes('closed') || name.includes('win')) return 'closed_won';
-  if (name.includes('lost') || name.includes('reject')) return 'closed_lost';
-  // Default by position: stages 1-2 = prospect, 3-4 = quoted, 5+ = negotiating
-  if (stageId <= 2) return 'prospect';
-  if (stageId <= 4) return 'quoted';
-  return 'negotiating';
+  if (stageName) return stageName;
+  return `Stage ${stageId}`;
 }
 
 interface SyncResult {
@@ -79,12 +71,25 @@ async function syncDeals(
 
     for (const d of deals) {
       try {
+        // Link to contacts table if person exists
+        let contactId = null;
+        if (d.person_id) {
+          const { data: contact } = await supabase
+            .from('contacts')
+            .select('id')
+            .eq('user_id', userId)
+            .eq('pipedrive_id', d.person_id)
+            .maybeSingle();
+          if (contact) contactId = contact.id;
+        }
+
         const mapped: any = {
           user_id: userId,
           pipedrive_id: d.id,
           company: d.org_name ?? d.title ?? `Deal #${d.id}`,
           contact_name: d.person_name ?? null,
-          stage: mapStage(d.stage_id, d.stage_order_nr?.toString()),
+          contact_id: contactId,
+          stage: d.stage_name ?? mapStage(d.stage_id, d.stage_order_nr?.toString()),
           value_usd: d.value ?? 0,
           probability: d.probability ?? 50,
           close_date: d.expected_close_date ?? null,
@@ -215,6 +220,41 @@ async function syncActivities(
             result.errors.push(`activity ${a.id}: ${error.message}`);
           } else {
             result.upserted++;
+          }
+        }
+
+        // Write to activities table (unified timeline)
+        {
+          let actDealId = null;
+          let actContactId = null;
+          if (a.deal_id) {
+            const { data: deal } = await supabase.from('deals').select('id').eq('user_id', userId).eq('pipedrive_id', a.deal_id).maybeSingle();
+            if (deal) actDealId = deal.id;
+          }
+          if (a.person_id) {
+            const { data: contact } = await supabase.from('contacts').select('id').eq('user_id', userId).eq('pipedrive_id', a.person_id).maybeSingle();
+            if (contact) actContactId = contact.id;
+          }
+
+          const actType = a.type === 'call' ? 'call' : a.type === 'meeting' ? 'meeting' : a.type === 'email' ? (a.done ? 'email_sent' : 'email_received') : 'note';
+          const actDate = a.due_date ? `${a.due_date}T${a.due_time ?? '00:00'}:00Z` : a.update_time ?? a.add_time;
+          const actBody = [a.note, a.public_description].filter(Boolean).join('\n').replace(/<[^>]*>/g, '').trim();
+
+          // Dedup by source + occurred_at + subject
+          const { data: existAct } = await supabase.from('activities').select('id').eq('user_id', userId).eq('source', 'pipedrive').eq('occurred_at', actDate).eq('subject', a.subject ?? '').limit(1);
+
+          if (!existAct || existAct.length === 0) {
+            await supabase.from('activities').insert({
+              user_id: userId,
+              deal_id: actDealId,
+              contact_id: actContactId,
+              type: actType,
+              subject: a.subject ?? null,
+              body: actBody || null,
+              metadata: { pipedrive_id: a.id, done: a.done, duration: a.duration },
+              source: 'pipedrive',
+              occurred_at: actDate,
+            });
           }
         }
 
@@ -377,6 +417,93 @@ async function syncNotes(
   return result;
 }
 
+async function syncLeads(
+  supabase: ReturnType<typeof createClient>,
+  userId: string,
+  domain: string,
+  apiToken: string,
+  since: string
+): Promise<SyncResult> {
+  const result: SyncResult = { resource: 'leads', fetched: 0, upserted: 0, errors: [] };
+
+  try {
+    // Pipedrive leads endpoint (LeadBooster / Leads Inbox)
+    const params = new URLSearchParams({ api_token: apiToken, limit: '100' });
+    const url = `https://${domain}.pipedrive.com/api/v1/leads?${params}`;
+    const res = await fetch(url);
+
+    if (res.status === 429) throw new Error('RATE_LIMITED');
+    if (!res.ok) {
+      // Leads API may not be available on all Pipedrive plans
+      if (res.status === 403 || res.status === 404) {
+        result.errors.push('Leads API not available on this Pipedrive plan');
+        return result;
+      }
+      throw new Error(`Pipedrive leads API ${res.status}`);
+    }
+
+    const json = await res.json();
+    const leads = json.data ?? [];
+    result.fetched = leads.length;
+
+    for (const l of leads) {
+      try {
+        // Get person details if linked
+        let contactName = null;
+        let contactEmail = null;
+        let contactId = null;
+
+        if (l.person_id) {
+          const { data: contact } = await supabase
+            .from('contacts')
+            .select('id, name, email')
+            .eq('user_id', userId)
+            .eq('pipedrive_id', l.person_id)
+            .maybeSingle();
+          if (contact) {
+            contactId = contact.id;
+            contactName = contact.name;
+            contactEmail = contact.email;
+          }
+        }
+
+        const mapped: any = {
+          user_id: userId,
+          pipedrive_id: l.id,
+          company: l.organization_name ?? l.title ?? `Lead #${l.id}`,
+          contact_id: contactId,
+          source: l.source_name ?? 'pipedrive',
+          status: l.is_archived ? 'dead' : 'new',
+          notes: l.note ?? null,
+          updated_at: new Date().toISOString(),
+        };
+
+        // Add label as tag
+        if (l.label_ids?.length) {
+          mapped.tags = l.label_ids.map((id: number) => `label_${id}`);
+        }
+
+        const { error } = await supabase
+          .from('leads')
+          .upsert(mapped, { onConflict: 'user_id,pipedrive_id' });
+
+        if (error) {
+          result.errors.push(`lead ${l.id}: ${error.message}`);
+        } else {
+          result.upserted++;
+        }
+      } catch (e: any) {
+        result.errors.push(`lead ${l.id}: ${e.message}`);
+      }
+    }
+  } catch (e: any) {
+    if (e.message === 'RATE_LIMITED') throw e;
+    result.errors.push(e.message);
+  }
+
+  return result;
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { status: 204, headers: CORS_HEADERS });
@@ -438,7 +565,7 @@ Deno.serve(async (req: Request) => {
 
       const results: SyncResult[] = [];
 
-      for (const resource of ['deals', 'persons', 'activities', 'notes']) {
+      for (const resource of ['deals', 'persons', 'leads', 'activities', 'notes']) {
         const state = stateMap[resource];
 
         // Circuit breaker: skip if in backoff
@@ -464,6 +591,8 @@ Deno.serve(async (req: Request) => {
             syncResult = await syncDeals(supabase, userId, domain, apiToken, since);
           } else if (resource === 'persons') {
             syncResult = await syncPersons(supabase, userId, domain, apiToken, since);
+          } else if (resource === 'leads') {
+            syncResult = await syncLeads(supabase, userId, domain, apiToken, since);
           } else if (resource === 'notes') {
             syncResult = await syncNotes(supabase, userId, domain, apiToken, since);
           } else {
