@@ -2,15 +2,16 @@ import { useState } from "react";
 import { useOpsSupa } from "../hooks/useOpsSupa.js";
 import { useCRM } from "../hooks/useCRM.js";
 import { ModeBar } from "../components/ops/ModeBar.jsx";
-import { CalendarRail } from "../components/ops/CalendarRail.jsx";
-import { ContextStrip } from "../components/ops/ContextStrip.jsx";
 import { QuickAddOps } from "../components/ops/QuickAddOps.jsx";
 import { SalesDashboard } from "../components/ops/SalesDashboard.jsx";
+import { PlaybookTab } from "../components/sales/PlaybookTab.jsx";
+import { StatsBar } from "../components/sales/StatsBar.jsx";
 import { TradingDashboard } from "../components/ops/TradingDashboard.jsx";
 import { BuildDashboard } from "../components/ops/BuildDashboard.jsx";
 
 export default function Work() {
   const [mode, setMode] = useState("sales");
+  const [salesTab, setSalesTab] = useState("sales");
   const crm = useCRM();
 
   const {
@@ -22,62 +23,55 @@ export default function Work() {
     salesCtx, tradingCtx, buildCtx, badges,
   } = useOpsSupa();
 
-  // Merge CRM deals with Supabase deals — CRM takes priority
   const mergedDeals = crm.deals.length > 0 ? crm.deals : deals;
 
   const ops = {
     deals: mergedDeals, followUps, proposals, comms, docs,
     positions, watchlist, tradeJournal,
     projects, ships, tasks,
-    intelligence,
-    crm,
+    calendarEvents, intelligence, crm,
   };
 
   return (
     <div className="flex flex-col h-full w-full overflow-hidden">
-      {/* Mode bar */}
+      {/* Mode bar — Work page modes */}
       <ModeBar mode={mode} setMode={setMode} badges={badges} />
 
-      {/* Main area: [main panel] + [calendar rail] */}
-      <div className="flex flex-1 overflow-hidden">
-        {/* Main content */}
-        <div className="flex-1 flex flex-col overflow-hidden">
-          {loading && (
-            <div className="flex items-center justify-center flex-1">
-              <div className="text-xs text-jarvis-muted animate-pulse">Loading operations hub…</div>
-            </div>
-          )}
+      {/* Sales sub-header: StatsBar with Sales/Playbook toggle */}
+      {mode === "sales" && (
+        <StatsBar
+          deals={mergedDeals}
+          proposals={proposals}
+          followUps={followUps}
+          activeTab={salesTab}
+          onTabChange={setSalesTab}
+        />
+      )}
 
-          {!loading && mode === "sales" && (
-            <SalesDashboard ops={ops} onRefresh={refresh} />
-          )}
-          {!loading && mode === "trading" && (
-            <TradingDashboard ops={ops} onRefresh={refresh} />
-          )}
-          {!loading && mode === "build" && (
-            <BuildDashboard ops={ops} onRefresh={refresh} />
-          )}
+      {/* Main content */}
+      <div className="flex-1 overflow-hidden">
+        {loading && (
+          <div className="flex items-center justify-center h-full">
+            <div className="text-xs text-jarvis-muted animate-pulse">Loading…</div>
+          </div>
+        )}
 
-          {/* Quick add bar */}
-          <QuickAddOps mode={mode} onRefresh={refresh} />
-
-          {/* Context strip */}
-          <ContextStrip
-            mode={mode}
-            sales={salesCtx}
-            trading={tradingCtx}
-            build={buildCtx}
-          />
-        </div>
-
-        {/* Calendar rail — hidden on mobile */}
-        <div className="hidden xl:contents">
-          <CalendarRail
-            followUps={followUps}
-            calendarEvents={calendarEvents}
-          />
-        </div>
+        {!loading && mode === "sales" && salesTab === "sales" && (
+          <SalesDashboard ops={ops} onRefresh={refresh} />
+        )}
+        {!loading && mode === "sales" && salesTab === "playbook" && (
+          <PlaybookTab deals={mergedDeals} />
+        )}
+        {!loading && mode === "trading" && (
+          <TradingDashboard ops={ops} onRefresh={refresh} />
+        )}
+        {!loading && mode === "build" && (
+          <BuildDashboard ops={ops} onRefresh={refresh} />
+        )}
       </div>
+
+      {/* Quick add bar */}
+      <QuickAddOps mode={mode} onRefresh={refresh} />
     </div>
   );
 }
