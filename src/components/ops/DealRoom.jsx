@@ -7,6 +7,7 @@ import { X, FileText, MessageSquare, Users, Clock, DollarSign, Send, Mail } from
 import { supabase } from "../../lib/supabase.js";
 import { jarvis } from "../../lib/jarvis.js";
 import { ProposalGenerator } from "./ProposalGenerator.jsx";
+import { DealTimeline } from "./DealTimeline.jsx";
 
 export function DealRoom({ dealId, deal, onClose }) {
   const [tab, setTab] = useState("overview");
@@ -276,17 +277,13 @@ export function DealRoom({ dealId, deal, onClose }) {
           )}
 
           {tab === "timeline" && (
-            <div className="space-y-1">
-              {timeline.length === 0 ? (
-                <div className="text-sm text-jarvis-muted">No activity yet.</div>
-              ) : timeline.map((t, i) => (
-                <div key={i} className="flex items-start gap-3 px-2 py-2">
-                  <div className="text-[10px] text-jarvis-muted w-14 shrink-0 tabular-nums pt-0.5">{fmtDate(t.date)}</div>
-                  <div className="w-1.5 h-1.5 rounded-full bg-jarvis-primary mt-1.5 shrink-0" />
-                  <div className="text-xs text-jarvis-body">{t.text}</div>
-                </div>
-              ))}
-            </div>
+            <DealTimeline
+              deal={deal}
+              comms={comms}
+              proposals={proposals}
+              followUps={followUps}
+              docs={docs}
+            />
           )}
         </div>
       </div>
