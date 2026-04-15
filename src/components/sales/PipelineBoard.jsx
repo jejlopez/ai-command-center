@@ -3,6 +3,7 @@
 import { motion, AnimatePresence } from "framer-motion";
 import { stagger } from "../../lib/motion.js";
 import { dealAge, ageColor, dealScore, scoreColor } from "../../lib/dealScore.js";
+import { QUALITY_COLORS, QUALITY_LABELS, ATTENTION_COLORS, ATTENTION_LABELS } from "../../lib/badges.js";
 
 const STAGE_ORDER = [
   { key: "Proposal",                  label: "Proposal",    color: "text-blue-400",        dot: "bg-blue-400"   },
@@ -39,6 +40,20 @@ function DealCard({ deal, onClick }) {
   if (deal.email_replied) signals.push({ text: "Email replied", color: "text-jarvis-success bg-jarvis-success/10" });
   if (isOverdue) signals.push({ text: "Overdue", color: "text-jarvis-danger bg-jarvis-danger/10" });
   if (deal.engagement === "hot") signals.push({ text: "Hot", color: "text-jarvis-warning bg-jarvis-warning/10" });
+  if (deal.quality && deal.quality !== "medium") {
+    signals.push({
+      text: QUALITY_LABELS[deal.quality] || deal.quality,
+      color: deal.quality === "whale"
+        ? "text-cyan-400 bg-cyan-400/10"
+        : QUALITY_COLORS[deal.quality]?.replace("bg-", "bg-").replace("text-", "text-") || "text-jarvis-muted bg-white/5"
+    });
+  }
+  if (deal.attention && deal.attention !== "warm") {
+    signals.push({
+      text: ATTENTION_LABELS[deal.attention] || deal.attention,
+      color: ATTENTION_COLORS[deal.attention]?.replace(/\s+/g, " ") || "text-jarvis-muted bg-white/5"
+    });
+  }
 
   // Next activity signal
   if (deal.next_activity && !isOverdue) {
