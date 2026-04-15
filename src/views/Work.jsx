@@ -8,6 +8,7 @@ import { SalesDashboard } from "../components/ops/SalesDashboard.jsx";
 import { LeadsTab } from "../components/sales/LeadsTab.jsx";
 import { PlaybookTab } from "../components/sales/PlaybookTab.jsx";
 import { StatsBar } from "../components/sales/StatsBar.jsx";
+import { SalesCommandBriefing } from "../components/sales/SalesCommandBriefing.jsx";
 import { TradingDashboard } from "../components/ops/TradingDashboard.jsx";
 import { BuildDashboard } from "../components/ops/BuildDashboard.jsx";
 
@@ -49,6 +50,15 @@ export default function Work() {
           leads={supaLeads}
           activeTab={salesTab}
           onTabChange={setSalesTab}
+        />
+      )}
+
+      {/* Sales Command Briefing */}
+      {mode === "sales" && (
+        <SalesCommandBriefing
+          deals={mergedDeals}
+          followUps={followUps}
+          calendarEvents={calendarEvents}
         />
       )}
 

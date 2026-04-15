@@ -12,6 +12,8 @@ import { ScoreZone } from "../shared/ScoreZone.jsx";
 import { NBAModule } from "../shared/NBAModule.jsx";
 import { DealDiscovery } from "./DealDiscovery.jsx";
 import { DealObjections } from "./DealObjections.jsx";
+import { ApprovalQueue } from "./ApprovalQueue.jsx";
+import { AuditLogViewer } from "./AuditLogViewer.jsx";
 import { dealHealth, whaleQuadrant } from "../../lib/dealHealth.js";
 
 function Tab({ label, icon: Icon, active, onClick, count }) {
@@ -164,6 +166,7 @@ export function DealRoomPanel({ deal: initialDeal, onClose }) {
           <Tab label="Notes" icon={StickyNote} active={tab === "notes"} onClick={() => setTab("notes")} count={comms.filter(c => c.type !== "email").length} />
           <Tab label="Discovery" icon={Eye} active={tab === "discovery"} onClick={() => setTab("discovery")} count={0} />
           <Tab label="Objections" icon={Sparkles} active={tab === "objections"} onClick={() => setTab("objections")} count={0} />
+          <Tab label="Approvals" icon={Eye} active={tab === "approvals"} onClick={() => setTab("approvals")} count={0} />
         </div>
 
         {/* Content */}
@@ -393,6 +396,11 @@ export function DealRoomPanel({ deal: initialDeal, onClose }) {
             <DealDiscovery dealId={dealId} />
           ) : tab === "objections" ? (
             <DealObjections dealId={dealId} />
+          ) : tab === "approvals" ? (
+            <div className="p-4 space-y-4">
+              <ApprovalQueue dealId={dealId} />
+              <AuditLogViewer dealId={dealId} />
+            </div>
           ) : null}
 
           {/* Email draft (shown in any tab) */}

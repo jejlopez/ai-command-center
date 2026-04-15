@@ -40,7 +40,7 @@ function StatusBadge({ status }) {
   return null;
 }
 
-export default function ApprovalQueue({ leadId, dealId }) {
+export function ApprovalQueue({ leadId, dealId }) {
   const { approvals, pending, loading, decideApproval, refresh } = useApprovalsSupa({ leadId, dealId });
   const [selected, setSelected] = useState(null);
 

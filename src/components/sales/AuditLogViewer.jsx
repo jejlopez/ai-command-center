@@ -56,7 +56,7 @@ function MiniDiff({ before, after }) {
   );
 }
 
-export default function AuditLogViewer({ leadId, dealId }) {
+export function AuditLogViewer({ leadId, dealId }) {
   const [entries, setEntries] = useState([]);
   const [loading, setLoading] = useState(true);
 

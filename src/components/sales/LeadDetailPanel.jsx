@@ -8,6 +8,8 @@ import { BadgeZone }        from "../shared/BadgeZone.jsx";
 import { ScoreZone }        from "../shared/ScoreZone.jsx";
 import { NBAModule }        from "../shared/NBAModule.jsx";
 import { ActivityTimeline } from "../shared/ActivityTimeline.jsx";
+import { ApprovalQueue } from "./ApprovalQueue.jsx";
+import { AuditLogViewer } from "./AuditLogViewer.jsx";
 import { LeadResearch }     from "./LeadResearch.jsx";
 import { LeadQualification } from "./LeadQualification.jsx";
 import { LeadSequence }     from "./LeadSequence.jsx";
@@ -168,8 +170,9 @@ export function LeadDetailPanel({ lead, onClose, onRefresh }) {
         )}
 
         {tab === "approvals" && (
-          <div className="text-[11px] text-jarvis-muted text-center py-8">
-            Approval history. Full implementation in Phase 3.
+          <div className="p-4 space-y-4">
+            <ApprovalQueue leadId={lead.id} />
+            <AuditLogViewer leadId={lead.id} />
           </div>
         )}
       </div>
