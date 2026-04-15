@@ -1,9 +1,11 @@
 import { useState } from "react";
 import { useOpsSupa } from "../hooks/useOpsSupa.js";
 import { useCRM } from "../hooks/useCRM.js";
+import { useLeadsSupa } from "../hooks/useLeadsSupa.js";
 import { ModeBar } from "../components/ops/ModeBar.jsx";
 import { QuickAddOps } from "../components/ops/QuickAddOps.jsx";
 import { SalesDashboard } from "../components/ops/SalesDashboard.jsx";
+import { LeadsTab } from "../components/sales/LeadsTab.jsx";
 import { PlaybookTab } from "../components/sales/PlaybookTab.jsx";
 import { StatsBar } from "../components/sales/StatsBar.jsx";
 import { TradingDashboard } from "../components/ops/TradingDashboard.jsx";
@@ -11,8 +13,9 @@ import { BuildDashboard } from "../components/ops/BuildDashboard.jsx";
 
 export default function Work() {
   const [mode, setMode] = useState("sales");
-  const [salesTab, setSalesTab] = useState("sales");
+  const [salesTab, setSalesTab] = useState("deals");
   const crm = useCRM();
+  const { leads: supaLeads } = useLeadsSupa();
 
   const {
     deals, followUps, proposals, comms, docs,
@@ -43,6 +46,7 @@ export default function Work() {
           deals={mergedDeals}
           proposals={proposals}
           followUps={followUps}
+          leads={supaLeads}
           activeTab={salesTab}
           onTabChange={setSalesTab}
         />
@@ -56,7 +60,10 @@ export default function Work() {
           </div>
         )}
 
-        {!loading && mode === "sales" && salesTab === "sales" && (
+        {!loading && mode === "sales" && salesTab === "leads" && (
+          <LeadsTab crm={crm} />
+        )}
+        {!loading && mode === "sales" && salesTab === "deals" && (
           <SalesDashboard ops={ops} onRefresh={refresh} />
         )}
         {!loading && mode === "sales" && salesTab === "playbook" && (

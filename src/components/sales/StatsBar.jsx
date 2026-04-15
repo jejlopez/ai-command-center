@@ -15,7 +15,7 @@ function Stat({ label, value, color, isLast }) {
   );
 }
 
-export function StatsBar({ deals = [], proposals = [], followUps = [], activeTab, onTabChange }) {
+export function StatsBar({ deals = [], proposals = [], followUps = [], leads = [], activeTab, onTabChange }) {
   const totalValue = deals.reduce((s, d) => s + (d.value || 0), 0);
   const overdue = followUps.filter(f => f.due_date && new Date(f.due_date) < new Date()).length;
   const proposalsOut = proposals.filter(p => p.status === "sent" || p.status === "review_needed").length;
@@ -36,6 +36,7 @@ export function StatsBar({ deals = [], proposals = [], followUps = [], activeTab
       className="flex items-center justify-between px-5 py-3 border-b border-jarvis-border bg-jarvis-surface/50"
     >
       <div className="flex items-center gap-0">
+        <Stat label="Leads" value={leads.length} color="text-blue-400" />
         <Stat label="Pipeline" value={fmt(totalValue)} />
         <Stat label="Deals" value={deals.length} />
         <Stat label="Overdue" value={overdue} color={overdue > 0 ? "text-jarvis-danger" : undefined} />
@@ -45,14 +46,24 @@ export function StatsBar({ deals = [], proposals = [], followUps = [], activeTab
 
       <div className="flex gap-1.5 items-center">
         <button
-          onClick={() => onTabChange("sales")}
+          onClick={() => onTabChange("leads")}
           className={`text-[11px] px-3.5 py-1.5 rounded-lg transition font-medium ${
-            activeTab === "sales"
+            activeTab === "leads"
               ? "bg-jarvis-primary/15 text-jarvis-primary"
               : "text-jarvis-muted hover:text-jarvis-ink"
           }`}
         >
-          Sales
+          Leads
+        </button>
+        <button
+          onClick={() => onTabChange("deals")}
+          className={`text-[11px] px-3.5 py-1.5 rounded-lg transition font-medium ${
+            activeTab === "deals"
+              ? "bg-jarvis-primary/15 text-jarvis-primary"
+              : "text-jarvis-muted hover:text-jarvis-ink"
+          }`}
+        >
+          Deals
         </button>
         <button
           onClick={() => onTabChange("playbook")}
