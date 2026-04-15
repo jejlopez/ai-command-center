@@ -106,7 +106,7 @@ export function ProposalGenerator({ deal, onClose, onSaved }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
       <div className="w-full max-w-3xl max-h-[90vh] flex flex-col glass border border-jarvis-border overflow-hidden">
 
         {/* Header */}
