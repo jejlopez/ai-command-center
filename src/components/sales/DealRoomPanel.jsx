@@ -7,6 +7,12 @@ import { X, FileText, Mail, StickyNote, Eye, Link2, Send, Trash2, Loader2, Spark
 import { supabase } from "../../lib/supabase.js";
 import { jarvis } from "../../lib/jarvis.js";
 import { ProposalGenerator } from "../ops/ProposalGenerator.jsx";
+import { BadgeZone } from "../shared/BadgeZone.jsx";
+import { ScoreZone } from "../shared/ScoreZone.jsx";
+import { NBAModule } from "../shared/NBAModule.jsx";
+import { DealDiscovery } from "./DealDiscovery.jsx";
+import { DealObjections } from "./DealObjections.jsx";
+import { dealHealth, whaleQuadrant } from "../../lib/dealHealth.js";
 
 function Tab({ label, icon: Icon, active, onClick, count }) {
   return (
@@ -46,6 +52,10 @@ export function DealRoomPanel({ deal: initialDeal, onClose }) {
 
   // Map deal to a Supabase deal_id — may be a Pipedrive ID
   const dealId = deal?.supabase_id ?? deal?.id;
+
+  // Health scores
+  const { score: health, whale, quality, breakdown } = dealHealth(deal ?? {});
+  const quadrant = whaleQuadrant(whale, health);
 
   useEffect(() => {
     if (!supabase || !dealId) { setLoading(false); return; }
@@ -139,6 +149,12 @@ export function DealRoomPanel({ deal: initialDeal, onClose }) {
               }`}>{deal.engagement}</span>
             </div>
           )}
+          <div className="mt-2">
+            <BadgeZone record={{ ...deal, quality, attention: deal.attention }} type="deal" />
+          </div>
+          <div className="mt-2">
+            <ScoreZone score={health} whale={whale} breakdown={breakdown} labels={{ score: "Health", whale: "Whale" }} />
+          </div>
         </div>
 
         {/* Tabs */}
@@ -146,6 +162,8 @@ export function DealRoomPanel({ deal: initialDeal, onClose }) {
           <Tab label="Proposal" icon={FileText} active={tab === "proposal"} onClick={() => setTab("proposal")} count={proposals.length} />
           <Tab label="Emails" icon={Mail} active={tab === "emails"} onClick={() => setTab("emails")} count={comms.filter(c => c.type === "email").length} />
           <Tab label="Notes" icon={StickyNote} active={tab === "notes"} onClick={() => setTab("notes")} count={comms.filter(c => c.type !== "email").length} />
+          <Tab label="Discovery" icon={Eye} active={tab === "discovery"} onClick={() => setTab("discovery")} count={0} />
+          <Tab label="Objections" icon={Sparkles} active={tab === "objections"} onClick={() => setTab("objections")} count={0} />
         </div>
 
         {/* Content */}
@@ -371,6 +389,10 @@ export function DealRoomPanel({ deal: initialDeal, onClose }) {
                 <div className="text-[11px] text-jarvis-muted">No notes. Notes sync from Pipedrive automatically.</div>
               )}
             </div>
+          ) : tab === "discovery" ? (
+            <DealDiscovery dealId={dealId} />
+          ) : tab === "objections" ? (
+            <DealObjections dealId={dealId} />
           ) : null}
 
           {/* Email draft (shown in any tab) */}
