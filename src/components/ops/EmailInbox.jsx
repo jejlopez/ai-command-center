@@ -1,64 +1,87 @@
-// EmailInbox — shows recent emails linked to deals. Reads from communications table.
+// EmailInbox — reads from jarvisd email_triage table (15-min Gmail sync).
+// Shows IN/OUT direction, auto-links to deals by contact email.
 
 import { useEffect, useState } from "react";
-import { Mail, Search, ChevronDown, ChevronUp, ExternalLink } from "lucide-react";
-import { supabase } from "../../lib/supabase.js";
+import { Mail, ChevronDown, ChevronUp } from "lucide-react";
+import { jarvis } from "../../lib/jarvis.js";
 
-const fmtDate = (s) => s
-  ? new Date(s).toLocaleDateString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })
-  : "";
+const USER_DOMAINS = ["3plcenter.com", "eddisammy@gmail.com"];
 
-function EmailRow({ email, deals = [] }) {
+function isOutbound(fromAddr) {
+  if (!fromAddr) return false;
+  const lower = fromAddr.toLowerCase();
+  return USER_DOMAINS.some(d => lower.includes(d));
+}
+
+function linkToDeal(email, deals) {
+  if (!email.from_addr || !deals?.length) return null;
+  const addr = email.from_addr.toLowerCase();
+  return deals.find(d => {
+    const ce = (d.contact_email || d.person_email || "").toLowerCase();
+    return ce && addr.includes(ce);
+  });
+}
+
+const fmtDate = (s) => {
+  if (!s) return "";
+  const d = new Date(s);
+  const now = new Date();
+  const diffH = (now - d) / 3_600_000;
+  if (diffH < 1) return `${Math.floor(diffH * 60)}m ago`;
+  if (diffH < 24) return `${Math.floor(diffH)}h ago`;
+  if (diffH < 48) return "Yesterday";
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+};
+
+function EmailRow({ email, deal }) {
   const [expanded, setExpanded] = useState(false);
-  const deal = email.deal_id ? deals.find(d => d.id === email.deal_id) : null;
-  const preview = (email.body ?? "").slice(0, 80);
+  const out = isOutbound(email.from_addr);
 
   return (
-    <div className="border-b border-jarvis-border/50 last:border-0">
+    <div className="border-b border-jarvis-border/30 last:border-0">
       <button
-        className="w-full text-left py-2 hover:bg-jarvis-ghost/20 rounded px-1 -mx-1 transition"
+        className="w-full text-left py-2 px-1 hover:bg-jarvis-ghost/20 rounded transition"
         onClick={() => setExpanded(v => !v)}
       >
-        <div className="flex items-start gap-2">
-          <Mail size={11} className="text-blue-400 shrink-0 mt-0.5" />
+        <div className="flex items-start gap-1.5">
+          <span className={`text-[8px] font-semibold px-1 py-0.5 rounded mt-0.5 shrink-0 ${
+            out
+              ? "bg-jarvis-primary/15 text-jarvis-primary"
+              : "bg-jarvis-success/15 text-jarvis-success"
+          }`}>
+            {out ? "OUT" : "IN"}
+          </span>
           <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-medium text-jarvis-ink truncate flex-1">
-                {email.subject || "(no subject)"}
-              </span>
-              {deal && (
-                <span className="chip bg-jarvis-primary/10 text-jarvis-primary text-[9px] shrink-0">
-                  {deal.company ?? deal.company_name}
-                </span>
-              )}
+            <div className="flex justify-between items-center">
+              <span className="text-[11px] text-jarvis-ink truncate flex-1">{email.subject || "(no subject)"}</span>
+              <span className="text-[9px] text-jarvis-ghost shrink-0 ml-2">{fmtDate(email.created_at)}</span>
             </div>
-            <div className="flex items-center gap-2 mt-0.5">
-              <span className="text-[10px] text-jarvis-muted truncate">
-                {email.contact_name || email.from_address || "Unknown"}
-              </span>
-              <span className="text-[9px] text-jarvis-ghost ml-auto shrink-0">{fmtDate(email.occurred_at)}</span>
-            </div>
-            {!expanded && preview && (
-              <div className="text-[10px] text-jarvis-ghost truncate mt-0.5">{preview}</div>
+            <div className="text-[10px] text-jarvis-muted truncate">{email.from_addr} — {email.snippet}</div>
+            {deal && (
+              <div className="text-[9px] text-jarvis-primary mt-0.5">→ {deal.title || deal.org_name} · ${(deal.value / 1000).toFixed(0)}K</div>
+            )}
+            {!deal && !out && email.category !== "newsletter" && email.category !== "junk" && (
+              <div className="text-[9px] text-jarvis-warning mt-0.5">→ New Lead (unmatched)</div>
             )}
           </div>
-          {expanded ? <ChevronUp size={10} className="text-jarvis-ghost shrink-0" /> : <ChevronDown size={10} className="text-jarvis-ghost shrink-0" />}
+          {expanded ? <ChevronUp size={10} className="text-jarvis-ghost shrink-0 mt-1" /> : <ChevronDown size={10} className="text-jarvis-ghost shrink-0 mt-1" />}
         </div>
       </button>
       {expanded && (
-        <div className="pb-2 px-1 space-y-2">
-          <p className="text-[11px] text-jarvis-body leading-relaxed whitespace-pre-wrap">{email.body}</p>
-          <div className="flex gap-2">
-            {deal && (
-              <button
-                className="btn-ghost text-[10px] flex items-center gap-1"
-                onClick={() => {/* open deal room */}}
-              >
-                <ExternalLink size={9} /> Open Deal
-              </button>
+        <div className="pb-2 px-1">
+          <div className="flex gap-1 mb-1">
+            <span className={`text-[8px] px-1.5 py-0.5 rounded ${
+              email.category === "urgent" ? "bg-jarvis-danger/10 text-jarvis-danger"
+              : email.category === "action_needed" ? "bg-jarvis-warning/10 text-jarvis-warning"
+              : "bg-white/5 text-jarvis-muted"
+            }`}>
+              {email.category}
+            </span>
+            {email.confidence > 0 && (
+              <span className="text-[8px] text-jarvis-ghost">{Math.round(email.confidence * 100)}% conf</span>
             )}
-            <button className="btn-ghost text-[10px]">Draft Reply</button>
           </div>
+          <p className="text-[10px] text-jarvis-body leading-relaxed">{email.snippet}</p>
         </div>
       )}
     </div>
@@ -67,72 +90,50 @@ function EmailRow({ email, deals = [] }) {
 
 export function EmailInbox({ deals = [] }) {
   const [emails, setEmails] = useState([]);
-  const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     async function load() {
-      if (!supabase) { setLoading(false); return; }
-      const { data } = await supabase
-        .from("communications")
-        .select("*")
-        .eq("type", "email")
-        .order("occurred_at", { ascending: false })
-        .limit(20);
-      setEmails(data ?? []);
-      setLoading(false);
+      try {
+        const data = await jarvis.emailTriage(30);
+        setEmails(Array.isArray(data) ? data : []);
+      } catch {
+        setEmails([]);
+      } finally {
+        setLoading(false);
+      }
     }
     load();
+    // Refresh every 5 minutes
+    const interval = setInterval(load, 300_000);
+    return () => clearInterval(interval);
   }, []);
 
-  const filtered = query.trim()
-    ? emails.filter(e =>
-        (e.subject ?? "").toLowerCase().includes(query.toLowerCase()) ||
-        (e.body ?? "").toLowerCase().includes(query.toLowerCase()) ||
-        (e.contact_name ?? "").toLowerCase().includes(query.toLowerCase())
-      )
-    : emails;
-
   return (
-    <div className="glass p-4 flex flex-col gap-3">
-      <div className="flex items-center gap-2">
-        <Mail size={13} className="text-blue-400" />
-        <span className="label flex-1">Email Inbox</span>
-        {emails.length > 0 && (
-          <span className="text-[10px] text-jarvis-ghost">{emails.length} emails</span>
-        )}
+    <div className="flex flex-col gap-2">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-1.5">
+          <Mail size={12} className="text-jarvis-primary" />
+          <span className="text-[13px] font-semibold text-jarvis-ink">Emails</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <div className="w-1.5 h-1.5 rounded-full bg-jarvis-success" />
+          <span className="text-[10px] text-jarvis-muted">Live · 15m sync</span>
+        </div>
       </div>
 
-      {emails.length > 0 && (
-        <div className="flex items-center gap-2 bg-jarvis-surface border border-jarvis-border rounded-lg px-2 py-1">
-          <Search size={10} className="text-jarvis-ghost" />
-          <input
-            className="flex-1 text-xs bg-transparent text-jarvis-ink placeholder-jarvis-ghost outline-none"
-            placeholder="Search emails…"
-            value={query}
-            onChange={e => setQuery(e.target.value)}
-          />
-        </div>
-      )}
-
-      {loading && <div className="text-xs text-jarvis-ghost animate-pulse">Loading emails…</div>}
+      {loading && <div className="text-[10px] text-jarvis-ghost animate-pulse">Loading emails…</div>}
 
       {!loading && emails.length === 0 && (
-        <div className="text-xs text-jarvis-ghost py-2">
-          Emails will sync automatically 3x/day from Gmail.
-        </div>
+        <div className="text-[10px] text-jarvis-ghost">No emails synced yet. Connect Gmail in Settings.</div>
       )}
 
-      {!loading && filtered.length > 0 && (
+      {!loading && emails.length > 0 && (
         <div>
-          {filtered.map(email => (
-            <EmailRow key={email.id} email={email} deals={deals} />
+          {emails.map(e => (
+            <EmailRow key={e.id} email={e} deal={linkToDeal(e, deals)} />
           ))}
         </div>
-      )}
-
-      {!loading && query && filtered.length === 0 && (
-        <div className="text-xs text-jarvis-ghost">No emails match "{query}"</div>
       )}
     </div>
   );
