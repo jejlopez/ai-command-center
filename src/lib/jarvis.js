@@ -182,6 +182,10 @@ export const jarvis = {
   emailSearch:     (q, max)            => get(`/email/search?q=${encodeURIComponent(q)}&max=${max ?? 10}`),
   emailForContact: (email)             => get(`/email/for-contact?email=${encodeURIComponent(email)}&max=10`),
 
+  // Email triage (classified inbox from daemon)
+  emailTriage:      (limit)             => get(`/email/triage?limit=${limit ?? 50}`),
+  emailTriageStats: ()                  => get("/email/triage/stats"),
+
   // Email intelligence
   emailAiDraft:    (dealId, type, context) => post("/email/ai-draft", { deal_id: dealId, type, context }),
   emailStyleLearn: (original, edited, dealId, contactId, context) => post("/email/style-learn", { original, edited, deal_id: dealId, contact_id: contactId, context }),
