@@ -1,77 +1,108 @@
-// Pipeline Kanban — deals flow through stages left to right.
-// JARVIS signals layered on: overdue, replied, PandaDoc viewed.
+// Pipeline — deals grouped by stage, vertical list. Each deal shows age + score.
 
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import { stagger } from "../../lib/motion.js";
+import { dealAge, ageColor, dealScore, scoreColor } from "../../lib/dealScore.js";
 
 const STAGE_ORDER = [
-  { key: "Proposal", label: "Proposal", color: "jarvis-primary" },
-  { key: "Follow up on proposal", label: "Follow-up", color: "jarvis-warning" },
-  { key: "Negotiations Started", label: "Negotiations", color: "jarvis-purple" },
-  { key: "Demo Scheduled/Site Visit", label: "Demo/Visit", color: "jarvis-success" },
-  { key: "Signing Contract", label: "Signing", color: "jarvis-success" },
+  { key: "Proposal",                  label: "Proposal",    border: "border-blue-400"   },
+  { key: "Follow up on proposal",     label: "Follow-up",   border: "border-jarvis-warning" },
+  { key: "Negotiations Started",      label: "Negotiation", border: "border-yellow-400" },
+  { key: "Demo Scheduled/Site Visit", label: "Demo/Visit",  border: "border-green-400"  },
+  { key: "Signing Contract",          label: "Signing",     border: "border-jarvis-success" },
 ];
 
-function DealCard({ deal, onClick }) {
-  const isOverdue = deal.next_activity && deal.next_activity < new Date().toISOString().slice(0, 10);
-  const hasValue = deal.value > 0;
+const COLOR_MAP = {
+  success: "text-jarvis-success bg-jarvis-success/10",
+  warning: "text-jarvis-warning bg-jarvis-warning/10",
+  danger:  "text-jarvis-danger bg-jarvis-danger/10",
+  ghost:   "text-jarvis-muted bg-white/5",
+};
 
+function Badge({ label, value, colorKey }) {
   return (
-    <button
-      onClick={() => onClick?.(deal)}
-      className={`w-full text-left p-2.5 rounded-lg border transition-all hover:bg-white/[0.02] ${
-        isOverdue
-          ? "border-jarvis-danger/10 bg-jarvis-danger/[0.015]"
-          : "border-jarvis-border bg-jarvis-surface"
-      }`}
-    >
-      <div className="flex justify-between items-start gap-2">
-        <span className="text-[10px] text-jarvis-ink font-medium truncate">{deal.title}</span>
-        {hasValue && (
-          <span className="text-[9px] text-jarvis-muted tabular-nums shrink-0">
-            ${(deal.value / 1000).toFixed(0)}K
-          </span>
-        )}
-      </div>
-      {deal.org_name && (
-        <div className="text-[8px] text-jarvis-muted truncate mt-0.5">{deal.org_name}</div>
-      )}
-      <div className="flex items-center gap-2 mt-1.5">
-        {isOverdue && (
-          <span className="text-[7px] text-jarvis-danger uppercase tracking-wider">overdue</span>
-        )}
-        {deal.pandadoc_viewed ? (
-          <span className="text-[7px] text-jarvis-success">viewed ✓</span>
-        ) : null}
-        {deal.engagement === "hot" && (
-          <span className="text-[7px] text-jarvis-warning">hot</span>
-        )}
-      </div>
-    </button>
+    <div className={`text-center px-1.5 py-0.5 rounded ${COLOR_MAP[colorKey] || COLOR_MAP.ghost}`}>
+      <div className="text-[8px] text-jarvis-muted/60 uppercase">{label}</div>
+      <div className="text-[11px] font-semibold tabular-nums">{value}</div>
+    </div>
   );
 }
 
-function StageColumn({ stage, deals, onOpenDeal }) {
-  const totalValue = deals.reduce((sum, d) => sum + (d.value || 0), 0);
+function DealCard({ deal, onClick }) {
+  const age = dealAge(deal);
+  const score = dealScore(deal);
+  const isOverdue = deal.next_activity && deal.next_activity < new Date().toISOString().slice(0, 10);
+
+  // Collect signal chips
+  const signals = [];
+  if (deal.pandadoc_viewed) signals.push({ text: `Proposal viewed${deal.pandadoc_view_count > 1 ? ` ${deal.pandadoc_view_count}x` : ""}`, color: "text-jarvis-primary bg-jarvis-primary/10" });
+  if (deal.email_replied) signals.push({ text: "Email replied", color: "text-jarvis-success bg-jarvis-success/10" });
+  if (isOverdue) signals.push({ text: "Overdue", color: "text-jarvis-danger bg-jarvis-danger/10" });
+  if (deal.engagement === "hot") signals.push({ text: "Hot", color: "text-jarvis-warning bg-jarvis-warning/10" });
+
+  // Next activity signal
+  if (deal.next_activity && !isOverdue) {
+    const actDate = new Date(deal.next_activity);
+    const today = new Date();
+    if (actDate.toDateString() === today.toDateString()) {
+      signals.push({ text: `Today ${actDate.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}`, color: "text-jarvis-warning bg-jarvis-warning/10" });
+    }
+  }
+
+  // Silence signal
+  const lastAct = deal.last_activity_date || deal.update_time;
+  if (lastAct) {
+    const silent = Math.floor((Date.now() - new Date(lastAct).getTime()) / 86_400_000);
+    if (silent >= 5) signals.push({ text: `No response ${silent}d`, color: "text-jarvis-danger bg-jarvis-danger/10" });
+  }
 
   return (
-    <div className="flex-1 min-w-[160px] flex flex-col gap-1.5">
-      <div className="flex justify-between items-baseline pb-2 border-b border-jarvis-border">
-        <span className="text-[8px] text-jarvis-muted uppercase tracking-[0.12em]">
-          {stage.label} ({deals.length})
-        </span>
-        {totalValue > 0 && (
-          <span className="text-[8px] text-jarvis-muted tabular-nums">
-            ${(totalValue / 1000).toFixed(0)}K
+    <motion.button
+      variants={stagger.item}
+      onClick={() => onClick?.(deal)}
+      className="w-full text-left p-2.5 rounded-lg border border-jarvis-border bg-jarvis-surface hover:bg-jarvis-surface-hover transition-all"
+    >
+      <div className="flex justify-between items-center">
+        <div className="min-w-0 flex-1">
+          <div className="text-xs text-jarvis-ink font-medium truncate">{deal.title || deal.org_name}</div>
+          <div className="text-[10px] text-jarvis-muted truncate">
+            {deal.contact_name || deal.person_name}{deal.org_name && deal.title ? ` · ${deal.org_name}` : ""}
+          </div>
+        </div>
+        <div className="flex items-center gap-2 shrink-0 ml-3">
+          <span className="text-sm font-bold text-jarvis-ink tabular-nums">
+            {deal.value > 0 ? `$${(deal.value / 1000).toFixed(0)}K` : "—"}
           </span>
-        )}
+          {age != null && <Badge label="AGE" value={`${age}d`} colorKey={ageColor(age)} />}
+          <Badge label="SCORE" value={score} colorKey={scoreColor(score)} />
+        </div>
       </div>
-      <div className="flex flex-col gap-1 overflow-y-auto max-h-[400px]" style={{ scrollbarWidth: "thin" }}>
-        {deals.map((d) => (
+      {signals.length > 0 && (
+        <div className="flex flex-wrap gap-1 mt-1.5">
+          {signals.map((s, i) => (
+            <span key={i} className={`text-[8px] px-1.5 py-0.5 rounded ${s.color}`}>{s.text}</span>
+          ))}
+        </div>
+      )}
+    </motion.button>
+  );
+}
+
+function StageGroup({ stage, deals, onOpenDeal }) {
+  const totalValue = deals.reduce((s, d) => s + (d.value || 0), 0);
+
+  return (
+    <div className="mb-3">
+      <div className={`flex justify-between items-center mb-1.5 pb-1 border-b-2 ${stage.border}`}>
+        <span className="text-[10px] font-bold uppercase tracking-wider text-jarvis-muted">{stage.label}</span>
+        <span className="text-[10px] text-jarvis-muted/50">{deals.length} · ${(totalValue / 1000).toFixed(0)}K</span>
+      </div>
+      <div className="flex flex-col gap-1">
+        {deals.map(d => (
           <DealCard key={d.id} deal={d} onClick={onOpenDeal} />
         ))}
         {deals.length === 0 && (
-          <div className="text-[9px] text-jarvis-muted/40 text-center py-4">No deals</div>
+          <div className="text-[9px] text-jarvis-muted/30 text-center py-3">No deals</div>
         )}
       </div>
     </div>
@@ -81,13 +112,13 @@ function StageColumn({ stage, deals, onOpenDeal }) {
 export function PipelineBoard({ pipeline, onOpenDeal }) {
   if (!pipeline || Object.keys(pipeline).length === 0) {
     return (
-      <div className="surface p-6 text-center">
-        <div className="text-[12px] text-jarvis-muted">No pipeline data. Connect Pipedrive or sync.</div>
+      <div className="text-center py-8">
+        <div className="text-xs text-jarvis-muted">No pipeline data. Connect Pipedrive in Settings.</div>
       </div>
     );
   }
 
-  // Normalize stage keys — Pipedrive sometimes adds trailing spaces
+  // Normalize stage keys (Pipedrive trailing spaces)
   const normalized = {};
   for (const [key, deals] of Object.entries(pipeline)) {
     const trimmed = key.trim();
@@ -95,21 +126,10 @@ export function PipelineBoard({ pipeline, onOpenDeal }) {
   }
 
   return (
-    <motion.div
-      variants={stagger.container}
-      initial="hidden"
-      animate="show"
-      className="flex gap-3 overflow-x-auto pb-2"
-      style={{ scrollbarWidth: "thin" }}
-    >
-      {STAGE_ORDER.map((stage) => {
-        const deals = normalized[stage.key] ?? [];
-        return (
-          <motion.div key={stage.key} variants={stagger.item} className="flex-1 min-w-[160px]">
-            <StageColumn stage={stage} deals={deals} onOpenDeal={onOpenDeal} />
-          </motion.div>
-        );
-      })}
+    <motion.div variants={stagger.container} initial="hidden" animate="show">
+      {STAGE_ORDER.map(stage => (
+        <StageGroup key={stage.key} stage={stage} deals={normalized[stage.key] ?? []} onOpenDeal={onOpenDeal} />
+      ))}
     </motion.div>
   );
 }
