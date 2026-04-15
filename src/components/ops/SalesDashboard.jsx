@@ -18,6 +18,7 @@ import { RevenueGoal } from "./RevenueGoal.jsx";
 import { EmailTemplates } from "./EmailTemplates.jsx";
 import { ActivityScoring } from "./ActivityScoring.jsx";
 import { WeeklyReport } from "./WeeklyReport.jsx";
+import { DealComparison } from "./DealComparison.jsx";
 
 // Pipeline strip — compact horizontal funnel
 function PipelineStrip({ stats, deals = [], onOpenDeal }) {
@@ -120,6 +121,7 @@ export function SalesDashboard({ ops, onRefresh }) {
   const { deals = [], followUps = [], proposals = [], comms = [], docs = [], intelligence, crm } = ops;
   const [openDeal, setOpenDeal] = useState(null);
   const [crmDealOpen, setCrmDealOpen] = useState(null);
+  const [compareOpen, setCompareOpen] = useState(false);
 
   const hasCRM = crm?.connected && (crm.deals?.length > 0 || crm.leads?.length > 0 || Object.keys(crm.pipeline || {}).length > 0);
 
@@ -138,11 +140,21 @@ export function SalesDashboard({ ops, onRefresh }) {
       )}
 
       {/* Pipeline Board — kanban (CRM) or strip (Supabase fallback) */}
-      <motion.div variants={stagger.item}>
+      <motion.div variants={stagger.item} className="flex flex-col gap-2">
         {hasCRM ? (
           <PipelineBoard pipeline={crm.pipeline} onOpenDeal={(d) => setCrmDealOpen(d)} />
         ) : (
           <PipelineStrip stats={intelligence?.pipeline_stats} deals={deals} onOpenDeal={setOpenDeal} />
+        )}
+        {deals.length >= 2 && (
+          <div className="flex justify-end">
+            <button
+              onClick={() => setCompareOpen(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-jarvis-ghost text-jarvis-muted hover:text-jarvis-ink hover:bg-jarvis-surface text-xs transition"
+            >
+              Compare Deals
+            </button>
+          </div>
         )}
       </motion.div>
 
@@ -196,6 +208,11 @@ export function SalesDashboard({ ops, onRefresh }) {
         <motion.div variants={stagger.item}>
           <LeadsSection leads={crm.leads} onRefresh={crm.refresh} />
         </motion.div>
+      )}
+
+      {/* Deal Comparison */}
+      {compareOpen && (
+        <DealComparison deals={deals} onClose={() => setCompareOpen(false)} />
       )}
 
       {/* Deal Room — old Supabase version */}
