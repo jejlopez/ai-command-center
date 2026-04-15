@@ -55,18 +55,19 @@ export function useLeadsSupa() {
 
   useEffect(() => { refresh(); }, [refresh]);
 
-  // Realtime subscription — created once, uses ref to avoid resubscribe
+  // Realtime — unique channel name per hook instance to avoid collisions
   useEffect(() => {
     if (!supabase) return;
+    const id = Math.random().toString(36).slice(2, 8);
     const channel = supabase
-      .channel("leads_changes")
+      .channel(`leads_${id}`)
       .on("postgres_changes", { event: "*", schema: "public", table: "leads" }, () => {
         refreshRef.current?.();
       })
       .subscribe();
     channelRef.current = channel;
     return () => { channel.unsubscribe(); };
-  }, []); // empty deps — subscribe once
+  }, []);
 
   const createLead = useCallback(async (fields) => {
     if (!supabase) return null;

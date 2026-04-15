@@ -26,10 +26,11 @@ export function useApprovalsSupa({ leadId, dealId, statusFilter } = {}) {
 
   useEffect(() => { refresh(); }, [refresh]);
 
-  // Realtime — subscribe once, use ref for callback
+  // Realtime — unique channel name per hook instance to avoid collisions
   useEffect(() => {
     if (!supabase) return;
-    const channel = supabase.channel("approvals_rt")
+    const id = Math.random().toString(36).slice(2, 8);
+    const channel = supabase.channel(`approvals_${id}`)
       .on("postgres_changes", { event: "*", schema: "public", table: "approvals" }, () => {
         refreshRef.current?.();
       })
