@@ -43,12 +43,27 @@ function linkToDeal(email, deals) {
 
 const fmtDate = (s) => {
   if (!s) return "";
-  const d = new Date(s);
+  // jarvisd timestamps may lack timezone — treat as UTC if no Z/offset
+  const raw = s.includes("Z") || s.includes("+") || s.includes("T") ? s : s.replace(" ", "T") + "Z";
+  const d = new Date(raw);
+  if (isNaN(d)) return "";
   const now = new Date();
-  const diffH = (now - d) / 3_600_000;
-  if (diffH < 1) return `${Math.floor(diffH * 60)}m`;
-  if (diffH < 24) return `${Math.floor(diffH)}h`;
-  if (diffH < 48) return "Yesterday";
+  const diffMs = now - d;
+  const diffMin = Math.floor(Math.abs(diffMs) / 60_000);
+  const diffH = Math.floor(Math.abs(diffMs) / 3_600_000);
+
+  // Future or just now
+  if (diffMs < 60_000) return "Just now";
+  // Today
+  const isToday = d.toDateString() === now.toDateString();
+  if (isToday) {
+    return d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+  }
+  // Yesterday
+  const yesterday = new Date(now);
+  yesterday.setDate(yesterday.getDate() - 1);
+  if (d.toDateString() === yesterday.toDateString()) return "Yesterday";
+  // Older
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 };
 
