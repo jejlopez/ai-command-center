@@ -1,12 +1,14 @@
 // Deal Room — slide-out panel showing everything about a deal.
-// Tabs: Proposal, Emails, Notes, Research, Activity
+// Connected to Supabase for real proposals, communications, and follow-ups.
 
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
-import { X, Send, FileText, Mail, StickyNote, Search, Activity, RefreshCcw } from "lucide-react";
+import { X, FileText, Mail, StickyNote, Eye, Link2, Send, Trash2, Loader2, Sparkles } from "lucide-react";
+import { supabase } from "../../lib/supabase.js";
 import { jarvis } from "../../lib/jarvis.js";
+import { ProposalGenerator } from "../ops/ProposalGenerator.jsx";
 
-function Tab({ label, icon: Icon, active, onClick }) {
+function Tab({ label, icon: Icon, active, onClick, count }) {
   return (
     <button
       onClick={onClick}
@@ -17,278 +19,426 @@ function Tab({ label, icon: Icon, active, onClick }) {
       }`}
     >
       <Icon size={11} />
-      {label}
+      {label}{count > 0 ? ` (${count})` : ""}
     </button>
   );
 }
 
-function ProposalTab({ deal }) {
-  const pricing = deal.pricing_model ? (typeof deal.pricing_model === "string" ? JSON.parse(deal.pricing_model) : deal.pricing_model) : null;
-
-  return (
-    <div className="space-y-3">
-      {pricing ? (
-        <div className="space-y-2">
-          <div className="label">Monthly Breakdown</div>
-          {pricing.storage && (
-            <div className="flex justify-between text-[11px]">
-              <span className="text-jarvis-muted">Storage ({pricing.storage.pallets} pallets × ${pricing.storage.rate})</span>
-              <span className="text-jarvis-ink">${pricing.storage.monthly?.toFixed(2)}</span>
-            </div>
-          )}
-          {pricing.receiving && (
-            <div className="flex justify-between text-[11px]">
-              <span className="text-jarvis-muted">Receiving ({pricing.receiving.pallets} × ${pricing.receiving.rate})</span>
-              <span className="text-jarvis-ink">${pricing.receiving.monthly?.toFixed(2)}</span>
-            </div>
-          )}
-          {pricing.orders && pricing.orders.count > 0 && (
-            <div className="flex justify-between text-[11px]">
-              <span className="text-jarvis-muted">Orders ({pricing.orders.count} × ${pricing.orders.rate})</span>
-              <span className="text-jarvis-ink">${pricing.orders.monthly?.toFixed(2)}</span>
-            </div>
-          )}
-          {pricing.picks && pricing.picks.count > 0 && (
-            <div className="flex justify-between text-[11px]">
-              <span className="text-jarvis-muted">Picks ({pricing.picks.count} × ${pricing.picks.rate})</span>
-              <span className="text-jarvis-ink">${pricing.picks.monthly?.toFixed(2)}</span>
-            </div>
-          )}
-          <div className="flex justify-between text-[11px] pt-2 border-t border-jarvis-border">
-            <span className="text-jarvis-ink font-medium">Monthly Total</span>
-            <span className="text-jarvis-primary font-medium">${pricing.monthlyTotal?.toFixed(2)}</span>
-          </div>
-          <div className="flex justify-between text-[11px]">
-            <span className="text-jarvis-muted">Annual Estimate</span>
-            <span className="text-jarvis-ink">${pricing.annualTotal?.toFixed(2)}</span>
-          </div>
-        </div>
-      ) : (
-        <div className="text-[11px] text-jarvis-muted">No pricing data yet. Generate a proposal to calculate.</div>
-      )}
-
-      {deal.proposals?.length > 0 && (
-        <div className="space-y-1">
-          <div className="label">Proposals</div>
-          {deal.proposals.map((p) => (
-            <div key={p.id} className="surface p-2.5 text-[10px]">
-              <div className="flex justify-between">
-                <span className="text-jarvis-ink">{p.title}</span>
-                <span className={`uppercase tracking-wider ${
-                  p.status === "sent" ? "text-jarvis-success" :
-                  p.status === "approved" ? "text-jarvis-primary" :
-                  "text-jarvis-warning"
-                }`}>{p.status}</span>
-              </div>
-              {p.amount_usd > 0 && <div className="text-jarvis-muted mt-1">${p.amount_usd.toLocaleString()}/yr</div>}
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
+function fmtDate(d) {
+  if (!d) return "";
+  return new Date(d).toLocaleDateString([], { month: "short", day: "numeric" });
 }
 
-function EmailsTab({ deal }) {
-  const drafts = deal.drafts ?? [];
-  const [emails, setEmails] = useState(deal.emails ?? []);
-  const [loadingEmails, setLoadingEmails] = useState(false);
-
-  // Fetch real Gmail history for this contact
-  useEffect(() => {
-    if (!deal.contact_email) return;
-    setLoadingEmails(true);
-    jarvis.emailForContact(deal.contact_email)
-      .then(data => {
-        if (Array.isArray(data) && data.length > 0) setEmails(data);
-      })
-      .catch(() => {})
-      .finally(() => setLoadingEmails(false));
-  }, [deal.contact_email]);
-
-  return (
-    <div className="space-y-2">
-      {drafts.length > 0 && (
-        <>
-          <div className="label">Drafts</div>
-          {drafts.map((d) => (
-            <div key={d.id} className="surface p-2.5 text-[10px] space-y-1">
-              <div className="flex justify-between">
-                <span className="text-jarvis-ink truncate">{d.subject}</span>
-                <span className={`uppercase tracking-wider text-[8px] ${
-                  d.status === "sent" ? "text-jarvis-success" : "text-jarvis-warning"
-                }`}>{d.status}</span>
-              </div>
-              <div className="text-jarvis-muted truncate">To: {d.to_addr}</div>
-            </div>
-          ))}
-        </>
-      )}
-      {loadingEmails && <div className="text-[10px] text-jarvis-muted animate-pulse">Loading email history...</div>}
-      {emails.length > 0 && (
-        <>
-          <div className="label">Email History</div>
-          {emails.map((e, i) => (
-            <div key={e.id || i} className="surface p-2.5 text-[10px]">
-              <div className="text-jarvis-ink truncate">{e.subject}</div>
-              <div className="text-jarvis-muted mt-0.5">
-                {e.from || e.from_addr ? `From: ${(e.from || e.from_addr).slice(0, 45)}` : ""}
-              </div>
-              {e.snippet && <div className="text-jarvis-muted/60 text-[9px] mt-1 truncate">{e.snippet.slice(0, 80)}</div>}
-              <div className="text-[8px] text-jarvis-muted/40 mt-1">{e.date?.slice(0, 22) || e.created_at?.slice(0, 10)}</div>
-            </div>
-          ))}
-        </>
-      )}
-      {!loadingEmails && emails.length === 0 && drafts.length === 0 && (
-        <div className="text-[11px] text-jarvis-muted">No email activity for this deal.</div>
-      )}
-    </div>
-  );
-}
-
-function NotesTab({ deal }) {
-  return (
-    <div className="space-y-2">
-      {deal.notes_summary ? (
-        <div className="text-[11px] text-jarvis-body leading-relaxed whitespace-pre-wrap">{deal.notes_summary}</div>
-      ) : (
-        <div className="text-[11px] text-jarvis-muted">No notes.</div>
-      )}
-    </div>
-  );
+function fmtUsd(n) {
+  return `$${(n ?? 0).toLocaleString()}`;
 }
 
 export function DealRoomPanel({ deal: initialDeal, onClose }) {
   const [tab, setTab] = useState("proposal");
   const [deal, setDeal] = useState(initialDeal);
-  const [generating, setGenerating] = useState(false);
+  const [proposals, setProposals] = useState([]);
+  const [comms, setComms] = useState([]);
+  const [expandedProposal, setExpandedProposal] = useState(null);
+  const [showProposalGen, setShowProposalGen] = useState(false);
+  const [drafting, setDrafting] = useState(false);
+  const [emailDraft, setEmailDraft] = useState(null);
+  const [loading, setLoading] = useState(true);
 
-  // Fetch full deal data with related emails/proposals
+  // Map deal to a Supabase deal_id — may be a Pipedrive ID
+  const dealId = deal?.supabase_id ?? deal?.id;
+
+  useEffect(() => {
+    if (!supabase || !dealId) { setLoading(false); return; }
+
+    // Try to find this deal in Supabase
+    const findAndFetch = async () => {
+      setLoading(true);
+
+      // If dealId is a UUID, use it directly. If it's a number (Pipedrive), look up by pipedrive_id
+      let supabaseDealId = dealId;
+      if (typeof dealId === "number" || /^\d+$/.test(dealId)) {
+        const { data: found } = await supabase
+          .from("deals")
+          .select("id")
+          .eq("pipedrive_id", parseInt(dealId))
+          .maybeSingle();
+        if (found) supabaseDealId = found.id;
+        else { setLoading(false); return; }
+      }
+
+      const [p, c] = await Promise.all([
+        supabase.from("proposals").select("*").eq("deal_id", supabaseDealId).order("created_at", { ascending: false }),
+        supabase.from("communications").select("*").eq("deal_id", supabaseDealId).order("occurred_at", { ascending: false }),
+      ]);
+
+      setProposals(p.data ?? []);
+      setComms(c.data ?? []);
+      setLoading(false);
+    };
+
+    findAndFetch();
+  }, [dealId]);
+
+  // Also try to load from CRM API for deal details
   useEffect(() => {
     if (initialDeal?.id) {
-      jarvis.crmDeal(initialDeal.id).then(setDeal).catch(() => {});
+      jarvis.crmDeal?.(initialDeal.id)?.then(d => { if (d) setDeal(prev => ({ ...prev, ...d })); }).catch(() => {});
     }
   }, [initialDeal?.id]);
 
-  const generateProposal = async () => {
-    setGenerating(true);
-    try {
-      await jarvis.runSkill("proposal_generator", {
-        dealId: deal.id,
-        clientName: deal.org_name || deal.title,
-        contactEmail: deal.contact_email,
-      });
-      // Refresh deal data
-      const updated = await jarvis.crmDeal(deal.id);
-      setDeal(updated);
-      setTab("proposal");
-    } catch (err) {
-      console.error("Proposal generation failed:", err);
-    } finally {
-      setGenerating(false);
-    }
-  };
-
   const draftEmail = async () => {
+    setDrafting(true);
     try {
-      await jarvis.runSkill("email_drafter", {
-        categories: "urgent,action_needed",
-        maxDrafts: 1,
-        tone: "professional",
-      });
-    } catch {}
+      const draft = await jarvis.emailAiDraft(dealId, "follow_up");
+      setEmailDraft({ ...draft, _original: draft.body });
+    } catch (e) {
+      console.error("Draft failed:", e);
+      setEmailDraft({ to: deal.contact_email ?? "", subject: `Following up — ${deal.title || deal.org_name}`, body: "", _original: "" });
+    }
+    setDrafting(false);
   };
 
   if (!deal) return null;
 
-  const opModel = deal.operating_model ? (typeof deal.operating_model === "string" ? JSON.parse(deal.operating_model) : deal.operating_model) : null;
+  const pricing = deal.pricing_model ? (typeof deal.pricing_model === "string" ? JSON.parse(deal.pricing_model) : deal.pricing_model) : null;
 
   return (
-    <motion.div
-      initial={{ x: "100%" }}
-      animate={{ x: 0 }}
-      exit={{ x: "100%" }}
-      transition={{ type: "spring", damping: 25, stiffness: 200 }}
-      className="fixed right-0 top-0 bottom-0 w-[420px] bg-jarvis-bg border-l border-jarvis-border z-40 flex flex-col overflow-hidden"
-    >
-      {/* Header */}
-      <div className="p-4 border-b border-jarvis-border">
-        <div className="flex items-center justify-between mb-2">
-          <h2 className="text-[14px] text-jarvis-ink font-semibold truncate">{deal.title || deal.org_name}</h2>
-          <button onClick={onClose} className="text-jarvis-muted hover:text-jarvis-ink">
-            <X size={16} />
-          </button>
-        </div>
-        <div className="flex items-center gap-2 text-[10px]">
-          <span className="text-jarvis-muted">{deal.org_name}</span>
-          {deal.value > 0 && <span className="text-jarvis-primary">${(deal.value / 1000).toFixed(0)}K/yr</span>}
-          <span className={`px-2 py-0.5 rounded-full text-[8px] uppercase tracking-wider ${
-            deal.stage?.includes("Sign") ? "bg-jarvis-success/10 text-jarvis-success" :
-            deal.stage?.includes("Negot") ? "bg-jarvis-purple/10 text-jarvis-purple" :
-            deal.stage?.includes("Demo") ? "bg-jarvis-primary/10 text-jarvis-primary" :
-            "bg-jarvis-warning/10 text-jarvis-warning"
-          }`}>{deal.stage?.slice(0, 15)}</span>
-        </div>
-
-        {/* Contact */}
-        {deal.contact_name && (
-          <div className="mt-2 text-[10px]">
-            <span className="text-jarvis-muted">Contact: </span>
-            <span className="text-jarvis-ink">{deal.contact_name}</span>
-            {deal.contact_email && <span className="text-jarvis-primary ml-2">{deal.contact_email}</span>}
+    <>
+      <motion.div
+        initial={{ x: "100%" }}
+        animate={{ x: 0 }}
+        exit={{ x: "100%" }}
+        transition={{ type: "spring", damping: 25, stiffness: 200 }}
+        className="fixed right-0 top-0 bottom-0 w-[420px] bg-jarvis-bg border-l border-jarvis-border z-40 flex flex-col overflow-hidden"
+      >
+        {/* Header */}
+        <div className="p-4 border-b border-jarvis-border">
+          <div className="flex items-center justify-between mb-2">
+            <h2 className="text-[14px] text-jarvis-ink font-semibold truncate">{deal.title || deal.org_name || deal.company}</h2>
+            <button onClick={onClose} className="text-jarvis-muted hover:text-jarvis-ink"><X size={16} /></button>
           </div>
-        )}
-
-        {/* Signals */}
-        <div className="flex gap-2 mt-2">
-          {deal.pandadoc_viewed ? (
-            <span className="text-[8px] text-jarvis-success bg-jarvis-success/8 px-2 py-0.5 rounded-full">PandaDoc viewed</span>
-          ) : null}
-          {deal.last_email_from_them && (
-            <span className="text-[8px] text-jarvis-primary bg-jarvis-primary/8 px-2 py-0.5 rounded-full">replied</span>
+          <div className="flex items-center gap-2 text-[10px]">
+            {deal.value > 0 && <span className="text-jarvis-primary font-semibold">{fmtUsd(deal.value || deal.value_usd)}</span>}
+            {deal.stage && (
+              <span className="chip text-[8px] bg-jarvis-primary/10 text-jarvis-primary">{deal.stage}</span>
+            )}
+          </div>
+          {(deal.contact_name || deal.contact_email) && (
+            <div className="mt-2 text-[10px]">
+              <span className="text-jarvis-muted">Contact: </span>
+              <span className="text-jarvis-ink">{deal.contact_name}</span>
+              {deal.contact_email && <span className="text-jarvis-primary ml-2">{deal.contact_email}</span>}
+            </div>
           )}
           {deal.engagement && (
-            <span className={`text-[8px] px-2 py-0.5 rounded-full ${
-              deal.engagement === "hot" ? "text-jarvis-danger bg-jarvis-danger/8" :
-              deal.engagement === "cold" ? "text-jarvis-muted bg-white/5" :
-              "text-jarvis-warning bg-jarvis-warning/8"
-            }`}>{deal.engagement}</span>
+            <div className="mt-2">
+              <span className={`text-[8px] px-2 py-0.5 rounded-full ${
+                deal.engagement === "hot" ? "text-jarvis-danger bg-jarvis-danger/8" :
+                deal.engagement === "cold" ? "text-jarvis-muted bg-white/5" :
+                "text-jarvis-warning bg-jarvis-warning/8"
+              }`}>{deal.engagement}</span>
+            </div>
           )}
         </div>
-      </div>
 
-      {/* Tabs */}
-      <div className="flex gap-1 px-4 py-2 border-b border-jarvis-border">
-        <Tab label="Proposal" icon={FileText} active={tab === "proposal"} onClick={() => setTab("proposal")} />
-        <Tab label="Emails" icon={Mail} active={tab === "emails"} onClick={() => setTab("emails")} />
-        <Tab label="Notes" icon={StickyNote} active={tab === "notes"} onClick={() => setTab("notes")} />
-      </div>
+        {/* Tabs */}
+        <div className="flex gap-1 px-4 py-2 border-b border-jarvis-border">
+          <Tab label="Proposal" icon={FileText} active={tab === "proposal"} onClick={() => setTab("proposal")} count={proposals.length} />
+          <Tab label="Emails" icon={Mail} active={tab === "emails"} onClick={() => setTab("emails")} count={comms.filter(c => c.type === "email").length} />
+          <Tab label="Notes" icon={StickyNote} active={tab === "notes"} onClick={() => setTab("notes")} count={comms.filter(c => c.type !== "email").length} />
+        </div>
 
-      {/* Content */}
-      <div className="flex-1 overflow-y-auto p-4">
-        {tab === "proposal" && <ProposalTab deal={deal} />}
-        {tab === "emails" && <EmailsTab deal={deal} />}
-        {tab === "notes" && <NotesTab deal={deal} />}
-      </div>
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto p-4">
+          {loading ? (
+            <div className="flex items-center justify-center py-8"><Loader2 size={20} className="animate-spin text-jarvis-primary" /></div>
+          ) : tab === "proposal" ? (
+            <div className="space-y-3">
+              {/* Pricing breakdown from CRM */}
+              {pricing && (
+                <div className="space-y-2">
+                  <div className="label">Monthly Breakdown</div>
+                  {pricing.storage && (
+                    <div className="flex justify-between text-[11px]">
+                      <span className="text-jarvis-muted">Storage ({pricing.storage.pallets} pallets × ${pricing.storage.rate})</span>
+                      <span className="text-jarvis-ink">${pricing.storage.monthly?.toFixed(2)}</span>
+                    </div>
+                  )}
+                  {pricing.receiving && (
+                    <div className="flex justify-between text-[11px]">
+                      <span className="text-jarvis-muted">Receiving ({pricing.receiving.pallets} × ${pricing.receiving.rate})</span>
+                      <span className="text-jarvis-ink">${pricing.receiving.monthly?.toFixed(2)}</span>
+                    </div>
+                  )}
+                  {pricing.monthlyTotal && (
+                    <>
+                      <div className="flex justify-between text-[11px] pt-2 border-t border-jarvis-border">
+                        <span className="text-jarvis-ink font-medium">Monthly Total</span>
+                        <span className="text-jarvis-primary font-medium">${pricing.monthlyTotal?.toFixed(2)}</span>
+                      </div>
+                      <div className="flex justify-between text-[11px]">
+                        <span className="text-jarvis-muted">Annual Estimate</span>
+                        <span className="text-jarvis-ink">${pricing.annualTotal?.toFixed(2)}</span>
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
 
-      {/* Actions */}
-      <div className="p-3 border-t border-jarvis-border flex gap-2">
-        <button
-          onClick={draftEmail}
-          className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-[10px] font-medium bg-jarvis-primary/10 text-jarvis-primary border border-jarvis-primary/15 transition-all hover:bg-jarvis-primary/15"
-        >
-          <Mail size={11} /> Draft Email
-        </button>
-        <button
-          onClick={generateProposal}
-          disabled={generating}
-          className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-[10px] font-medium bg-jarvis-purple/10 text-jarvis-purple border border-jarvis-purple/15 transition-all hover:bg-jarvis-purple/15 disabled:opacity-40"
-        >
-          {generating ? <RefreshCcw size={11} className="animate-spin" /> : <FileText size={11} />}
-          {generating ? "Generating..." : "Generate Proposal"}
-        </button>
-      </div>
-    </motion.div>
+              {/* Proposals from Supabase */}
+              <div className="label mt-4">Proposals</div>
+              {proposals.length === 0 ? (
+                <div className="text-[11px] text-jarvis-muted">No proposals yet. Click "Create Proposal" below.</div>
+              ) : proposals.map(p => (
+                <div key={p.id} className="surface overflow-hidden">
+                  {/* Clickable header */}
+                  <button
+                    onClick={() => setExpandedProposal(expandedProposal === p.id ? null : p.id)}
+                    className="w-full flex items-center justify-between p-2.5 text-left hover:bg-jarvis-ghost/30 transition"
+                  >
+                    <div>
+                      <div className="text-[11px] text-jarvis-ink font-medium">{p.name || p.company_name}</div>
+                      <div className="text-[9px] text-jarvis-muted">{fmtDate(p.created_at)} · v{p.version}{p.pricing?.annual_projection ? ` · ${fmtUsd(p.pricing.annual_projection)}/yr` : ""}</div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {p.view_count > 0 && <span className="text-[8px] text-jarvis-muted">{p.view_count} views</span>}
+                      <span className={`text-[8px] uppercase tracking-wider ${
+                        p.status === "accepted" ? "text-jarvis-success" :
+                        p.status === "sent" ? "text-jarvis-primary" :
+                        p.status === "rejected" ? "text-jarvis-danger" :
+                        "text-jarvis-warning"
+                      }`}>{p.client_response === "changes_requested" ? "Changes Requested" : p.status}</span>
+                    </div>
+                  </button>
+
+                  {/* Expanded detail */}
+                  {expandedProposal === p.id && (
+                    <div className="p-2.5 pt-0 border-t border-jarvis-border space-y-2">
+                      {/* Pricing */}
+                      {p.pricing && (
+                        <div className="grid grid-cols-3 gap-2 text-center mt-2">
+                          <div className="rounded-lg bg-jarvis-ghost p-2">
+                            <div className="text-[8px] text-jarvis-muted uppercase">Per Ship</div>
+                            <div className="text-[11px] font-semibold text-jarvis-ink tabular-nums">{fmtUsd(p.pricing.total_per_shipment)}</div>
+                          </div>
+                          <div className="rounded-lg bg-jarvis-ghost p-2">
+                            <div className="text-[8px] text-jarvis-muted uppercase">Monthly</div>
+                            <div className="text-[11px] font-semibold text-jarvis-primary tabular-nums">{fmtUsd(p.pricing.monthly_cost)}</div>
+                          </div>
+                          <div className="rounded-lg bg-jarvis-ghost p-2">
+                            <div className="text-[8px] text-jarvis-muted uppercase">Annual</div>
+                            <div className="text-[11px] font-semibold text-jarvis-success tabular-nums">{fmtUsd(p.pricing.annual_projection)}</div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Lanes */}
+                      {p.lanes?.length > 0 && (
+                        <div>
+                          <div className="text-[8px] text-jarvis-muted uppercase mb-1">Lanes</div>
+                          {p.lanes.map((l, i) => (
+                            <div key={i} className="flex justify-between text-[10px] py-0.5">
+                              <span className="text-jarvis-body">{l.origin} → {l.destination}</span>
+                              <span className="text-jarvis-ink tabular-nums">{l.volume}× ${l.per_shipment}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Summary */}
+                      {p.executive_summary && (
+                        <div className="text-[10px] text-jarvis-body leading-relaxed">{p.executive_summary}</div>
+                      )}
+
+                      {/* Client feedback */}
+                      {p.client_notes && (
+                        <div className="rounded-lg border border-jarvis-warning/30 bg-jarvis-warning/5 p-2">
+                          <div className="text-[8px] text-jarvis-warning uppercase">Client Feedback</div>
+                          <div className="text-[10px] text-jarvis-body mt-1">{p.client_notes}</div>
+                        </div>
+                      )}
+
+                      {/* Signature */}
+                      {p.signature && (
+                        <div className="rounded-lg border border-jarvis-success/30 bg-jarvis-success/5 p-2">
+                          <div className="text-[8px] text-jarvis-success uppercase">Signed</div>
+                          <div className="text-[10px] text-jarvis-body">{p.signature.name} · {p.signature.title}</div>
+                        </div>
+                      )}
+
+                      {/* Action buttons */}
+                      <div className="flex flex-wrap gap-1.5 pt-1">
+                        {p.share_token && (
+                          <>
+                            <button
+                              onClick={() => window.open(`https://bqlmkaapurfxdmqcuvla.supabase.co/functions/v1/proposal-view?token=${p.share_token}`, "_blank")}
+                              className="flex items-center gap-1 px-2 py-1 rounded-lg bg-jarvis-ghost text-jarvis-body text-[9px] hover:text-jarvis-ink transition"
+                            >
+                              <Eye size={10} /> Preview
+                            </button>
+                            <button
+                              onClick={(e) => {
+                                navigator.clipboard.writeText(`https://bqlmkaapurfxdmqcuvla.supabase.co/functions/v1/proposal-view?token=${p.share_token}`);
+                                e.currentTarget.textContent = "✓ Copied";
+                                setTimeout(() => { e.currentTarget.textContent = "Copy Link"; }, 2000);
+                              }}
+                              className="flex items-center gap-1 px-2 py-1 rounded-lg bg-jarvis-ghost text-jarvis-body text-[9px] hover:text-jarvis-ink transition"
+                            >
+                              <Link2 size={10} /> Copy Link
+                            </button>
+                          </>
+                        )}
+                        {p.status === "draft" && p.share_token && (
+                          <button
+                            onClick={async () => {
+                              if (!supabase) return;
+                              await supabase.from("proposals").update({ status: "sent" }).eq("id", p.id);
+                              setProposals(prev => prev.map(pp => pp.id === p.id ? { ...pp, status: "sent" } : pp));
+                            }}
+                            className="flex items-center gap-1 px-2 py-1 rounded-lg bg-jarvis-primary/15 text-jarvis-primary text-[9px] font-semibold hover:bg-jarvis-primary/25 transition"
+                          >
+                            <Send size={10} /> Mark Sent
+                          </button>
+                        )}
+                        {!p.share_token && (
+                          <button
+                            onClick={async () => {
+                              if (!supabase) return;
+                              const token = Array.from(crypto.getRandomValues(new Uint8Array(8)), b => b.toString(36)).join("").slice(0, 12);
+                              await supabase.from("proposals").update({ share_token: token }).eq("id", p.id);
+                              setProposals(prev => prev.map(pp => pp.id === p.id ? { ...pp, share_token: token } : pp));
+                            }}
+                            className="flex items-center gap-1 px-2 py-1 rounded-lg bg-jarvis-primary/15 text-jarvis-primary text-[9px] font-semibold hover:bg-jarvis-primary/25 transition"
+                          >
+                            <Link2 size={10} /> Generate Link
+                          </button>
+                        )}
+                        <button
+                          onClick={async () => {
+                            if (!supabase || !confirm("Delete this proposal?")) return;
+                            await supabase.from("proposals").delete().eq("id", p.id);
+                            setProposals(prev => prev.filter(pp => pp.id !== p.id));
+                          }}
+                          className="flex items-center gap-1 px-2 py-1 rounded-lg text-jarvis-danger/60 text-[9px] hover:bg-jarvis-danger/10 hover:text-jarvis-danger transition ml-auto"
+                        >
+                          <Trash2 size={10} />
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          ) : tab === "emails" ? (
+            <div className="space-y-2">
+              {comms.filter(c => c.type === "email").length === 0 ? (
+                <div className="text-[11px] text-jarvis-muted">No email history. Emails sync 3x/day from Gmail.</div>
+              ) : comms.filter(c => c.type === "email").map(c => (
+                <div key={c.id} className="surface p-2.5 text-[10px]">
+                  {c.subject && <div className="text-jarvis-ink font-medium truncate">{c.subject}</div>}
+                  <div className="text-jarvis-body mt-1 text-[9px] leading-relaxed">{(c.body ?? "").slice(0, 200)}</div>
+                  <div className="text-[8px] text-jarvis-muted mt-1">{fmtDate(c.occurred_at)}</div>
+                </div>
+              ))}
+              {/* Non-email comms */}
+              {comms.filter(c => c.type !== "email").length > 0 && (
+                <>
+                  <div className="label mt-3">Other Communications</div>
+                  {comms.filter(c => c.type !== "email").map(c => (
+                    <div key={c.id} className="surface p-2.5 text-[10px]">
+                      <div className="flex items-center gap-2">
+                        <span className="chip text-[8px] bg-jarvis-ghost text-jarvis-body">{c.type}</span>
+                        <span className="text-[8px] text-jarvis-muted">{fmtDate(c.occurred_at)}</span>
+                      </div>
+                      <div className="text-jarvis-body mt-1 text-[9px]">{(c.body ?? "").slice(0, 200)}</div>
+                    </div>
+                  ))}
+                </>
+              )}
+            </div>
+          ) : tab === "notes" ? (
+            <div className="space-y-2">
+              {deal.notes_summary ? (
+                <div className="text-[11px] text-jarvis-body leading-relaxed whitespace-pre-wrap">{deal.notes_summary}</div>
+              ) : comms.filter(c => c.type === "note").length > 0 ? (
+                comms.filter(c => c.type === "note").map(c => (
+                  <div key={c.id} className="surface p-2.5 text-[10px]">
+                    <div className="text-jarvis-body text-[9px] leading-relaxed">{c.body}</div>
+                    <div className="text-[8px] text-jarvis-muted mt-1">{fmtDate(c.occurred_at)}</div>
+                  </div>
+                ))
+              ) : (
+                <div className="text-[11px] text-jarvis-muted">No notes. Notes sync from Pipedrive automatically.</div>
+              )}
+            </div>
+          ) : null}
+
+          {/* Email draft (shown in any tab) */}
+          {emailDraft && (
+            <div className="mt-4 surface p-3 space-y-2">
+              <div className="label">AI Draft Email</div>
+              {emailDraft.to && <div className="text-[9px] text-jarvis-muted">To: {emailDraft.to}</div>}
+              <div className="text-[10px] text-jarvis-ink font-medium">Subject: {emailDraft.subject}</div>
+              <textarea
+                value={emailDraft.body}
+                onChange={e => setEmailDraft({ ...emailDraft, body: e.target.value })}
+                rows={5}
+                className="w-full px-2 py-1.5 rounded-lg bg-jarvis-ghost border border-jarvis-border text-[10px] text-jarvis-ink outline-none resize-none focus:border-jarvis-primary/40"
+              />
+              <div className="flex gap-2">
+                <button
+                  onClick={async () => {
+                    if (emailDraft._original && emailDraft.body !== emailDraft._original) {
+                      await jarvis.emailStyleLearn?.(emailDraft._original, emailDraft.body, dealId);
+                    }
+                    await jarvis.ask(`Send email to ${emailDraft.to}: Subject: ${emailDraft.subject}\n\n${emailDraft.body}`, { kind: "chat" });
+                    setEmailDraft(null);
+                  }}
+                  className="px-3 py-1.5 rounded-lg bg-jarvis-primary/15 text-jarvis-primary text-[9px] font-semibold"
+                >
+                  Send for Approval
+                </button>
+                <button onClick={() => setEmailDraft(null)} className="px-3 py-1.5 rounded-lg bg-jarvis-ghost text-jarvis-muted text-[9px]">
+                  Discard
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Bottom actions */}
+        <div className="p-3 border-t border-jarvis-border flex gap-2">
+          <button
+            onClick={draftEmail}
+            disabled={drafting}
+            className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-[10px] font-medium bg-jarvis-primary/10 text-jarvis-primary border border-jarvis-primary/15 hover:bg-jarvis-primary/15 transition disabled:opacity-40"
+          >
+            {drafting ? <Loader2 size={11} className="animate-spin" /> : <Mail size={11} />}
+            {drafting ? "Drafting..." : "Draft Email"}
+          </button>
+          <button
+            onClick={() => setShowProposalGen(true)}
+            className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-[10px] font-medium bg-jarvis-purple/10 text-jarvis-purple border border-jarvis-purple/15 hover:bg-jarvis-purple/15 transition"
+          >
+            <FileText size={11} /> Create Proposal
+          </button>
+        </div>
+      </motion.div>
+
+      {/* Proposal Generator Modal */}
+      {showProposalGen && (
+        <ProposalGenerator
+          deal={{ ...deal, id: dealId, company: deal.title || deal.org_name || deal.company }}
+          onClose={() => setShowProposalGen(false)}
+          onSaved={() => {
+            setShowProposalGen(false);
+            if (supabase && dealId) {
+              supabase.from("proposals").select("*").eq("deal_id", dealId).order("created_at", { ascending: false })
+                .then(({ data }) => setProposals(data ?? []));
+            }
+          }}
+        />
+      )}
+    </>
   );
 }
