@@ -353,14 +353,14 @@ export function DealRoom({ dealId, deal, onClose }) {
                         {p.share_token && (
                           <>
                             <button
-                              onClick={() => window.open(`https://bqlmkaapurfxdmqcuvla.supabase.co/functions/v1/proposal-view?token=${p.share_token}`, '_blank')}
+                              onClick={() => window.open(`http://127.0.0.1:8787/proposal/${p.share_token}`, '_blank')}
                               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-jarvis-ghost text-jarvis-body text-xs hover:text-jarvis-ink hover:bg-jarvis-surface transition"
                             >
                               <Eye size={12} /> Preview
                             </button>
                             <button
                               onClick={(e) => {
-                                navigator.clipboard.writeText(`https://bqlmkaapurfxdmqcuvla.supabase.co/functions/v1/proposal-view?token=${p.share_token}`);
+                                navigator.clipboard.writeText(`http://127.0.0.1:8787/proposal/${p.share_token}`);
                                 const btn = e.currentTarget;
                                 const orig = btn.textContent;
                                 btn.textContent = '✓ Copied!';

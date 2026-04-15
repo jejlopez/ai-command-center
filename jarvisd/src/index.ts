@@ -56,6 +56,8 @@ import { proposalExpiry } from "./skills/proposal_expiry.js";
 import { dealStageAutomation } from "./skills/deal_stage_automation.js";
 import { pipelineSnapshot } from "./skills/pipeline_snapshot.js";
 import { autoDailySnapshot } from "./skills/auto_daily_snapshot.js";
+import { rateOptimizer } from "./skills/rate_optimizer.js";
+import { proposalFollowup } from "./skills/proposal_followup.js";
 import { crmRoutes } from "./routes/crm.js";
 import { webhookRoutes } from "./routes/webhooks.js";
 import { learningRoutes } from "./routes/learning.js";
@@ -73,6 +75,7 @@ import { policyRoutes } from "./routes/policy.js";
 import { panicRoutes } from "./routes/panic.js";
 import { auditRoutes } from "./routes/audit.js";
 import { voiceRoutes } from "./routes/voice.js";
+import { proposalPageRoutes } from "./routes/proposal_page.js";
 import { registerRateLimiter, registerRateLimitResetRoute } from "./lib/rate_limit.js";
 import type { HealthResponse } from "../../shared/types.js";
 
@@ -134,6 +137,7 @@ async function main() {
   await panicRoutes(app);
   await auditRoutes(app);
   await voiceRoutes(app);
+  await proposalPageRoutes(app);
 
   // Test-only helpers (safe — only exposed when tests set LOG_LEVEL=error).
   if (process.env.LOG_LEVEL === "error") {
@@ -176,6 +180,8 @@ async function main() {
   registry.register(dealStageAutomation);
   registry.register(pipelineSnapshot);
   registry.register(autoDailySnapshot);
+  registry.register(rateOptimizer);
+  registry.register(proposalFollowup);
 
   // Wire the event bus after skills are registered so subscriptions pick up
   // every manifest with an event trigger.

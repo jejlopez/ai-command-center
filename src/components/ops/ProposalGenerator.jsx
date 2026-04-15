@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { FileText, Plus, X, Link, Eye, Loader2, Sparkles, Trash2 } from "lucide-react";
+import { useState, useMemo } from "react";
+import { FileText, X, Link, Eye, Loader2, Sparkles, TrendingUp, DollarSign } from "lucide-react";
 import { supabase } from "../../lib/supabase.js";
 import { jarvis } from "../../lib/jarvis.js";
 
@@ -7,57 +7,180 @@ function generateToken() {
   return Array.from(crypto.getRandomValues(new Uint8Array(8)), b => b.toString(36)).join('').slice(0, 12);
 }
 
+const DEFAULTS = {
+  storage: {
+    small_30x36x24: 6.00,
+    standard_40x48x60: 14.75,
+    tall_40x48x72: 25.00,
+    oversized_40x48xover72: 40.00,
+  },
+  receiving_palletized: {
+    single_sku: 13.50,
+    two_sku: 35.00,
+    mixed_sku: 75.00,
+  },
+  receiving_loose: {
+    per_carton: 2.50,
+    count_per_piece: 0.50,
+  },
+  container_unloading: {
+    twenty_ft: 425.00,
+    forty_ft: 650.00,
+    fortyfive_ft: 700.00,
+    additional_250_packages: 45.00,
+    additional_10_skus: 45.00,
+  },
+  outbound_parcel: {
+    order_processing: 3.50,
+    per_pick: 0.75,
+    rush_order: 30.00,
+  },
+  outbound_pallet: {
+    per_pallet: 13.50,
+    per_pick: 0.75,
+    bol: 4.50,
+    rush_order: 30.00,
+  },
+  special_projects: {
+    man_hour: 40.00,
+    man_hour_forklift: 45.00,
+    man_hour_manager: 55.00,
+    label: 0.50,
+    serial_scan: 0.50,
+  },
+  integrations: {
+    prebuilt: 750.00,
+    monthly: 125.00,
+    custom_per_hour: 150.00,
+    edi: "TBD",
+  },
+  rebill_per_tracking: 7.50,
+  minimums: {
+    handling: 2500,
+    storage: 1000,
+  },
+};
+
+const LABOR_RATE_DEFAULT = 22; // $ per hour for margin estimate
+
+function RateInput({ value, onChange, prefix = "$", step = "0.01", disabled = false }) {
+  return (
+    <div className="flex items-center gap-1">
+      {prefix && <span className="text-[10px] text-jarvis-muted">{prefix}</span>}
+      <input
+        type={disabled ? "text" : "number"}
+        value={value}
+        onChange={disabled ? undefined : e => onChange(e.target.value)}
+        readOnly={disabled}
+        step={step}
+        min="0"
+        className="w-20 px-2 py-1 rounded-lg bg-jarvis-ghost border border-jarvis-border text-xs text-jarvis-ink text-right outline-none focus:border-jarvis-primary/50 transition-colors disabled:opacity-50"
+      />
+    </div>
+  );
+}
+
+function SectionTable({ title, rows }) {
+  return (
+    <div className="mb-4">
+      <div className="text-[10px] uppercase tracking-widest text-jarvis-muted mb-1 font-medium">{title}</div>
+      <div className="border border-jarvis-border rounded-xl overflow-hidden">
+        <table className="w-full text-xs">
+          <tbody>
+            {rows.map(([label, ...inputs], i) => (
+              <tr key={i} className={i % 2 === 0 ? "bg-jarvis-ghost/30" : "bg-jarvis-ghost/10"}>
+                <td className="px-3 py-1.5 text-jarvis-body flex-1">{label}</td>
+                <td className="px-3 py-1.5 text-right">{inputs}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 export function ProposalGenerator({ deal, onClose, onSaved }) {
+  // Client Info
   const [companyName, setCompanyName] = useState(deal?.company ?? '');
-  const [clientName, setClientName] = useState(deal?.contact_name ?? '');
-  const [clientEmail, setClientEmail] = useState('');
-  const [lanes, setLanes] = useState([{ origin: '', destination: '', rate: '', volume: '', per_shipment: '' }]);
-  const [fuelPct, setFuelPct] = useState('15');
-  const [accessorials, setAccessorials] = useState([]);
-  const [newAcc, setNewAcc] = useState({ name: '', amount: '' });
-  const [monthlyShipments, setMonthlyShipments] = useState('');
-  const [services, setServices] = useState(['Real-time tracking', 'Dedicated account manager', '24/7 support', 'Claims handling']);
-  const [allServices] = useState(['Real-time tracking', 'Dedicated account manager', '24/7 support', 'Claims handling', 'Insurance coverage', 'Customs brokerage', 'Warehousing', 'Cross-docking', 'White glove delivery']);
-  const [terms, setTerms] = useState({ valid_until: '', payment: 'Net 30', minimum: '', contract_length: '' });
+  const [contactName, setContactName] = useState(deal?.contact_name ?? '');
+  const [contactEmail, setContactEmail] = useState('');
+  const [contactPhone, setContactPhone] = useState('');
+  const [businessAddress, setBusinessAddress] = useState('');
+  const [acctContact, setAcctContact] = useState('');
+  const [acctPhone, setAcctPhone] = useState('');
+  const [acctEmail, setAcctEmail] = useState('');
+
+  // Pricing state — deeply nested
+  const [rates, setRates] = useState(DEFAULTS);
+
+  // Volume estimate
+  const [volPallets, setVolPallets] = useState('');
+  const [volOrders, setVolOrders] = useState('');
+  const [volPicks, setVolPicks] = useState('');
+
+  // Revenue impact
+  const [laborRate, setLaborRate] = useState(String(LABOR_RATE_DEFAULT));
+
+  // UI state
   const [summary, setSummary] = useState('');
   const [generating, setGenerating] = useState(false);
   const [saving, setSaving] = useState(false);
   const [shareUrl, setShareUrl] = useState(null);
 
-  const totalPerShipment = lanes.reduce((s, l) => s + (parseFloat(l.per_shipment) || 0), 0)
-    + accessorials.reduce((s, a) => s + (parseFloat(a.amount) || 0), 0);
-  const monthlyCost = totalPerShipment * (parseInt(monthlyShipments) || 0);
-  const annualProjection = monthlyCost * 12;
-
-  const addLane = () => setLanes([...lanes, { origin: '', destination: '', rate: '', volume: '', per_shipment: '' }]);
-  const removeLane = (i) => setLanes(lanes.filter((_, idx) => idx !== i));
-  const updateLane = (i, field, val) => {
-    const updated = [...lanes];
-    updated[i] = { ...updated[i], [field]: val };
-    setLanes(updated);
+  const setRate = (section, key, val) => {
+    setRates(prev => ({
+      ...prev,
+      [section]: typeof prev[section] === 'object' && !Array.isArray(prev[section])
+        ? { ...prev[section], [key]: val }
+        : val,
+    }));
   };
 
-  const addAccessorial = () => {
-    if (newAcc.name && newAcc.amount) {
-      setAccessorials([...accessorials, { ...newAcc }]);
-      setNewAcc({ name: '', amount: '' });
-    }
+  const setTopRate = (key, val) => {
+    setRates(prev => ({ ...prev, [key]: val }));
   };
 
-  const toggleService = (s) => {
-    setServices(prev => prev.includes(s) ? prev.filter(x => x !== s) : [...prev, s]);
-  };
+  // ── Monthly estimate ──────────────────────────────────────────────────────
+  const estimates = useMemo(() => {
+    const pallets = parseFloat(volPallets) || 0;
+    const orders = parseFloat(volOrders) || 0;
+    const picks = parseFloat(volPicks) || 0;
+
+    const storageRevenue = pallets * (parseFloat(rates.storage.standard_40x48x60) || 0);
+    const storageActual = Math.max(storageRevenue, parseFloat(rates.minimums.storage) || 0);
+
+    const orderRevenue = orders * (parseFloat(rates.outbound_parcel.order_processing) || 0);
+    const pickRevenue = picks * (parseFloat(rates.outbound_parcel.per_pick) || 0);
+    const handlingRevenue = orderRevenue + pickRevenue;
+    const handlingActual = Math.max(handlingRevenue, parseFloat(rates.minimums.handling) || 0);
+
+    const monthlyRevenue = storageActual + handlingActual;
+    const annualRevenue = monthlyRevenue * 12;
+
+    // Margin: assume labor hours = picks / 30 picks/hr
+    const labor = parseFloat(laborRate) || LABOR_RATE_DEFAULT;
+    const estLaborHours = (picks || orders * 3) / 30;
+    const estLaborCost = estLaborHours * labor;
+    const monthlyMargin = monthlyRevenue - estLaborCost;
+    const marginPct = monthlyRevenue > 0 ? (monthlyMargin / monthlyRevenue) * 100 : 0;
+
+    return { monthlyRevenue, annualRevenue, monthlyMargin, marginPct, estLaborCost };
+  }, [volPallets, volOrders, volPicks, rates, laborRate]);
 
   const generateSummary = async () => {
     setGenerating(true);
     try {
       const result = await jarvis.ask(
-        `Write a 2-3 sentence executive summary for a 3PL logistics proposal to ${companyName}. They need shipping services for these lanes: ${lanes.map(l => `${l.origin} to ${l.destination}`).join(', ')}. Total monthly volume: ${monthlyShipments} shipments. Monthly cost: $${monthlyCost.toLocaleString()}. Keep it professional and compelling. Do NOT use markdown formatting.`,
+        `Write a 2-3 sentence executive summary for a 3PL warehousing & fulfillment agreement proposal to ${companyName || 'the client'}. ` +
+        `Estimated monthly volume: ${volPallets || 0} pallets stored, ${volOrders || 0} orders/month, ${volPicks || 0} picks/month. ` +
+        `Estimated monthly cost: $${estimates.monthlyRevenue.toLocaleString()}. ` +
+        `Company: 3PL Center LLC, NJ. Keep it professional and compelling. No markdown.`,
         { kind: 'summary' }
       );
       setSummary(result.text);
-    } catch (e) {
-      setSummary(`We are pleased to present our logistics proposal for ${companyName}. Our competitive rates and comprehensive service offering are designed to optimize your supply chain and reduce total transportation costs.`);
+    } catch {
+      setSummary(`We are pleased to present our warehousing and fulfillment agreement to ${companyName || 'your organization'}. 3PL Center LLC offers competitive rates, 99% inventory accuracy, and end-to-end logistics support from our New Jersey facility.`);
     }
     setGenerating(false);
   };
@@ -68,35 +191,38 @@ export function ProposalGenerator({ deal, onClose, onSaved }) {
     try {
       const token = generateToken();
       const pricing = {
-        rate_per_mile: parseFloat(lanes[0]?.rate) || 0,
-        fuel_surcharge_pct: parseFloat(fuelPct) || 0,
-        accessorials,
-        total_per_shipment: totalPerShipment,
-        monthly_shipments: parseInt(monthlyShipments) || 0,
-        monthly_cost: monthlyCost,
-        annual_projection: annualProjection,
+        ...rates,
+        estimated_monthly_volume: {
+          pallets: parseFloat(volPallets) || 0,
+          orders: parseFloat(volOrders) || 0,
+          picks: parseFloat(volPicks) || 0,
+        },
+        monthly_estimate: estimates.monthlyRevenue,
+        annual_estimate: estimates.annualRevenue,
+        // Legacy compat
+        monthly_cost: estimates.monthlyRevenue,
+        annual_projection: estimates.annualRevenue,
       };
 
       const { error } = await supabase.from('proposals').insert({
         deal_id: deal?.id ?? null,
-        name: `Proposal — ${companyName}`,
+        name: `Warehousing Agreement — ${companyName}`,
         version: 1,
         status: 'draft',
         pricing,
         company_name: companyName,
-        client_name: clientName,
-        client_email: clientEmail,
-        lanes: lanes.filter(l => l.origin || l.destination),
-        services,
-        terms,
+        client_name: contactName,
+        client_email: contactEmail,
+        client_phone: contactPhone,
+        business_address: businessAddress,
+        accounting_contact: { name: acctContact, phone: acctPhone, email: acctEmail },
         executive_summary: summary,
         share_token: token,
-        valid_until: terms.valid_until || null,
       });
 
       if (error) throw error;
 
-      const url = `https://bqlmkaapurfxdmqcuvla.supabase.co/functions/v1/proposal-view?token=${token}`;
+      const url = `http://127.0.0.1:8787/proposal/${token}`;
       setShareUrl(url);
       onSaved?.();
     } catch (e) {
@@ -104,6 +230,8 @@ export function ProposalGenerator({ deal, onClose, onSaved }) {
     }
     setSaving(false);
   };
+
+  const inputCls = "px-3 py-2 rounded-xl bg-jarvis-ghost border border-jarvis-border text-sm text-jarvis-ink placeholder-jarvis-muted outline-none focus:border-jarvis-primary/50 transition-colors";
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
@@ -113,7 +241,7 @@ export function ProposalGenerator({ deal, onClose, onSaved }) {
         <div className="flex items-center justify-between px-6 py-4 border-b border-jarvis-border">
           <div className="flex items-center gap-2">
             <FileText size={18} className="text-jarvis-primary" />
-            <span className="text-lg font-semibold text-jarvis-ink">Create Proposal</span>
+            <span className="text-lg font-semibold text-jarvis-ink">3PL Center — Warehousing Agreement</span>
           </div>
           <button onClick={onClose} className="p-2 rounded-xl text-jarvis-muted hover:text-jarvis-ink hover:bg-jarvis-ghost transition">
             <X size={18} />
@@ -123,304 +251,237 @@ export function ProposalGenerator({ deal, onClose, onSaved }) {
         {/* Scrollable body */}
         <div className="flex-1 overflow-y-auto px-6 py-4 space-y-6">
 
-          {/* Client Info */}
+          {/* ── Client Info ── */}
           <div>
             <div className="label mb-2">Client Information</div>
+            <div className="grid grid-cols-2 gap-3 mb-3">
+              <input value={companyName} onChange={e => setCompanyName(e.target.value)} placeholder="Company name *" className={inputCls} />
+              <input value={contactName} onChange={e => setContactName(e.target.value)} placeholder="Contact name" className={inputCls} />
+              <input value={contactEmail} onChange={e => setContactEmail(e.target.value)} placeholder="Contact email" type="email" className={inputCls} />
+              <input value={contactPhone} onChange={e => setContactPhone(e.target.value)} placeholder="Contact phone" type="tel" className={inputCls} />
+            </div>
+            <input value={businessAddress} onChange={e => setBusinessAddress(e.target.value)} placeholder="Business address" className={`${inputCls} w-full mb-3`} />
+            <div className="text-[10px] uppercase tracking-widest text-jarvis-muted mb-1.5 font-medium">Accounting Contact</div>
             <div className="grid grid-cols-3 gap-3">
-              <input
-                value={companyName}
-                onChange={e => setCompanyName(e.target.value)}
-                placeholder="Company name"
-                className="px-3 py-2 rounded-xl bg-jarvis-ghost border border-jarvis-border text-sm text-jarvis-ink placeholder-jarvis-muted outline-none focus:border-jarvis-primary/50 transition-colors"
-              />
-              <input
-                value={clientName}
-                onChange={e => setClientName(e.target.value)}
-                placeholder="Contact name"
-                className="px-3 py-2 rounded-xl bg-jarvis-ghost border border-jarvis-border text-sm text-jarvis-ink placeholder-jarvis-muted outline-none focus:border-jarvis-primary/50 transition-colors"
-              />
-              <input
-                value={clientEmail}
-                onChange={e => setClientEmail(e.target.value)}
-                placeholder="Email"
-                type="email"
-                className="px-3 py-2 rounded-xl bg-jarvis-ghost border border-jarvis-border text-sm text-jarvis-ink placeholder-jarvis-muted outline-none focus:border-jarvis-primary/50 transition-colors"
-              />
+              <input value={acctContact} onChange={e => setAcctContact(e.target.value)} placeholder="Name" className={inputCls} />
+              <input value={acctPhone} onChange={e => setAcctPhone(e.target.value)} placeholder="Phone" type="tel" className={inputCls} />
+              <input value={acctEmail} onChange={e => setAcctEmail(e.target.value)} placeholder="Email" type="email" className={inputCls} />
             </div>
           </div>
 
-          {/* Shipping Lanes */}
+          {/* ── Storage Rates ── */}
+          <SectionTable
+            title="Monthly Storage"
+            rows={[
+              ["30×36×24 (small pallet)", <RateInput value={rates.storage.small_30x36x24} onChange={v => setRate('storage','small_30x36x24',v)} />],
+              ["40×48×60 (standard)", <RateInput value={rates.storage.standard_40x48x60} onChange={v => setRate('storage','standard_40x48x60',v)} />],
+              ["40×48×72 (tall)", <RateInput value={rates.storage.tall_40x48x72} onChange={v => setRate('storage','tall_40x48x72',v)} />],
+              ["40×48×over 72 (oversized)", <RateInput value={rates.storage.oversized_40x48xover72} onChange={v => setRate('storage','oversized_40x48xover72',v)} />],
+            ]}
+          />
+
+          {/* ── Receiving Palletized ── */}
+          <SectionTable
+            title="Receiving — Palletized"
+            rows={[
+              ["Per pallet (1 SKU)", <RateInput value={rates.receiving_palletized.single_sku} onChange={v => setRate('receiving_palletized','single_sku',v)} />],
+              ["Per pallet (2 SKUs)", <RateInput value={rates.receiving_palletized.two_sku} onChange={v => setRate('receiving_palletized','two_sku',v)} />],
+              ["Per pallet (Mixed SKU)", <RateInput value={rates.receiving_palletized.mixed_sku} onChange={v => setRate('receiving_palletized','mixed_sku',v)} />],
+            ]}
+          />
+
+          {/* ── Receiving Loose ── */}
+          <SectionTable
+            title="Receiving — Loose Cartons"
+            rows={[
+              ["Per carton", <RateInput value={rates.receiving_loose.per_carton} onChange={v => setRate('receiving_loose','per_carton',v)} />],
+              ["Counting pieces (per piece)", <RateInput value={rates.receiving_loose.count_per_piece} onChange={v => setRate('receiving_loose','count_per_piece',v)} />],
+            ]}
+          />
+
+          {/* ── Container Unloading ── */}
+          <SectionTable
+            title="Container Unloading (floor loaded, incl. 10 SKUs)"
+            rows={[
+              ["20' container (incl. 500 cartons)", <RateInput value={rates.container_unloading.twenty_ft} onChange={v => setRate('container_unloading','twenty_ft',v)} />],
+              ["40' container (incl. 1000 cartons)", <RateInput value={rates.container_unloading.forty_ft} onChange={v => setRate('container_unloading','forty_ft',v)} />],
+              ["45' container (incl. 1000 cartons)", <RateInput value={rates.container_unloading.fortyfive_ft} onChange={v => setRate('container_unloading','fortyfive_ft',v)} />],
+              ["Each additional 250 packages", <RateInput value={rates.container_unloading.additional_250_packages} onChange={v => setRate('container_unloading','additional_250_packages',v)} />],
+              ["Each additional 10 SKUs", <RateInput value={rates.container_unloading.additional_10_skus} onChange={v => setRate('container_unloading','additional_10_skus',v)} />],
+            ]}
+          />
+
+          {/* ── Outbound Small Parcel ── */}
+          <SectionTable
+            title="Outbound — Small Parcel (FedEx / UPS / USPS)"
+            rows={[
+              ["Order processing", <RateInput value={rates.outbound_parcel.order_processing} onChange={v => setRate('outbound_parcel','order_processing',v)} />],
+              ["Per pick (under 30 lbs)", <RateInput value={rates.outbound_parcel.per_pick} onChange={v => setRate('outbound_parcel','per_pick',v)} />],
+              ["Rush order fee", <RateInput value={rates.outbound_parcel.rush_order} onChange={v => setRate('outbound_parcel','rush_order',v)} />],
+            ]}
+          />
+
+          {/* ── Outbound Palletization ── */}
+          <SectionTable
+            title="Outbound — Palletization (LTL / FTL)"
+            rows={[
+              ["Per pallet", <RateInput value={rates.outbound_pallet.per_pallet} onChange={v => setRate('outbound_pallet','per_pallet',v)} />],
+              ["Per pick (under 30 lbs)", <RateInput value={rates.outbound_pallet.per_pick} onChange={v => setRate('outbound_pallet','per_pick',v)} />],
+              ["Bill of lading", <RateInput value={rates.outbound_pallet.bol} onChange={v => setRate('outbound_pallet','bol',v)} />],
+              ["Rush order fee", <RateInput value={rates.outbound_pallet.rush_order} onChange={v => setRate('outbound_pallet','rush_order',v)} />],
+            ]}
+          />
+
+          {/* ── Special Projects ── */}
+          <SectionTable
+            title="Special Projects"
+            rows={[
+              ["Per man hour (standard)", <RateInput value={rates.special_projects.man_hour} onChange={v => setRate('special_projects','man_hour',v)} />],
+              ["Per man hour (forklift)", <RateInput value={rates.special_projects.man_hour_forklift} onChange={v => setRate('special_projects','man_hour_forklift',v)} />],
+              ["Per man hour (manager)", <RateInput value={rates.special_projects.man_hour_manager} onChange={v => setRate('special_projects','man_hour_manager',v)} />],
+              ["Per carton / pallet label", <RateInput value={rates.special_projects.label} onChange={v => setRate('special_projects','label',v)} />],
+              ["Scanning serial #", <RateInput value={rates.special_projects.serial_scan} onChange={v => setRate('special_projects','serial_scan',v)} />],
+            ]}
+          />
+
+          {/* ── Integrations ── */}
+          <SectionTable
+            title="Integrations"
+            rows={[
+              ["Pre-built (Amazon, Shopify, etc.) — one-time", <RateInput value={rates.integrations.prebuilt} onChange={v => setRate('integrations','prebuilt',v)} />],
+              ["Monthly integration fee", <RateInput value={rates.integrations.monthly} onChange={v => setRate('integrations','monthly',v)} />],
+              ["Custom integration (per hour)", <RateInput value={rates.integrations.custom_per_hour} onChange={v => setRate('integrations','custom_per_hour',v)} />],
+              ["EDI", <RateInput value={rates.integrations.edi} onChange={v => setRate('integrations','edi',v)} prefix="" disabled={rates.integrations.edi === 'TBD'} />],
+            ]}
+          />
+
+          {/* ── Re-Bill & Minimums ── */}
+          <SectionTable
+            title="3PL Re-Bill & Monthly Minimums"
+            rows={[
+              ["Re-bill per tracking (FedEx/UPS/USPS/DHL)", <RateInput value={rates.rebill_per_tracking} onChange={v => setTopRate('rebill_per_tracking',v)} />],
+              ["Monthly handling minimum", <RateInput value={rates.minimums.handling} onChange={v => setRate('minimums','handling',v)} step="1" />],
+              ["Monthly storage minimum", <RateInput value={rates.minimums.storage} onChange={v => setRate('minimums','storage',v)} step="1" />],
+            ]}
+          />
+
+          {/* ── Estimated Monthly Volume ── */}
           <div>
-            <div className="flex items-center justify-between mb-2">
-              <div className="label">Shipping Lanes</div>
-              <button onClick={addLane} className="text-[11px] text-jarvis-primary flex items-center gap-1 hover:underline">
-                <Plus size={10} /> Add lane
-              </button>
-            </div>
-            <div className="space-y-2">
-              {lanes.map((l, i) => (
-                <div key={i} className="grid grid-cols-6 gap-2 items-center">
-                  <input
-                    value={l.origin}
-                    onChange={e => updateLane(i, 'origin', e.target.value)}
-                    placeholder="Origin"
-                    className="px-3 py-2 rounded-xl bg-jarvis-ghost border border-jarvis-border text-xs text-jarvis-ink placeholder-jarvis-muted outline-none col-span-1 focus:border-jarvis-primary/50 transition-colors"
-                  />
-                  <input
-                    value={l.destination}
-                    onChange={e => updateLane(i, 'destination', e.target.value)}
-                    placeholder="Destination"
-                    className="px-3 py-2 rounded-xl bg-jarvis-ghost border border-jarvis-border text-xs text-jarvis-ink placeholder-jarvis-muted outline-none col-span-1 focus:border-jarvis-primary/50 transition-colors"
-                  />
-                  <input
-                    value={l.rate}
-                    onChange={e => updateLane(i, 'rate', e.target.value)}
-                    placeholder="$/mi"
-                    type="number"
-                    step="0.01"
-                    className="px-3 py-2 rounded-xl bg-jarvis-ghost border border-jarvis-border text-xs text-jarvis-ink placeholder-jarvis-muted outline-none focus:border-jarvis-primary/50 transition-colors"
-                  />
-                  <input
-                    value={l.volume}
-                    onChange={e => updateLane(i, 'volume', e.target.value)}
-                    placeholder="Vol/mo"
-                    type="number"
-                    className="px-3 py-2 rounded-xl bg-jarvis-ghost border border-jarvis-border text-xs text-jarvis-ink placeholder-jarvis-muted outline-none focus:border-jarvis-primary/50 transition-colors"
-                  />
-                  <input
-                    value={l.per_shipment}
-                    onChange={e => updateLane(i, 'per_shipment', e.target.value)}
-                    placeholder="$/ship"
-                    type="number"
-                    className="px-3 py-2 rounded-xl bg-jarvis-ghost border border-jarvis-border text-xs text-jarvis-ink placeholder-jarvis-muted outline-none focus:border-jarvis-primary/50 transition-colors"
-                  />
-                  {lanes.length > 1 && (
-                    <button onClick={() => removeLane(i)} className="p-1 text-jarvis-muted hover:text-jarvis-danger transition-colors">
-                      <Trash2 size={12} />
-                    </button>
-                  )}
-                </div>
-              ))}
+            <div className="label mb-2">Estimated Monthly Volume</div>
+            <div className="grid grid-cols-3 gap-3">
+              <div>
+                <div className="text-[10px] uppercase tracking-wider text-jarvis-muted mb-1">Pallets stored</div>
+                <input value={volPallets} onChange={e => setVolPallets(e.target.value)} type="number" min="0" placeholder="0" className={inputCls} />
+              </div>
+              <div>
+                <div className="text-[10px] uppercase tracking-wider text-jarvis-muted mb-1">Orders / month</div>
+                <input value={volOrders} onChange={e => setVolOrders(e.target.value)} type="number" min="0" placeholder="0" className={inputCls} />
+              </div>
+              <div>
+                <div className="text-[10px] uppercase tracking-wider text-jarvis-muted mb-1">Total picks / month</div>
+                <input value={volPicks} onChange={e => setVolPicks(e.target.value)} type="number" min="0" placeholder="0" className={inputCls} />
+              </div>
             </div>
           </div>
 
-          {/* Fuel + Monthly */}
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <div className="label mb-2">Fuel Surcharge %</div>
-              <input
-                value={fuelPct}
-                onChange={e => setFuelPct(e.target.value)}
-                type="number"
-                className="w-full px-3 py-2 rounded-xl bg-jarvis-ghost border border-jarvis-border text-sm text-jarvis-ink outline-none focus:border-jarvis-primary/50 transition-colors"
-              />
-            </div>
-            <div>
-              <div className="label mb-2">Monthly Shipments (total)</div>
-              <input
-                value={monthlyShipments}
-                onChange={e => setMonthlyShipments(e.target.value)}
-                type="number"
-                className="w-full px-3 py-2 rounded-xl bg-jarvis-ghost border border-jarvis-border text-sm text-jarvis-ink outline-none focus:border-jarvis-primary/50 transition-colors"
-              />
-            </div>
-          </div>
-
-          {/* Accessorials */}
-          <div>
-            <div className="label mb-2">Accessorial Charges</div>
-            <div className="space-y-1 mb-2">
-              {accessorials.map((a, i) => (
-                <div key={i} className="flex items-center justify-between px-3 py-1.5 rounded-lg border border-jarvis-border bg-jarvis-surface text-xs">
-                  <span className="text-jarvis-ink">{a.name}</span>
-                  <div className="flex items-center gap-2">
-                    <span className="text-jarvis-body">${a.amount}</span>
-                    <button onClick={() => setAccessorials(accessorials.filter((_, idx) => idx !== i))} className="text-jarvis-muted hover:text-jarvis-danger transition-colors">
-                      <X size={10} />
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-            <div className="flex gap-2">
-              <input
-                value={newAcc.name}
-                onChange={e => setNewAcc({ ...newAcc, name: e.target.value })}
-                placeholder="Service name"
-                onKeyDown={e => e.key === 'Enter' && addAccessorial()}
-                className="flex-1 px-3 py-2 rounded-xl bg-jarvis-ghost border border-jarvis-border text-xs text-jarvis-ink placeholder-jarvis-muted outline-none focus:border-jarvis-primary/50 transition-colors"
-              />
-              <input
-                value={newAcc.amount}
-                onChange={e => setNewAcc({ ...newAcc, amount: e.target.value })}
-                placeholder="$"
-                type="number"
-                onKeyDown={e => e.key === 'Enter' && addAccessorial()}
-                className="w-20 px-3 py-2 rounded-xl bg-jarvis-ghost border border-jarvis-border text-xs text-jarvis-ink placeholder-jarvis-muted outline-none focus:border-jarvis-primary/50 transition-colors"
-              />
-              <button
-                onClick={addAccessorial}
-                className="px-3 py-2 rounded-xl bg-jarvis-primary/15 text-jarvis-primary text-xs font-semibold hover:bg-jarvis-primary/25 transition-colors"
-              >
-                Add
-              </button>
-            </div>
-          </div>
-
-          {/* Cost Summary */}
-          {totalPerShipment > 0 && (
+          {/* ── Revenue Impact ── */}
+          {(volPallets || volOrders || volPicks) && (
             <div className="rounded-2xl border border-jarvis-primary/20 bg-jarvis-primary/5 p-4">
-              <div className="label mb-3">Cost Summary</div>
-              <div className="grid grid-cols-3 gap-4 text-center">
-                <div>
-                  <div className="text-[10px] text-jarvis-muted uppercase tracking-wider mb-1">Per Shipment</div>
-                  <div className="text-lg font-semibold text-jarvis-primary tabular-nums">${totalPerShipment.toLocaleString()}</div>
+              <div className="flex items-center gap-2 mb-3">
+                <TrendingUp size={14} className="text-jarvis-primary" />
+                <div className="label">Revenue Impact</div>
+              </div>
+              <div className="grid grid-cols-4 gap-3 mb-3">
+                <div className="text-center">
+                  <div className="text-[10px] text-jarvis-muted uppercase tracking-wider mb-1">Monthly Revenue</div>
+                  <div className="text-base font-semibold text-jarvis-primary tabular-nums">${estimates.monthlyRevenue.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
                 </div>
-                <div>
-                  <div className="text-[10px] text-jarvis-muted uppercase tracking-wider mb-1">Monthly</div>
-                  <div className="text-lg font-semibold text-jarvis-primary tabular-nums">${monthlyCost.toLocaleString()}</div>
+                <div className="text-center">
+                  <div className="text-[10px] text-jarvis-muted uppercase tracking-wider mb-1">Annual Projection</div>
+                  <div className="text-base font-semibold text-emerald-400 tabular-nums">${estimates.annualRevenue.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
                 </div>
-                <div>
-                  <div className="text-[10px] text-jarvis-muted uppercase tracking-wider mb-1">Annual</div>
-                  <div className="text-lg font-semibold text-jarvis-success tabular-nums">${annualProjection.toLocaleString()}</div>
+                <div className="text-center">
+                  <div className="text-[10px] text-jarvis-muted uppercase tracking-wider mb-1">Est. Margin</div>
+                  <div className="text-base font-semibold text-jarvis-ink tabular-nums">${estimates.monthlyMargin.toLocaleString(undefined, { maximumFractionDigits: 0 })}/mo</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-[10px] text-jarvis-muted uppercase tracking-wider mb-1">Margin %</div>
+                  <div className={`text-base font-semibold tabular-nums ${estimates.marginPct >= 50 ? 'text-emerald-400' : estimates.marginPct >= 30 ? 'text-yellow-400' : 'text-red-400'}`}>{estimates.marginPct.toFixed(1)}%</div>
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <div className="text-[10px] text-jarvis-muted uppercase tracking-wider">Labor rate for margin calc:</div>
+                <div className="flex items-center gap-1">
+                  <span className="text-[10px] text-jarvis-muted">$</span>
+                  <input value={laborRate} onChange={e => setLaborRate(e.target.value)} type="number" min="0" step="1" className="w-16 px-2 py-1 rounded-lg bg-jarvis-ghost border border-jarvis-border text-xs text-jarvis-ink text-right outline-none focus:border-jarvis-primary/50" />
+                  <span className="text-[10px] text-jarvis-muted">/hr</span>
                 </div>
               </div>
             </div>
           )}
 
-          {/* Services */}
-          <div>
-            <div className="label mb-2">Services Included</div>
-            <div className="grid grid-cols-3 gap-2">
-              {allServices.map(s => (
-                <button
-                  key={s}
-                  onClick={() => toggleService(s)}
-                  className={`px-3 py-2 rounded-xl text-xs text-left transition-all ${
-                    services.includes(s)
-                      ? 'bg-jarvis-primary/10 text-jarvis-primary border border-jarvis-primary/30'
-                      : 'bg-jarvis-ghost text-jarvis-muted border border-jarvis-border hover:bg-jarvis-surface-hover'
-                  }`}
-                >
-                  {services.includes(s) ? '✓ ' : ''}{s}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Terms */}
-          <div>
-            <div className="label mb-2">Terms</div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <div className="text-[10px] text-jarvis-muted uppercase tracking-wider mb-1">Valid Until</div>
-                <input
-                  value={terms.valid_until}
-                  onChange={e => setTerms({ ...terms, valid_until: e.target.value })}
-                  type="date"
-                  className="w-full px-3 py-2 rounded-xl bg-jarvis-ghost border border-jarvis-border text-sm text-jarvis-ink outline-none focus:border-jarvis-primary/50 transition-colors"
-                />
-              </div>
-              <div>
-                <div className="text-[10px] text-jarvis-muted uppercase tracking-wider mb-1">Payment Terms</div>
-                <input
-                  value={terms.payment}
-                  onChange={e => setTerms({ ...terms, payment: e.target.value })}
-                  placeholder="Net 30"
-                  className="w-full px-3 py-2 rounded-xl bg-jarvis-ghost border border-jarvis-border text-sm text-jarvis-ink placeholder-jarvis-muted outline-none focus:border-jarvis-primary/50 transition-colors"
-                />
-              </div>
-              <div>
-                <div className="text-[10px] text-jarvis-muted uppercase tracking-wider mb-1">Minimum Volume</div>
-                <input
-                  value={terms.minimum}
-                  onChange={e => setTerms({ ...terms, minimum: e.target.value })}
-                  placeholder="e.g. 20 shipments/mo"
-                  className="w-full px-3 py-2 rounded-xl bg-jarvis-ghost border border-jarvis-border text-sm text-jarvis-ink placeholder-jarvis-muted outline-none focus:border-jarvis-primary/50 transition-colors"
-                />
-              </div>
-              <div>
-                <div className="text-[10px] text-jarvis-muted uppercase tracking-wider mb-1">Contract Length</div>
-                <input
-                  value={terms.contract_length}
-                  onChange={e => setTerms({ ...terms, contract_length: e.target.value })}
-                  placeholder="e.g. 12 months"
-                  className="w-full px-3 py-2 rounded-xl bg-jarvis-ghost border border-jarvis-border text-sm text-jarvis-ink placeholder-jarvis-muted outline-none focus:border-jarvis-primary/50 transition-colors"
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* Executive Summary */}
+          {/* ── AI Summary ── */}
           <div>
             <div className="flex items-center justify-between mb-2">
               <div className="label">Executive Summary</div>
               <button
                 onClick={generateSummary}
                 disabled={generating || !companyName}
-                className="text-[11px] text-jarvis-primary flex items-center gap-1 hover:underline disabled:opacity-50 transition-opacity"
+                className="text-[11px] text-jarvis-primary flex items-center gap-1 hover:underline disabled:opacity-40 disabled:no-underline transition"
               >
                 {generating ? <Loader2 size={10} className="animate-spin" /> : <Sparkles size={10} />}
-                {generating ? 'Generating...' : 'AI Generate'}
+                {generating ? 'Generating…' : 'AI Generate'}
               </button>
             </div>
             <textarea
               value={summary}
               onChange={e => setSummary(e.target.value)}
+              placeholder="Executive summary for this agreement…"
               rows={3}
-              placeholder="A brief executive summary for the client..."
-              className="w-full px-3 py-2 rounded-xl bg-jarvis-ghost border border-jarvis-border text-sm text-jarvis-ink placeholder-jarvis-muted outline-none resize-none focus:border-jarvis-primary/50 transition-colors"
+              className="w-full px-3 py-2 rounded-xl bg-jarvis-ghost border border-jarvis-border text-sm text-jarvis-ink placeholder-jarvis-muted outline-none focus:border-jarvis-primary/50 transition-colors resize-none"
             />
           </div>
 
-          {/* Share URL (after save) */}
-          {shareUrl && (
-            <div className="rounded-2xl border border-jarvis-success/30 bg-jarvis-success/5 p-4">
-              <div className="flex items-center gap-2 mb-3">
-                <Link size={14} className="text-jarvis-success" />
-                <span className="text-sm font-semibold text-jarvis-success">Proposal Link Ready</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <input
-                  value={shareUrl}
-                  readOnly
-                  className="flex-1 px-3 py-2 rounded-xl bg-jarvis-ghost border border-jarvis-border text-xs text-jarvis-ink font-mono"
-                />
-                <button
-                  onClick={() => navigator.clipboard.writeText(shareUrl)}
-                  className="px-3 py-2 rounded-xl bg-jarvis-primary/15 text-jarvis-primary text-xs font-semibold hover:bg-jarvis-primary/25 transition-colors whitespace-nowrap"
-                >
-                  Copy
-                </button>
-                <button
-                  onClick={() => window.open(shareUrl, '_blank')}
-                  className="p-2 rounded-xl bg-jarvis-ghost text-jarvis-body text-xs font-semibold hover:bg-jarvis-surface-hover transition-colors"
-                  title="Preview"
-                >
-                  <Eye size={14} />
-                </button>
-              </div>
-            </div>
-          )}
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-jarvis-border">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 rounded-xl text-sm text-jarvis-body hover:text-jarvis-ink hover:bg-jarvis-ghost transition"
-          >
-            {shareUrl ? 'Close' : 'Cancel'}
-          </button>
-          <button
-            onClick={save}
-            disabled={saving || !companyName}
-            className="px-4 py-2 rounded-xl text-sm font-semibold bg-jarvis-primary/15 text-jarvis-primary border border-jarvis-primary/30 hover:bg-jarvis-primary/25 disabled:opacity-40 transition flex items-center gap-2"
-          >
-            {saving ? <Loader2 size={14} className="animate-spin" /> : <FileText size={14} />}
-            {shareUrl ? 'Regenerate Link' : 'Generate Proposal Link'}
-          </button>
+        <div className="px-6 py-4 border-t border-jarvis-border flex items-center gap-3">
+          {shareUrl ? (
+            <>
+              <div className="flex-1 flex items-center gap-2 px-3 py-2 rounded-xl bg-jarvis-ghost border border-jarvis-border overflow-hidden">
+                <Link size={14} className="text-jarvis-primary flex-shrink-0" />
+                <span className="text-xs text-jarvis-body truncate">{shareUrl}</span>
+              </div>
+              <button
+                onClick={() => { navigator.clipboard.writeText(shareUrl); }}
+                className="px-4 py-2 rounded-xl text-xs font-semibold bg-jarvis-primary/15 text-jarvis-primary hover:bg-jarvis-primary/25 transition-colors flex-shrink-0"
+              >
+                Copy Link
+              </button>
+              <button
+                onClick={() => window.open(shareUrl, '_blank')}
+                className="px-3 py-2 rounded-xl text-xs font-semibold border border-jarvis-border text-jarvis-body hover:bg-jarvis-ghost transition-colors flex-shrink-0 flex items-center gap-1"
+              >
+                <Eye size={12} /> Preview
+              </button>
+            </>
+          ) : (
+            <>
+              <button onClick={onClose} className="px-4 py-2 rounded-xl text-sm text-jarvis-muted border border-jarvis-border hover:bg-jarvis-ghost transition-colors">
+                Cancel
+              </button>
+              <button
+                onClick={save}
+                disabled={saving || !companyName}
+                className="flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold bg-jarvis-primary/15 text-jarvis-primary border border-jarvis-primary/20 hover:bg-jarvis-primary/25 disabled:opacity-40 transition-colors"
+              >
+                {saving ? <Loader2 size={14} className="animate-spin" /> : <FileText size={14} />}
+                {saving ? 'Saving…' : 'Save & Generate Link'}
+              </button>
+            </>
+          )}
         </div>
+
       </div>
     </div>
   );
