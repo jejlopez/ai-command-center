@@ -29,17 +29,23 @@ const HomeLife   = lazy(() => import("./views/HomeLife.jsx"));
 const Health     = lazy(() => import("./views/Health.jsx"));
 const Skills     = lazy(() => import("./views/Skills.jsx"));
 import { VoiceButton } from "./components/VoiceButton.jsx";
+import { CommandPalette } from "./components/CommandPalette.jsx";
+import { NotificationCenter } from "./components/NotificationCenter.jsx";
+import { QuickCapture } from "./components/QuickCapture.jsx";
 import { useNotifications } from "./hooks/useNotifications.js";
+import { useKeyboardNav } from "./hooks/useKeyboardNav.js";
 import { useJarvisBrief, useOnboarding, useCostToday } from "./hooks/useJarvis.js";
 import { useAuth } from "./hooks/useAuth.js";
 import { jarvis } from "./lib/jarvis.js";
 
 export default function App() {
   const [active, setActive] = useState("home");
+  const [cmdOpen, setCmdOpen] = useState(false);
   const [health, setHealth] = useState(null);
   const [localMode, setLocalMode] = useState(() => localStorage.getItem("jarvis_local_mode") === "true");
   const auth = useAuth();
   useNotifications();
+  useKeyboardNav(setActive);
   const { brief, rail, recentRuns, error, loading, decide, regenerateBrief } = useJarvisBrief();
   const { status: onboardingStatus, loading: onboardingLoading, refresh: refreshOnboarding } = useOnboarding();
   const { cost } = useCostToday();
@@ -47,6 +53,18 @@ export default function App() {
   useEffect(() => {
     jarvis.health().then(setHealth).catch(() => setHealth(null));
   }, [onboardingStatus?.complete]);
+
+  useEffect(() => {
+    const handler = (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+        e.preventDefault();
+        setCmdOpen(prev => !prev);
+      }
+      if (e.key === "Escape") setCmdOpen(false);
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, []);
 
   // Auth gate — show login unless authenticated or in local mode
   if (auth.loading) {
@@ -114,6 +132,7 @@ export default function App() {
           </h1>
           <div className="flex items-center gap-3">
             <VoiceButton />
+            <NotificationCenter />
             <StatusStrip vaultLocked={health?.vaultLocked ?? true} cost={cost} />
           </div>
         </header>
@@ -150,6 +169,15 @@ export default function App() {
       </main>
 
       {health?.vaultLocked && <VaultLockedOverlay onUnlocked={refreshHealth} />}
+
+      <QuickCapture />
+
+      {cmdOpen && (
+        <CommandPalette
+          onClose={() => setCmdOpen(false)}
+          onNavigate={(page) => { setActive(page); setCmdOpen(false); }}
+        />
+      )}
     </div>
   );
 }
