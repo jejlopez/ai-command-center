@@ -5,6 +5,7 @@ export function useApprovalsSupa({ leadId, dealId, statusFilter } = {}) {
   const [approvals, setApprovals] = useState([]);
   const [loading, setLoading] = useState(true);
   const channelRef = useRef(null);
+  const refreshRef = useRef(null);
 
   const refresh = useCallback(async () => {
     if (!supabase) { setLoading(false); return; }
@@ -21,16 +22,21 @@ export function useApprovalsSupa({ leadId, dealId, statusFilter } = {}) {
     setLoading(false);
   }, [leadId, dealId, statusFilter]);
 
+  refreshRef.current = refresh;
+
   useEffect(() => { refresh(); }, [refresh]);
 
+  // Realtime — subscribe once, use ref for callback
   useEffect(() => {
     if (!supabase) return;
     const channel = supabase.channel("approvals_rt")
-      .on("postgres_changes", { event: "*", schema: "public", table: "approvals" }, () => refresh())
+      .on("postgres_changes", { event: "*", schema: "public", table: "approvals" }, () => {
+        refreshRef.current?.();
+      })
       .subscribe();
     channelRef.current = channel;
     return () => { channel.unsubscribe(); };
-  }, [refresh]);
+  }, []);
 
   const pending = approvals.filter(a => a.status === "pending");
 

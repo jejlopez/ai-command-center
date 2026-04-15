@@ -9,6 +9,7 @@ const EMPTY = { leads: [], loading: true, error: null };
 export function useLeadsSupa() {
   const [data, setData] = useState(EMPTY);
   const channelRef = useRef(null);
+  const refreshRef = useRef(null);
 
   const refresh = useCallback(async () => {
     if (!supabase) {
@@ -49,18 +50,23 @@ export function useLeadsSupa() {
     }
   }, []);
 
+  // Keep ref in sync so realtime callback always calls latest refresh
+  refreshRef.current = refresh;
+
   useEffect(() => { refresh(); }, [refresh]);
 
-  // Realtime subscription
+  // Realtime subscription — created once, uses ref to avoid resubscribe
   useEffect(() => {
     if (!supabase) return;
     const channel = supabase
       .channel("leads_changes")
-      .on("postgres_changes", { event: "*", schema: "public", table: "leads" }, () => refresh())
+      .on("postgres_changes", { event: "*", schema: "public", table: "leads" }, () => {
+        refreshRef.current?.();
+      })
       .subscribe();
     channelRef.current = channel;
     return () => { channel.unsubscribe(); };
-  }, [refresh]);
+  }, []); // empty deps — subscribe once
 
   const createLead = useCallback(async (fields) => {
     if (!supabase) return null;
