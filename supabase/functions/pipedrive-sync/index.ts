@@ -56,6 +56,21 @@ async function fetchPipedrive(
   return json.data ?? [];
 }
 
+async function fetchStageMap(domain: string, apiToken: string): Promise<Record<number, string>> {
+  const map: Record<number, string> = {};
+  try {
+    const url = `https://${domain}.pipedrive.com/api/v1/stages?api_token=${apiToken}`;
+    const res = await fetch(url);
+    if (res.ok) {
+      const json = await res.json();
+      for (const s of (json.data ?? [])) {
+        map[s.id] = s.name;
+      }
+    }
+  } catch {}
+  return map;
+}
+
 async function syncDeals(
   supabase: ReturnType<typeof createClient>,
   userId: string,
@@ -66,8 +81,19 @@ async function syncDeals(
   const result: SyncResult = { resource: 'deals', fetched: 0, upserted: 0, errors: [] };
 
   try {
+    // Fetch stage names first so we can map stage_id → real name
+    const stageMap = await fetchStageMap(domain, apiToken);
+
     const deals = await fetchPipedrive(domain, apiToken, 'deals', since);
     result.fetched = deals.length;
+
+    // Lead-stage names — these go to `leads` table, not `deals`
+    const LEAD_STAGES = ['new lead', 'new leads', 'pipedrive leads', 'gather info'];
+
+    function isLeadStage(stageName: string): boolean {
+      const lower = (stageName ?? '').toLowerCase();
+      return LEAD_STAGES.some(ls => lower.includes(ls));
+    }
 
     for (const d of deals) {
       try {
@@ -83,13 +109,41 @@ async function syncDeals(
           if (contact) contactId = contact.id;
         }
 
+        const stageName = d.stage_name ?? stageMap[d.stage_id] ?? mapStage(d.stage_id, d.stage_order_nr?.toString());
+
+        // Route to leads table if it's a lead stage
+        if (isLeadStage(stageName) && d.status !== 'won' && d.status !== 'lost') {
+          const leadMapped: any = {
+            user_id: userId,
+            pipedrive_id: d.id,
+            company: d.org_name ?? d.title ?? `Lead #${d.id}`,
+            contact_id: contactId,
+            source: 'pipedrive',
+            status: 'new',
+            notes: d.title ?? null,
+            updated_at: new Date().toISOString(),
+          };
+
+          const { error } = await supabase
+            .from('leads')
+            .upsert(leadMapped, { onConflict: 'user_id,pipedrive_id' });
+
+          if (error) {
+            result.errors.push(`lead-deal ${d.id}: ${error.message}`);
+          } else {
+            result.upserted++;
+          }
+          continue; // skip deals table for this record
+        }
+
+        // Real deal — goes to deals table
         const mapped: any = {
           user_id: userId,
           pipedrive_id: d.id,
           company: d.org_name ?? d.title ?? `Deal #${d.id}`,
           contact_name: d.person_name ?? null,
           contact_id: contactId,
-          stage: d.stage_name ?? mapStage(d.stage_id, d.stage_order_nr?.toString()),
+          stage: stageName,
           value_usd: d.value ?? 0,
           probability: d.probability ?? 50,
           close_date: d.expected_close_date ?? null,
