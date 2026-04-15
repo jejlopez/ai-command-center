@@ -5,11 +5,11 @@ import { stagger } from "../../lib/motion.js";
 import { dealAge, ageColor, dealScore, scoreColor } from "../../lib/dealScore.js";
 
 const STAGE_ORDER = [
-  { key: "Proposal",                  label: "Proposal",    border: "border-blue-400"   },
-  { key: "Follow up on proposal",     label: "Follow-up",   border: "border-jarvis-warning" },
-  { key: "Negotiations Started",      label: "Negotiation", border: "border-yellow-400" },
-  { key: "Demo Scheduled/Site Visit", label: "Demo/Visit",  border: "border-green-400"  },
-  { key: "Signing Contract",          label: "Signing",     border: "border-jarvis-success" },
+  { key: "Proposal",                  label: "Proposal",    color: "text-blue-400",        dot: "bg-blue-400"   },
+  { key: "Follow up on proposal",     label: "Follow-up",   color: "text-jarvis-warning",  dot: "bg-jarvis-warning" },
+  { key: "Negotiations Started",      label: "Negotiation", color: "text-yellow-400",      dot: "bg-yellow-400" },
+  { key: "Demo Scheduled/Site Visit", label: "Demo/Visit",  color: "text-green-400",       dot: "bg-green-400"  },
+  { key: "Signing Contract",          label: "Signing",     color: "text-jarvis-success",  dot: "bg-jarvis-success" },
 ];
 
 const COLOR_MAP = {
@@ -60,7 +60,7 @@ function DealCard({ deal, onClick }) {
     <motion.button
       variants={stagger.item}
       onClick={() => onClick?.(deal)}
-      className="w-full text-left p-2.5 rounded-lg border border-jarvis-border bg-jarvis-surface hover:bg-jarvis-surface-hover transition-all"
+      className="w-full text-left p-3 rounded-xl bg-white/[0.02] border border-white/[0.06] hover:bg-white/[0.04] hover:border-white/[0.1] transition-all duration-200"
     >
       <div className="flex justify-between items-center">
         <div className="min-w-0 flex-1">
@@ -92,10 +92,13 @@ function StageGroup({ stage, deals, onOpenDeal }) {
   const totalValue = deals.reduce((s, d) => s + (d.value || 0), 0);
 
   return (
-    <div className="mb-3">
-      <div className={`flex justify-between items-center mb-1.5 pb-1 border-b-2 ${stage.border}`}>
-        <span className="text-[10px] font-bold uppercase tracking-wider text-jarvis-muted">{stage.label}</span>
-        <span className="text-[10px] text-jarvis-muted/50">{deals.length} · ${(totalValue / 1000).toFixed(0)}K</span>
+    <div className="mb-4">
+      <div className="flex justify-between items-center mb-2">
+        <div className="flex items-center gap-2">
+          <div className={`w-2 h-2 rounded-full ${stage.dot}`} />
+          <span className={`text-[10px] font-semibold uppercase tracking-[0.12em] ${stage.color}`}>{stage.label}</span>
+        </div>
+        <span className="text-[10px] text-jarvis-muted/40 tabular-nums">{deals.length} · ${(totalValue / 1000).toFixed(0)}K</span>
       </div>
       <div className="flex flex-col gap-1">
         {deals.map(d => (

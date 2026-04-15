@@ -3,11 +3,14 @@
 import { motion } from "framer-motion";
 import { fadeIn } from "../../lib/motion.js";
 
-function Stat({ label, value, color }) {
+function Stat({ label, value, color, isLast }) {
   return (
-    <div className="flex flex-col">
-      <span className="text-[9px] text-jarvis-muted uppercase tracking-wider">{label}</span>
-      <span className={`text-xl font-bold tabular-nums ${color || "text-jarvis-ink"}`}>{value}</span>
+    <div className="flex items-center gap-7">
+      <div className="flex flex-col">
+        <span className="text-[8px] text-jarvis-muted uppercase tracking-[0.15em] mb-0.5">{label}</span>
+        <span className={`text-lg font-display font-semibold tabular-nums leading-none ${color || "text-jarvis-ink"}`}>{value}</span>
+      </div>
+      {!isLast && <div className="w-px h-6 bg-jarvis-border/50" />}
     </div>
   );
 }
@@ -32,12 +35,12 @@ export function StatsBar({ deals = [], proposals = [], followUps = [], activeTab
       animate="show"
       className="flex items-center justify-between px-5 py-3 border-b border-jarvis-border bg-jarvis-surface/50"
     >
-      <div className="flex gap-7">
+      <div className="flex items-center gap-0">
         <Stat label="Pipeline" value={fmt(totalValue)} />
         <Stat label="Deals" value={deals.length} />
         <Stat label="Overdue" value={overdue} color={overdue > 0 ? "text-jarvis-danger" : undefined} />
         <Stat label="Proposals" value={proposalsOut} color="text-jarvis-primary" />
-        <Stat label="Closing" value={fmt(closingValue)} color="text-jarvis-success" />
+        <Stat label="Closing" value={fmt(closingValue)} color="text-jarvis-success" isLast />
       </div>
 
       <div className="flex gap-1.5 items-center">

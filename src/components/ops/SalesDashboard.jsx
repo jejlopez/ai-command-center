@@ -3,7 +3,7 @@
 
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { stagger } from "../../lib/motion.js";
+import { stagger, fadeIn } from "../../lib/motion.js";
 import { PipelineBoard } from "../sales/PipelineBoard.jsx";
 import { DealRoomPanel } from "../sales/DealRoomPanel.jsx";
 import { DealComparison } from "./DealComparison.jsx";
@@ -21,21 +21,27 @@ function CalendarToday({ calendarEvents = [] }) {
     );
   }
 
-  const borderColors = [
-    "border-l-blue-400", "border-l-jarvis-warning", "border-l-jarvis-success",
-    "border-l-jarvis-purple", "border-l-cyan-400",
+  const dotColors = [
+    "bg-blue-400", "bg-jarvis-warning", "bg-jarvis-success",
+    "bg-jarvis-purple", "bg-cyan-400",
   ];
 
   return (
-    <div className="flex flex-col gap-1.5">
+    <div className="flex flex-col gap-2">
       {calendarEvents.map((ev, i) => {
         const time = ev.start_h != null
           ? `${ev.start_h}:${String(ev.start_m ?? 0).padStart(2, "0")}`
           : ev.start_time || "";
         return (
-          <div key={i} className={`border-l-2 ${borderColors[i % borderColors.length]} pl-2`}>
-            <div className="text-[11px] text-jarvis-ink">{time && `${time} — `}{ev.title || ev.summary}</div>
-            {ev.location && <div className="text-[9px] text-jarvis-muted">{ev.location}</div>}
+          <div key={i} className="flex items-start gap-2">
+            <div className={`w-1.5 h-1.5 rounded-full mt-1.5 shrink-0 ${dotColors[i % dotColors.length]}`} />
+            <div>
+              <div className="text-[11px] text-jarvis-ink leading-snug">
+                {time && <span className="text-jarvis-muted font-mono text-[10px] mr-1">{time}</span>}
+                {ev.title || ev.summary}
+              </div>
+              {ev.location && <div className="text-[9px] text-jarvis-muted/70">{ev.location}</div>}
+            </div>
           </div>
         );
       })}
@@ -92,7 +98,7 @@ function LeadsCompact({ leads = [] }) {
   return (
     <div className="flex flex-col gap-1">
       <div className="flex items-center justify-between mb-0.5">
-        <span className="text-[12px] font-semibold text-jarvis-ink">Leads</span>
+        <span className="text-[12px] font-display font-semibold text-jarvis-ink">Leads</span>
         <span className="text-[9px] text-jarvis-muted">
           <span className="text-jarvis-success">{hot.length}</span> ·{" "}
           <span className="text-jarvis-warning">{warm.length}</span> ·{" "}
@@ -135,7 +141,7 @@ export function SalesDashboard({ ops, onRefresh }) {
         {/* COLUMN 1: Pipeline */}
         <div className="border-r border-jarvis-border/50 p-4 overflow-y-auto" style={{ scrollbarWidth: "thin" }}>
           <div className="flex items-center justify-between mb-3">
-            <span className="text-[13px] font-semibold text-jarvis-ink">Pipeline</span>
+            <span className="text-sm font-display font-semibold text-jarvis-ink">Pipeline</span>
             <button
               onClick={() => setCompareOpen(true)}
               className="text-[10px] text-jarvis-muted hover:text-jarvis-ink transition"
@@ -169,7 +175,7 @@ export function SalesDashboard({ ops, onRefresh }) {
           <div className="mb-4">
             <div className="flex items-center gap-1.5 mb-2">
               <Calendar size={12} className="text-jarvis-muted" />
-              <span className="text-[12px] font-semibold text-jarvis-ink">Today</span>
+              <span className="text-[12px] font-display font-semibold text-jarvis-ink">Today</span>
             </div>
             <CalendarToday calendarEvents={calendarEvents} />
           </div>
@@ -179,7 +185,7 @@ export function SalesDashboard({ ops, onRefresh }) {
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-1.5">
                 <Clock size={12} className="text-jarvis-muted" />
-                <span className="text-[12px] font-semibold text-jarvis-ink">Follow-ups</span>
+                <span className="text-[12px] font-display font-semibold text-jarvis-ink">Follow-ups</span>
               </div>
               {followUps.filter(f => f.due_date && new Date(f.due_date) <= new Date()).length > 0 && (
                 <span className="text-[9px] bg-jarvis-danger/10 text-jarvis-danger px-1.5 py-0.5 rounded">
