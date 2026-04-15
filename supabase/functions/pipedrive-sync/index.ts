@@ -98,13 +98,15 @@ async function syncDeals(
     for (const d of deals) {
       try {
         // Link to contacts table if person exists
+        // Pipedrive API returns person_id as number or object { value: number }
         let contactId = null;
-        if (d.person_id) {
+        const personPdId = typeof d.person_id === 'object' ? d.person_id?.value : d.person_id;
+        if (personPdId) {
           const { data: contact } = await supabase
             .from('contacts')
             .select('id')
             .eq('user_id', userId)
-            .eq('pipedrive_id', d.person_id)
+            .eq('pipedrive_id', personPdId)
             .maybeSingle();
           if (contact) contactId = contact.id;
         }
@@ -113,6 +115,37 @@ async function syncDeals(
 
         // Route to leads table if it's a lead stage
         if (isLeadStage(stageName) && d.status !== 'won' && d.status !== 'lost') {
+          // Create or find contact from deal's person data
+          if (!contactId && d.person_name) {
+            const personEmail = d.cc_email ?? null;
+
+            // Try to find by name first
+            const { data: existingContact } = await supabase
+              .from('contacts')
+              .select('id')
+              .eq('user_id', userId)
+              .eq('name', d.person_name)
+              .maybeSingle();
+
+            if (existingContact) {
+              contactId = existingContact.id;
+            } else {
+              // Create the contact
+              const { data: newContact } = await supabase
+                .from('contacts')
+                .insert({
+                  user_id: userId,
+                  name: d.person_name,
+                  email: personEmail,
+                  company: d.org_name ?? null,
+                  pipedrive_id: personPdId ?? null,
+                })
+                .select('id')
+                .single();
+              if (newContact) contactId = newContact.id;
+            }
+          }
+
           const leadMapped: any = {
             user_id: userId,
             pipedrive_id: d.id,
@@ -120,7 +153,7 @@ async function syncDeals(
             contact_id: contactId,
             source: 'pipedrive',
             status: 'new',
-            notes: d.title ?? null,
+            notes: [d.title, d.person_name, d.org_name].filter(Boolean).join(' — '),
             updated_at: new Date().toISOString(),
           };
 
@@ -192,7 +225,10 @@ async function syncPersons(
 
     for (const p of persons) {
       try {
-        const email = Array.isArray(p.email) ? p.email.find((e: any) => e.primary)?.value ?? p.email[0]?.value : p.email;
+        // Filter out pipedrivemail.com relay addresses — get real email
+        const allEmails = Array.isArray(p.email) ? p.email.map((e: any) => e.value).filter(Boolean) : [p.email].filter(Boolean);
+        const realEmails = allEmails.filter((e: string) => !e.includes('pipedrivemail.com'));
+        const email = realEmails[0] ?? allEmails[0] ?? null;
         const phone = Array.isArray(p.phone) ? p.phone.find((ph: any) => ph.primary)?.value ?? p.phone[0]?.value : p.phone;
 
         const mapped = {
@@ -200,7 +236,7 @@ async function syncPersons(
           pipedrive_id: p.id,
           name: p.name ?? `Person #${p.id}`,
           company: p.org_name ?? null,
-          role: p.job_title ?? null,
+          title: p.job_title ?? null,
           email: email ?? null,
           phone: phone ?? null,
           last_interaction: p.update_time ?? null,
