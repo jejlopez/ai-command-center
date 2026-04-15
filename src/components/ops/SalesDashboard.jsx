@@ -89,34 +89,23 @@ function FollowUpsColumn({ followUps = [], deals = [], onOpenDeal }) {
 function LeadsCompact({ leads = [] }) {
   if (!leads || leads.length === 0) return null;
 
-  const hot = leads.filter(l => l.fit_score === "hot");
-  const warm = leads.filter(l => l.fit_score === "warm");
-  const cold = leads.filter(l => l.fit_score === "cold" || !l.fit_score);
-
-  const dotColor = (fit) => fit === "hot" ? "bg-jarvis-success" : fit === "warm" ? "bg-jarvis-warning" : "bg-jarvis-muted/30";
+  const hot = leads.filter(l => l.fit_score === "hot" || l.attention === "hot");
+  const count = leads.length;
 
   return (
-    <div className="flex flex-col gap-1">
-      <div className="flex items-center justify-between mb-0.5">
-        <span className="text-[12px] font-display font-semibold text-jarvis-ink">Leads</span>
-        <span className="text-[9px] text-jarvis-muted">
-          <span className="text-jarvis-success">{hot.length}</span> ·{" "}
-          <span className="text-jarvis-warning">{warm.length}</span> ·{" "}
-          <span>{cold.length}</span>
-        </span>
-      </div>
-      {[...hot, ...warm, ...cold].slice(0, 5).map(l => (
-        <div key={l.id} className="flex items-center gap-1.5 py-1 cursor-pointer hover:bg-jarvis-ghost/20 rounded px-1 -mx-1 transition">
-          <div className={`w-[5px] h-[5px] rounded-full shrink-0 ${dotColor(l.fit_score)}`} />
-          <div className="min-w-0 flex-1">
-            <div className="text-[10px] text-jarvis-ink truncate">{l.title || l.org_name}</div>
-            <div className="text-[9px] text-jarvis-muted truncate">
-              {l.source || "New inbound"}
-              {l.research && <span className="text-jarvis-primary ml-1">· Researched</span>}
-            </div>
-          </div>
+    <div className="surface p-3">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-1.5">
+          <span className="text-[12px] font-display font-semibold text-jarvis-ink">Leads</span>
+          <span className="text-[9px] text-jarvis-ghost">({count})</span>
         </div>
-      ))}
+        {hot.length > 0 && (
+          <span className="text-[9px] text-jarvis-danger font-semibold">🔥 {hot.length} hot</span>
+        )}
+      </div>
+      <div className="text-[10px] text-jarvis-muted mt-1">
+        Full leads inbox in the <span className="text-jarvis-primary font-medium">Leads tab</span> →
+      </div>
     </div>
   );
 }
