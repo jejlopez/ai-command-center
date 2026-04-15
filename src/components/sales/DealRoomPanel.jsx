@@ -15,6 +15,8 @@ import { DealObjections } from "./DealObjections.jsx";
 import { ApprovalQueue } from "./ApprovalQueue.jsx";
 import { AuditLogViewer } from "./AuditLogViewer.jsx";
 import { dealHealth, whaleQuadrant } from "../../lib/dealHealth.js";
+import { PipelineEconomics } from "./PipelineEconomics.jsx";
+import { VoiceToCRM } from "./VoiceToCRM.jsx";
 
 function Tab({ label, icon: Icon, active, onClick, count }) {
   return (
@@ -156,6 +158,10 @@ export function DealRoomPanel({ deal: initialDeal, onClose }) {
           </div>
           <div className="mt-2">
             <ScoreZone score={health} whale={whale} breakdown={breakdown} labels={{ score: "Health", whale: "Whale" }} />
+          </div>
+          <div className="mt-2 flex items-center justify-between">
+            <PipelineEconomics deal={deal} />
+            <VoiceToCRM dealId={dealId} contactId={deal.contact_id} onComplete={() => {}} />
           </div>
         </div>
 

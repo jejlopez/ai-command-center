@@ -9,6 +9,7 @@ import { WinLossJournal } from "../ops/WinLossJournal.jsx";
 import { WeeklyReport } from "../ops/WeeklyReport.jsx";
 import { BriefingsPanel } from "../ops/BriefingsPanel.jsx";
 import { EmailTemplates } from "../ops/EmailTemplates.jsx";
+import { LearningDashboard } from "./LearningDashboard.jsx";
 
 export function PlaybookTab({ deals = [] }) {
   return (
@@ -38,6 +39,10 @@ export function PlaybookTab({ deals = [] }) {
 
       <motion.div variants={stagger.item}>
         <EmailTemplates />
+      </motion.div>
+
+      <motion.div variants={stagger.item}>
+        <LearningDashboard />
       </motion.div>
     </motion.div>
   );

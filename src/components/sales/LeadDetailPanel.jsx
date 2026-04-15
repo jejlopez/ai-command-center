@@ -14,6 +14,9 @@ import { LeadResearch }     from "./LeadResearch.jsx";
 import { LeadQualification } from "./LeadQualification.jsx";
 import { LeadSequence }     from "./LeadSequence.jsx";
 import { ConvertToDeal }    from "./ConvertToDeal.jsx";
+import { VoiceToCRM }       from "./VoiceToCRM.jsx";
+import { CallPrepPanel }    from "./CallPrepPanel.jsx";
+import { EmailDraftFlow }   from "./EmailDraftFlow.jsx";
 
 const TABS = [
   { id: "timeline",      label: "Timeline" },
@@ -116,10 +119,13 @@ export function LeadDetailPanel({ lead, onClose, onRefresh }) {
           onAction={onRefresh}
         />
 
-        {/* Convert to deal */}
-        {showConvert && (
-          <ConvertToDeal lead={lead} onRefresh={onRefresh} />
-        )}
+        {/* Convert to deal + Voice */}
+        <div className="flex items-center gap-2">
+          {showConvert && (
+            <ConvertToDeal lead={lead} onRefresh={onRefresh} />
+          )}
+          <VoiceToCRM leadId={lead.id} contactId={lead.contact_id} onComplete={onRefresh} />
+        </div>
       </div>
 
       {/* ── Tabs ── */}
