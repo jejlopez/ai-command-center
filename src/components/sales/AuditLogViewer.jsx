@@ -1,6 +1,18 @@
 import { useEffect, useState } from 'react';
-import supabase from '../../lib/supabase.js';
-import { formatDistanceToNow } from 'date-fns';
+import { supabase } from '../../lib/supabase.js';
+
+function timeAgo(dateStr) {
+  if (!dateStr) return "";
+  const diff = Date.now() - new Date(dateStr).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  if (days < 7) return `${days}d ago`;
+  return new Date(dateStr).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
 
 const ACTOR_STYLES = {
   jarvis: 'bg-purple-900/60 text-purple-300 border border-purple-700',
@@ -113,7 +125,7 @@ export default function AuditLogViewer({ leadId, dealId }) {
 
             {/* Timestamp */}
             <span className="text-[10px] text-gray-600 ml-auto">
-              {formatDistanceToNow(new Date(entry.created_at), { addSuffix: true })}
+              {timeAgo(entry.created_at)}
             </span>
           </div>
 
