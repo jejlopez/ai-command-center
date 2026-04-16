@@ -331,76 +331,69 @@ export async function crmRoutes(app: FastifyInstance) {
         : "";
 
       try {
-        // Step 1: Try to extract volumes from notes/context with code first
+        // Step 1: Extract real volumes from notes — use actual numbers, not buckets
         const allText = (context + " " + dealNotes).toLowerCase();
-        let autoDetectedBucket: string | null = null;
 
-        // Parse volume clues from text
-        const palletMatch = allText.match(/(\d[\d,]*)\s*pallets?/);
-        const orderMatch = allText.match(/(\d[\d,]*)\s*(orders?|shipments?|packages?|boxes?)\s*\/?\s*(mo|month|per month|monthly)/);
-        const parsedPallets = palletMatch ? parseInt(palletMatch[1].replace(/,/g, "")) : 0;
-        const parsedOrders = orderMatch ? parseInt(orderMatch[1].replace(/,/g, "")) : 0;
+        // Parse all pallet mentions, take the largest reasonable one
+        const palletMatches = [...allText.matchAll(/(\d[\d,]*)\s*pallets?/g)].map(m => parseInt(m[1].replace(/,/g, "")));
+        // Parse order/shipment mentions with or without /mo qualifier
+        const orderMatches = [...allText.matchAll(/(\d[\d,]*)\s*(orders?|shipments?|packages?|boxes?|pieces?)/g)].map(m => parseInt(m[1].replace(/,/g, "")));
 
-        if (parsedPallets > 200 || parsedOrders > 5000) autoDetectedBucket = "xlarge";
-        else if (parsedPallets > 80 || parsedOrders > 2000) autoDetectedBucket = "large";
-        else if (parsedPallets > 25 || parsedOrders > 500) autoDetectedBucket = "medium";
-        else if (parsedPallets > 8 || parsedOrders > 150) autoDetectedBucket = "small";
-        else if (parsedPallets > 0 || parsedOrders > 0) autoDetectedBucket = "tiny";
+        // Filter out unreasonable numbers (likely years, IDs, etc)
+        const reasonablePallets = palletMatches.filter(n => n > 0 && n < 10000);
+        const reasonableOrders = orderMatches.filter(n => n > 0 && n < 100000);
+
+        // Use the most common/median value, or the first one
+        const parsedPallets = reasonablePallets.length > 0 ? reasonablePallets.sort((a, b) => a - b)[Math.floor(reasonablePallets.length / 2)] : 0;
+        const parsedOrders = reasonableOrders.length > 0 ? reasonableOrders.sort((a, b) => a - b)[Math.floor(reasonableOrders.length / 2)] : 0;
 
         // Known large companies
         const orgLower = (deal.org_name || deal.title || "").toLowerCase();
-        if (/spacex|tesla|amazon|walmart|target|costco|nike/i.test(orgLower)) autoDetectedBucket = "xlarge";
+        const isKnownLarge = /spacex|tesla|amazon|walmart|target|costco|nike/i.test(orgLower);
 
-        // Stage-based defaults if no volume data
+        // Stage-based defaults
         const stage = (deal.stage || "").toLowerCase();
         const isNegotiating = stage.includes("negotiat") || stage.includes("proposal") || stage.includes("follow up");
         const isNewLead = stage.includes("new lead") || stage.includes("gather info");
 
+        let bucket: VolumeBucket;
         let bucketKey: string;
         let confidencePct: number;
         let confidenceWhy: string;
 
-        if (autoDetectedBucket) {
-          // Code-detected volume — high confidence
-          bucketKey = autoDetectedBucket;
-          confidencePct = parsedPallets > 0 || parsedOrders > 0 ? 85 : 70;
-          confidenceWhy = parsedPallets > 0 || parsedOrders > 0
-            ? `Detected ${parsedPallets > 0 ? `${parsedPallets} pallets` : ""}${parsedPallets > 0 && parsedOrders > 0 ? " and " : ""}${parsedOrders > 0 ? `${parsedOrders} orders/mo` : ""} in deal notes`
-            : `Known large company — classified as ${autoDetectedBucket}`;
+        if (parsedPallets > 0 || parsedOrders > 0) {
+          // USE REAL NUMBERS from the notes — not bucket defaults
+          const pallets = parsedPallets || (parsedOrders > 0 ? Math.max(5, Math.ceil(parsedOrders / 50)) : 15);
+          const orders = parsedOrders || (parsedPallets > 0 ? parsedPallets * 20 : 300);
+          const palletsIn = Math.max(2, Math.ceil(pallets * 0.3));
+
+          bucket = { label: `Custom (from notes)`, pallets, orders, palletsIn };
+          bucketKey = `custom_${pallets}p_${orders}o`;
+          confidencePct = 85;
+          confidenceWhy = `Extracted from deal notes: ${parsedPallets > 0 ? `${parsedPallets} pallets` : ""}${parsedPallets > 0 && parsedOrders > 0 ? ", " : ""}${parsedOrders > 0 ? `${parsedOrders} orders/mo` : ""}`;
+        } else if (isKnownLarge) {
+          bucket = VOLUME_BUCKETS.xlarge;
+          bucketKey = "xlarge";
+          confidencePct = 70;
+          confidenceWhy = "Known large company — estimated xlarge";
         } else if (isNegotiating) {
-          // Further along in pipeline, likely medium
+          bucket = VOLUME_BUCKETS.medium;
           bucketKey = "medium";
           confidencePct = 50;
           confidenceWhy = "In negotiation/proposal stage but no volume data — estimated medium";
         } else if (isNewLead) {
-          // Early stage, likely small
+          bucket = VOLUME_BUCKETS.small;
           bucketKey = "small";
           confidencePct = 35;
           confidenceWhy = "New lead with no volume data — defaulting to small";
         } else {
-          // Use LLM as fallback only when code can't determine
-          try {
-            const result = await callModel({
-              kind: "summary",
-              privacy: "personal",
-              prompt: `Classify this deal: tiny/small/medium/large/xlarge.
-
-${context.slice(0, 500)}${feedbackBlock}
-
-Reply ONLY: {"bucket":"<size>"}`,
-            }, { skill: "deal_value_estimator" });
-            const parsed = JSON.parse(result.text.trim().replace(/```json?\n?/g, "").replace(/```/g, ""));
-            bucketKey = parsed.bucket || "small";
-          } catch {
-            bucketKey = "small";
-          }
-          confidencePct = 40;
-          confidenceWhy = "LLM classification — limited context";
+          bucket = VOLUME_BUCKETS.small;
+          bucketKey = "small";
+          confidencePct = 30;
+          confidenceWhy = "No volume data or stage context";
         }
 
-        const bucket = VOLUME_BUCKETS[bucketKey] || VOLUME_BUCKETS.small;
-
-        // Step 2: Calculate value using REAL rate card
+        // Step 2: Calculate value using REAL rate card with actual volumes
         const calc = calculateDealValue(bucket);
         const value = calc.annual;
 
