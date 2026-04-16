@@ -152,6 +152,37 @@ export async function getMessage(messageId: string): Promise<GmailMessage> {
   return message;
 }
 
+export async function getThread(threadId: string): Promise<GmailMessage[]> {
+  assertLimit("gmail", "scan");
+  const thread = await gmailApi("GET", `/threads/${threadId}?format=full`);
+  const messages: GmailMessage[] = (thread.messages ?? []).map((msg: any) => {
+    const headers = msg.payload?.headers ?? [];
+    const getHeader = (name: string) =>
+      headers.find((h: any) => h.name.toLowerCase() === name.toLowerCase())?.value ?? "";
+    return {
+      id: msg.id,
+      threadId: msg.threadId,
+      from: getHeader("From"),
+      to: getHeader("To"),
+      subject: getHeader("Subject"),
+      snippet: msg.snippet ?? "",
+      body: extractBody(msg.payload),
+      date: getHeader("Date"),
+      labels: msg.labelIds ?? [],
+      isStarred: (msg.labelIds ?? []).includes("STARRED"),
+    };
+  });
+  recordAction("gmail", "scan");
+  return messages;
+}
+
+export async function markAsRead(messageId: string): Promise<void> {
+  await gmailApi("POST", `/messages/${messageId}/modify`, {
+    removeLabelIds: ["UNREAD"],
+  });
+  audit({ actor: "user", action: "gmail.mark_read", subject: messageId });
+}
+
 // ---------------------------------------------------------------------------
 // Draft (Phase B)
 // ---------------------------------------------------------------------------

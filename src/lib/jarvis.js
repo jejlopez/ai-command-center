@@ -186,6 +186,9 @@ export const jarvis = {
   emailTriage:      (limit)             => get(`/email/triage?limit=${limit ?? 50}`),
   emailTriageStats: ()                  => get("/email/triage/stats"),
   emailMessage:     (messageId)         => get(`/email/message/${encodeURIComponent(messageId)}`),
+  emailThread:      (threadId)          => get(`/email/thread/${encodeURIComponent(threadId)}`),
+  emailMarkRead:    (messageId)         => post(`/email/message/${encodeURIComponent(messageId)}/read`, {}),
+  emailSendNow:     (to, subject, body, threadId) => post("/email/send-now", { to, subject, body, threadId }),
 
   // Email intelligence
   emailAiDraft:    (dealId, type, context) => post("/email/ai-draft", { deal_id: dealId, type, context }),

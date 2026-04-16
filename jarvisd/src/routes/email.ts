@@ -4,7 +4,7 @@
 import type { FastifyInstance } from "fastify";
 import { db } from "../db/db.js";
 import { checkAction, validateApproval, listPendingApprovals } from "../lib/approval_gateway.js";
-import { createDraft, updateDraft, sendDraft, getMessage } from "../lib/providers/gmail_actions.js";
+import { createDraft, updateDraft, sendDraft, getMessage, getThread, markAsRead } from "../lib/providers/gmail_actions.js";
 import { audit } from "../lib/audit.js";
 
 export async function emailRoutes(app: FastifyInstance) {
@@ -42,6 +42,52 @@ export async function emailRoutes(app: FastifyInstance) {
       return { ...msg, triage: triage ?? null };
     } catch (err: any) {
       return reply.code(502).send({ error: `Gmail fetch failed: ${err.message}` });
+    }
+  });
+
+  // --- Full thread (all messages in a thread) ---
+
+  app.get<{ Params: { threadId: string } }>("/email/thread/:threadId", async (req, reply) => {
+    try {
+      const messages = await getThread((req.params as any).threadId);
+      return { messages };
+    } catch (err: any) {
+      return reply.code(502).send({ error: `Gmail thread fetch failed: ${err.message}` });
+    }
+  });
+
+  // --- Mark as read ---
+
+  app.post<{ Params: { messageId: string } }>("/email/message/:messageId/read", async (req, reply) => {
+    try {
+      await markAsRead((req.params as any).messageId);
+      return { ok: true };
+    } catch (err: any) {
+      return reply.code(502).send({ error: `Mark read failed: ${err.message}` });
+    }
+  });
+
+  // --- Send now (create draft + send immediately) ---
+
+  app.post("/email/send-now", async (req, reply) => {
+    const { to, subject, body, threadId } = req.body as any;
+    if (!to || !subject || !body) {
+      return reply.code(400).send({ error: "to, subject, body required" });
+    }
+    try {
+      const draft = await createDraft(to, subject, body, threadId);
+      // Auto-approve for send-now (user already clicked Send Now)
+      const gate = checkAction("send_email", draft.draftId);
+      const result = await sendDraft(draft.draftId, gate.approvalToken ?? "");
+      audit({
+        actor: "user",
+        action: "gmail.send_now",
+        subject: result.messageId,
+        metadata: { to, subject: subject.slice(0, 80) },
+      });
+      return { ok: true, messageId: result.messageId };
+    } catch (err: any) {
+      return reply.code(500).send({ error: err.message });
     }
   });
 
