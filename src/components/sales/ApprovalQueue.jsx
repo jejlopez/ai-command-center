@@ -3,6 +3,7 @@ import {
   Mail, FileText, GitBranch, Clock, DollarSign, ChevronDown, ChevronRight,
   Check, Database, FileSearch, MailOpen, StickyNote, Pencil, ThumbsDown, Loader2,
 } from "lucide-react";
+import { jarvis } from "../../lib/jarvis.js";
 import { useApprovalsSupa } from "../../hooks/useApprovalsSupa.js";
 import ApprovalReview from "./ApprovalReview.jsx";
 
@@ -68,13 +69,14 @@ function StatusBadge({ status }) {
 
 function ValueEstimateCard({ approval, onDecide }) {
   const [expanded, setExpanded] = useState(false);
-  const d = approval.draft_content || {};
+  const [currentApproval, setCurrentApproval] = useState(approval);
+  const d = currentApproval.draft_content || {};
   const math = d.math || [];
   const mathTotal = math.reduce((s, m) => s + (Number(m.amount) || 0), 0);
   const [editedValue, setEditedValue] = useState(d.estimated_value ?? 0);
   const [denyMode, setDenyMode] = useState(false);
   const [denyReason, setDenyReason] = useState("");
-  const [decided, setDecided] = useState(null); // "approved" | "denied"
+  const [decided, setDecided] = useState(null); // "approved" | "reestimating" | "denied"
   const [busy, setBusy] = useState(false);
 
   const confPct = d.confidence_pct ?? 50;
@@ -106,7 +108,9 @@ function ValueEstimateCard({ approval, onDecide }) {
   const handleDeny = async () => {
     if (!denyReason.trim()) return;
     setBusy(true);
-    await onDecide(approval.id, {
+    setDecided("reestimating");
+
+    await onDecide(currentApproval.id, {
       status: "rejected",
       userComment: denyReason.trim(),
       finalContent: {
@@ -117,17 +121,70 @@ function ValueEstimateCard({ approval, onDecide }) {
         data_sources: d.data_sources,
       },
     });
-    setDecided("denied");
+
+    // Poll for the re-estimated approval
+    let found = null;
+    for (let i = 0; i < 12; i++) {
+      await new Promise(r => setTimeout(r, 3000));
+      try {
+        const all = await jarvis.approvals();
+        found = all.find(a =>
+          a.payload?.deal_id === d.deal_id &&
+          a.id !== currentApproval.id &&
+          (a.payload?.attempt ?? 1) > (d.attempt ?? 1)
+        );
+        if (found) break;
+      } catch {}
+    }
+
+    if (found) {
+      // Normalize and swap in the new card
+      const norm = {
+        ...currentApproval,
+        id: found.id,
+        draft_content: found.payload || {},
+        title: found.title,
+        reason: found.reason,
+        created_at: found.requestedAt,
+      };
+      setCurrentApproval(norm);
+      setEditedValue(found.payload?.estimated_value ?? 0);
+      setDenyMode(false);
+      setDenyReason("");
+      setDecided(null);
+      setExpanded(true);
+    } else {
+      setDecided("denied");
+    }
     setBusy(false);
   };
 
-  if (decided) {
+  if (decided === "approved") {
     return (
       <div className="px-3 py-2 rounded-lg bg-white/[0.02] border border-jarvis-border/30 flex items-center gap-2">
-        <Check size={12} className={decided === "approved" ? "text-green-400" : "text-jarvis-primary"} />
-        <span className="text-[10px] text-jarvis-muted">
-          {d.company} — {decided === "approved" ? `${fmtUsd(editedValue !== d.estimated_value ? editedValue : d.estimated_value)} saved` : "denied, Jarvis will learn"}
-        </span>
+        <Check size={12} className="text-green-400" />
+        <span className="text-[10px] text-jarvis-muted">{d.company} — {fmtUsd(editedValue !== d.estimated_value ? editedValue : d.estimated_value)} saved</span>
+      </div>
+    );
+  }
+
+  if (decided === "reestimating") {
+    return (
+      <div className="px-3 py-3 rounded-lg border border-jarvis-primary/20 bg-jarvis-primary/5 flex items-center gap-2.5">
+        <Loader2 size={14} className="animate-spin text-jarvis-primary" />
+        <div>
+          <div className="text-[10px] text-jarvis-ink font-medium">{d.company}</div>
+          <div className="text-[9px] text-jarvis-primary">Re-estimating with your feedback...</div>
+        </div>
+      </div>
+    );
+  }
+
+  if (decided === "denied") {
+    return (
+      <div className="px-3 py-2 rounded-lg bg-white/[0.02] border border-jarvis-border/30 flex items-center gap-2">
+        <Check size={12} className="text-jarvis-primary" />
+        <span className="text-[10px] text-jarvis-muted">{d.company} — denied</span>
       </div>
     );
   }

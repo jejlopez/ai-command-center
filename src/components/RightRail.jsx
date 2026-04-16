@@ -36,13 +36,14 @@ function fmtUsd(n) {
 
 function ValueEstimateRailCard({ approval, onDecided }) {
   const [expanded, setExpanded] = useState(false);
-  const p = approval.payload || {};
+  const [currentApproval, setCurrentApproval] = useState(approval);
+  const p = currentApproval.payload || {};
   const math = p.math || [];
   const mathTotal = math.reduce((s, m) => s + (Number(m.amount) || 0), 0);
   const [editedValue, setEditedValue] = useState(p.estimated_value ?? 0);
   const [denyMode, setDenyMode] = useState(false);
   const [denyReason, setDenyReason] = useState("");
-  const [decided, setDecided] = useState(null);
+  const [decided, setDecided] = useState(null); // "approved" | "reestimating" | "denied"
   const [busy, setBusy] = useState(false);
 
   const confPct = p.confidence_pct ?? 50;
@@ -68,9 +69,13 @@ function ValueEstimateRailCard({ approval, onDecided }) {
   const handleDeny = async () => {
     if (!denyReason.trim()) return;
     setBusy(true);
+    setDecided("reestimating");
+
     try {
-      await jarvis.decideApproval(approval.id, "deny", denyReason.trim());
-      // Also send feedback for learning
+      // Dismiss the old approval
+      await jarvis.decideApproval(currentApproval.id, "deny", denyReason.trim());
+
+      // Send feedback — this triggers re-estimation on the backend
       await fetch("http://127.0.0.1:8787/crm/value-estimate-feedback", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -85,19 +90,67 @@ function ValueEstimateRailCard({ approval, onDecided }) {
           decision: "rejected",
         }),
       });
+
+      // Poll for the new approval (backend re-estimates async, usually 5-15s)
+      let newApproval = null;
+      for (let i = 0; i < 12; i++) {
+        await new Promise(r => setTimeout(r, 3000));
+        try {
+          const all = await jarvis.approvals();
+          newApproval = all.find(a =>
+            a.payload?.deal_id === p.deal_id &&
+            a.id !== currentApproval.id &&
+            (a.payload?.attempt ?? 1) > (p.attempt ?? 1)
+          );
+          if (newApproval) break;
+        } catch {}
+      }
+
+      if (newApproval) {
+        // Swap in the new estimate — reset the card state
+        setCurrentApproval(newApproval);
+        setEditedValue(newApproval.payload?.estimated_value ?? 0);
+        setDenyMode(false);
+        setDenyReason("");
+        setDecided(null);
+        setExpanded(true);
+        setBusy(false);
+        return;
+      }
     } catch {}
+
+    // If re-estimation didn't produce a result, show denied
     setDecided("denied");
     setBusy(false);
     onDecided?.();
   };
 
-  if (decided) {
+  if (decided === "approved") {
     return (
       <div className="rounded-lg bg-white/[0.03] border border-jarvis-border/30 p-2 flex items-center gap-2">
-        <Check size={11} className={decided === "approved" ? "text-green-400" : "text-jarvis-primary"} />
-        <span className="text-[10px] text-jarvis-muted truncate">
-          {p.company} — {decided === "approved" ? "saved" : "denied"}
-        </span>
+        <Check size={11} className="text-green-400" />
+        <span className="text-[10px] text-jarvis-muted truncate">{p.company} — {fmtUsd(editedValue)} saved</span>
+      </div>
+    );
+  }
+
+  if (decided === "reestimating") {
+    return (
+      <div className="rounded-xl bg-jarvis-primary/5 border border-jarvis-primary/20 p-3 flex items-center gap-2">
+        <Loader2 size={12} className="animate-spin text-jarvis-primary" />
+        <div>
+          <div className="text-[11px] text-jarvis-ink font-medium">{p.company}</div>
+          <div className="text-[9px] text-jarvis-primary">Re-estimating with your feedback...</div>
+        </div>
+      </div>
+    );
+  }
+
+  if (decided === "denied") {
+    return (
+      <div className="rounded-lg bg-white/[0.03] border border-jarvis-border/30 p-2 flex items-center gap-2">
+        <Check size={11} className="text-jarvis-primary" />
+        <span className="text-[10px] text-jarvis-muted truncate">{p.company} — denied, no re-estimate available</span>
       </div>
     );
   }
