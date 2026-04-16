@@ -277,9 +277,29 @@ export async function crmRoutes(app: FastifyInstance) {
     ).all() as any[];
     if (deals.length === 0) return { ok: true, queued: 0, total: 0, message: "No $0 deals found" };
 
+    // Get all deal IDs that already have a pending or approved estimate — skip them
+    const existingApprovals = approvals.pending().filter((a: any) => a.skill === "deal_value_estimator");
+    const alreadyQueued = new Set(existingApprovals.map((a: any) => {
+      try { return JSON.parse(a.payload).deal_id; } catch { return null; }
+    }).filter(Boolean));
+
+    // Also check decided approvals (approved ones already wrote the value)
+    const decided = db.prepare(
+      "SELECT payload FROM approvals WHERE skill = 'deal_value_estimator' AND decision IS NOT NULL"
+    ).all() as any[];
+    for (const d of decided) {
+      try { const p = JSON.parse(d.payload); if (p.deal_id) alreadyQueued.add(p.deal_id); } catch {}
+    }
+
     const results: any[] = [];
 
     for (const deal of deals) {
+      // Skip if already has a pending or decided estimate
+      if (alreadyQueued.has(deal.id)) {
+        results.push({ id: deal.id, company: deal.org_name || deal.title, skipped: true, reason: "already estimated" });
+        continue;
+      }
+
       // Gather context from SQLite: activities, notes
       const activities = db.prepare(
         "SELECT type, subject FROM crm_activities WHERE deal_id = ? ORDER BY rowid DESC LIMIT 5"
