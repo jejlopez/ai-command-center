@@ -21,32 +21,17 @@ import { costRoutes } from "./routes/cost.js";
 import { feedbackRoutes } from "./routes/feedback.js";
 import { registry } from "./lib/skills.js";
 import { startScheduler, initEventBus } from "./lib/workflow.js";
-import { dailyRecap } from "./skills/daily_recap.js";
+// ── Core skills (kept) ──
 import { planMyDay } from "./skills/plan_my_day.js";
 import { budgetWatch } from "./skills/budget_watch.js";
-import { meetingPrep } from "./skills/meeting_prep.js";
 import { contactEnrich } from "./skills/contact_enrich.js";
-import { docSummarize } from "./skills/doc_summarize.js";
-import { weeklyReview } from "./skills/weekly_review.js";
-import { draftReply } from "./skills/draft_reply.js";
 import { followUpSuggest } from "./skills/follow_up_suggest.js";
-import { researchBrief } from "./skills/research_brief.js";
-import { codexAgent } from "./skills/codex_agent.js";
-import { briefGeneratorSkill } from "./skills/brief_generator.js";
-import { inboxSummarySkill } from "./skills/inbox_summary.js";
-import { browserAgent } from "./skills/browser_agent.js";
-import { coderAgent } from "./skills/coder_agent.js";
-import { reviewerAgent } from "./skills/reviewer_agent.js";
 import { emailTriage } from "./skills/email_triage.js";
-import { emailDrafter } from "./skills/email_drafter.js";
+import { emailDealSync } from "./skills/email_deal_sync.js";
 import { leadResearch } from "./skills/lead_research.js";
 import { proposalGenerator } from "./skills/proposal_generator.js";
 import { proactiveAgent } from "./skills/proactive_agent.js";
-import { followUpNagger } from "./skills/follow_up_nagger.js";
-import { emailDealSync } from "./skills/email_deal_sync.js";
-import { emailCleanup } from "./skills/email_cleanup.js";
 import { crmMorningBrief } from "./skills/crm_morning_brief.js";
-import { crmMiddayRecap } from "./skills/crm_midday_recap.js";
 import { crmEodRecap } from "./skills/crm_eod_recap.js";
 import { crmMeetingPrep } from "./skills/crm_meeting_prep.js";
 import { crmDealPlaybook } from "./skills/crm_deal_playbook.js";
@@ -55,9 +40,16 @@ import { crmPipelineGap } from "./skills/crm_pipeline_gap.js";
 import { proposalExpiry } from "./skills/proposal_expiry.js";
 import { dealStageAutomation } from "./skills/deal_stage_automation.js";
 import { pipelineSnapshot } from "./skills/pipeline_snapshot.js";
-import { autoDailySnapshot } from "./skills/auto_daily_snapshot.js";
 import { rateOptimizer } from "./skills/rate_optimizer.js";
 import { proposalFollowup } from "./skills/proposal_followup.js";
+// ── New/consolidated skills ──
+import { masterEmailAgent } from "./skills/master_email_agent.js";
+import { meetingIntelligence } from "./skills/meeting_intelligence.js";
+import { winLossAnalyzer } from "./skills/win_loss_analyzer.js";
+import { whaleDetector } from "./skills/whale_detector.js";
+import { objectionCoach } from "./skills/objection_coach.js";
+import { inboundCapture } from "./skills/inbound_capture.js";
+import { nurtureEngine } from "./skills/nurture_engine.js";
 import { crmRoutes } from "./routes/crm.js";
 import { webhookRoutes } from "./routes/webhooks.js";
 import { learningRoutes } from "./routes/learning.js";
@@ -145,32 +137,17 @@ async function main() {
   }
 
   // Register built-in skills before the scheduler starts.
-  registry.register(dailyRecap);
+  // ── Core skills ──
   registry.register(planMyDay);
   registry.register(budgetWatch);
-  registry.register(meetingPrep);
   registry.register(contactEnrich);
-  registry.register(docSummarize);
-  registry.register(weeklyReview);
-  registry.register(draftReply);
   registry.register(followUpSuggest);
-  registry.register(researchBrief);
-  registry.register(codexAgent);
-  registry.register(briefGeneratorSkill);
-  registry.register(inboxSummarySkill);
-  registry.register(browserAgent);
-  registry.register(coderAgent);
-  registry.register(reviewerAgent);
   registry.register(emailTriage);
-  registry.register(emailDrafter);
+  registry.register(emailDealSync);
   registry.register(leadResearch);
   registry.register(proposalGenerator);
   registry.register(proactiveAgent);
-  registry.register(followUpNagger);
-  registry.register(emailDealSync);
-  registry.register(emailCleanup);
   registry.register(crmMorningBrief);
-  registry.register(crmMiddayRecap);
   registry.register(crmEodRecap);
   registry.register(crmMeetingPrep);
   registry.register(crmDealPlaybook);
@@ -179,9 +156,16 @@ async function main() {
   registry.register(proposalExpiry);
   registry.register(dealStageAutomation);
   registry.register(pipelineSnapshot);
-  registry.register(autoDailySnapshot);
   registry.register(rateOptimizer);
   registry.register(proposalFollowup);
+  // ── New/consolidated skills ──
+  registry.register(masterEmailAgent);
+  registry.register(meetingIntelligence);
+  registry.register(winLossAnalyzer);
+  registry.register(whaleDetector);
+  registry.register(objectionCoach);
+  registry.register(inboundCapture);
+  registry.register(nurtureEngine);
 
   // Wire the event bus after skills are registered so subscriptions pick up
   // every manifest with an event trigger.

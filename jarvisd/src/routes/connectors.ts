@@ -30,7 +30,8 @@ import {
   unlinkAll as unlinkUnifiedAll,
   status as unifiedStatus,
 } from "../lib/providers/google_unified.js";
-import { summarizeInbox } from "../skills/inbox_summary.js";
+// inbox_summary was deleted — use email_triage instead
+const summarizeInbox = async (_max: number) => ({ message: "Use email_triage skill instead", deprecated: true });
 import type {
   ConnectorId,
   ConnectorStatus,

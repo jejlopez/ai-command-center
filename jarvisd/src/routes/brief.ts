@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import type { MorningBrief, RightRail } from "../../../shared/types.js";
 import { audit } from "../lib/audit.js";
-import { generateBrief, latestBrief } from "../skills/brief_generator.js";
+import { generateBrief, latestBrief } from "../skills/brief_utils.js";
 import { approvals } from "../lib/approvals.js";
 
 function stubBrief(): MorningBrief {
