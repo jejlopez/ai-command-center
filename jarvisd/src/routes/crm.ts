@@ -242,54 +242,93 @@ export async function crmRoutes(app: FastifyInstance) {
       if (deal.contact_email) dataSources.push("contact_email");
       if (deal.org_name && !deal.org_name.startsWith("Deal #")) dataSources.push("company_name");
 
+      // Check for past denials on this deal to include as feedback
+      const pastFeedback = db.prepare(
+        "SELECT reason, corrected_value, original_estimate FROM value_estimate_feedback WHERE deal_id = ? ORDER BY created_at DESC LIMIT 3"
+      ).all(deal.id) as any[];
+
+      const feedbackBlock = pastFeedback.length > 0
+        ? `\n\nPREVIOUS ESTIMATE WAS REJECTED. User corrections:\n${pastFeedback.map((f: any) =>
+            `- Jarvis said $${f.original_estimate?.toLocaleString()}${f.corrected_value ? `, user said real value is $${f.corrected_value.toLocaleString()}` : ""}. Reason: ${f.reason}`
+          ).join("\n")}\nDO NOT repeat the same mistake. Use the user's corrections as ground truth.`
+        : "";
+
+      // Check for calibration data
+      const calibration = db.prepare(
+        "SELECT calibration_data FROM value_estimate_calibration ORDER BY created_at DESC LIMIT 1"
+      ).get() as any;
+      const calBlock = calibration
+        ? `\n\nCALIBRATED PRICING (learned from user corrections):\n${calibration.calibration_data}`
+        : "";
+
       try {
         const result = await callModel({
           kind: "summary",
           privacy: "personal",
-          prompt: `Estimate the annual deal value for this 3PL/logistics deal. Show your math.
+          prompt: `Estimate the ANNUAL deal value for this 3PL/logistics deal. Show your math.
 
-${context}
+${context}${feedbackBlock}${calBlock}
 
-Use these 3PL pricing benchmarks:
+3PL pricing benchmarks:
 - Storage: $15-30/pallet/month
 - Pick & pack: $2-5/order
 - Receiving: $25-50/pallet
 - Shipping: $5-15/package (varies by weight/zone)
 - Monthly minimum: ~$1,500-3,000 for small accounts
 
-Return ONLY a JSON object with this exact structure:
+Return ONLY a JSON object:
 {
-  "value_usd": <annual number>,
+  "monthly_total": <monthly number>,
+  "value_usd": <annual = monthly_total × 12>,
   "confidence_pct": <0-100>,
-  "confidence_why": "<why this confidence level — what data was missing or present>",
+  "confidence_why": "<what data was missing or present>",
   "math": [
-    {"line": "<description>", "calc": "<formula>", "amount": <number>},
-    {"line": "<description>", "calc": "<formula>", "amount": <number>}
+    {"line": "<component>", "calc": "<formula showing monthly>", "monthly": <monthly amount>, "amount": <annual = monthly × 12>}
   ],
-  "assumptions": "<key assumptions made>"
+  "assumptions": "<key assumptions>"
 }
 
-Rules:
-- Each math line should be a specific pricing component (storage, pick & pack, receiving, shipping)
-- Use realistic volumes based on clues in the data. If no clues, state assumptions clearly.
-- confidence_pct: 80-100 if volume data present, 40-60 if only company name, 60-80 if notes have some detail
-- The math lines should SUM to value_usd
+CRITICAL RULES:
+- Calculate each component as a MONTHLY cost first, then multiply by 12 for annual.
+- Each math line must have both "monthly" and "amount" (annual) fields.
+- "value_usd" MUST equal the sum of all math line "amount" fields. Verify this before responding.
+- "value_usd" MUST equal "monthly_total" × 12. If it doesn't, fix it.
+- Do NOT invent a value_usd that doesn't match the math. The math IS the value.
+- If monthly components sum to $1,500, then annual is $18,000. Not $120,000. Not $500,000. $18,000.
 - No other text outside the JSON.`,
         }, { skill: "deal_value_estimator" });
 
         const parsed = JSON.parse(result.text.trim().replace(/```json?\n?/g, "").replace(/```/g, ""));
-        const value = Math.round(Number(parsed.value_usd) || 0);
+
+        // Self-check: verify math adds up
+        const mathLines = parsed.math || [];
+        const mathSum = mathLines.reduce((s: number, m: any) => s + (Number(m.amount) || 0), 0);
+        const monthlySum = mathLines.reduce((s: number, m: any) => s + (Number(m.monthly) || 0), 0);
+
+        // Trust the math, not the headline number
+        let value: number;
+        if (mathSum > 0) {
+          value = Math.round(mathSum);
+          parsed.value_usd = value;
+          parsed.monthly_total = Math.round(monthlySum);
+        } else if (parsed.monthly_total > 0) {
+          value = Math.round(parsed.monthly_total * 12);
+          parsed.value_usd = value;
+        } else {
+          value = Math.round(Number(parsed.value_usd) || 0);
+        }
 
         if (value > 0) {
           // Queue as approval — do NOT write value directly
           approvals.enqueue({
-            title: `Value estimate: ${deal.org_name || deal.title} — $${value.toLocaleString()}`,
+            title: `Value estimate: ${deal.org_name || deal.title} — $${value.toLocaleString()}/yr ($${Math.round(value / 12).toLocaleString()}/mo)`,
             reason: parsed.assumptions || parsed.confidence_why || "",
             skill: "deal_value_estimator",
             riskLevel: "low",
             payload: {
               deal_id: deal.id,
               estimated_value: value,
+              monthly_total: parsed.monthly_total ?? Math.round(value / 12),
               confidence_pct: parsed.confidence_pct ?? 50,
               confidence_why: parsed.confidence_why ?? "",
               math: parsed.math ?? [],
@@ -299,6 +338,7 @@ Rules:
               stage: deal.stage,
               contact: deal.contact_name,
               context_summary: context.slice(0, 800),
+              attempt: (pastFeedback.length + 1),
             },
           });
           audit({
@@ -400,6 +440,127 @@ Based on these corrections, output a JSON object with updated pricing benchmarks
       } catch {}
     }
 
-    return { ok: true, denialCount, recalibrated };
+    // Re-estimate this specific deal with the user's feedback
+    let reEstimated = false;
+    if (deal_id && decision === "rejected") {
+      const deal = db.prepare("SELECT * FROM crm_deals WHERE id = ?").get(deal_id) as any;
+      if (deal) {
+        // Gather same context as the estimator
+        const acts = db.prepare("SELECT type, subject FROM crm_activities WHERE deal_id = ? ORDER BY rowid DESC LIMIT 5").all(deal.id) as any[];
+        const nts = db.prepare("SELECT content FROM crm_notes WHERE deal_id = ? ORDER BY rowid DESC LIMIT 3").all(deal.id) as any[];
+        const dealNotes = deal.notes_summary || "";
+        const actText = acts.map((a: any) => `[${a.type}] ${a.subject || ""}`).join("\n");
+        const noteText = nts.map((n: any) => (n.content || "").slice(0, 300)).join("\n");
+
+        const allFeedback = db.prepare(
+          "SELECT reason, corrected_value, original_estimate FROM value_estimate_feedback WHERE deal_id = ? ORDER BY created_at DESC LIMIT 5"
+        ).all(deal.id) as any[];
+
+        const feedbackBlock = `\n\nPREVIOUS ESTIMATES WERE REJECTED. User corrections:\n${allFeedback.map((f: any) =>
+          `- Jarvis said $${f.original_estimate?.toLocaleString()}${f.corrected_value ? `, user said real value is $${f.corrected_value.toLocaleString()}` : ""}. Reason: ${f.reason}`
+        ).join("\n")}\nDO NOT repeat these mistakes. The user's corrections are ground truth.`;
+
+        const calRow = db.prepare("SELECT calibration_data FROM value_estimate_calibration ORDER BY created_at DESC LIMIT 1").get() as any;
+        const calBlock = calRow ? `\n\nCALIBRATED PRICING:\n${calRow.calibration_data}` : "";
+
+        const ctx = [
+          `Company: ${deal.org_name || deal.title}`,
+          `Stage: ${deal.stage}`,
+          `Contact: ${deal.contact_name || "unknown"}`,
+          deal.contact_email ? `Email: ${deal.contact_email}` : "",
+          dealNotes ? `Deal Notes:\n${dealNotes.slice(0, 1000)}` : "",
+          noteText ? `CRM Notes:\n${noteText}` : "",
+          actText ? `Activities:\n${actText}` : "",
+        ].filter(Boolean).join("\n");
+
+        const dataSrcs: string[] = [];
+        if (dealNotes) dataSrcs.push("deal_notes");
+        if (noteText) dataSrcs.push("crm_notes");
+        if (actText) dataSrcs.push("activities");
+        if (deal.contact_email) dataSrcs.push("contact_email");
+        if (deal.org_name && !deal.org_name.startsWith("Deal #")) dataSrcs.push("company_name");
+        dataSrcs.push("user_feedback");
+
+        try {
+          const result = await callModel({
+            kind: "summary",
+            privacy: "personal",
+            prompt: `Re-estimate the ANNUAL deal value for this 3PL/logistics deal. Your previous estimate was WRONG and rejected by the user. Read their feedback carefully and try again.
+
+${ctx}${feedbackBlock}${calBlock}
+
+3PL pricing benchmarks:
+- Storage: $15-30/pallet/month
+- Pick & pack: $2-5/order
+- Receiving: $25-50/pallet
+- Shipping: $5-15/package
+- Monthly minimum: ~$1,500-3,000 for small accounts
+
+Return ONLY a JSON object:
+{
+  "monthly_total": <monthly number>,
+  "value_usd": <annual = monthly_total × 12>,
+  "confidence_pct": <0-100>,
+  "confidence_why": "<what changed from the previous attempt>",
+  "math": [
+    {"line": "<component>", "calc": "<formula showing monthly>", "monthly": <monthly>, "amount": <annual = monthly × 12>}
+  ],
+  "assumptions": "<what you changed based on user feedback>"
+}
+
+CRITICAL: value_usd MUST = sum of all math "amount" fields = monthly_total × 12. Verify before responding.`,
+          }, { skill: "deal_value_estimator" });
+
+          const parsed = JSON.parse(result.text.trim().replace(/```json?\n?/g, "").replace(/```/g, ""));
+          const mathLines = parsed.math || [];
+          const mathAnnualSum = mathLines.reduce((s: number, m: any) => s + (Number(m.amount) || 0), 0);
+          const monthlySum = mathLines.reduce((s: number, m: any) => s + (Number(m.monthly) || 0), 0);
+
+          let newValue: number;
+          if (mathAnnualSum > 0) {
+            newValue = Math.round(mathAnnualSum);
+          } else if (monthlySum > 0) {
+            newValue = Math.round(monthlySum * 12);
+          } else {
+            newValue = Math.round(Number(parsed.value_usd) || 0);
+          }
+
+          if (newValue > 0) {
+            approvals.enqueue({
+              title: `Re-estimate: ${deal.org_name || deal.title} — $${newValue.toLocaleString()}/yr ($${Math.round(newValue / 12).toLocaleString()}/mo)`,
+              reason: `Revised after feedback: "${reason}"`,
+              skill: "deal_value_estimator",
+              riskLevel: "low",
+              payload: {
+                deal_id: deal.id,
+                estimated_value: newValue,
+                monthly_total: parsed.monthly_total ?? Math.round(newValue / 12),
+                confidence_pct: parsed.confidence_pct ?? 50,
+                confidence_why: parsed.confidence_why ?? "",
+                math: parsed.math ?? [],
+                assumptions: parsed.assumptions ?? "",
+                data_sources: dataSrcs,
+                company: deal.org_name || deal.title,
+                stage: deal.stage,
+                contact: deal.contact_name,
+                attempt: allFeedback.length + 1,
+                previous_estimate: original_estimate,
+                user_correction: corrected_value,
+              },
+            });
+            reEstimated = true;
+
+            audit({
+              actor: "jarvis",
+              action: "deal.value_re_estimated",
+              subject: deal.id,
+              metadata: { company: deal.org_name || deal.title, oldValue: original_estimate, newValue, attempt: allFeedback.length + 1 },
+            });
+          }
+        } catch {}
+      }
+    }
+
+    return { ok: true, denialCount, recalibrated, reEstimated };
   });
 }

@@ -112,9 +112,15 @@ function ValueEstimateRailCard({ approval, onDecided }) {
         <DollarSign size={11} className="text-jarvis-primary shrink-0" />
         <div className="flex-1 min-w-0">
           <div className="text-[11px] text-jarvis-ink font-medium truncate">{p.company || approval.title}</div>
-          <div className="text-[9px] text-jarvis-muted">{p.stage}</div>
+          <div className="text-[9px] text-jarvis-muted">
+            {p.stage}
+            {p.attempt > 1 && <span className="ml-1.5 text-jarvis-warning">· attempt {p.attempt}</span>}
+          </div>
         </div>
-        <span className="text-[12px] font-bold text-jarvis-success tabular-nums shrink-0">{fmtUsd(p.estimated_value)}</span>
+        <div className="text-right shrink-0">
+          <div className="text-[12px] font-bold text-jarvis-success tabular-nums">{fmtUsd(p.estimated_value)}<span className="text-[8px] text-jarvis-muted font-normal">/yr</span></div>
+          {p.monthly_total > 0 && <div className="text-[8px] text-jarvis-muted tabular-nums">{fmtUsd(p.monthly_total)}/mo</div>}
+        </div>
         <span className={`text-[9px] font-medium tabular-nums shrink-0 ${confColor}`}>{confPct}%</span>
         {expanded ? <ChevronDown size={11} className="text-jarvis-muted" /> : <ChevronRight size={11} className="text-jarvis-muted" />}
       </button>
@@ -148,12 +154,18 @@ function ValueEstimateRailCard({ approval, onDecided }) {
                         <div className="text-[9px] text-jarvis-ink">{m.line}</div>
                         <div className="text-[7px] text-jarvis-muted font-mono">{m.calc}</div>
                       </div>
-                      <span className="text-[9px] text-jarvis-ink font-semibold tabular-nums shrink-0 ml-2">{fmtUsd(m.amount)}</span>
+                      <div className="text-right shrink-0 ml-2">
+                        {m.monthly > 0 && <div className="text-[7px] text-jarvis-muted tabular-nums">{fmtUsd(m.monthly)}/mo</div>}
+                        <div className="text-[9px] text-jarvis-ink font-semibold tabular-nums">{fmtUsd(m.amount)}/yr</div>
+                      </div>
                     </div>
                   ))}
                   <div className="flex justify-between px-2 py-1 bg-white/[0.03] border-t border-white/8">
                     <span className="text-[9px] font-semibold text-jarvis-ink">Total</span>
-                    <span className="text-[10px] text-jarvis-success font-bold tabular-nums">{fmtUsd(mathTotal)}</span>
+                    <div className="text-right">
+                      {p.monthly_total > 0 && <div className="text-[7px] text-jarvis-muted tabular-nums">{fmtUsd(p.monthly_total)}/mo</div>}
+                      <div className="text-[10px] text-jarvis-success font-bold tabular-nums">{fmtUsd(mathTotal)}/yr</div>
+                    </div>
                   </div>
                 </>
               ) : (
