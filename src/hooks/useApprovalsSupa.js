@@ -73,6 +73,17 @@ export function useApprovalsSupa({ leadId, dealId, statusFilter } = {}) {
         reason: userComment,
       });
 
+      // If approved deal_value_estimate, write value to deal
+      if (status === "approved" && approval.type === "deal_value_estimate" && approval.deal_id) {
+        const value = finalContent?.estimated_value ?? approval.draft_content?.estimated_value;
+        if (value) {
+          await supabase.from("deals").update({
+            value_usd: Number(value),
+            updated_at: new Date().toISOString(),
+          }).eq("id", approval.deal_id);
+        }
+      }
+
       // Create learning_event for edits or rejections
       const hasEdits = userEdits && Object.keys(userEdits).length > 0;
       if (hasEdits || status === "rejected") {

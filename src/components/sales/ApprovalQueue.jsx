@@ -81,11 +81,11 @@ export function ApprovalQueue({ leadId, dealId }) {
                   onClick={() => setSelected(a)}
                   className="flex items-start gap-2 px-2 py-2 rounded cursor-pointer hover:bg-white/5 transition-colors"
                 >
-                  <TypeIcon type={a.approval_type} />
+                  <TypeIcon type={a.type} />
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-1.5">
                       <span className="text-[10px] font-medium text-jarvis-text">
-                        {TYPE_META[a.approval_type]?.label ?? a.approval_type}
+                        {TYPE_META[a.type]?.label ?? a.type}
                       </span>
                       {a.source_agent && (
                         <span className="text-[9px] text-jarvis-muted truncate">· {a.source_agent}</span>
@@ -117,9 +117,9 @@ export function ApprovalQueue({ leadId, dealId }) {
                   key={a.id}
                   className="flex items-center gap-2 px-2 py-1.5 rounded"
                 >
-                  <TypeIcon type={a.approval_type} />
+                  <TypeIcon type={a.type} />
                   <span className="text-[10px] text-jarvis-muted flex-1 truncate">
-                    {TYPE_META[a.approval_type]?.label ?? a.approval_type}
+                    {TYPE_META[a.type]?.label ?? a.type}
                     {" — "}
                     {preview(a.draft_content)}
                   </span>

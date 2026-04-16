@@ -1,10 +1,11 @@
 import { useState } from "react";
-import { X, Mail, FileText, GitBranch, Clock, Check } from "lucide-react";
+import { X, Mail, FileText, GitBranch, Clock, Check, DollarSign } from "lucide-react";
 
 const TYPE_META = {
-  email:        { icon: Mail,      label: "Email" },
-  proposal:     { icon: FileText,  label: "Proposal" },
-  stage_change: { icon: GitBranch, label: "Stage Change" },
+  email:               { icon: Mail,       label: "Email" },
+  proposal:            { icon: FileText,   label: "Proposal" },
+  stage_change:        { icon: GitBranch,  label: "Stage Change" },
+  deal_value_estimate: { icon: DollarSign, label: "Value Estimate" },
 };
 
 function relativeTime(iso) {
@@ -34,17 +35,28 @@ function computeUserEdits(original, editedSubject, editedBody) {
 
 export default function ApprovalReview({ approval, onDecide, onClose }) {
   const draft = approval?.draft_content ?? {};
-  const meta  = TYPE_META[approval?.approval_type] || { icon: FileText, label: approval?.approval_type };
+  const meta  = TYPE_META[approval?.type] || { icon: FileText, label: approval?.type };
   const Icon  = meta.icon;
 
+  const isValueEstimate = approval?.type === "deal_value_estimate";
   const [editedSubject, setEditedSubject] = useState(draft.subject ?? "");
   const [editedBody,    setEditedBody]    = useState(draft.body    ?? "");
+  const [editedValue,   setEditedValue]   = useState(draft.estimated_value ?? 0);
   const [comment,       setComment]       = useState("");
   const [denyMode,      setDenyMode]      = useState(false);
   const [denyReason,    setDenyReason]    = useState("");
   const [denied,        setDenied]        = useState(false);
 
   function handleApprove() {
+    if (isValueEstimate) {
+      onDecide({
+        status:       "approved",
+        finalContent: { estimated_value: editedValue },
+        userEdits:    editedValue !== draft.estimated_value ? { value_changed: true } : undefined,
+        userComment:  comment || undefined,
+      });
+      return;
+    }
     const userEdits = computeUserEdits(draft, editedSubject, editedBody);
     onDecide({
       status:       "approved",
@@ -89,59 +101,114 @@ export default function ApprovalReview({ approval, onDecide, onClose }) {
         {/* Scrollable body */}
         <div className="flex-1 overflow-y-auto px-4 py-3 space-y-4 text-[11px]">
 
-          {/* Original Draft */}
-          <section>
-            <h4 className="text-[10px] font-semibold uppercase tracking-wider text-jarvis-muted mb-1.5">
-              Original Draft
-            </h4>
-            <div className="rounded-lg bg-white/5 border border-white/8 p-3 space-y-2">
-              {draft.subject !== undefined && (
-                <div>
-                  <span className="text-[9px] text-jarvis-muted uppercase tracking-wider">Subject</span>
-                  <p className="text-[11px] text-jarvis-text mt-0.5">{draft.subject || <em className="text-jarvis-muted">(empty)</em>}</p>
+          {isValueEstimate ? (
+            /* ── Deal Value Estimate view ─────────────────────────── */
+            <>
+              <section>
+                <h4 className="text-[10px] font-semibold uppercase tracking-wider text-jarvis-muted mb-1.5">
+                  Value Estimate — {draft.company}
+                </h4>
+                <div className="rounded-lg bg-white/5 border border-white/8 p-3 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[9px] text-jarvis-muted uppercase tracking-wider">Estimated Annual Value</span>
+                    <span className="text-[16px] font-semibold text-jarvis-success tabular-nums">
+                      ${(draft.estimated_value ?? 0).toLocaleString()}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-[9px] text-jarvis-muted uppercase tracking-wider">Confidence</span>
+                    <span className={`text-[11px] font-medium ${
+                      draft.confidence === "high" ? "text-jarvis-success" :
+                      draft.confidence === "medium" ? "text-jarvis-warning" :
+                      "text-jarvis-muted"
+                    }`}>{draft.confidence}</span>
+                  </div>
+                  <div>
+                    <span className="text-[9px] text-jarvis-muted uppercase tracking-wider block mb-1">Reasoning</span>
+                    <p className="text-[11px] text-jarvis-text leading-relaxed">{draft.reasoning}</p>
+                  </div>
+                  {draft.stage && (
+                    <div className="flex items-center justify-between">
+                      <span className="text-[9px] text-jarvis-muted uppercase tracking-wider">Stage</span>
+                      <span className="text-[11px] text-jarvis-text">{draft.stage}</span>
+                    </div>
+                  )}
                 </div>
-              )}
-              {draft.body !== undefined && (
-                <div>
-                  <span className="text-[9px] text-jarvis-muted uppercase tracking-wider">Body</span>
-                  <p className="text-[11px] text-jarvis-text mt-0.5 whitespace-pre-wrap leading-relaxed">
-                    {draft.body || <em className="text-jarvis-muted">(empty)</em>}
-                  </p>
-                </div>
-              )}
-            </div>
-          </section>
+              </section>
 
-          {/* Your Version */}
-          <section>
-            <h4 className="text-[10px] font-semibold uppercase tracking-wider text-jarvis-muted mb-1.5">
-              Your Version
-            </h4>
-            <div className="space-y-2">
-              {draft.subject !== undefined && (
-                <div>
-                  <label className="text-[9px] text-jarvis-muted uppercase tracking-wider block mb-1">Subject</label>
+              <section>
+                <h4 className="text-[10px] font-semibold uppercase tracking-wider text-jarvis-muted mb-1.5">
+                  Adjust Value
+                </h4>
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] text-jarvis-muted">$</span>
                   <input
-                    type="text"
-                    value={editedSubject}
-                    onChange={e => setEditedSubject(e.target.value)}
-                    className="w-full bg-white/5 border border-white/10 rounded px-2 py-1.5 text-[11px] text-jarvis-text placeholder-jarvis-muted focus:outline-none focus:border-jarvis-accent/50"
+                    type="number"
+                    value={editedValue}
+                    onChange={e => setEditedValue(Number(e.target.value))}
+                    className="flex-1 bg-white/5 border border-white/10 rounded px-2 py-1.5 text-[14px] text-jarvis-text font-semibold tabular-nums focus:outline-none focus:border-jarvis-accent/50"
                   />
                 </div>
-              )}
-              {draft.body !== undefined && (
-                <div>
-                  <label className="text-[9px] text-jarvis-muted uppercase tracking-wider block mb-1">Body</label>
-                  <textarea
-                    value={editedBody}
-                    onChange={e => setEditedBody(e.target.value)}
-                    rows={6}
-                    className="w-full bg-white/5 border border-white/10 rounded px-2 py-1.5 text-[11px] text-jarvis-text placeholder-jarvis-muted focus:outline-none focus:border-jarvis-accent/50 resize-none leading-relaxed"
-                  />
+              </section>
+            </>
+          ) : (
+            /* ── Email / Proposal view ────────────────────────────── */
+            <>
+              {/* Original Draft */}
+              <section>
+                <h4 className="text-[10px] font-semibold uppercase tracking-wider text-jarvis-muted mb-1.5">
+                  Original Draft
+                </h4>
+                <div className="rounded-lg bg-white/5 border border-white/8 p-3 space-y-2">
+                  {draft.subject !== undefined && (
+                    <div>
+                      <span className="text-[9px] text-jarvis-muted uppercase tracking-wider">Subject</span>
+                      <p className="text-[11px] text-jarvis-text mt-0.5">{draft.subject || <em className="text-jarvis-muted">(empty)</em>}</p>
+                    </div>
+                  )}
+                  {draft.body !== undefined && (
+                    <div>
+                      <span className="text-[9px] text-jarvis-muted uppercase tracking-wider">Body</span>
+                      <p className="text-[11px] text-jarvis-text mt-0.5 whitespace-pre-wrap leading-relaxed">
+                        {draft.body || <em className="text-jarvis-muted">(empty)</em>}
+                      </p>
+                    </div>
+                  )}
                 </div>
-              )}
+              </section>
+
+              {/* Your Version */}
+              <section>
+                <h4 className="text-[10px] font-semibold uppercase tracking-wider text-jarvis-muted mb-1.5">
+                  Your Version
+                </h4>
+                <div className="space-y-2">
+                  {draft.subject !== undefined && (
+                    <div>
+                      <label className="text-[9px] text-jarvis-muted uppercase tracking-wider block mb-1">Subject</label>
+                      <input
+                        type="text"
+                        value={editedSubject}
+                        onChange={e => setEditedSubject(e.target.value)}
+                        className="w-full bg-white/5 border border-white/10 rounded px-2 py-1.5 text-[11px] text-jarvis-text placeholder-jarvis-muted focus:outline-none focus:border-jarvis-accent/50"
+                      />
+                    </div>
+                  )}
+                  {draft.body !== undefined && (
+                    <div>
+                      <label className="text-[9px] text-jarvis-muted uppercase tracking-wider block mb-1">Body</label>
+                      <textarea
+                        value={editedBody}
+                        onChange={e => setEditedBody(e.target.value)}
+                        rows={6}
+                        className="w-full bg-white/5 border border-white/10 rounded px-2 py-1.5 text-[11px] text-jarvis-text placeholder-jarvis-muted focus:outline-none focus:border-jarvis-accent/50 resize-none leading-relaxed"
+                      />
+                    </div>
+                  )}
             </div>
           </section>
+            </>
+          )}
 
           {/* Comment */}
           <section>

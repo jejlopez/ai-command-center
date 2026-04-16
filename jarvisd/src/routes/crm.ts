@@ -6,9 +6,9 @@ import {
   getDealsByStage, getPipelineStats, isPipedriveConnected
 } from "../lib/providers/pipedrive.js";
 import { db } from "../db/db.js";
-import { supaFetch, supaUpdate } from "../lib/supabase_client.js";
 import { callModel } from "../lib/skills.js";
 import { audit } from "../lib/audit.js";
+import { approvals } from "../lib/approvals.js";
 
 export async function crmRoutes(app: FastifyInstance) {
   // Status
@@ -127,40 +127,39 @@ export async function crmRoutes(app: FastifyInstance) {
   // --- Deal value estimator — estimate value for $0 deals ---
 
   app.post("/crm/estimate-values", async (_req, reply) => {
-    // Fetch all deals with $0 or null value
-    const deals = await supaFetch("deals", "select=id,company,stage,value_usd,contact_name,notes&or=(value_usd.eq.0,value_usd.is.null)&limit=50");
-    if (deals.length === 0) return { ok: true, updated: 0, message: "No $0 deals found" };
+    // Read deals from jarvisd SQLite (Supabase blocked by RLS without session)
+    const deals = db.prepare(
+      "SELECT * FROM crm_deals WHERE (value IS NULL OR value = 0) AND status = 'open' LIMIT 50"
+    ).all() as any[];
+    if (deals.length === 0) return { ok: true, queued: 0, total: 0, message: "No $0 deals found" };
 
     const results: any[] = [];
 
     for (const deal of deals) {
-      // Gather context: comms, activities, proposals
-      const [comms, activities, proposals] = await Promise.all([
-        supaFetch("communications", `select=subject,body,type&deal_id=eq.${deal.id}&order=occurred_at.desc&limit=5`),
-        supaFetch("activities", `select=subject,body,type&deal_id=eq.${deal.id}&order=occurred_at.desc&limit=5`),
-        supaFetch("proposals", `select=pricing,executive_summary&deal_id=eq.${deal.id}&limit=1`),
-      ]);
+      // Gather context from SQLite: activities, notes
+      const activities = db.prepare(
+        "SELECT type, subject FROM crm_activities WHERE deal_id = ? ORDER BY rowid DESC LIMIT 5"
+      ).all(deal.id) as any[];
+      const notes = db.prepare(
+        "SELECT content FROM crm_notes WHERE deal_id = ? ORDER BY rowid DESC LIMIT 3"
+      ).all(deal.id) as any[];
 
-      const commText = comms.map((c: any) => `[${c.type}] ${c.subject || ""}: ${(c.body || "").slice(0, 200)}`).join("\n");
-      const actText = activities.map((a: any) => `[${a.type}] ${a.subject || ""}: ${(a.body || "").slice(0, 200)}`).join("\n");
-      const proposalText = proposals[0]?.pricing
-        ? `Proposal pricing: ${JSON.stringify(proposals[0].pricing)}`
-        : proposals[0]?.executive_summary
-        ? `Proposal summary: ${proposals[0].executive_summary}`
-        : "";
+      const actText = activities.map((a: any) => `[${a.type}] ${a.subject || ""}`).join("\n");
+      const noteText = notes.map((n: any) => (n.content || "").slice(0, 300)).join("\n");
+      const proposalText = "";
 
       const context = [
-        `Company: ${deal.company}`,
+        `Company: ${deal.org_name || deal.title}`,
         `Stage: ${deal.stage}`,
         `Contact: ${deal.contact_name || "unknown"}`,
-        deal.notes ? `Notes: ${(deal.notes as string).slice(0, 500)}` : "",
-        commText ? `Communications:\n${commText}` : "",
+        deal.contact_email ? `Email: ${deal.contact_email}` : "",
+        noteText ? `Notes:\n${noteText}` : "",
         actText ? `Activities:\n${actText}` : "",
         proposalText,
       ].filter(Boolean).join("\n");
 
       if (!context || context.length < 30) {
-        results.push({ id: deal.id, company: deal.company, skipped: true, reason: "insufficient context" });
+        results.push({ id: deal.id, company: deal.org_name || deal.title, skipped: true, reason: "insufficient context" });
         continue;
       }
 
@@ -186,22 +185,37 @@ No other text.`,
         const value = Math.round(Number(parsed.value_usd) || 0);
 
         if (value > 0) {
-          await supaUpdate("deals", `id=eq.${deal.id}`, { value_usd: value, updated_at: new Date().toISOString() });
+          // Queue as approval — do NOT write value directly
+          approvals.enqueue({
+            title: `Value estimate: ${deal.org_name || deal.title} — $${value.toLocaleString()}`,
+            reason: parsed.reasoning,
+            skill: "deal_value_estimator",
+            riskLevel: "low",
+            payload: {
+              deal_id: deal.id,
+              estimated_value: value,
+              confidence: parsed.confidence,
+              reasoning: parsed.reasoning,
+              company: deal.org_name || deal.title,
+              stage: deal.stage,
+              contact: deal.contact_name,
+            },
+          });
           audit({
             actor: "jarvis",
-            action: "deal.value_estimated",
+            action: "deal.value_estimate_queued",
             subject: deal.id,
-            metadata: { company: deal.company, value, confidence: parsed.confidence, reasoning: parsed.reasoning },
+            metadata: { company: deal.org_name || deal.title, value, confidence: parsed.confidence },
           });
-          results.push({ id: deal.id, company: deal.company, value, confidence: parsed.confidence, reasoning: parsed.reasoning });
+          results.push({ id: deal.id, company: deal.org_name || deal.title, value, confidence: parsed.confidence, reasoning: parsed.reasoning, queued: true });
         } else {
-          results.push({ id: deal.id, company: deal.company, skipped: true, reason: "could not estimate" });
+          results.push({ id: deal.id, company: deal.org_name || deal.title, skipped: true, reason: "could not estimate" });
         }
       } catch (err: any) {
-        results.push({ id: deal.id, company: deal.company, skipped: true, reason: err.message });
+        results.push({ id: deal.id, company: deal.org_name || deal.title, skipped: true, reason: err.message });
       }
     }
 
-    return { ok: true, updated: results.filter(r => !r.skipped).length, total: deals.length, results };
+    return { ok: true, queued: results.filter(r => r.queued).length, skipped: results.filter(r => r.skipped).length, total: deals.length, results };
   });
 }
