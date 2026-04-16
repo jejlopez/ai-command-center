@@ -10,6 +10,89 @@ import { callModel } from "../lib/skills.js";
 import { audit } from "../lib/audit.js";
 import { approvals } from "../lib/approvals.js";
 
+// 3PL Center rate card — from proposal_generator.ts
+const RATE_CARD = {
+  storage_per_pallet: 17.50,
+  receiving_per_pallet: 12.50,
+  outbound_per_pallet: 12.50,
+  order_processing: 1.75,
+  pick_fee: 0.45,
+  picks_per_order: 3,
+  admin_fee: 199,
+  bol_fee: 4.50,
+  handling_minimum: 2500,
+  storage_minimum: 1000,
+};
+
+// Volume buckets — estimate from context clues
+interface VolumeBucket {
+  label: string;
+  pallets: number;
+  orders: number;
+  palletsIn: number;
+}
+
+const VOLUME_BUCKETS: Record<string, VolumeBucket> = {
+  tiny:   { label: "Tiny (startup/test)",    pallets: 5,   orders: 100,  palletsIn: 3 },
+  small:  { label: "Small (early stage)",    pallets: 15,  orders: 300,  palletsIn: 8 },
+  medium: { label: "Medium (growing)",       pallets: 50,  orders: 1000, palletsIn: 20 },
+  large:  { label: "Large (established)",    pallets: 150, orders: 3000, palletsIn: 50 },
+  xlarge: { label: "XL (high volume)",       pallets: 500, orders: 10000,palletsIn: 150 },
+};
+
+function calculateDealValue(bucket: VolumeBucket) {
+  const storageCost = Math.max(bucket.pallets * RATE_CARD.storage_per_pallet, RATE_CARD.storage_minimum);
+  const receivingCost = bucket.palletsIn * RATE_CARD.receiving_per_pallet;
+  const orderCost = bucket.orders * RATE_CARD.order_processing;
+  const pickCost = bucket.orders * RATE_CARD.picks_per_order * RATE_CARD.pick_fee;
+  const handlingSubtotal = receivingCost + orderCost + pickCost;
+  const handlingActual = Math.max(handlingSubtotal, RATE_CARD.handling_minimum);
+  const monthlyTotal = storageCost + handlingActual + RATE_CARD.admin_fee;
+  const annualTotal = monthlyTotal * 12;
+
+  return {
+    monthly: Math.round(monthlyTotal),
+    annual: Math.round(annualTotal),
+    lines: [
+      {
+        line: "Storage",
+        calc: `${bucket.pallets} pallets × $${RATE_CARD.storage_per_pallet}/pallet${bucket.pallets * RATE_CARD.storage_per_pallet < RATE_CARD.storage_minimum ? ` (min $${RATE_CARD.storage_minimum})` : ""}`,
+        monthly: Math.round(storageCost),
+        amount: Math.round(storageCost * 12),
+      },
+      {
+        line: "Receiving",
+        calc: `${bucket.palletsIn} pallets/mo × $${RATE_CARD.receiving_per_pallet}`,
+        monthly: Math.round(receivingCost),
+        amount: Math.round(receivingCost * 12),
+      },
+      {
+        line: "Order processing",
+        calc: `${bucket.orders} orders × $${RATE_CARD.order_processing}`,
+        monthly: Math.round(orderCost),
+        amount: Math.round(orderCost * 12),
+      },
+      {
+        line: "Pick fees",
+        calc: `${bucket.orders * RATE_CARD.picks_per_order} picks × $${RATE_CARD.pick_fee}`,
+        monthly: Math.round(pickCost),
+        amount: Math.round(pickCost * 12),
+      },
+      {
+        line: "Admin fee",
+        calc: "Flat monthly",
+        monthly: RATE_CARD.admin_fee,
+        amount: RATE_CARD.admin_fee * 12,
+      },
+    ].concat(handlingSubtotal < RATE_CARD.handling_minimum ? [{
+      line: "Handling minimum adjustment",
+      calc: `Min $${RATE_CARD.handling_minimum} applies (subtotal was $${Math.round(handlingSubtotal)})`,
+      monthly: Math.round(RATE_CARD.handling_minimum - handlingSubtotal),
+      amount: Math.round((RATE_CARD.handling_minimum - handlingSubtotal) * 12),
+    }] : []),
+  };
+}
+
 export async function crmRoutes(app: FastifyInstance) {
   // Status
   app.get("/crm/status", async () => ({
@@ -242,102 +325,112 @@ export async function crmRoutes(app: FastifyInstance) {
       if (deal.contact_email) dataSources.push("contact_email");
       if (deal.org_name && !deal.org_name.startsWith("Deal #")) dataSources.push("company_name");
 
-      // Check for past denials on this deal to include as feedback
+      // Check for past denials on this deal
       const pastFeedback = db.prepare(
         "SELECT reason, corrected_value, original_estimate FROM value_estimate_feedback WHERE deal_id = ? ORDER BY created_at DESC LIMIT 3"
       ).all(deal.id) as any[];
 
       const feedbackBlock = pastFeedback.length > 0
-        ? `\n\nPREVIOUS ESTIMATE WAS REJECTED. User corrections:\n${pastFeedback.map((f: any) =>
-            `- Jarvis said $${f.original_estimate?.toLocaleString()}${f.corrected_value ? `, user said real value is $${f.corrected_value.toLocaleString()}` : ""}. Reason: ${f.reason}`
-          ).join("\n")}\nDO NOT repeat the same mistake. Use the user's corrections as ground truth.`
-        : "";
-
-      // Check for calibration data
-      const calibration = db.prepare(
-        "SELECT calibration_data FROM value_estimate_calibration ORDER BY created_at DESC LIMIT 1"
-      ).get() as any;
-      const calBlock = calibration
-        ? `\n\nCALIBRATED PRICING (learned from user corrections):\n${calibration.calibration_data}`
+        ? `\n\nPrevious estimates were rejected:\n${pastFeedback.map((f: any) =>
+            `- Estimated $${f.original_estimate?.toLocaleString()}${f.corrected_value ? `, actual was $${f.corrected_value.toLocaleString()}` : ""}. Reason: ${f.reason}`
+          ).join("\n")}\nUse these corrections to pick the right volume bucket.`
         : "";
 
       try {
-        const result = await callModel({
-          kind: "summary",
-          privacy: "personal",
-          prompt: `Estimate the ANNUAL deal value for this 3PL/logistics deal. Show your math.
+        // Step 1: Try to extract volumes from notes/context with code first
+        const allText = (context + " " + dealNotes).toLowerCase();
+        let autoDetectedBucket: string | null = null;
 
-${context}${feedbackBlock}${calBlock}
+        // Parse volume clues from text
+        const palletMatch = allText.match(/(\d[\d,]*)\s*pallets?/);
+        const orderMatch = allText.match(/(\d[\d,]*)\s*(orders?|shipments?|packages?|boxes?)\s*\/?\s*(mo|month|per month|monthly)/);
+        const parsedPallets = palletMatch ? parseInt(palletMatch[1].replace(/,/g, "")) : 0;
+        const parsedOrders = orderMatch ? parseInt(orderMatch[1].replace(/,/g, "")) : 0;
 
-3PL pricing benchmarks:
-- Storage: $15-30/pallet/month
-- Pick & pack: $2-5/order
-- Receiving: $25-50/pallet
-- Shipping: $5-15/package (varies by weight/zone)
-- Monthly minimum: ~$1,500-3,000 for small accounts
+        if (parsedPallets > 200 || parsedOrders > 5000) autoDetectedBucket = "xlarge";
+        else if (parsedPallets > 80 || parsedOrders > 2000) autoDetectedBucket = "large";
+        else if (parsedPallets > 25 || parsedOrders > 500) autoDetectedBucket = "medium";
+        else if (parsedPallets > 8 || parsedOrders > 150) autoDetectedBucket = "small";
+        else if (parsedPallets > 0 || parsedOrders > 0) autoDetectedBucket = "tiny";
 
-Return ONLY a JSON object:
-{
-  "monthly_total": <monthly number>,
-  "value_usd": <annual = monthly_total × 12>,
-  "confidence_pct": <0-100>,
-  "confidence_why": "<what data was missing or present>",
-  "math": [
-    {"line": "<component>", "calc": "<formula showing monthly>", "monthly": <monthly amount>, "amount": <annual = monthly × 12>}
-  ],
-  "assumptions": "<key assumptions>"
-}
+        // Known large companies
+        const orgLower = (deal.org_name || deal.title || "").toLowerCase();
+        if (/spacex|tesla|amazon|walmart|target|costco|nike/i.test(orgLower)) autoDetectedBucket = "xlarge";
 
-CRITICAL RULES:
-- Calculate each component as a MONTHLY cost first, then multiply by 12 for annual.
-- Each math line must have both "monthly" and "amount" (annual) fields.
-- "value_usd" MUST equal the sum of all math line "amount" fields. Verify this before responding.
-- "value_usd" MUST equal "monthly_total" × 12. If it doesn't, fix it.
-- Do NOT invent a value_usd that doesn't match the math. The math IS the value.
-- If monthly components sum to $1,500, then annual is $18,000. Not $120,000. Not $500,000. $18,000.
-- No other text outside the JSON.`,
-        }, { skill: "deal_value_estimator" });
+        // Stage-based defaults if no volume data
+        const stage = (deal.stage || "").toLowerCase();
+        const isNegotiating = stage.includes("negotiat") || stage.includes("proposal") || stage.includes("follow up");
+        const isNewLead = stage.includes("new lead") || stage.includes("gather info");
 
-        const parsed = JSON.parse(result.text.trim().replace(/```json?\n?/g, "").replace(/```/g, ""));
+        let bucketKey: string;
+        let confidencePct: number;
+        let confidenceWhy: string;
 
-        // Self-check: verify math adds up
-        const mathLines = parsed.math || [];
-        const mathSum = mathLines.reduce((s: number, m: any) => s + (Number(m.amount) || 0), 0);
-        const monthlySum = mathLines.reduce((s: number, m: any) => s + (Number(m.monthly) || 0), 0);
-
-        // Trust the math, not the headline number
-        let value: number;
-        if (mathSum > 0) {
-          value = Math.round(mathSum);
-          parsed.value_usd = value;
-          parsed.monthly_total = Math.round(monthlySum);
-        } else if (parsed.monthly_total > 0) {
-          value = Math.round(parsed.monthly_total * 12);
-          parsed.value_usd = value;
+        if (autoDetectedBucket) {
+          // Code-detected volume — high confidence
+          bucketKey = autoDetectedBucket;
+          confidencePct = parsedPallets > 0 || parsedOrders > 0 ? 85 : 70;
+          confidenceWhy = parsedPallets > 0 || parsedOrders > 0
+            ? `Detected ${parsedPallets > 0 ? `${parsedPallets} pallets` : ""}${parsedPallets > 0 && parsedOrders > 0 ? " and " : ""}${parsedOrders > 0 ? `${parsedOrders} orders/mo` : ""} in deal notes`
+            : `Known large company — classified as ${autoDetectedBucket}`;
+        } else if (isNegotiating) {
+          // Further along in pipeline, likely medium
+          bucketKey = "medium";
+          confidencePct = 50;
+          confidenceWhy = "In negotiation/proposal stage but no volume data — estimated medium";
+        } else if (isNewLead) {
+          // Early stage, likely small
+          bucketKey = "small";
+          confidencePct = 35;
+          confidenceWhy = "New lead with no volume data — defaulting to small";
         } else {
-          value = Math.round(Number(parsed.value_usd) || 0);
+          // Use LLM as fallback only when code can't determine
+          try {
+            const result = await callModel({
+              kind: "summary",
+              privacy: "personal",
+              prompt: `Classify this deal: tiny/small/medium/large/xlarge.
+
+${context.slice(0, 500)}${feedbackBlock}
+
+Reply ONLY: {"bucket":"<size>"}`,
+            }, { skill: "deal_value_estimator" });
+            const parsed = JSON.parse(result.text.trim().replace(/```json?\n?/g, "").replace(/```/g, ""));
+            bucketKey = parsed.bucket || "small";
+          } catch {
+            bucketKey = "small";
+          }
+          confidencePct = 40;
+          confidenceWhy = "LLM classification — limited context";
         }
+
+        const bucket = VOLUME_BUCKETS[bucketKey] || VOLUME_BUCKETS.small;
+
+        // Step 2: Calculate value using REAL rate card
+        const calc = calculateDealValue(bucket);
+        const value = calc.annual;
 
         if (value > 0) {
           // Queue as approval — do NOT write value directly
           approvals.enqueue({
-            title: `Value estimate: ${deal.org_name || deal.title} — $${value.toLocaleString()}/yr ($${Math.round(value / 12).toLocaleString()}/mo)`,
-            reason: parsed.assumptions || parsed.confidence_why || "",
+            title: `Value estimate: ${deal.org_name || deal.title} — $${calc.monthly.toLocaleString()}/mo ($${value.toLocaleString()}/yr)`,
+            reason: confidenceWhy || "",
             skill: "deal_value_estimator",
             riskLevel: "low",
             payload: {
               deal_id: deal.id,
               estimated_value: value,
-              monthly_total: parsed.monthly_total ?? Math.round(value / 12),
-              confidence_pct: parsed.confidence_pct ?? 50,
-              confidence_why: parsed.confidence_why ?? "",
-              math: parsed.math ?? [],
-              assumptions: parsed.assumptions ?? "",
+              monthly_total: calc.monthly,
+              confidence_pct: confidencePct,
+              confidence_why: confidenceWhy,
+              volume_bucket: bucketKey,
+              volume_label: bucket.label,
+              math: calc.lines,
+              assumptions: `Volume bucket: ${bucket.label} (${bucket.pallets} pallets, ${bucket.orders} orders/mo, ${bucket.palletsIn} receiving/mo)`,
               data_sources: dataSources,
               company: deal.org_name || deal.title,
               stage: deal.stage,
               contact: deal.contact_name,
-              context_summary: context.slice(0, 800),
               attempt: (pastFeedback.length + 1),
             },
           });
@@ -345,9 +438,9 @@ CRITICAL RULES:
             actor: "jarvis",
             action: "deal.value_estimate_queued",
             subject: deal.id,
-            metadata: { company: deal.org_name || deal.title, value, confidence: parsed.confidence },
+            metadata: { company: deal.org_name || deal.title, value, bucket: bucketKey, confidence: confidencePct },
           });
-          results.push({ id: deal.id, company: deal.org_name || deal.title, value, confidence_pct: parsed.confidence_pct, queued: true });
+          results.push({ id: deal.id, company: deal.org_name || deal.title, value, bucket: bucketKey, confidence_pct: confidencePct, queued: true });
         } else {
           results.push({ id: deal.id, company: deal.org_name || deal.title, skipped: true, reason: "could not estimate" });
         }
@@ -445,10 +538,9 @@ Based on these corrections, output a JSON object with updated pricing benchmarks
     if (deal_id && decision === "rejected") {
       const deal = db.prepare("SELECT * FROM crm_deals WHERE id = ?").get(deal_id) as any;
       if (deal) {
-        // Gather same context as the estimator
+        const dealNotes = deal.notes_summary || "";
         const acts = db.prepare("SELECT type, subject FROM crm_activities WHERE deal_id = ? ORDER BY rowid DESC LIMIT 5").all(deal.id) as any[];
         const nts = db.prepare("SELECT content FROM crm_notes WHERE deal_id = ? ORDER BY rowid DESC LIMIT 3").all(deal.id) as any[];
-        const dealNotes = deal.notes_summary || "";
         const actText = acts.map((a: any) => `[${a.type}] ${a.subject || ""}`).join("\n");
         const noteText = nts.map((n: any) => (n.content || "").slice(0, 300)).join("\n");
 
@@ -456,107 +548,82 @@ Based on these corrections, output a JSON object with updated pricing benchmarks
           "SELECT reason, corrected_value, original_estimate FROM value_estimate_feedback WHERE deal_id = ? ORDER BY created_at DESC LIMIT 5"
         ).all(deal.id) as any[];
 
-        const feedbackBlock = `\n\nPREVIOUS ESTIMATES WERE REJECTED. User corrections:\n${allFeedback.map((f: any) =>
-          `- Jarvis said $${f.original_estimate?.toLocaleString()}${f.corrected_value ? `, user said real value is $${f.corrected_value.toLocaleString()}` : ""}. Reason: ${f.reason}`
-        ).join("\n")}\nDO NOT repeat these mistakes. The user's corrections are ground truth.`;
-
-        const calRow = db.prepare("SELECT calibration_data FROM value_estimate_calibration ORDER BY created_at DESC LIMIT 1").get() as any;
-        const calBlock = calRow ? `\n\nCALIBRATED PRICING:\n${calRow.calibration_data}` : "";
+        const feedbackBlock = `\nPrevious estimates rejected:\n${allFeedback.map((f: any) =>
+          `- Estimated $${f.original_estimate?.toLocaleString()}${f.corrected_value ? `, actual $${f.corrected_value.toLocaleString()}` : ""}. Reason: ${f.reason}`
+        ).join("\n")}`;
 
         const ctx = [
           `Company: ${deal.org_name || deal.title}`,
           `Stage: ${deal.stage}`,
           `Contact: ${deal.contact_name || "unknown"}`,
-          deal.contact_email ? `Email: ${deal.contact_email}` : "",
-          dealNotes ? `Deal Notes:\n${dealNotes.slice(0, 1000)}` : "",
+          dealNotes ? `Notes:\n${dealNotes.slice(0, 1000)}` : "",
           noteText ? `CRM Notes:\n${noteText}` : "",
           actText ? `Activities:\n${actText}` : "",
         ].filter(Boolean).join("\n");
 
-        const dataSrcs: string[] = [];
+        const dataSrcs: string[] = ["user_feedback"];
         if (dealNotes) dataSrcs.push("deal_notes");
         if (noteText) dataSrcs.push("crm_notes");
         if (actText) dataSrcs.push("activities");
-        if (deal.contact_email) dataSrcs.push("contact_email");
-        if (deal.org_name && !deal.org_name.startsWith("Deal #")) dataSrcs.push("company_name");
-        dataSrcs.push("user_feedback");
 
         try {
+          // Use same bucket classification approach
           const result = await callModel({
             kind: "summary",
             privacy: "personal",
-            prompt: `Re-estimate the ANNUAL deal value for this 3PL/logistics deal. Your previous estimate was WRONG and rejected by the user. Read their feedback carefully and try again.
+            prompt: `Re-classify this deal into a volume bucket. Previous estimate was WRONG.
 
-${ctx}${feedbackBlock}${calBlock}
+${ctx}${feedbackBlock}
 
-3PL pricing benchmarks:
-- Storage: $15-30/pallet/month
-- Pick & pack: $2-5/order
-- Receiving: $25-50/pallet
-- Shipping: $5-15/package
-- Monthly minimum: ~$1,500-3,000 for small accounts
+Volume buckets:
+- "tiny": ~5 pallets, ~100 orders/mo. Monthly ~$3,700.
+- "small": ~15 pallets, ~300 orders/mo. Monthly ~$3,500.
+- "medium": ~50 pallets, ~1,000 orders/mo. Monthly ~$5,000.
+- "large": ~150 pallets, ~3,000 orders/mo. Monthly ~$13,000.
+- "xlarge": ~500+ pallets, ~10,000+ orders/mo. Monthly ~$35,000+.
 
-Return ONLY a JSON object:
-{
-  "monthly_total": <monthly number>,
-  "value_usd": <annual = monthly_total × 12>,
-  "confidence_pct": <0-100>,
-  "confidence_why": "<what changed from the previous attempt>",
-  "math": [
-    {"line": "<component>", "calc": "<formula showing monthly>", "monthly": <monthly>, "amount": <annual = monthly × 12>}
-  ],
-  "assumptions": "<what you changed based on user feedback>"
-}
+${corrected_value ? `The user says the real value is ~$${Number(corrected_value).toLocaleString()}/yr (~$${Math.round(Number(corrected_value) / 12).toLocaleString()}/mo). Pick the bucket closest to that.` : ""}
 
-CRITICAL: value_usd MUST = sum of all math "amount" fields = monthly_total × 12. Verify before responding.`,
+Return ONLY: {"bucket": "tiny"|"small"|"medium"|"large"|"xlarge", "confidence_pct": <0-100>, "confidence_why": "<reason>"}`,
           }, { skill: "deal_value_estimator" });
 
           const parsed = JSON.parse(result.text.trim().replace(/```json?\n?/g, "").replace(/```/g, ""));
-          const mathLines = parsed.math || [];
-          const mathAnnualSum = mathLines.reduce((s: number, m: any) => s + (Number(m.amount) || 0), 0);
-          const monthlySum = mathLines.reduce((s: number, m: any) => s + (Number(m.monthly) || 0), 0);
+          const bucketKey = parsed.bucket || "small";
+          const bucket = VOLUME_BUCKETS[bucketKey] || VOLUME_BUCKETS.small;
+          const calc = calculateDealValue(bucket);
 
-          let newValue: number;
-          if (mathAnnualSum > 0) {
-            newValue = Math.round(mathAnnualSum);
-          } else if (monthlySum > 0) {
-            newValue = Math.round(monthlySum * 12);
-          } else {
-            newValue = Math.round(Number(parsed.value_usd) || 0);
-          }
+          approvals.enqueue({
+            title: `Re-estimate: ${deal.org_name || deal.title} — $${calc.monthly.toLocaleString()}/mo ($${calc.annual.toLocaleString()}/yr)`,
+            reason: `Revised after feedback: "${reason}"`,
+            skill: "deal_value_estimator",
+            riskLevel: "low",
+            payload: {
+              deal_id: deal.id,
+              estimated_value: calc.annual,
+              monthly_total: calc.monthly,
+              confidence_pct: parsed.confidence_pct ?? 50,
+              confidence_why: parsed.confidence_why ?? "",
+              volume_bucket: bucketKey,
+              volume_label: bucket.label,
+              math: calc.lines,
+              assumptions: `Volume bucket: ${bucket.label}. ${parsed.confidence_why || ""}`,
+              data_sources: dataSrcs,
+              company: deal.org_name || deal.title,
+              stage: deal.stage,
+              contact: deal.contact_name,
+              attempt: allFeedback.length + 1,
+              previous_estimate: original_estimate,
+              user_correction: corrected_value,
+            },
+          });
+          reEstimated = true;
 
-          if (newValue > 0) {
-            approvals.enqueue({
-              title: `Re-estimate: ${deal.org_name || deal.title} — $${newValue.toLocaleString()}/yr ($${Math.round(newValue / 12).toLocaleString()}/mo)`,
-              reason: `Revised after feedback: "${reason}"`,
-              skill: "deal_value_estimator",
-              riskLevel: "low",
-              payload: {
-                deal_id: deal.id,
-                estimated_value: newValue,
-                monthly_total: parsed.monthly_total ?? Math.round(newValue / 12),
-                confidence_pct: parsed.confidence_pct ?? 50,
-                confidence_why: parsed.confidence_why ?? "",
-                math: parsed.math ?? [],
-                assumptions: parsed.assumptions ?? "",
-                data_sources: dataSrcs,
-                company: deal.org_name || deal.title,
-                stage: deal.stage,
-                contact: deal.contact_name,
-                attempt: allFeedback.length + 1,
-                previous_estimate: original_estimate,
-                user_correction: corrected_value,
-              },
-            });
-            reEstimated = true;
-
-            audit({
-              actor: "jarvis",
-              action: "deal.value_re_estimated",
-              subject: deal.id,
-              metadata: { company: deal.org_name || deal.title, oldValue: original_estimate, newValue, attempt: allFeedback.length + 1 },
-            });
-          }
+          audit({
+            actor: "jarvis",
+            action: "deal.value_re_estimated",
+            subject: deal.id,
+            metadata: { company: deal.org_name || deal.title, bucket: bucketKey, oldValue: original_estimate, newValue: calc.annual },
+          });
         } catch {}
       }
     }
