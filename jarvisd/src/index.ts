@@ -50,6 +50,15 @@ import { whaleDetector } from "./skills/whale_detector.js";
 import { objectionCoach } from "./skills/objection_coach.js";
 import { inboundCapture } from "./skills/inbound_capture.js";
 import { nurtureEngine } from "./skills/nurture_engine.js";
+// ── Elon skills ──
+import { firstPrinciplesAnalyzer } from "./skills/first_principles_analyzer.js";
+import { constraintDetector } from "./skills/constraint_detector.js";
+import { iterationEngine } from "./skills/iteration_engine.js";
+// ── Buffett skills ──
+import { relationshipCapitalTracker } from "./skills/relationship_capital_tracker.js";
+import { dealQualityScorer } from "./skills/deal_quality_scorer.js";
+import { compoundingRevenueTracker } from "./skills/compounding_revenue_tracker.js";
+import { circleOfCompetenceGuard } from "./skills/circle_of_competence_guard.js";
 import { crmRoutes } from "./routes/crm.js";
 import { webhookRoutes } from "./routes/webhooks.js";
 import { learningRoutes } from "./routes/learning.js";
@@ -166,6 +175,15 @@ async function main() {
   registry.register(objectionCoach);
   registry.register(inboundCapture);
   registry.register(nurtureEngine);
+  // ── Elon skills ──
+  registry.register(firstPrinciplesAnalyzer);
+  registry.register(constraintDetector);
+  registry.register(iterationEngine);
+  // ── Buffett skills ──
+  registry.register(relationshipCapitalTracker);
+  registry.register(dealQualityScorer);
+  registry.register(compoundingRevenueTracker);
+  registry.register(circleOfCompetenceGuard);
 
   // Wire the event bus after skills are registered so subscriptions pick up
   // every manifest with an event trigger.
