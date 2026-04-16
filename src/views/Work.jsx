@@ -17,6 +17,7 @@ const EmailInboxPanel = lazy(() => import("../components/sales/EmailInboxPanel.j
 const EmailDetailModal= lazy(() => import("../components/sales/EmailDetailModal.jsx").then(m => ({ default: m.EmailDetailModal })));
 const TradingDashboard= lazy(() => import("../components/ops/TradingDashboard.jsx").then(m => ({ default: m.TradingDashboard })));
 const BuildDashboard  = lazy(() => import("../components/ops/BuildDashboard.jsx").then(m => ({ default: m.BuildDashboard })));
+const ApprovalQueue   = lazy(() => import("../components/sales/ApprovalQueue.jsx").then(m => ({ default: m.ApprovalQueue })));
 
 export default function Work() {
   const [mode, setMode] = useState("sales");
@@ -99,6 +100,11 @@ export default function Work() {
             )}
             {mode === "sales" && salesTab === "inbox" && (
               <EmailInboxPanel onSelectEmail={setSelectedEmail} />
+            )}
+            {mode === "sales" && salesTab === "approvals" && (
+              <div className="h-full overflow-y-auto p-4">
+                <ApprovalQueue />
+              </div>
             )}
             {mode === "sales" && salesTab === "playbook" && (
               <PlaybookTab deals={mergedDeals} />
