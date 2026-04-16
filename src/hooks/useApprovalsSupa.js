@@ -73,16 +73,19 @@ export function useApprovalsSupa({ leadId, dealId, statusFilter } = {}) {
         reason: userComment,
       });
 
-      // Create learning_event if edits were made
-      if (userEdits && Object.keys(userEdits).length > 0) {
+      // Create learning_event for edits or rejections
+      const hasEdits = userEdits && Object.keys(userEdits).length > 0;
+      if (hasEdits || status === "rejected") {
         await supabase.from("learning_events").insert({
           approval_id: id,
           lead_id: approval.lead_id,
           deal_id: approval.deal_id,
           event_type: status === "approved" ? "draft_edited" : "draft_rejected",
           ai_draft: approval.draft_content,
-          final_version: finalContent,
-          diff_summary: userEdits,
+          final_version: finalContent || null,
+          diff_summary: hasEdits
+            ? userEdits
+            : { critique: userComment, context_type: approval.type },
         });
       }
     }

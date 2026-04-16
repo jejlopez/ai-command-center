@@ -128,6 +128,30 @@ function extractBody(payload: any): string {
   return "";
 }
 
+export async function getMessage(messageId: string): Promise<GmailMessage> {
+  assertLimit("gmail", "scan");
+  const msg = await gmailApi("GET", `/messages/${messageId}?format=full`);
+  const headers = msg.payload?.headers ?? [];
+  const getHeader = (name: string) =>
+    headers.find((h: any) => h.name.toLowerCase() === name.toLowerCase())?.value ?? "";
+
+  const message: GmailMessage = {
+    id: msg.id,
+    threadId: msg.threadId,
+    from: getHeader("From"),
+    to: getHeader("To"),
+    subject: getHeader("Subject"),
+    snippet: msg.snippet ?? "",
+    body: extractBody(msg.payload),
+    date: getHeader("Date"),
+    labels: msg.labelIds ?? [],
+    isStarred: (msg.labelIds ?? []).includes("STARRED"),
+  };
+
+  recordAction("gmail", "scan");
+  return message;
+}
+
 // ---------------------------------------------------------------------------
 // Draft (Phase B)
 // ---------------------------------------------------------------------------

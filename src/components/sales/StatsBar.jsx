@@ -66,6 +66,16 @@ export function StatsBar({ deals = [], proposals = [], followUps = [], leads = [
           Deals
         </button>
         <button
+          onClick={() => onTabChange("inbox")}
+          className={`text-[11px] px-3.5 py-1.5 rounded-lg transition font-medium ${
+            activeTab === "inbox"
+              ? "bg-jarvis-primary/15 text-jarvis-primary"
+              : "text-jarvis-muted hover:text-jarvis-ink"
+          }`}
+        >
+          Inbox
+        </button>
+        <button
           onClick={() => onTabChange("playbook")}
           className={`text-[11px] px-3.5 py-1.5 rounded-lg transition font-medium ${
             activeTab === "playbook"

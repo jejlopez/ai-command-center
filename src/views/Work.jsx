@@ -1,20 +1,26 @@
-import { useState } from "react";
+import { useState, lazy, Suspense } from "react";
+import { AnimatePresence } from "framer-motion";
 import { useOpsSupa } from "../hooks/useOpsSupa.js";
 import { useCRM } from "../hooks/useCRM.js";
 import { useLeadsSupa } from "../hooks/useLeadsSupa.js";
 import { ModeBar } from "../components/ops/ModeBar.jsx";
 import { QuickAddOps } from "../components/ops/QuickAddOps.jsx";
-import { SalesDashboard } from "../components/ops/SalesDashboard.jsx";
-import { LeadsTab } from "../components/sales/LeadsTab.jsx";
-import { PlaybookTab } from "../components/sales/PlaybookTab.jsx";
 import { StatsBar } from "../components/sales/StatsBar.jsx";
 import { SalesCommandBriefing } from "../components/sales/SalesCommandBriefing.jsx";
-import { TradingDashboard } from "../components/ops/TradingDashboard.jsx";
-import { BuildDashboard } from "../components/ops/BuildDashboard.jsx";
+
+// Lazy-load tab content — only one mode/tab visible at a time
+const SalesDashboard  = lazy(() => import("../components/ops/SalesDashboard.jsx").then(m => ({ default: m.SalesDashboard })));
+const LeadsTab        = lazy(() => import("../components/sales/LeadsTab.jsx").then(m => ({ default: m.LeadsTab })));
+const PlaybookTab     = lazy(() => import("../components/sales/PlaybookTab.jsx").then(m => ({ default: m.PlaybookTab })));
+const EmailInboxPanel = lazy(() => import("../components/sales/EmailInboxPanel.jsx").then(m => ({ default: m.EmailInboxPanel })));
+const EmailDetailModal= lazy(() => import("../components/sales/EmailDetailModal.jsx").then(m => ({ default: m.EmailDetailModal })));
+const TradingDashboard= lazy(() => import("../components/ops/TradingDashboard.jsx").then(m => ({ default: m.TradingDashboard })));
+const BuildDashboard  = lazy(() => import("../components/ops/BuildDashboard.jsx").then(m => ({ default: m.BuildDashboard })));
 
 export default function Work() {
   const [mode, setMode] = useState("sales");
   const [salesTab, setSalesTab] = useState("deals");
+  const [selectedEmail, setSelectedEmail] = useState(null);
   const crm = useCRM();
   const { leads: supaLeads } = useLeadsSupa();
 
@@ -66,31 +72,48 @@ export default function Work() {
 
       {/* Main content */}
       <div className="flex-1 overflow-hidden">
-        {loading && (
+        {loading ? (
           <div className="flex items-center justify-center h-full">
             <div className="text-xs text-jarvis-muted animate-pulse">Loading…</div>
           </div>
-        )}
-
-        {!loading && mode === "sales" && salesTab === "leads" && (
-          <LeadsTab crm={crm} />
-        )}
-        {!loading && mode === "sales" && salesTab === "deals" && (
-          <SalesDashboard ops={ops} onRefresh={refresh} />
-        )}
-        {!loading && mode === "sales" && salesTab === "playbook" && (
-          <PlaybookTab deals={mergedDeals} />
-        )}
-        {!loading && mode === "trading" && (
-          <TradingDashboard ops={ops} onRefresh={refresh} />
-        )}
-        {!loading && mode === "build" && (
-          <BuildDashboard ops={ops} onRefresh={refresh} />
+        ) : (
+          <Suspense fallback={<div className="flex items-center justify-center h-full"><div className="text-xs text-jarvis-muted animate-pulse">Loading…</div></div>}>
+            {mode === "sales" && salesTab === "leads" && (
+              <LeadsTab crm={crm} />
+            )}
+            {mode === "sales" && salesTab === "deals" && (
+              <SalesDashboard ops={ops} onRefresh={refresh} />
+            )}
+            {mode === "sales" && salesTab === "inbox" && (
+              <EmailInboxPanel onSelectEmail={setSelectedEmail} />
+            )}
+            {mode === "sales" && salesTab === "playbook" && (
+              <PlaybookTab deals={mergedDeals} />
+            )}
+            {mode === "trading" && (
+              <TradingDashboard ops={ops} onRefresh={refresh} />
+            )}
+            {mode === "build" && (
+              <BuildDashboard ops={ops} onRefresh={refresh} />
+            )}
+          </Suspense>
         )}
       </div>
 
       {/* Quick add bar */}
       <QuickAddOps mode={mode} onRefresh={refresh} />
+
+      {/* Email detail modal */}
+      {selectedEmail && (
+        <Suspense fallback={null}>
+          <AnimatePresence>
+            <EmailDetailModal
+              triageEmail={selectedEmail}
+              onClose={() => setSelectedEmail(null)}
+            />
+          </AnimatePresence>
+        </Suspense>
+      )}
     </div>
   );
 }

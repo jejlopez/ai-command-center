@@ -71,8 +71,22 @@ export function useLeadsSupa() {
 
   const createLead = useCallback(async (fields) => {
     if (!supabase) return null;
-    const { data: lead, error } = await supabase.from("leads").insert(fields).select().single();
+    const { data: lead, error } = await supabase.from("leads").insert(fields).select("*, contacts(name, email)").single();
     if (error) throw error;
+
+    // Auto-trigger lead research if we have a company name
+    if (lead.company) {
+      const contact = lead.contacts;
+      try {
+        const { jarvis } = await import("../lib/jarvis.js");
+        jarvis.runSkill("lead_research", {
+          company: lead.company,
+          contactName: contact?.name || "",
+          contactEmail: contact?.email || "",
+        });
+      } catch { /* non-blocking */ }
+    }
+
     refresh();
     return lead;
   }, [refresh]);

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { X, Mail, FileText, GitBranch, Clock } from "lucide-react";
+import { X, Mail, FileText, GitBranch, Clock, Check } from "lucide-react";
 
 const TYPE_META = {
   email:        { icon: Mail,      label: "Email" },
@@ -40,6 +40,9 @@ export default function ApprovalReview({ approval, onDecide, onClose }) {
   const [editedSubject, setEditedSubject] = useState(draft.subject ?? "");
   const [editedBody,    setEditedBody]    = useState(draft.body    ?? "");
   const [comment,       setComment]       = useState("");
+  const [denyMode,      setDenyMode]      = useState(false);
+  const [denyReason,    setDenyReason]    = useState("");
+  const [denied,        setDenied]        = useState(false);
 
   function handleApprove() {
     const userEdits = computeUserEdits(draft, editedSubject, editedBody);
@@ -52,10 +55,12 @@ export default function ApprovalReview({ approval, onDecide, onClose }) {
   }
 
   function handleReject() {
+    if (!denyReason.trim()) return;
     onDecide({
       status:      "rejected",
-      userComment: comment || undefined,
+      userComment: denyReason.trim(),
     });
+    setDenied(true);
   }
 
   return (
@@ -153,26 +158,66 @@ export default function ApprovalReview({ approval, onDecide, onClose }) {
           </section>
         </div>
 
-        {/* Action Buttons */}
-        <div className="flex items-center justify-end gap-2 px-4 py-3 border-t border-white/10 shrink-0">
-          <button
-            onClick={onClose}
-            className="px-3 py-1.5 rounded text-[11px] text-jarvis-muted hover:text-jarvis-text hover:bg-white/5 transition-colors"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={handleReject}
-            className="px-3 py-1.5 rounded text-[11px] font-medium bg-red-900/40 text-red-400 hover:bg-red-900/60 border border-red-800/50 transition-colors"
-          >
-            Reject
-          </button>
-          <button
-            onClick={handleApprove}
-            className="px-3 py-1.5 rounded text-[11px] font-medium bg-green-900/40 text-green-400 hover:bg-green-900/60 border border-green-800/50 transition-colors"
-          >
-            Approve
-          </button>
+        {/* Action Buttons / Deny Flow */}
+        <div className="px-4 py-3 border-t border-white/10 shrink-0">
+          {denied ? (
+            <div className="flex items-center gap-2">
+              <Check size={14} className="text-jarvis-primary" />
+              <span className="text-[11px] text-jarvis-primary font-medium">
+                Got it, I'll learn from this
+              </span>
+            </div>
+          ) : denyMode ? (
+            <div className="space-y-2">
+              <label className="text-[9px] text-jarvis-muted uppercase tracking-wider block">
+                Why are you denying this?
+              </label>
+              <textarea
+                autoFocus
+                value={denyReason}
+                onChange={e => setDenyReason(e.target.value)}
+                placeholder="Too aggressive, wrong tone, inaccurate info…"
+                rows={2}
+                className="w-full bg-white/5 border border-red-800/40 rounded px-2 py-1.5 text-[11px] text-jarvis-text placeholder-jarvis-muted focus:outline-none focus:border-red-600/60 resize-none"
+              />
+              <div className="flex items-center justify-end gap-2">
+                <button
+                  onClick={() => { setDenyMode(false); setDenyReason(""); }}
+                  className="px-3 py-1.5 rounded text-[11px] text-jarvis-muted hover:text-jarvis-text hover:bg-white/5 transition-colors"
+                >
+                  Back
+                </button>
+                <button
+                  onClick={handleReject}
+                  disabled={!denyReason.trim()}
+                  className="px-3 py-1.5 rounded text-[11px] font-medium bg-red-900/40 text-red-400 hover:bg-red-900/60 border border-red-800/50 transition-colors disabled:opacity-40"
+                >
+                  Deny & Teach
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="flex items-center justify-end gap-2">
+              <button
+                onClick={onClose}
+                className="px-3 py-1.5 rounded text-[11px] text-jarvis-muted hover:text-jarvis-text hover:bg-white/5 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => setDenyMode(true)}
+                className="px-3 py-1.5 rounded text-[11px] font-medium bg-red-900/40 text-red-400 hover:bg-red-900/60 border border-red-800/50 transition-colors"
+              >
+                Deny
+              </button>
+              <button
+                onClick={handleApprove}
+                className="px-3 py-1.5 rounded text-[11px] font-medium bg-green-900/40 text-green-400 hover:bg-green-900/60 border border-green-800/50 transition-colors"
+              >
+                Approve
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </div>

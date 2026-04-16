@@ -1,22 +1,27 @@
 // Deal Room — slide-out panel showing everything about a deal.
 // Connected to Supabase for real proposals, communications, and follow-ups.
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, lazy, Suspense } from "react";
 import { motion } from "framer-motion";
-import { X, FileText, Mail, StickyNote, Eye, Link2, Send, Trash2, Loader2, Sparkles } from "lucide-react";
+import { AnimatePresence } from "framer-motion";
+import { X, FileText, Mail, StickyNote, Eye, Link2, Send, Trash2, Loader2, Sparkles, Clock } from "lucide-react";
 import { supabase } from "../../lib/supabase.js";
 import { jarvis } from "../../lib/jarvis.js";
-import { ProposalGenerator } from "../ops/ProposalGenerator.jsx";
 import { BadgeZone } from "../shared/BadgeZone.jsx";
 import { ScoreZone } from "../shared/ScoreZone.jsx";
-import { NBAModule } from "../shared/NBAModule.jsx";
-import { DealDiscovery } from "./DealDiscovery.jsx";
-import { DealObjections } from "./DealObjections.jsx";
-import { ApprovalQueue } from "./ApprovalQueue.jsx";
-import { AuditLogViewer } from "./AuditLogViewer.jsx";
 import { dealHealth, whaleQuadrant } from "../../lib/dealHealth.js";
 import { PipelineEconomics } from "./PipelineEconomics.jsx";
 import { VoiceToCRM } from "./VoiceToCRM.jsx";
+import { DealActivityTimeline } from "./DealActivityTimeline.jsx";
+
+// Lazy-load tab content and modals — only one tab visible at a time
+const ProposalGenerator = lazy(() => import("../ops/ProposalGenerator.jsx").then(m => ({ default: m.ProposalGenerator })));
+const NBAModule         = lazy(() => import("../shared/NBAModule.jsx").then(m => ({ default: m.NBAModule })));
+const DealDiscovery     = lazy(() => import("./DealDiscovery.jsx").then(m => ({ default: m.DealDiscovery })));
+const DealObjections    = lazy(() => import("./DealObjections.jsx").then(m => ({ default: m.DealObjections })));
+const ApprovalQueue     = lazy(() => import("./ApprovalQueue.jsx").then(m => ({ default: m.ApprovalQueue })));
+const AuditLogViewer    = lazy(() => import("./AuditLogViewer.jsx").then(m => ({ default: m.AuditLogViewer })));
+const EmailDetailModal  = lazy(() => import("./EmailDetailModal.jsx").then(m => ({ default: m.EmailDetailModal })));
 
 function Tab({ label, icon: Icon, active, onClick, count }) {
   return (
@@ -44,7 +49,7 @@ function fmtUsd(n) {
 }
 
 export function DealRoomPanel({ deal: initialDeal, onClose }) {
-  const [tab, setTab] = useState("proposal");
+  const [tab, setTab] = useState("timeline");
   const [deal, setDeal] = useState(initialDeal);
   const [proposals, setProposals] = useState([]);
   const [comms, setComms] = useState([]);
@@ -53,6 +58,7 @@ export function DealRoomPanel({ deal: initialDeal, onClose }) {
   const [drafting, setDrafting] = useState(false);
   const [emailDraft, setEmailDraft] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [selectedEmail, setSelectedEmail] = useState(null);
 
   // Map deal to a Supabase deal_id — may be a Pipedrive ID
   const dealId = deal?.supabase_id ?? deal?.id;
@@ -166,7 +172,8 @@ export function DealRoomPanel({ deal: initialDeal, onClose }) {
         </div>
 
         {/* Tabs */}
-        <div className="flex gap-1 px-4 py-2 border-b border-jarvis-border">
+        <div className="flex gap-1 px-4 py-2 border-b border-jarvis-border overflow-x-auto">
+          <Tab label="Timeline" icon={Clock} active={tab === "timeline"} onClick={() => setTab("timeline")} count={0} />
           <Tab label="Proposal" icon={FileText} active={tab === "proposal"} onClick={() => setTab("proposal")} count={proposals.length} />
           <Tab label="Emails" icon={Mail} active={tab === "emails"} onClick={() => setTab("emails")} count={comms.filter(c => c.type === "email").length} />
           <Tab label="Notes" icon={StickyNote} active={tab === "notes"} onClick={() => setTab("notes")} count={comms.filter(c => c.type !== "email").length} />
@@ -177,8 +184,11 @@ export function DealRoomPanel({ deal: initialDeal, onClose }) {
 
         {/* Content */}
         <div className="flex-1 overflow-y-auto p-4">
+          <Suspense fallback={<div className="flex items-center justify-center py-8"><Loader2 size={20} className="animate-spin text-jarvis-primary" /></div>}>
           {loading ? (
             <div className="flex items-center justify-center py-8"><Loader2 size={20} className="animate-spin text-jarvis-primary" /></div>
+          ) : tab === "timeline" ? (
+            <DealActivityTimeline dealId={dealId} onEmailClick={setSelectedEmail} />
           ) : tab === "proposal" ? (
             <div className="space-y-3">
               {/* Pricing breakdown from CRM */}
@@ -408,6 +418,7 @@ export function DealRoomPanel({ deal: initialDeal, onClose }) {
               <AuditLogViewer dealId={dealId} />
             </div>
           ) : null}
+          </Suspense>
 
           {/* Email draft (shown in any tab) */}
           {emailDraft && (
@@ -463,17 +474,31 @@ export function DealRoomPanel({ deal: initialDeal, onClose }) {
 
       {/* Proposal Generator Modal */}
       {showProposalGen && (
-        <ProposalGenerator
-          deal={{ ...deal, id: dealId, company: deal.title || deal.org_name || deal.company }}
-          onClose={() => setShowProposalGen(false)}
-          onSaved={() => {
-            setShowProposalGen(false);
-            if (supabase && dealId) {
-              supabase.from("proposals").select("*").eq("deal_id", dealId).order("created_at", { ascending: false })
-                .then(({ data }) => setProposals(data ?? []));
-            }
-          }}
-        />
+        <Suspense fallback={null}>
+          <ProposalGenerator
+            deal={{ ...deal, id: dealId, company: deal.title || deal.org_name || deal.company }}
+            onClose={() => setShowProposalGen(false)}
+            onSaved={() => {
+              setShowProposalGen(false);
+              if (supabase && dealId) {
+                supabase.from("proposals").select("*").eq("deal_id", dealId).order("created_at", { ascending: false })
+                  .then(({ data }) => setProposals(data ?? []));
+              }
+            }}
+          />
+        </Suspense>
+      )}
+
+      {/* Email Detail Modal */}
+      {selectedEmail && (
+        <Suspense fallback={null}>
+          <AnimatePresence>
+            <EmailDetailModal
+              triageEmail={selectedEmail}
+              onClose={() => setSelectedEmail(null)}
+            />
+          </AnimatePresence>
+        </Suspense>
       )}
     </>
   );

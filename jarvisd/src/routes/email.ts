@@ -4,7 +4,7 @@
 import type { FastifyInstance } from "fastify";
 import { db } from "../db/db.js";
 import { checkAction, validateApproval, listPendingApprovals } from "../lib/approval_gateway.js";
-import { createDraft, updateDraft, sendDraft } from "../lib/providers/gmail_actions.js";
+import { createDraft, updateDraft, sendDraft, getMessage } from "../lib/providers/gmail_actions.js";
 import { audit } from "../lib/audit.js";
 
 export async function emailRoutes(app: FastifyInstance) {
@@ -28,6 +28,21 @@ export async function emailRoutes(app: FastifyInstance) {
       "SELECT category, COUNT(*) as count FROM email_triage GROUP BY category"
     ).all() as any[];
     return rows.reduce((acc: any, r: any) => { acc[r.category] = r.count; return acc; }, {});
+  });
+
+  // --- Single message (full body from Gmail API) ---
+
+  app.get<{ Params: { messageId: string } }>("/email/message/:messageId", async (req, reply) => {
+    try {
+      const msg = await getMessage((req.params as any).messageId);
+      // Attach linked deal/lead from triage table if present
+      const triage = db.prepare(
+        "SELECT id, category, draft_id FROM email_triage WHERE message_id = ?"
+      ).get((req.params as any).messageId) as any;
+      return { ...msg, triage: triage ?? null };
+    } catch (err: any) {
+      return reply.code(502).send({ error: `Gmail fetch failed: ${err.message}` });
+    }
   });
 
   // --- Drafts ---
