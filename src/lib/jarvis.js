@@ -189,6 +189,7 @@ export const jarvis = {
   emailThread:      (threadId)          => get(`/email/thread/${encodeURIComponent(threadId)}`),
   emailMarkRead:    (messageId)         => post(`/email/message/${encodeURIComponent(messageId)}/read`, {}),
   emailSendNow:     (to, subject, body, threadId) => post("/email/send-now", { to, subject, body, threadId }),
+  emailDrafts:      (limit)             => get(`/email/drafts?limit=${limit ?? 20}`),
 
   // Email intelligence
   emailAiDraft:    (dealId, type, context) => post("/email/ai-draft", { deal_id: dealId, type, context }),

@@ -78,7 +78,7 @@ export function DealActivityTimeline({ dealId, onEmailClick }) {
     if (!supabase || !dealId) { setLoading(false); return; }
     setLoading(true);
 
-    const [activitiesRes, commsRes, trackingRes, styleRes] = await Promise.all([
+    const [activitiesRes, commsRes, trackingRes, styleRes, auditRes] = await Promise.all([
       supabase
         .from("activities")
         .select("*")
@@ -103,6 +103,12 @@ export function DealActivityTimeline({ dealId, onEmailClick }) {
         .eq("deal_id", dealId)
         .order("created_at", { ascending: false })
         .limit(20),
+      supabase
+        .from("audit_log")
+        .select("*")
+        .eq("entity_id", dealId)
+        .order("created_at", { ascending: false })
+        .limit(50),
     ]);
 
     // Normalize into a common shape
@@ -166,6 +172,31 @@ export function DealActivityTimeline({ dealId, onEmailClick }) {
         source: "jarvis",
         metadata: { context: s.context },
         ts: s.created_at,
+        messageId: null,
+      });
+    }
+
+    for (const a of auditRes.data ?? []) {
+      // Map audit actions to readable labels
+      const actionLabel =
+        a.action === "approval_decided" ? `Approval ${a.after_state?.status || "decided"}` :
+        a.action === "deal.stage_changed" ? `Stage → ${a.after_state?.stage || a.metadata?.to || ""}` :
+        a.action === "deal.won" ? "Deal won" :
+        a.action === "deal.lost" ? `Deal lost${a.metadata?.reason ? `: ${a.metadata.reason}` : ""}` :
+        a.action.replace(/[._]/g, " ");
+
+      // Skip audit entries that duplicate activities (approval_decided is already logged as activity)
+      if (a.action === "approval_decided") continue;
+
+      normalized.push({
+        id: a.id,
+        kind: "audit",
+        type: a.action.includes("stage") ? "stage_change" : a.action.includes("proposal") ? "proposal" : "note",
+        subject: actionLabel,
+        body: a.reason || null,
+        source: a.actor,
+        metadata: { ...a.metadata, before: a.before_state, after: a.after_state },
+        ts: a.created_at,
         messageId: null,
       });
     }

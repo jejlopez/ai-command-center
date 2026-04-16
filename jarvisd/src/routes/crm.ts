@@ -6,6 +6,9 @@ import {
   getDealsByStage, getPipelineStats, isPipedriveConnected
 } from "../lib/providers/pipedrive.js";
 import { db } from "../db/db.js";
+import { supaFetch, supaUpdate } from "../lib/supabase_client.js";
+import { callModel } from "../lib/skills.js";
+import { audit } from "../lib/audit.js";
 
 export async function crmRoutes(app: FastifyInstance) {
   // Status
@@ -119,5 +122,86 @@ export async function crmRoutes(app: FastifyInstance) {
       })),
       stats: getPipelineStats(),
     };
+  });
+
+  // --- Deal value estimator — estimate value for $0 deals ---
+
+  app.post("/crm/estimate-values", async (_req, reply) => {
+    // Fetch all deals with $0 or null value
+    const deals = await supaFetch("deals", "select=id,company,stage,value_usd,contact_name,notes&or=(value_usd.eq.0,value_usd.is.null)&limit=50");
+    if (deals.length === 0) return { ok: true, updated: 0, message: "No $0 deals found" };
+
+    const results: any[] = [];
+
+    for (const deal of deals) {
+      // Gather context: comms, activities, proposals
+      const [comms, activities, proposals] = await Promise.all([
+        supaFetch("communications", `select=subject,body,type&deal_id=eq.${deal.id}&order=occurred_at.desc&limit=5`),
+        supaFetch("activities", `select=subject,body,type&deal_id=eq.${deal.id}&order=occurred_at.desc&limit=5`),
+        supaFetch("proposals", `select=pricing,executive_summary&deal_id=eq.${deal.id}&limit=1`),
+      ]);
+
+      const commText = comms.map((c: any) => `[${c.type}] ${c.subject || ""}: ${(c.body || "").slice(0, 200)}`).join("\n");
+      const actText = activities.map((a: any) => `[${a.type}] ${a.subject || ""}: ${(a.body || "").slice(0, 200)}`).join("\n");
+      const proposalText = proposals[0]?.pricing
+        ? `Proposal pricing: ${JSON.stringify(proposals[0].pricing)}`
+        : proposals[0]?.executive_summary
+        ? `Proposal summary: ${proposals[0].executive_summary}`
+        : "";
+
+      const context = [
+        `Company: ${deal.company}`,
+        `Stage: ${deal.stage}`,
+        `Contact: ${deal.contact_name || "unknown"}`,
+        deal.notes ? `Notes: ${(deal.notes as string).slice(0, 500)}` : "",
+        commText ? `Communications:\n${commText}` : "",
+        actText ? `Activities:\n${actText}` : "",
+        proposalText,
+      ].filter(Boolean).join("\n");
+
+      if (!context || context.length < 30) {
+        results.push({ id: deal.id, company: deal.company, skipped: true, reason: "insufficient context" });
+        continue;
+      }
+
+      try {
+        const result = await callModel({
+          kind: "summary",
+          privacy: "personal",
+          prompt: `Estimate the annual deal value for this 3PL/logistics deal based on the context below.
+
+${context}
+
+Think about typical 3PL pricing:
+- Storage: $15-30/pallet/month
+- Pick & pack: $2-5/order
+- Receiving: $25-50/pallet
+- Shipping: varies by volume
+
+Return ONLY a JSON object: {"value_usd": <number>, "confidence": "high"|"medium"|"low", "reasoning": "<one sentence>"}
+No other text.`,
+        }, { skill: "deal_value_estimator" });
+
+        const parsed = JSON.parse(result.text.trim().replace(/```json?\n?/g, "").replace(/```/g, ""));
+        const value = Math.round(Number(parsed.value_usd) || 0);
+
+        if (value > 0) {
+          await supaUpdate("deals", `id=eq.${deal.id}`, { value_usd: value, updated_at: new Date().toISOString() });
+          audit({
+            actor: "jarvis",
+            action: "deal.value_estimated",
+            subject: deal.id,
+            metadata: { company: deal.company, value, confidence: parsed.confidence, reasoning: parsed.reasoning },
+          });
+          results.push({ id: deal.id, company: deal.company, value, confidence: parsed.confidence, reasoning: parsed.reasoning });
+        } else {
+          results.push({ id: deal.id, company: deal.company, skipped: true, reason: "could not estimate" });
+        }
+      } catch (err: any) {
+        results.push({ id: deal.id, company: deal.company, skipped: true, reason: err.message });
+      }
+    }
+
+    return { ok: true, updated: results.filter(r => !r.skipped).length, total: deals.length, results };
   });
 }

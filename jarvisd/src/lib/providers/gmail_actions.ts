@@ -112,14 +112,22 @@ export async function listMessages(maxResults = 20, query = "is:unread"): Promis
 function extractBody(payload: any): string {
   if (!payload) return "";
   if (payload.body?.data) {
-    return Buffer.from(payload.body.data, "base64url").toString("utf8").slice(0, 4000);
+    return Buffer.from(payload.body.data, "base64url").toString("utf8").slice(0, 50000);
   }
   if (payload.parts) {
+    // Prefer HTML so the frontend iframe renders it properly
     for (const part of payload.parts) {
-      if (part.mimeType === "text/plain" && part.body?.data) {
-        return Buffer.from(part.body.data, "base64url").toString("utf8").slice(0, 4000);
+      if (part.mimeType === "text/html" && part.body?.data) {
+        return Buffer.from(part.body.data, "base64url").toString("utf8").slice(0, 50000);
       }
     }
+    // Fall back to plain text
+    for (const part of payload.parts) {
+      if (part.mimeType === "text/plain" && part.body?.data) {
+        return Buffer.from(part.body.data, "base64url").toString("utf8").slice(0, 50000);
+      }
+    }
+    // Recurse into nested parts (e.g. multipart/alternative inside multipart/mixed)
     for (const part of payload.parts) {
       const body = extractBody(part);
       if (body) return body;

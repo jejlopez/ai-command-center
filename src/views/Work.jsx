@@ -1,5 +1,6 @@
-import { useState, lazy, Suspense } from "react";
+import { useState, useEffect, lazy, Suspense } from "react";
 import { AnimatePresence } from "framer-motion";
+import { jarvis } from "../lib/jarvis.js";
 import { useOpsSupa } from "../hooks/useOpsSupa.js";
 import { useCRM } from "../hooks/useCRM.js";
 import { useLeadsSupa } from "../hooks/useLeadsSupa.js";
@@ -21,8 +22,19 @@ export default function Work() {
   const [mode, setMode] = useState("sales");
   const [salesTab, setSalesTab] = useState("deals");
   const [selectedEmail, setSelectedEmail] = useState(null);
+  const [inboxCount, setInboxCount] = useState(0);
   const crm = useCRM();
   const { leads: supaLeads } = useLeadsSupa();
+
+  // Fetch unread inbox count
+  useEffect(() => {
+    jarvis.emailTriageStats?.()
+      .then(stats => {
+        const count = (stats?.urgent || 0) + (stats?.action_needed || 0) + (stats?.fyi || 0) + (stats?.personal || 0) + (stats?.billing || 0);
+        setInboxCount(count);
+      })
+      .catch(() => {});
+  }, []);
 
   const {
     deals, followUps, proposals, comms, docs,
@@ -58,6 +70,7 @@ export default function Work() {
           leads={supaLeads}
           activeTab={salesTab}
           onTabChange={setSalesTab}
+          inboxCount={inboxCount}
         />
       )}
 

@@ -39,30 +39,30 @@ function EmailBody({ body }) {
   if (!body) return <span className="text-jarvis-muted">(empty)</span>;
 
   if (isHtml(body)) {
-    // Wrap in a dark-themed container so it looks native in our UI
-    const wrapped = `<!DOCTYPE html><html><head><style>
-      body { margin:0; padding:0; font-family:-apple-system,system-ui,sans-serif;
-             font-size:13px; line-height:1.5; color:#e0e0e0; background:transparent;
-             word-break:break-word; }
-      a { color:#00E0D0; }
-      img { max-width:100%; height:auto; }
-      table { max-width:100%!important; }
-      blockquote { border-left:2px solid rgba(255,255,255,0.15); margin:8px 0; padding-left:10px; color:#aaa; }
-    </style></head><body>${body}</body></html>`;
+    // Inject a base style tag into the existing HTML rather than wrapping it
+    const resetCss = `<style>img{max-width:100%!important;height:auto!important;}table{max-width:100%!important;}</style>`;
+    // Insert our reset right after <head> or at the start if no head tag
+    let patched = body;
+    if (/<head[^>]*>/i.test(patched)) {
+      patched = patched.replace(/<head[^>]*>/i, (m) => m + resetCss);
+    } else {
+      patched = resetCss + patched;
+    }
 
     return (
       <iframe
-        srcDoc={wrapped}
+        srcDoc={patched}
         sandbox="allow-same-origin"
-        className="w-full border-0 rounded min-h-[80px]"
-        style={{ height: "auto", minHeight: 80, maxHeight: 400, background: "transparent" }}
+        scrolling="yes"
+        referrerPolicy="no-referrer"
+        className="w-full rounded"
+        style={{ width: '100%', minHeight: '300px', border: 'none', backgroundColor: 'white', colorScheme: 'light' }}
         onLoad={(e) => {
-          // Auto-resize iframe to fit content
           try {
             const doc = e.target.contentDocument;
             if (doc) {
               const h = doc.documentElement.scrollHeight;
-              e.target.style.height = Math.min(h + 16, 400) + "px";
+              e.target.style.height = Math.min(h + 16, 600) + "px";
             }
           } catch {}
         }}

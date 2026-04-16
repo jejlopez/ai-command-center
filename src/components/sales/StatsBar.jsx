@@ -15,7 +15,7 @@ function Stat({ label, value, color, isLast }) {
   );
 }
 
-export function StatsBar({ deals = [], proposals = [], followUps = [], leads = [], activeTab, onTabChange }) {
+export function StatsBar({ deals = [], proposals = [], followUps = [], leads = [], activeTab, onTabChange, inboxCount = 0 }) {
   const totalValue = deals.reduce((s, d) => s + (d.value || 0), 0);
   const overdue = followUps.filter(f => f.due_date && new Date(f.due_date) < new Date()).length;
   const proposalsOut = proposals.filter(p => p.status === "sent" || p.status === "review_needed").length;
@@ -67,13 +67,18 @@ export function StatsBar({ deals = [], proposals = [], followUps = [], leads = [
         </button>
         <button
           onClick={() => onTabChange("inbox")}
-          className={`text-[11px] px-3.5 py-1.5 rounded-lg transition font-medium ${
+          className={`text-[11px] px-3.5 py-1.5 rounded-lg transition font-medium relative ${
             activeTab === "inbox"
               ? "bg-jarvis-primary/15 text-jarvis-primary"
               : "text-jarvis-muted hover:text-jarvis-ink"
           }`}
         >
           Inbox
+          {inboxCount > 0 && (
+            <span className="absolute -top-1 -right-1 min-w-[16px] h-4 flex items-center justify-center px-1 rounded-full bg-jarvis-danger text-white text-[8px] font-bold tabular-nums">
+              {inboxCount > 99 ? "99+" : inboxCount}
+            </span>
+          )}
         </button>
         <button
           onClick={() => onTabChange("playbook")}

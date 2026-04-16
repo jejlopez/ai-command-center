@@ -41,6 +41,23 @@ export async function supaInsert(table: string, data: any): Promise<boolean> {
   }
 }
 
+export async function supaUpdate(table: string, filter: string, data: any): Promise<boolean> {
+  if (!SUPA_URL || !SUPA_KEY) return false;
+  try {
+    const res = await fetch(`${SUPA_URL}/rest/v1/${table}?${filter}`, {
+      method: 'PATCH',
+      headers: headers({
+        'Content-Type': 'application/json',
+        'Prefer': 'return=minimal',
+      }),
+      body: JSON.stringify(data),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
 export async function supaUpsert(table: string, data: any, onConflict: string): Promise<boolean> {
   if (!SUPA_URL || !SUPA_KEY) return false;
   try {
