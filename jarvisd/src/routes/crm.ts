@@ -163,22 +163,46 @@ export async function crmRoutes(app: FastifyInstance) {
         continue;
       }
 
+      // Track what data sources we have
+      const dataSources: string[] = [];
+      if (noteText) dataSources.push("deal_notes");
+      if (actText) dataSources.push("activities");
+      if (deal.contact_email) dataSources.push("contact_email");
+      if (deal.org_name && !deal.org_name.startsWith("Deal #")) dataSources.push("company_name");
+
       try {
         const result = await callModel({
           kind: "summary",
           privacy: "personal",
-          prompt: `Estimate the annual deal value for this 3PL/logistics deal based on the context below.
+          prompt: `Estimate the annual deal value for this 3PL/logistics deal. Show your math.
 
 ${context}
 
-Think about typical 3PL pricing:
+Use these 3PL pricing benchmarks:
 - Storage: $15-30/pallet/month
 - Pick & pack: $2-5/order
 - Receiving: $25-50/pallet
-- Shipping: varies by volume
+- Shipping: $5-15/package (varies by weight/zone)
+- Monthly minimum: ~$1,500-3,000 for small accounts
 
-Return ONLY a JSON object: {"value_usd": <number>, "confidence": "high"|"medium"|"low", "reasoning": "<one sentence>"}
-No other text.`,
+Return ONLY a JSON object with this exact structure:
+{
+  "value_usd": <annual number>,
+  "confidence_pct": <0-100>,
+  "confidence_why": "<why this confidence level — what data was missing or present>",
+  "math": [
+    {"line": "<description>", "calc": "<formula>", "amount": <number>},
+    {"line": "<description>", "calc": "<formula>", "amount": <number>}
+  ],
+  "assumptions": "<key assumptions made>"
+}
+
+Rules:
+- Each math line should be a specific pricing component (storage, pick & pack, receiving, shipping)
+- Use realistic volumes based on clues in the data. If no clues, state assumptions clearly.
+- confidence_pct: 80-100 if volume data present, 40-60 if only company name, 60-80 if notes have some detail
+- The math lines should SUM to value_usd
+- No other text outside the JSON.`,
         }, { skill: "deal_value_estimator" });
 
         const parsed = JSON.parse(result.text.trim().replace(/```json?\n?/g, "").replace(/```/g, ""));
@@ -188,17 +212,21 @@ No other text.`,
           // Queue as approval — do NOT write value directly
           approvals.enqueue({
             title: `Value estimate: ${deal.org_name || deal.title} — $${value.toLocaleString()}`,
-            reason: parsed.reasoning,
+            reason: parsed.assumptions || parsed.confidence_why || "",
             skill: "deal_value_estimator",
             riskLevel: "low",
             payload: {
               deal_id: deal.id,
               estimated_value: value,
-              confidence: parsed.confidence,
-              reasoning: parsed.reasoning,
+              confidence_pct: parsed.confidence_pct ?? 50,
+              confidence_why: parsed.confidence_why ?? "",
+              math: parsed.math ?? [],
+              assumptions: parsed.assumptions ?? "",
+              data_sources: dataSources,
               company: deal.org_name || deal.title,
               stage: deal.stage,
               contact: deal.contact_name,
+              context_summary: context.slice(0, 800),
             },
           });
           audit({
@@ -207,7 +235,7 @@ No other text.`,
             subject: deal.id,
             metadata: { company: deal.org_name || deal.title, value, confidence: parsed.confidence },
           });
-          results.push({ id: deal.id, company: deal.org_name || deal.title, value, confidence: parsed.confidence, reasoning: parsed.reasoning, queued: true });
+          results.push({ id: deal.id, company: deal.org_name || deal.title, value, confidence_pct: parsed.confidence_pct, queued: true });
         } else {
           results.push({ id: deal.id, company: deal.org_name || deal.title, skipped: true, reason: "could not estimate" });
         }
@@ -217,5 +245,89 @@ No other text.`,
     }
 
     return { ok: true, queued: results.filter(r => r.queued).length, skipped: results.filter(r => r.skipped).length, total: deals.length, results };
+  });
+
+  // --- Value estimate feedback — saves learning data, triggers recalibration ---
+
+  app.post("/crm/value-estimate-feedback", async (req) => {
+    const { deal_id, company, original_estimate, corrected_value, math, data_sources, reason, decision } = req.body as any;
+
+    // Store feedback in SQLite
+    db.prepare(`
+      INSERT INTO value_estimate_feedback(id, deal_id, company, original_estimate, corrected_value, math, data_sources, reason, decision, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+    `).run(
+      crypto.randomUUID(),
+      deal_id || null,
+      company || "",
+      original_estimate || 0,
+      corrected_value || null,
+      JSON.stringify(math || []),
+      JSON.stringify(data_sources || []),
+      reason || "",
+      decision || "rejected",
+    );
+
+    audit({
+      actor: "user",
+      action: `deal.value_estimate.${decision}`,
+      subject: deal_id || company,
+      metadata: { company, original_estimate, corrected_value, reason },
+    });
+
+    // Check if we've hit 10 denials — trigger recalibration
+    const denialCount = (db.prepare(
+      "SELECT COUNT(*) as cnt FROM value_estimate_feedback WHERE decision = 'rejected'"
+    ).get() as any)?.cnt || 0;
+
+    let recalibrated = false;
+    if (denialCount > 0 && denialCount % 10 === 0) {
+      // Gather all denial feedback for recalibration
+      const feedback = db.prepare(
+        "SELECT company, original_estimate, corrected_value, reason FROM value_estimate_feedback WHERE decision = 'rejected' ORDER BY created_at DESC LIMIT 20"
+      ).all() as any[];
+
+      const feedbackText = feedback.map((f: any) =>
+        `Company: ${f.company} | Jarvis estimated: $${f.original_estimate?.toLocaleString()} | ${f.corrected_value ? `Real value: $${f.corrected_value.toLocaleString()} |` : ""} Reason: ${f.reason}`
+      ).join("\n");
+
+      try {
+        const result = await callModel({
+          kind: "summary",
+          privacy: "personal",
+          prompt: `You are a pricing estimation system for 3PL logistics. You've received ${denialCount} corrections from the user. Analyze the pattern and output updated pricing assumptions.
+
+CORRECTIONS:
+${feedbackText}
+
+Based on these corrections, output a JSON object with updated pricing benchmarks:
+{
+  "storage_per_pallet_month": {"low": <number>, "high": <number>},
+  "pick_pack_per_order": {"low": <number>, "high": <number>},
+  "receiving_per_pallet": {"low": <number>, "high": <number>},
+  "shipping_per_package": {"low": <number>, "high": <number>},
+  "bias_direction": "overestimating" | "underestimating" | "mixed",
+  "key_lesson": "<one sentence about what the user keeps correcting>"
+}`,
+        }, { skill: "value_recalibration" });
+
+        const recalData = JSON.parse(result.text.trim().replace(/```json?\n?/g, "").replace(/```/g, ""));
+        db.prepare(`
+          INSERT INTO value_estimate_calibration(id, denial_count, calibration_data, created_at)
+          VALUES (?, ?, ?, datetime('now'))
+        `).run(crypto.randomUUID(), denialCount, JSON.stringify(recalData));
+
+        audit({
+          actor: "jarvis",
+          action: "deal.value_estimator.recalibrated",
+          subject: `after_${denialCount}_denials`,
+          metadata: recalData,
+        });
+
+        recalibrated = true;
+      } catch {}
+    }
+
+    return { ok: true, denialCount, recalibrated };
   });
 }

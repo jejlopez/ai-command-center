@@ -130,18 +130,36 @@ export function useApprovalsSupa({ leadId, dealId, statusFilter } = {}) {
           body: JSON.stringify({ decision, reason: userComment || "" }),
         });
 
-        // If approved deal_value_estimate, update the deal in jarvisd SQLite
+        // If approved deal_value_estimate, update the deal value
         if (status === "approved" && approval.draft_content?.deal_id) {
           const value = finalContent?.estimated_value ?? approval.draft_content?.estimated_value;
-          if (value) {
-            // Also try Supabase update (may fail due to RLS)
-            if (supabase) {
-              await supabase.from("deals").update({
-                value_usd: Number(value),
-                updated_at: new Date().toISOString(),
-              }).eq("id", approval.draft_content.deal_id).catch(() => {});
-            }
+          if (value && supabase) {
+            await supabase.from("deals").update({
+              value_usd: Number(value),
+              updated_at: new Date().toISOString(),
+            }).eq("id", approval.draft_content.deal_id).catch(() => {});
           }
+        }
+
+        // Save learning event for value estimate denials/edits (via jarvisd)
+        const dc = approval.draft_content;
+        if (dc && (status === "rejected" || (userEdits && Object.keys(userEdits).length > 0))) {
+          try {
+            await fetch("http://127.0.0.1:8787/crm/value-estimate-feedback", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                deal_id: dc.deal_id,
+                company: dc.company,
+                original_estimate: dc.estimated_value,
+                corrected_value: finalContent?.estimated_value ?? finalContent?.corrected_value,
+                math: dc.math,
+                data_sources: dc.data_sources,
+                reason: userComment,
+                decision: status,
+              }),
+            });
+          } catch {}
         }
       } catch (err) {
         console.warn("jarvisd decide failed:", err);
