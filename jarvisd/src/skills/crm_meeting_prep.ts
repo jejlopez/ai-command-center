@@ -11,9 +11,9 @@ const manifest: SkillManifest = {
   description: "Pre-meeting briefing — pulls all context for upcoming meetings",
   version: "0.1.0",
   scopes: ["memory.read"],
-  routerHint: "complex_reasoning",
+  routerHint: "summary",
   triggers: [
-    { kind: "cron", expr: "*/15 8-18 * * 1-5" },
+    { kind: "cron", expr: "0 8,10,12,14,16 * * 1-5" },  // every 2hrs business hours — checks for meetings in next 2hrs
     { kind: "manual" },
   ],
 };
@@ -28,7 +28,7 @@ export const crmMeetingPrep: Skill = {
   async run(ctx) {
     const today = new Date().toISOString().slice(0, 10);
     const now = Date.now();
-    const thirtyMin = 30 * 60 * 1000;
+    const twoHours = 2 * 60 * 60 * 1000;
 
     // Fetch today's calendar events via apple provider
     let events: any[] = [];
@@ -41,15 +41,15 @@ export const crmMeetingPrep: Skill = {
       ctx.log("crm_meeting_prep.calendar_fail", { error: err?.message ?? String(err) });
     }
 
-    // Filter to events starting in the next 30 minutes
+    // Filter to events starting in the next 2 hours
     const upcoming = events.filter((e: any) => {
       const start = new Date(e.start).getTime();
-      return start > now && start <= now + thirtyMin;
+      return start > now && start <= now + twoHours;
     });
 
     if (upcoming.length === 0) {
       ctx.log("crm_meeting_prep.no_upcoming");
-      return { skipped: true, reason: "no meetings in next 30 minutes" };
+      return { skipped: true, reason: "no meetings in next 2 hours" };
     }
 
     const results: any[] = [];
@@ -132,7 +132,7 @@ Format as JSON with no markdown:
 
       try {
         const out = await ctx.callModel({
-          kind: "complex_reasoning",
+          kind: "summary",
           system: "You are JARVIS, a sharp sales AI. Return only valid JSON, no markdown fences.",
           prompt,
           maxTokens: 600,

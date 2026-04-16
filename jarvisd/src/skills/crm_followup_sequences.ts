@@ -11,7 +11,7 @@ const manifest: SkillManifest = {
   description: "Auto-creates follow-up sequences for new deals",
   version: "0.1.0",
   scopes: ["memory.read"],
-  routerHint: "classification",
+  routerHint: "summary",
   triggers: [
     { kind: "cron", expr: "0 8 * * 1-5" },
     { kind: "manual" },

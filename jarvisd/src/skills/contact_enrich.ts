@@ -15,7 +15,7 @@ const manifest: SkillManifest = {
     "Extract structured facts (role, company, relationships, preferences) about a person from memory.",
   version: "0.1.0",
   scopes: ["memory.read", "memory.write", "llm.cloud"],
-  routerHint: "extraction",
+  routerHint: "summary",
   triggers: [
     { kind: "manual" },
     { kind: "event", event: "memory.remembered" },
@@ -89,7 +89,7 @@ async function enrichSupabaseContacts(ctx: any): Promise<{ enriched: number }> {
   for (const c of contacts) {
     try {
       const out = await ctx.callModel({
-        kind: "complex_reasoning",
+        kind: "summary",
         privacy: "personal",
         prompt: `Research this business contact for a 3PL/shipping sales context:
 Name: ${c.name}
@@ -185,7 +185,7 @@ export const contactEnrich: Skill = {
     let extracted: ExtractedFact[] = [];
     try {
       const out = await ctx.callModel({
-        kind: "extraction",
+        kind: "summary",
         system:
           "You extract structured facts from messy notes. Output JSON arrays only.",
         prompt,

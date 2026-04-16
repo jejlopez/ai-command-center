@@ -14,8 +14,8 @@ const manifest: SkillManifest = {
   description:
     "Checks daily LLM spend vs. budget and warns when it crosses 80%. Uses local model only.",
   version: "0.1.0",
-  scopes: ["memory.read", "llm.local"],
-  routerHint: "classification",
+  scopes: ["memory.read", "llm.cloud"],
+  routerHint: "summary",
   triggers: [
     { kind: "cron", expr: "0 9 * * *" },
     { kind: "event", event: "cost.budget_threshold" },
@@ -45,7 +45,7 @@ export const budgetWatch: Skill = {
     let warningText = `Budget warning: spent $${spent.toFixed(2)} of $${budget.toFixed(2)} (${Math.round(ratio * 100)}%).`;
     try {
       const out = await ctx.callModel({
-        kind: "classification",
+        kind: "summary",
         privacy: "secret",
         system: "Write a one-sentence budget warning. Direct, no preamble.",
         prompt: `Spent $${spent.toFixed(2)} of $${budget.toFixed(2)} today (${Math.round(ratio * 100)}%). Warn the user.`,

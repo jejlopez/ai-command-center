@@ -11,7 +11,7 @@ const manifest: SkillManifest = {
     "Pulls open tasks from memory and today's calendar events, then proposes a time-boxed plan.",
   version: "0.1.0",
   scopes: ["memory.read", "llm.cloud"],
-  routerHint: "complex_reasoning",
+  routerHint: "chat",
   triggers: [
     { kind: "cron", expr: "0 7 * * *" },
     { kind: "manual" },
@@ -57,7 +57,7 @@ export const planMyDay: Skill = {
 
     try {
       const out = await ctx.callModel({
-        kind: "complex_reasoning",
+        kind: "chat",
         system:
           "You are JARVIS, the user's chief of staff. Build tight, realistic daily plans. No fluff.",
         prompt,

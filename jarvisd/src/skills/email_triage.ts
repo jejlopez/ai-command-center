@@ -13,8 +13,8 @@ const manifest: SkillManifest = {
   title: "Email Triage",
   description: "Scan inbox, classify emails (urgent/action/fyi/junk/billing), store for review.",
   version: "0.1.0",
-  scopes: ["gmail.read", "llm.cloud", "llm.local"],
-  routerHint: "classification",
+  scopes: ["gmail.read", "llm.cloud"],
+  routerHint: "chat",
   triggers: [
     { kind: "cron", expr: "*/15 * * * *" },  // every 15 min — needs cron upgrade to support */N
     { kind: "manual" },
@@ -78,7 +78,7 @@ export const emailTriage: Skill = {
 
     try {
       const out = await ctx.callModel({
-        kind: "classification",
+        kind: "chat",
         privacy: "personal",
         system: "Classify emails precisely. Output ONLY the numbered format. No explanations.",
         prompt,

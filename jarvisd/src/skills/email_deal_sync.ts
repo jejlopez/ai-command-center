@@ -12,7 +12,7 @@ export const emailDealSync: Skill = {
     description: "Sync Gmail threads into deal communications — auto-links emails to deals",
     version: "0.1.0",
     scopes: ["memory.read"],
-    routerHint: "classification",
+    routerHint: "summary",
     triggers: [{ kind: "cron", expr: "0 7,12,17 * * 1-5" }],
     inputs: [],
   } as unknown as SkillManifest,

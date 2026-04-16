@@ -11,7 +11,7 @@ const manifest: SkillManifest = {
   description: "End of day CRM recap — what happened, what to learn, tomorrow's plan",
   version: "0.1.0",
   scopes: ["memory.read"],
-  routerHint: "complex_reasoning",
+  routerHint: "chat",
   triggers: [
     { kind: "cron", expr: "0 17 * * 1-5" },
     { kind: "manual" },
@@ -86,7 +86,7 @@ Format as JSON with no markdown:
 
     try {
       const out = await ctx.callModel({
-        kind: "complex_reasoning",
+        kind: "chat",
         system: "You are JARVIS, a sharp sales AI. Return only valid JSON, no markdown fences.",
         prompt,
         maxTokens: 1000,
