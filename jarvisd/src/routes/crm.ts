@@ -124,6 +124,73 @@ export async function crmRoutes(app: FastifyInstance) {
     };
   });
 
+  // --- Enrich deals with notes from Pipedrive ---
+
+  app.post("/crm/enrich-notes", async () => {
+    if (!isPipedriveConnected()) return { error: "Pipedrive not connected" };
+
+    // Fetch all notes from Pipedrive
+    const { syncDeals: _, syncLeads: __, ...rest } = await import("../lib/providers/pipedrive.js");
+    const pipedrive = await import("../lib/providers/pipedrive.js");
+
+    // Get notes via Pipedrive API directly
+    const vault = (await import("../lib/vault.js")).vault;
+    const token = vault.get("pipedrive_api_key") || vault.get("pipedrive_api_token");
+    const domain = vault.get("pipedrive_domain") || "api";
+
+    let enriched = 0;
+    let notesFound = 0;
+
+    // Fetch notes from Pipedrive
+    const notesRes = await fetch(`https://${domain}.pipedrive.com/v1/notes?api_token=${token}&limit=200&sort=update_time+DESC`);
+    if (!notesRes.ok) return { error: `Pipedrive notes API failed: ${notesRes.status}` };
+    const notesJson = await notesRes.json();
+    const notes = notesJson.data ?? [];
+    notesFound = notes.length;
+
+    // Group notes by deal_id
+    const notesByDeal: Record<number, string[]> = {};
+    for (const n of notes) {
+      if (n.deal_id) {
+        if (!notesByDeal[n.deal_id]) notesByDeal[n.deal_id] = [];
+        const content = (n.content || "").replace(/<[^>]*>/g, "").trim();
+        if (content) notesByDeal[n.deal_id].push(content);
+      }
+    }
+
+    // Update each deal's notes_summary
+    for (const [pdId, dealNotes] of Object.entries(notesByDeal)) {
+      const combined = dealNotes.join("\n---\n").slice(0, 2000);
+      const dealId = `pd-${pdId}`;
+      db.prepare("UPDATE crm_deals SET notes_summary = ? WHERE id = ?").run(combined, dealId);
+      enriched++;
+    }
+
+    // Also fetch activities with notes/descriptions
+    const actRes = await fetch(`https://${domain}.pipedrive.com/v1/activities?api_token=${token}&limit=200&sort=update_time+DESC`);
+    let activitiesEnriched = 0;
+    if (actRes.ok) {
+      const actJson = await actRes.json();
+      const activities = actJson.data ?? [];
+      for (const a of activities) {
+        if (a.deal_id && (a.note || a.public_description)) {
+          const noteContent = [a.note, a.public_description].filter(Boolean).join("\n").replace(/<[^>]*>/g, "").trim();
+          if (noteContent) {
+            const dealId = `pd-${a.deal_id}`;
+            const existing = (db.prepare("SELECT notes_summary FROM crm_deals WHERE id = ?").get(dealId) as any)?.notes_summary || "";
+            if (!existing.includes(noteContent.slice(0, 50))) {
+              const updated = existing ? `${existing}\n---\n[${a.type}] ${noteContent}` : `[${a.type}] ${noteContent}`;
+              db.prepare("UPDATE crm_deals SET notes_summary = ? WHERE id = ?").run(updated.slice(0, 3000), dealId);
+              activitiesEnriched++;
+            }
+          }
+        }
+      }
+    }
+
+    return { ok: true, notesFound, dealsEnriched: enriched, activitiesEnriched };
+  });
+
   // --- Deal value estimator — estimate value for $0 deals ---
 
   app.post("/crm/estimate-values", async (_req, reply) => {
@@ -148,12 +215,16 @@ export async function crmRoutes(app: FastifyInstance) {
       const noteText = notes.map((n: any) => (n.content || "").slice(0, 300)).join("\n");
       const proposalText = "";
 
+      // Also include notes_summary from the deal record itself
+      const dealNotes = deal.notes_summary || "";
+
       const context = [
         `Company: ${deal.org_name || deal.title}`,
         `Stage: ${deal.stage}`,
         `Contact: ${deal.contact_name || "unknown"}`,
         deal.contact_email ? `Email: ${deal.contact_email}` : "",
-        noteText ? `Notes:\n${noteText}` : "",
+        dealNotes ? `Deal Notes:\n${dealNotes.slice(0, 1000)}` : "",
+        noteText ? `CRM Notes:\n${noteText}` : "",
         actText ? `Activities:\n${actText}` : "",
         proposalText,
       ].filter(Boolean).join("\n");
@@ -165,7 +236,8 @@ export async function crmRoutes(app: FastifyInstance) {
 
       // Track what data sources we have
       const dataSources: string[] = [];
-      if (noteText) dataSources.push("deal_notes");
+      if (dealNotes) dataSources.push("deal_notes");
+      if (noteText) dataSources.push("crm_notes");
       if (actText) dataSources.push("activities");
       if (deal.contact_email) dataSources.push("contact_email");
       if (deal.org_name && !deal.org_name.startsWith("Deal #")) dataSources.push("company_name");
