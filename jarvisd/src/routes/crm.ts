@@ -41,13 +41,12 @@ const VOLUME_BUCKETS: Record<string, VolumeBucket> = {
 };
 
 function calculateDealValue(bucket: VolumeBucket) {
-  const storageCost = Math.max(bucket.pallets * RATE_CARD.storage_per_pallet, RATE_CARD.storage_minimum);
+  // Real costs only — no minimums applied to deal value estimates
+  const storageCost = bucket.pallets * RATE_CARD.storage_per_pallet;
   const receivingCost = bucket.palletsIn * RATE_CARD.receiving_per_pallet;
   const orderCost = bucket.orders * RATE_CARD.order_processing;
   const pickCost = bucket.orders * RATE_CARD.picks_per_order * RATE_CARD.pick_fee;
-  const handlingSubtotal = receivingCost + orderCost + pickCost;
-  const handlingActual = Math.max(handlingSubtotal, RATE_CARD.handling_minimum);
-  const monthlyTotal = storageCost + handlingActual + RATE_CARD.admin_fee;
+  const monthlyTotal = storageCost + receivingCost + orderCost + pickCost + RATE_CARD.admin_fee;
   const annualTotal = monthlyTotal * 12;
 
   return {
@@ -56,7 +55,7 @@ function calculateDealValue(bucket: VolumeBucket) {
     lines: [
       {
         line: "Storage",
-        calc: `${bucket.pallets} pallets × $${RATE_CARD.storage_per_pallet}/pallet${bucket.pallets * RATE_CARD.storage_per_pallet < RATE_CARD.storage_minimum ? ` (min $${RATE_CARD.storage_minimum})` : ""}`,
+        calc: `${bucket.pallets} pallets × $${RATE_CARD.storage_per_pallet}/pallet`,
         monthly: Math.round(storageCost),
         amount: Math.round(storageCost * 12),
       },
@@ -84,12 +83,7 @@ function calculateDealValue(bucket: VolumeBucket) {
         monthly: RATE_CARD.admin_fee,
         amount: RATE_CARD.admin_fee * 12,
       },
-    ].concat(handlingSubtotal < RATE_CARD.handling_minimum ? [{
-      line: "Handling minimum adjustment",
-      calc: `Min $${RATE_CARD.handling_minimum} applies (subtotal was $${Math.round(handlingSubtotal)})`,
-      monthly: Math.round(RATE_CARD.handling_minimum - handlingSubtotal),
-      amount: Math.round((RATE_CARD.handling_minimum - handlingSubtotal) * 12),
-    }] : []),
+    ],
   };
 }
 
