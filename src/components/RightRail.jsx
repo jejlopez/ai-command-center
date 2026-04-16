@@ -1,6 +1,8 @@
+import { useState } from "react";
 import { motion } from "framer-motion";
-import { ShieldAlert, BellRing, Ban, CheckCircle2 } from "lucide-react";
+import { ShieldAlert, BellRing, Ban, CheckCircle2, DollarSign, ChevronDown, ChevronRight, Pencil, ThumbsDown, Check, Loader2 } from "lucide-react";
 import { stagger } from "../lib/motion.js";
+import { jarvis } from "../lib/jarvis.js";
 import SkillsRailWidget from "./skills/SkillsRailWidget.jsx";
 
 function Card({ Icon, title, tone = "primary", count, children }) {
@@ -26,8 +28,263 @@ function Card({ Icon, title, tone = "primary", count, children }) {
   );
 }
 
+function fmtUsd(n) {
+  return `$${Number(n || 0).toLocaleString()}`;
+}
+
+// ── Inline value estimate card for the rail ──────────────────────────────────
+
+function ValueEstimateRailCard({ approval, onDecided }) {
+  const [expanded, setExpanded] = useState(false);
+  const p = approval.payload || {};
+  const math = p.math || [];
+  const mathTotal = math.reduce((s, m) => s + (Number(m.amount) || 0), 0);
+  const [editedValue, setEditedValue] = useState(p.estimated_value ?? 0);
+  const [denyMode, setDenyMode] = useState(false);
+  const [denyReason, setDenyReason] = useState("");
+  const [decided, setDecided] = useState(null);
+  const [busy, setBusy] = useState(false);
+
+  const confPct = p.confidence_pct ?? 50;
+  const confColor = confPct >= 70 ? "text-green-400" : confPct >= 40 ? "text-amber-400" : "text-red-400";
+  const barColor = confPct >= 70 ? "bg-green-500" : confPct >= 40 ? "bg-amber-500" : "bg-red-500";
+
+  const handleApprove = async () => {
+    setBusy(true);
+    await jarvis.decideApproval(approval.id, "approve", "");
+    setDecided("approved");
+    setBusy(false);
+    onDecided?.();
+  };
+
+  const handleEditApprove = async () => {
+    setBusy(true);
+    await jarvis.decideApproval(approval.id, "approve", `Corrected to ${fmtUsd(editedValue)}`);
+    setDecided("approved");
+    setBusy(false);
+    onDecided?.();
+  };
+
+  const handleDeny = async () => {
+    if (!denyReason.trim()) return;
+    setBusy(true);
+    try {
+      await jarvis.decideApproval(approval.id, "deny", denyReason.trim());
+      // Also send feedback for learning
+      await fetch("http://127.0.0.1:8787/crm/value-estimate-feedback", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          deal_id: p.deal_id,
+          company: p.company,
+          original_estimate: p.estimated_value,
+          corrected_value: editedValue !== p.estimated_value ? editedValue : null,
+          math: p.math,
+          data_sources: p.data_sources,
+          reason: denyReason.trim(),
+          decision: "rejected",
+        }),
+      });
+    } catch {}
+    setDecided("denied");
+    setBusy(false);
+    onDecided?.();
+  };
+
+  if (decided) {
+    return (
+      <div className="rounded-lg bg-white/[0.03] border border-jarvis-border/30 p-2 flex items-center gap-2">
+        <Check size={11} className={decided === "approved" ? "text-green-400" : "text-jarvis-primary"} />
+        <span className="text-[10px] text-jarvis-muted truncate">
+          {p.company} — {decided === "approved" ? "saved" : "denied"}
+        </span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-xl bg-jarvis-amber/5 border border-jarvis-amber/20 overflow-hidden">
+      {/* Collapsed header */}
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="w-full flex items-center gap-2 p-3 text-left hover:bg-white/[0.02] transition"
+      >
+        <DollarSign size={11} className="text-jarvis-primary shrink-0" />
+        <div className="flex-1 min-w-0">
+          <div className="text-[11px] text-jarvis-ink font-medium truncate">{p.company || approval.title}</div>
+          <div className="text-[9px] text-jarvis-muted">{p.stage}</div>
+        </div>
+        <span className="text-[12px] font-bold text-jarvis-success tabular-nums shrink-0">{fmtUsd(p.estimated_value)}</span>
+        <span className={`text-[9px] font-medium tabular-nums shrink-0 ${confColor}`}>{confPct}%</span>
+        {expanded ? <ChevronDown size={11} className="text-jarvis-muted" /> : <ChevronRight size={11} className="text-jarvis-muted" />}
+      </button>
+
+      {/* Expanded detail */}
+      {expanded && (
+        <div className="px-3 pb-3 space-y-2.5 border-t border-jarvis-amber/10 pt-2.5">
+          {/* Data sources */}
+          {p.data_sources?.length > 0 && (
+            <div>
+              <span className="text-[8px] text-jarvis-muted uppercase tracking-wider font-semibold">Data Sources</span>
+              <div className="flex flex-wrap gap-1 mt-0.5">
+                {p.data_sources.map(src => (
+                  <span key={src} className="px-1.5 py-0.5 rounded-full bg-jarvis-primary/10 border border-jarvis-primary/20 text-[7px] text-jarvis-primary font-medium">
+                    {src.replace(/_/g, " ")}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Math breakdown */}
+          <div>
+            <span className="text-[8px] text-jarvis-muted uppercase tracking-wider font-semibold">Pricing Math</span>
+            <div className="mt-0.5 rounded bg-white/[0.03] border border-white/5 overflow-hidden">
+              {math.length > 0 ? (
+                <>
+                  {math.map((m, i) => (
+                    <div key={i} className="flex items-start justify-between px-2 py-1 border-b border-white/5 last:border-b-0">
+                      <div className="min-w-0 flex-1">
+                        <div className="text-[9px] text-jarvis-ink">{m.line}</div>
+                        <div className="text-[7px] text-jarvis-muted font-mono">{m.calc}</div>
+                      </div>
+                      <span className="text-[9px] text-jarvis-ink font-semibold tabular-nums shrink-0 ml-2">{fmtUsd(m.amount)}</span>
+                    </div>
+                  ))}
+                  <div className="flex justify-between px-2 py-1 bg-white/[0.03] border-t border-white/8">
+                    <span className="text-[9px] font-semibold text-jarvis-ink">Total</span>
+                    <span className="text-[10px] text-jarvis-success font-bold tabular-nums">{fmtUsd(mathTotal)}</span>
+                  </div>
+                </>
+              ) : (
+                <div className="px-2 py-1.5 text-[8px] text-jarvis-muted">Benchmark estimate — no line items</div>
+              )}
+            </div>
+          </div>
+
+          {/* Confidence */}
+          <div>
+            <div className="flex items-center justify-between">
+              <span className="text-[8px] text-jarvis-muted uppercase tracking-wider font-semibold">Confidence</span>
+              <span className={`text-[10px] font-bold tabular-nums ${confColor}`}>{confPct}%</span>
+            </div>
+            <div className="w-full h-1 rounded-full bg-white/10 mt-0.5">
+              <div className={`h-full rounded-full ${barColor}`} style={{ width: `${confPct}%` }} />
+            </div>
+            {p.confidence_why && <p className="text-[8px] text-jarvis-muted mt-0.5">{p.confidence_why}</p>}
+          </div>
+
+          {/* Assumptions */}
+          {p.assumptions && (
+            <div>
+              <span className="text-[8px] text-jarvis-muted uppercase tracking-wider font-semibold">Assumptions</span>
+              <p className="text-[8px] text-jarvis-body mt-0.5 leading-relaxed">{p.assumptions}</p>
+            </div>
+          )}
+
+          {/* Inline edit */}
+          <div className="flex items-center gap-1.5">
+            <span className="text-[10px] text-jarvis-muted">$</span>
+            <input
+              type="number"
+              value={editedValue}
+              onChange={e => setEditedValue(Number(e.target.value))}
+              className="flex-1 bg-white/5 border border-white/10 rounded px-2 py-1 text-[12px] text-jarvis-ink font-bold tabular-nums focus:outline-none focus:border-jarvis-accent/50"
+            />
+            {editedValue !== p.estimated_value && (
+              <span className="text-[8px] text-jarvis-warning">{editedValue > p.estimated_value ? "+" : ""}{fmtUsd(editedValue - p.estimated_value)}</span>
+            )}
+          </div>
+
+          {/* Actions */}
+          {denyMode ? (
+            <div className="space-y-1.5">
+              <textarea
+                autoFocus
+                value={denyReason}
+                onChange={e => setDenyReason(e.target.value)}
+                placeholder="Why is this estimate wrong?"
+                rows={2}
+                className="w-full bg-white/5 border border-red-800/40 rounded px-2 py-1 text-[10px] text-jarvis-ink placeholder-jarvis-muted outline-none focus:border-red-600/60 resize-none"
+              />
+              <div className="flex gap-1.5">
+                <button onClick={() => { setDenyMode(false); setDenyReason(""); }} className="text-[9px] text-jarvis-muted hover:text-jarvis-ink">Back</button>
+                <button
+                  onClick={handleDeny}
+                  disabled={!denyReason.trim() || busy}
+                  className="flex items-center gap-1 px-2 py-1 rounded text-[9px] font-medium bg-red-900/40 text-red-400 border border-red-800/50 disabled:opacity-40 ml-auto"
+                >
+                  {busy ? <Loader2 size={9} className="animate-spin" /> : <ThumbsDown size={9} />}
+                  Deny & Teach
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="flex gap-1.5">
+              <button
+                onClick={handleApprove}
+                disabled={busy}
+                className="flex-1 py-1.5 rounded-lg bg-jarvis-green/15 text-jarvis-green text-[10px] font-semibold hover:bg-jarvis-green/25 transition disabled:opacity-40"
+              >
+                Approve {fmtUsd(p.estimated_value)}
+              </button>
+              {editedValue !== p.estimated_value && (
+                <button
+                  onClick={handleEditApprove}
+                  disabled={busy}
+                  className="flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg bg-jarvis-primary/15 text-jarvis-primary text-[10px] font-semibold hover:bg-jarvis-primary/25 transition disabled:opacity-40"
+                >
+                  <Pencil size={9} />
+                  {fmtUsd(editedValue)}
+                </button>
+              )}
+              <button
+                onClick={() => setDenyMode(true)}
+                className="px-2 py-1.5 rounded-lg bg-white/5 text-jarvis-body text-[10px] font-semibold hover:bg-white/10 transition"
+              >
+                Deny
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Standard approval card (non-value-estimate) ──────────────────────────────
+
+function StandardApprovalCard({ approval, onDecide }) {
+  return (
+    <div className="rounded-xl bg-jarvis-amber/5 border border-jarvis-amber/20 p-3">
+      <div className="text-[13px] text-jarvis-ink font-medium">{approval.title}</div>
+      <div className="text-[11px] text-jarvis-body mt-1">{approval.reason}</div>
+      <div className="flex gap-2 mt-3">
+        <button
+          onClick={() => onDecide?.(approval.id, "approve")}
+          className="flex-1 py-1.5 rounded-lg bg-jarvis-green/15 text-jarvis-green text-[11px] font-semibold hover:bg-jarvis-green/25 transition"
+        >
+          Approve
+        </button>
+        <button
+          onClick={() => onDecide?.(approval.id, "deny")}
+          className="flex-1 py-1.5 rounded-lg bg-white/5 text-jarvis-body text-[11px] font-semibold hover:bg-white/10 transition"
+        >
+          Deny
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ── Main RightRail ───────────────────────────────────────────────────────────
+
 export function RightRail({ rail, onDecide, recentRuns = [] }) {
   if (!rail) return null;
+
+  const valueEstimates = rail.approvals.filter(a => a.skill === "deal_value_estimator");
+  const otherApprovals = rail.approvals.filter(a => a.skill !== "deal_value_estimator");
+
   return (
     <motion.div
       variants={stagger.container}
@@ -39,25 +296,11 @@ export function RightRail({ rail, onDecide, recentRuns = [] }) {
         {rail.approvals.length === 0 && (
           <div className="text-[11px] text-jarvis-muted italic">No approvals pending.</div>
         )}
-        {rail.approvals.map((a) => (
-          <div key={a.id} className="rounded-xl bg-jarvis-amber/5 border border-jarvis-amber/20 p-3">
-            <div className="text-[13px] text-jarvis-ink font-medium">{a.title}</div>
-            <div className="text-[11px] text-jarvis-body mt-1">{a.reason}</div>
-            <div className="flex gap-2 mt-3">
-              <button
-                onClick={() => onDecide?.(a.id, "approve")}
-                className="flex-1 py-1.5 rounded-lg bg-jarvis-green/15 text-jarvis-green text-[11px] font-semibold hover:bg-jarvis-green/25 transition"
-              >
-                Approve
-              </button>
-              <button
-                onClick={() => onDecide?.(a.id, "deny")}
-                className="flex-1 py-1.5 rounded-lg bg-white/5 text-jarvis-body text-[11px] font-semibold hover:bg-white/10 transition"
-              >
-                Deny
-              </button>
-            </div>
-          </div>
+        {valueEstimates.map(a => (
+          <ValueEstimateRailCard key={a.id} approval={a} onDecided={() => {}} />
+        ))}
+        {otherApprovals.map(a => (
+          <StandardApprovalCard key={a.id} approval={a} onDecide={onDecide} />
         ))}
       </Card>
 
