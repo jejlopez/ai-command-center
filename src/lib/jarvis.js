@@ -51,6 +51,7 @@ export const jarvis = {
   brief:           () => get("/brief"),
   rail:            () => get("/rail"),
   generateBrief:   () => post("/brief/generate"),
+  approvals:       ()                      => get("/approvals"),
   decideApproval:  (id, decision, reason) =>
     post(`/approvals/${id}/decide`, { decision, reason }),
   ask: (prompt, opts = {}) => post("/ask", { prompt, ...opts }),

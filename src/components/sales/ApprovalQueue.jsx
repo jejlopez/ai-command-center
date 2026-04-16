@@ -1,12 +1,13 @@
 import { useState } from "react";
-import { Mail, FileText, GitBranch, Clock } from "lucide-react";
+import { Mail, FileText, GitBranch, Clock, DollarSign } from "lucide-react";
 import { useApprovalsSupa } from "../../hooks/useApprovalsSupa.js";
 import ApprovalReview from "./ApprovalReview.jsx";
 
 const TYPE_META = {
-  email:        { icon: Mail,       label: "Email" },
-  proposal:     { icon: FileText,   label: "Proposal" },
-  stage_change: { icon: GitBranch,  label: "Stage Change" },
+  email:               { icon: Mail,       label: "Email" },
+  proposal:            { icon: FileText,   label: "Proposal" },
+  stage_change:        { icon: GitBranch,  label: "Stage Change" },
+  deal_value_estimate: { icon: DollarSign, label: "Value Estimate" },
 };
 
 function relativeTime(iso) {
@@ -20,8 +21,12 @@ function relativeTime(iso) {
   return `${days}d ago`;
 }
 
-function preview(draft) {
-  if (!draft) return "—";
+function preview(approval) {
+  const draft = approval?.draft_content;
+  if (!draft) return approval?.title || "—";
+  if (draft.estimated_value) {
+    return `${draft.company || ""} — $${Number(draft.estimated_value).toLocaleString()} (${draft.confidence || "?"})`;
+  }
   const text = draft.subject || draft.body || "";
   return text.slice(0, 80) + (text.length > 80 ? "…" : "");
 }
@@ -92,7 +97,7 @@ export function ApprovalQueue({ leadId, dealId }) {
                       )}
                     </div>
                     <p className="text-[10px] text-jarvis-muted truncate leading-tight mt-0.5">
-                      {preview(a.draft_content)}
+                      {preview(a)}
                     </p>
                   </div>
                   <div className="flex items-center gap-1 shrink-0 text-[9px] text-jarvis-muted">
@@ -121,7 +126,7 @@ export function ApprovalQueue({ leadId, dealId }) {
                   <span className="text-[10px] text-jarvis-muted flex-1 truncate">
                     {TYPE_META[a.type]?.label ?? a.type}
                     {" — "}
-                    {preview(a.draft_content)}
+                    {preview(a)}
                   </span>
                   <StatusBadge status={a.status} />
                   <span className="text-[9px] text-jarvis-muted shrink-0">
