@@ -10,9 +10,9 @@ import { supaFetch, supaInsert } from "../lib/supabase_client.js";
 import { audit } from "../lib/audit.js";
 
 const DraftBody = z.object({
-  deal_id: z.string().uuid(),
-  type: z.enum(["follow_up", "intro", "proposal_send", "thank_you", "check_in"]).default("follow_up"),
-  context: z.string().optional(),
+  deal_id: z.string().uuid().nullable().optional(),
+  type: z.enum(["follow_up", "intro", "proposal_send", "thank_you", "check_in", "reply"]).default("follow_up"),
+  context: z.union([z.string(), z.record(z.any())]).optional(),
 });
 
 export async function emailDraftRoutes(app: FastifyInstance) {
@@ -26,55 +26,87 @@ export async function emailDraftRoutes(app: FastifyInstance) {
 
     const { deal_id, type, context } = parsed.data;
 
-    // Fetch deal
-    const deals = await supaFetch('deals', `select=*&id=eq.${deal_id}`);
-    const deal = deals[0];
-    if (!deal) {
-      reply.code(404);
-      return { error: "Deal not found" };
-    }
+    // Parse context — may be string or object (for replies)
+    const ctx = typeof context === "object" ? context as any : { note: context };
 
-    // Fetch contact
+    // Fetch deal if available
+    let deal: any = null;
     let contactEmail = '';
-    let contactName: string = deal.contact_name ?? deal.company ?? '';
-    if (deal.contact_id) {
-      const contacts = await supaFetch('contacts', `select=*&id=eq.${deal.contact_id}`);
-      if (contacts[0]) {
-        contactEmail = contacts[0].email ?? '';
-        contactName = contacts[0].name ?? contactName;
+    let contactName = '';
+    if (deal_id) {
+      const deals = await supaFetch('deals', `select=*&id=eq.${deal_id}`);
+      deal = deals[0] ?? null;
+      if (deal) {
+        contactName = deal.contact_name ?? deal.company ?? '';
+        if (deal.contact_id) {
+          const contacts = await supaFetch('contacts', `select=*&id=eq.${deal.contact_id}`);
+          if (contacts[0]) {
+            contactEmail = contacts[0].email ?? '';
+            contactName = contacts[0].name ?? contactName;
+          }
+        }
       }
     }
 
-    // Fetch recent comms + style samples in parallel
-    const [comms, styleSamples] = await Promise.all([
-      supaFetch('communications', `select=type,subject,body,occurred_at&deal_id=eq.${deal_id}&order=occurred_at.desc&limit=5`),
-      supaFetch('email_style', `select=edited_draft,context&order=created_at.desc&limit=3`),
-    ]);
+    // Fetch style samples (always — not deal-specific)
+    const styleSamples = await supaFetch('email_style', `select=edited_draft,context&order=created_at.desc&limit=3`);
 
     const styleNote = styleSamples.length > 0
-      ? `\n\nExamples of how the user writes (match this tone and style exactly):\n${styleSamples.map((s: any) => `---\n${s.edited_draft}\n---`).join('\n')}`
+      ? `\n\nExamples of how Samuel writes (match this tone and style exactly):\n${styleSamples.map((s: any) => `---\n${s.edited_draft}\n---`).join('\n')}`
       : '';
 
-    const commHistory = comms.length > 0
-      ? `\n\nRecent communications with this contact:\n${comms.map((c: any) => `[${c.type}] ${c.subject ?? ''}: ${(c.body ?? '').slice(0, 200)}`).join('\n')}`
-      : '';
+    // Fetch recent comms if we have a deal
+    let commHistory = '';
+    if (deal_id) {
+      const comms = await supaFetch('communications', `select=type,subject,body,occurred_at&deal_id=eq.${deal_id}&order=occurred_at.desc&limit=5`);
+      if (comms.length > 0) {
+        commHistory = `\n\nRecent communications with this contact:\n${comms.map((c: any) => `[${c.type}] ${c.subject ?? ''}: ${(c.body ?? '').slice(0, 200)}`).join('\n')}`;
+      }
+    }
 
-    const prompt = `You are drafting an email for a VP of Sales at a 3PL/shipping company.
+    // Build prompt based on type
+    let prompt: string;
 
-Deal: ${deal.company ?? deal.company_name ?? 'Unknown'} — Stage: ${deal.stage} — $${((deal.value_usd ?? deal.value ?? 0)).toLocaleString()}
-Contact: ${contactName}
-Email type: ${type}${context ? `\nAdditional context: ${context}` : ''}
-${commHistory}
-${styleNote}
+    if (type === "reply" && ctx.originalSnippet) {
+      // Reply mode — draft is based on the actual email content
+      prompt = `You are Samuel Eddi, VP of Sales at 3PL Center LLC (warehousing, fulfillment, shipping — NJ + CA).
+You are replying to an email. Read the original carefully and draft a specific, contextual reply.
+
+FROM: ${ctx.originalFrom ?? "unknown sender"}
+SUBJECT: ${ctx.originalSubject ?? ""}
+ORIGINAL EMAIL:
+${ctx.originalSnippet}
+${deal ? `\nDEAL CONTEXT: ${deal.company ?? deal.company_name} — Stage: ${deal.stage} — $${((deal.value_usd ?? deal.value ?? 0)).toLocaleString()}` : ''}${commHistory}${styleNote}
+
+INSTRUCTIONS:
+- Read the email above and identify what the sender is asking or communicating.
+- Draft a reply that directly addresses their specific points.
+- If the email mentions shipping, warehousing, invoices, scheduling, or logistics — tailor your reply to that context with relevant 3PL expertise.
+- If it's a meeting confirmation — confirm your attendance and mention anything you want to discuss.
+- If it's a question — answer it directly.
+- If it's an update request — provide the update or say what you'll follow up on.
+- Be professional, concise, and actionable. One clear next step.
+- Under 120 words. No markdown. No fluff.
+- Sign off as: Samuel Eddi, VP Sales | 3PL Center
+
+At the very end on a new line, add the subject line prefixed exactly with "SUBJECT: "`;
+    } else {
+      // Outbound/follow-up mode
+      prompt = `You are Samuel Eddi, VP of Sales at 3PL Center LLC (warehousing, fulfillment, shipping — NJ + CA).
+
+Deal: ${deal ? `${deal.company ?? deal.company_name ?? 'Unknown'} — Stage: ${deal.stage} — $${((deal.value_usd ?? deal.value ?? 0)).toLocaleString()}` : 'No deal linked'}
+Contact: ${contactName || ctx.originalFrom || 'Unknown'}
+Email type: ${type}${ctx.note ? `\nAdditional context: ${ctx.note}` : ''}${commHistory}${styleNote}
 
 Write a professional, concise email. Be direct and warm but not overly casual.
 Include one clear call-to-action.
 Keep it under 150 words.
 Do NOT include a subject line in the body.
 Do NOT use markdown.
-Use a generic professional sign-off (not a specific name).
+Sign off as: Samuel Eddi, VP Sales | 3PL Center
 
 At the very end on a new line, add the subject line prefixed exactly with "SUBJECT: "`;
+    }
 
     try {
       const result = await callModel(
@@ -94,17 +126,17 @@ At the very end on a new line, add the subject line prefixed exactly with "SUBJE
       audit({
         actor: "route:email_draft",
         action: "email.draft.created",
-        subject: deal_id,
-        metadata: { type, company: deal.company ?? deal.company_name },
+        subject: deal_id ?? "no-deal",
+        metadata: { type, company: deal?.company ?? deal?.company_name ?? ctx.originalFrom },
       });
 
       return {
-        to: contactEmail,
+        to: contactEmail || "",
         subject,
         body,
-        deal_id,
-        contact_name: contactName,
-        company: deal.company ?? deal.company_name ?? '',
+        deal_id: deal_id ?? null,
+        contact_name: contactName || ctx.originalFrom || "",
+        company: deal?.company ?? deal?.company_name ?? "",
         type,
       };
     } catch (e: any) {
