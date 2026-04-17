@@ -118,7 +118,7 @@ export async function crmRoutes(app: FastifyInstance) {
   // All deals
   app.get("/crm/deals", async (req) => {
     const { pipeline, status } = req.query as any;
-    return getDeals(pipeline ?? "New pipeline", status ?? "open");
+    return getDeals(pipeline, status ?? "open");
   });
 
   // Single deal

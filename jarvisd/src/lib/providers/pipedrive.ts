@@ -35,26 +35,40 @@ async function pipedriveApi(endpoint: string, params: Record<string, string> = {
 // Sync deals from the "New pipeline" (or specified pipeline)
 // ---------------------------------------------------------------------------
 
-export async function syncDeals(pipelineName = "New pipeline"): Promise<{ synced: number; total: number }> {
-  // Get all pipelines to find the ID
-  const pipelines = await pipedriveApi("pipelines");
-  const pipeline = (pipelines.data ?? []).find((p: any) =>
-    p.name.toLowerCase() === pipelineName.toLowerCase()
-  );
-
-  if (!pipeline) {
-    throw new Error(`Pipeline "${pipelineName}" not found. Available: ${(pipelines.data ?? []).map((p: any) => p.name).join(", ")}`);
+export async function syncDeals(pipelineName = "all"): Promise<{ synced: number; total: number }> {
+  // Get stages + pipelines maps for real names
+  const stagesResult = await pipedriveApi("stages");
+  const stageMap: Record<number, string> = {};
+  for (const s of (stagesResult.data ?? [])) {
+    stageMap[s.id] = s.name;
   }
 
-  // Get deals in this pipeline
-  const result = await pipedriveApi("deals", {
-    pipeline_id: String(pipeline.id),
-    status: "open",
-    limit: "100",
-    sort: "update_time DESC",
-  });
+  const pipelinesResult = await pipedriveApi("pipelines");
+  const pipelineMap: Record<number, string> = {};
+  for (const p of (pipelinesResult.data ?? [])) {
+    pipelineMap[p.id] = p.name;
+  }
 
-  const deals = result.data ?? [];
+  // Pull ALL deals across all pipelines (open + won + lost)
+  const allDeals: any[] = [];
+  for (const status of ["open", "won", "lost"]) {
+    let start = 0;
+    let hasMore = true;
+    while (hasMore && start < 500) {
+      const result = await pipedriveApi("deals", {
+        status,
+        limit: "100",
+        start: String(start),
+        sort: "value DESC",
+      });
+      const batch = result.data ?? [];
+      allDeals.push(...batch);
+      hasMore = result.additional_data?.pagination?.more_items_in_collection ?? false;
+      start += 100;
+    }
+  }
+
+  const deals = allDeals;
   let synced = 0;
 
   const upsert = db.prepare(`
@@ -64,18 +78,19 @@ export async function syncDeals(pipelineName = "New pipeline"): Promise<{ synced
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
     ON CONFLICT(pipedrive_id) DO UPDATE SET
       title=excluded.title, org_name=excluded.org_name, contact_name=excluded.contact_name,
-      contact_email=excluded.contact_email, stage=excluded.stage, status=excluded.status,
+      contact_email=excluded.contact_email, pipeline=excluded.pipeline, stage=excluded.stage, status=excluded.status,
       value=excluded.value, updated_at=excluded.updated_at, last_activity=excluded.last_activity,
       next_activity=excluded.next_activity, total_activities=excluded.total_activities,
       synced_at=datetime('now')
   `);
 
   for (const d of deals) {
-    const personName = d.person_id?.name ?? "";
-    const personEmail = d.person_id?.email?.[0]?.value ?? "";
+    const personName = d.person_id?.name ?? d.person_name ?? "";
+    const personEmail = d.person_id?.email?.[0]?.value ?? d.cc_email ?? "";
     const personPhone = d.person_id?.phone?.[0]?.value ?? "";
-    const orgName = d.org_id?.name ?? "";
-    const stageName = d.stage_id ? await getStageNameCached(d.stage_id) : "";
+    const orgName = d.org_id?.name ?? d.org_name ?? "";
+    const stageName = stageMap[d.stage_id] ?? `Stage ${d.stage_id}`;
+    const pipelineLabel = pipelineMap[d.pipeline_id] ?? `Pipeline ${d.pipeline_id}`;
 
     upsert.run(
       `pd-${d.id}`,
@@ -85,7 +100,7 @@ export async function syncDeals(pipelineName = "New pipeline"): Promise<{ synced
       personName,
       personEmail,
       personPhone,
-      pipelineName,
+      pipelineLabel,
       stageName,
       d.status ?? "open",
       d.value ?? 0,
@@ -267,7 +282,7 @@ export function getLeads(status = "active"): any[] {
 }
 
 export function getDealsByStage(): Record<string, any[]> {
-  const deals = getDeals("New pipeline", "open");
+  const deals = getDeals(undefined, "open");
   const stages: Record<string, any[]> = {};
   for (const d of deals) {
     const stage = d.stage || "Unknown";
