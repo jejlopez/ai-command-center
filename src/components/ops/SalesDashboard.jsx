@@ -118,17 +118,33 @@ export function SalesDashboard({ ops, onRefresh }) {
   const [openDeal, setOpenDeal] = useState(null);
   const [compareOpen, setCompareOpen] = useState(false);
   const [pipelineFilter, setPipelineFilter] = useState("New pipeline");
+  const [statusFilter, setStatusFilter] = useState("open");
 
   const hasCRM = crm?.connected && (crm.deals?.length > 0 || Object.keys(crm.pipeline || {}).length > 0);
   const rawDeals = deals.length > 0 ? deals : (hasCRM ? crm.deals : []);
 
+  // Lead stages — these show in the Leads tab, not the pipeline
+  const LEAD_STAGES = ["new lead", "new leads", "pipedrive leads", "gather info"];
+  const isLeadStage = (stage) => LEAD_STAGES.some(ls => (stage || "").toLowerCase().includes(ls));
+
   // Get unique pipeline names for filter dropdown
   const pipelineNames = [...new Set(rawDeals.map(d => (d.pipeline || d.pipe || "Unknown").trim()))].sort();
 
-  // Filter deals by selected pipeline
-  const allDeals = pipelineFilter === "all"
-    ? rawDeals
-    : rawDeals.filter(d => (d.pipeline || d.pipe || "").trim() === pipelineFilter);
+  // Filter deals by pipeline, status, and exclude lead stages
+  const allDeals = rawDeals.filter(d => {
+    const pipe = (d.pipeline || d.pipe || "").trim();
+    const status = (d.status || "open").toLowerCase();
+    const stage = d.stage || "";
+
+    // Pipeline filter
+    if (pipelineFilter !== "all" && pipe !== pipelineFilter) return false;
+    // Status filter
+    if (statusFilter !== "all" && status !== statusFilter) return false;
+    // Exclude lead stages from pipeline view (they belong in Leads tab)
+    if (statusFilter === "open" && isLeadStage(stage)) return false;
+
+    return true;
+  });
 
   // Build pipeline from Supabase deals (grouped by stage), normalizing field names
   const supaPipeline = {};
@@ -170,9 +186,19 @@ export function SalesDashboard({ ops, onRefresh }) {
                 className="text-[10px] bg-white/5 border border-jarvis-border rounded px-2 py-0.5 text-jarvis-body outline-none focus:border-jarvis-primary/40"
               >
                 {pipelineNames.map(p => (
-                  <option key={p} value={p}>{p} ({rawDeals.filter(d => (d.pipeline || d.pipe || "").trim() === p).length})</option>
+                  <option key={p} value={p}>{p}</option>
                 ))}
-                <option value="all">All pipelines ({rawDeals.length})</option>
+                <option value="all">All pipelines</option>
+              </select>
+              <select
+                value={statusFilter}
+                onChange={e => setStatusFilter(e.target.value)}
+                className="text-[10px] bg-white/5 border border-jarvis-border rounded px-2 py-0.5 text-jarvis-body outline-none focus:border-jarvis-primary/40"
+              >
+                <option value="open">Open ({allDeals.length})</option>
+                <option value="won">Won</option>
+                <option value="lost">Lost</option>
+                <option value="all">All statuses</option>
               </select>
             </div>
             <button
