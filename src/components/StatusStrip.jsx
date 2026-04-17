@@ -13,14 +13,18 @@ function Indicator({ label, value, color = "text-jarvis-muted" }) {
 
 export function StatusStrip({ vaultLocked, cost }) {
   const connected = useSocketStatus();
-  const [googleStatus, setGoogleStatus] = useState(null); // "connected" | "no_creds" | "no_refresh" | "vault_locked"
+  const [googleStatus, setGoogleStatus] = useState(null);
+  const [learningCount, setLearningCount] = useState(0);
 
-  // Poll Google connection status every 30s
+  // Poll Google + learning status every 30s
   useEffect(() => {
     const check = () => {
       jarvis.emailConnectionStatus?.()
         .then(s => setGoogleStatus(s?.gmail ?? null))
         .catch(() => setGoogleStatus(null));
+      jarvis.learningDashboard?.()
+        .then(d => setLearningCount(d?.eventsToday ?? d?.totalEvents ?? 0))
+        .catch(() => {});
     };
     check();
     const interval = setInterval(check, 30000);
@@ -48,6 +52,10 @@ export function StatusStrip({ vaultLocked, cost }) {
       <div className="flex items-center gap-1.5">
         <div className={`w-1.5 h-1.5 rounded-full ${googleConnected ? "bg-jarvis-success" : "bg-jarvis-danger"}`} />
         <span className={`text-[10px] ${googleConnected ? "text-jarvis-muted" : "text-jarvis-warning"}`}>{googleLabel}</span>
+      </div>
+      <div className="flex items-center gap-1.5">
+        <div className="w-1.5 h-1.5 rounded-full bg-jarvis-primary animate-pulse" />
+        <span className="text-[10px] text-jarvis-primary">Learning{learningCount > 0 ? ` (${learningCount})` : ""}</span>
       </div>
       <span className={`text-[10px] ${vaultLocked ? "text-jarvis-warning" : "text-jarvis-muted"}`}>
         {vaultLocked ? "Locked" : "Vault open"}

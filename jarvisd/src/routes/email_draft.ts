@@ -8,6 +8,7 @@ import { z } from "zod";
 import { callModel } from "../lib/skills.js";
 import { supaFetch, supaInsert } from "../lib/supabase_client.js";
 import { audit } from "../lib/audit.js";
+import { db } from "../db/db.js";
 
 const DraftBody = z.object({
   deal_id: z.string().uuid().nullable().optional(),
@@ -64,6 +65,23 @@ export async function emailDraftRoutes(app: FastifyInstance) {
       }
     }
 
+    // Load Samuel's learned style profile if available
+    let styleProfileNote = '';
+    try {
+      const profile = db.prepare("SELECT profile FROM jarvis_style_profile WHERE id = 'current'").get() as any;
+      if (profile?.profile) {
+        const p = JSON.parse(profile.profile);
+        styleProfileNote = `\n\nSAMUEL'S WRITING STYLE (learned from ${p.email_count || "many"} emails):
+- Tone: ${p.tone || "direct and warm"}
+- Greetings: ${(p.greeting_patterns || []).join(", ") || "varies"}
+- Sign-offs: ${(p.sign_off_patterns || []).join(", ") || "Samuel Eddi"}
+- Avg length: ${p.avg_length_words || 80} words
+- Key phrases: ${(p.key_phrases || []).slice(0, 5).join(", ") || "none captured"}
+- Do NOT: ${(p.do_not || []).join(", ") || "no restrictions"}
+Match this style exactly.`;
+      }
+    } catch {}
+
     // Build prompt based on type
     let prompt: string;
 
@@ -76,7 +94,7 @@ FROM: ${ctx.originalFrom ?? "unknown sender"}
 SUBJECT: ${ctx.originalSubject ?? ""}
 ORIGINAL EMAIL:
 ${ctx.originalSnippet}
-${deal ? `\nDEAL CONTEXT: ${deal.company ?? deal.company_name} — Stage: ${deal.stage} — $${((deal.value_usd ?? deal.value ?? 0)).toLocaleString()}` : ''}${commHistory}${styleNote}
+${deal ? `\nDEAL CONTEXT: ${deal.company ?? deal.company_name} — Stage: ${deal.stage} — $${((deal.value_usd ?? deal.value ?? 0)).toLocaleString()}` : ''}${commHistory}${styleNote}${styleProfileNote}
 
 INSTRUCTIONS:
 - Read the email above and identify what the sender is asking or communicating.
@@ -96,7 +114,7 @@ At the very end on a new line, add the subject line prefixed exactly with "SUBJE
 
 Deal: ${deal ? `${deal.company ?? deal.company_name ?? 'Unknown'} — Stage: ${deal.stage} — $${((deal.value_usd ?? deal.value ?? 0)).toLocaleString()}` : 'No deal linked'}
 Contact: ${contactName || ctx.originalFrom || 'Unknown'}
-Email type: ${type}${ctx.note ? `\nAdditional context: ${ctx.note}` : ''}${commHistory}${styleNote}
+Email type: ${type}${ctx.note ? `\nAdditional context: ${ctx.note}` : ''}${commHistory}${styleNote}${styleProfileNote}
 
 Write a professional, concise email. Be direct and warm but not overly casual.
 Include one clear call-to-action.

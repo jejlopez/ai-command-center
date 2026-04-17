@@ -204,6 +204,13 @@ export const jarvis = {
   crmStats:        ()                  => get("/crm/stats"),
   crmDeals:        (pipeline, status)  => get(`/crm/deals?${pipeline ? `pipeline=${encodeURIComponent(pipeline)}&` : ""}status=${status ?? "open"}`),
   crmSyncStatus:   ()                  => get("/crm/sync/status"),
+
+  // Learning system
+  learningDashboard: ()                => get("/learning/dashboard"),
+  learningStyleProfile: ()             => get("/learning/style-profile"),
+  learningAnalyzeHistory: ()           => post("/learning/analyze-history", {}),
+  learningLog: (type, data, dealId)    => post("/learning/log", { type, data, deal_id: dealId }),
+  learningWeeklyAnalysis: ()           => post("/learning/weekly-analysis", {}),
   crmDeal:         (id)                => get(`/crm/deals/${encodeURIComponent(id)}`),
   crmDealTimeline: (id)                => get(`/crm/deals/${encodeURIComponent(id)}/timeline`),
   crmUpdateDeal:   (id, data)          => post(`/crm/deals/${encodeURIComponent(id)}`, data),

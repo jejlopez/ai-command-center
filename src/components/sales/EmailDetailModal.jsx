@@ -326,11 +326,18 @@ export function EmailDetailModal({ triageEmail, onClose }) {
 
   const senderEmail = parseSender(triageEmail?.from_addr).email;
 
-  // Style learn helper
+  // Style learn helper — also logs to learning system
   const learnStyle = async () => {
     if (originalDraft && replyBody !== originalDraft) {
       try {
         await jarvis.emailStyleLearn(originalDraft, replyBody, linkedDeal?.id || null, null, "reply");
+        // Log to learning system
+        await jarvis.learningLog?.("email_edit", {
+          original: originalDraft.slice(0, 500),
+          edited: replyBody.slice(0, 500),
+          context: triageEmail.subject,
+          from: triageEmail.from_addr,
+        }, linkedDeal?.id);
       } catch {}
     }
   };
@@ -381,6 +388,16 @@ export function EmailDetailModal({ triageEmail, onClose }) {
           },
         });
       }
+      // Also log to jarvisd learning system
+      try {
+        await jarvis.learningLog?.("email_edit", {
+          original: originalDraft?.slice(0, 500),
+          reason: denyReason.trim(),
+          context: triageEmail.subject,
+          from: triageEmail.from_addr,
+          action: "denied",
+        }, linkedDeal?.id);
+      } catch {}
       setDenied(true);
     } catch {}
     setSending(false);
