@@ -4,10 +4,17 @@
 import type { FastifyInstance } from "fastify";
 import { db } from "../db/db.js";
 import { checkAction, validateApproval, listPendingApprovals } from "../lib/approval_gateway.js";
-import { createDraft, updateDraft, sendDraft, getMessage, getThread, markAsRead } from "../lib/providers/gmail_actions.js";
+import { createDraft, updateDraft, sendDraft, getMessage, getThread, markAsRead, gmailConnectionStatus } from "../lib/providers/gmail_actions.js";
 import { audit } from "../lib/audit.js";
 
 export async function emailRoutes(app: FastifyInstance) {
+  // --- Connection status (for frontend status dot) ---
+
+  app.get("/email/connection-status", async () => {
+    const gmail = gmailConnectionStatus();
+    return { gmail, connected: gmail === "connected" };
+  });
+
   // --- Triage results ---
 
   app.get("/email/triage", async (req) => {

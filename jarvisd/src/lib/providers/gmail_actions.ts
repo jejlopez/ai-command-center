@@ -9,10 +9,18 @@ import { checkAction, validateApproval } from "../approval_gateway.js";
 import type { GatewayAction } from "../approval_gateway.js";
 
 // ---------------------------------------------------------------------------
-// OAuth token management
+// OAuth token management — cached with auto-refresh
 // ---------------------------------------------------------------------------
 
+let cachedAccessToken: string | null = null;
+let tokenExpiresAt = 0; // unix ms
+
 async function getAccessToken(): Promise<string> {
+  // Return cached token if still valid (with 2min buffer)
+  if (cachedAccessToken && Date.now() < tokenExpiresAt - 120_000) {
+    return cachedAccessToken;
+  }
+
   const refreshToken = vault.get("gmail.refresh_token");
   const clientId = vault.get("gmail.client_id");
   const clientSecret = vault.get("gmail.client_secret");
@@ -32,9 +40,27 @@ async function getAccessToken(): Promise<string> {
     }),
   });
 
-  if (!res.ok) throw new Error(`Gmail token refresh failed: ${res.status}`);
+  if (!res.ok) {
+    cachedAccessToken = null;
+    tokenExpiresAt = 0;
+    throw new Error(`Gmail token refresh failed: ${res.status}`);
+  }
+
   const data = await res.json() as any;
-  return data.access_token;
+  cachedAccessToken = data.access_token as string;
+  // Google tokens expire in 3600s, cache for that duration
+  tokenExpiresAt = Date.now() + (data.expires_in ?? 3600) * 1000;
+  return cachedAccessToken!;
+}
+
+/** Check if Gmail is connected and working. */
+export function gmailConnectionStatus(): "connected" | "no_creds" | "no_refresh" | "vault_locked" {
+  if (vault.isLocked()) return "vault_locked";
+  const refresh = vault.get("gmail.refresh_token");
+  const clientId = vault.get("gmail.client_id");
+  if (!clientId) return "no_creds";
+  if (!refresh) return "no_refresh";
+  return "connected";
 }
 
 async function gmailApi(method: string, path: string, body?: any): Promise<any> {

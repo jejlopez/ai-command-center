@@ -186,6 +186,7 @@ export const jarvis = {
   // Email triage (classified inbox from daemon)
   emailTriage:      (limit)             => get(`/email/triage?limit=${limit ?? 50}`),
   emailTriageStats: ()                  => get("/email/triage/stats"),
+  emailConnectionStatus: ()            => get("/email/connection-status"),
   emailMessage:     (messageId)         => get(`/email/message/${encodeURIComponent(messageId)}`),
   emailThread:      (threadId)          => get(`/email/thread/${encodeURIComponent(threadId)}`),
   emailMarkRead:    (messageId)         => post(`/email/message/${encodeURIComponent(messageId)}/read`, {}),

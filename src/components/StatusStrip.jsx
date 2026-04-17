@@ -1,4 +1,6 @@
+import { useState, useEffect } from "react";
 import { useSocketStatus } from "../hooks/useJarvisSocket.js";
+import { jarvis } from "../lib/jarvis.js";
 
 function Indicator({ label, value, color = "text-jarvis-muted" }) {
   return (
@@ -11,10 +13,30 @@ function Indicator({ label, value, color = "text-jarvis-muted" }) {
 
 export function StatusStrip({ vaultLocked, cost }) {
   const connected = useSocketStatus();
+  const [googleStatus, setGoogleStatus] = useState(null); // "connected" | "no_creds" | "no_refresh" | "vault_locked"
+
+  // Poll Google connection status every 30s
+  useEffect(() => {
+    const check = () => {
+      jarvis.emailConnectionStatus?.()
+        .then(s => setGoogleStatus(s?.gmail ?? null))
+        .catch(() => setGoogleStatus(null));
+    };
+    check();
+    const interval = setInterval(check, 30000);
+    return () => clearInterval(interval);
+  }, []);
+
   const spent = cost?.spentUsd != null ? `$${cost.spentUsd.toFixed(2)}` : "—";
   const budget = cost?.budgetUsd != null ? `$${cost.budgetUsd}` : "—";
   const frac = (cost?.spentUsd && cost?.budgetUsd) ? cost.spentUsd / cost.budgetUsd : 0;
   const costColor = frac < 0.5 ? "text-jarvis-success" : frac < 0.9 ? "text-jarvis-warning" : "text-jarvis-danger";
+
+  const googleConnected = googleStatus === "connected";
+  const googleLabel = googleStatus === "connected" ? "Google" :
+    googleStatus === "no_refresh" ? "Google: re-auth" :
+    googleStatus === "no_creds" ? "Google: setup" :
+    googleStatus === "vault_locked" ? "Google: locked" : "Google";
 
   return (
     <div className="flex items-center gap-5">
@@ -22,6 +44,10 @@ export function StatusStrip({ vaultLocked, cost }) {
       <div className="flex items-center gap-1.5">
         <div className={`w-1.5 h-1.5 rounded-full ${connected ? "bg-jarvis-success" : "bg-jarvis-danger"}`} />
         <span className="text-[10px] text-jarvis-muted">{connected ? "Live" : "Off"}</span>
+      </div>
+      <div className="flex items-center gap-1.5">
+        <div className={`w-1.5 h-1.5 rounded-full ${googleConnected ? "bg-jarvis-success" : "bg-jarvis-danger"}`} />
+        <span className={`text-[10px] ${googleConnected ? "text-jarvis-muted" : "text-jarvis-warning"}`}>{googleLabel}</span>
       </div>
       <span className={`text-[10px] ${vaultLocked ? "text-jarvis-warning" : "text-jarvis-muted"}`}>
         {vaultLocked ? "Locked" : "Vault open"}
