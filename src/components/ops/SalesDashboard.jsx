@@ -134,8 +134,9 @@ export function SalesDashboard({ ops, onRefresh }) {
     return () => clearInterval(interval);
   }, []);
 
-  const hasCRM = crm?.connected && (crm.deals?.length > 0 || Object.keys(crm.pipeline || {}).length > 0);
-  const rawDeals = deals.length > 0 ? deals : (hasCRM ? crm.deals : []);
+  const hasCRM = crm?.connected;
+  // deals already comes from mergedDeals in Work.jsx (jarvisd-first)
+  const rawDeals = deals;
 
   // Lead stages — these show in the Leads tab, not the pipeline
   const LEAD_STAGES = ["new lead", "new leads", "pipedrive leads", "gather info"];
@@ -160,27 +161,23 @@ export function SalesDashboard({ ops, onRefresh }) {
     return true;
   });
 
-  // Build pipeline from Supabase deals (grouped by stage), normalizing field names
-  const supaPipeline = {};
-  if (deals.length > 0) {
-    for (const d of deals) {
-      const stage = (d.stage || "Unknown").trim();
-      // Skip closed deals from pipeline view
-      if (stage === "closed_won" || stage === "closed_lost") continue;
-      // Normalize Supabase field names to match what PipelineBoard/DealCard expects
-      const normalized = {
-        ...d,
-        title: d.company || d.title,
-        org_name: d.company || d.org_name,
-        value: d.value_usd || d.value || 0,
-        stage_name: stage,
-        person_name: d.contact_name,
-        add_time: d.created_at,
-        update_time: d.updated_at || d.last_touch,
-        last_activity_date: d.last_touch,
-      };
-      (supaPipeline[stage] ??= []).push(normalized);
-    }
+  // Build pipeline from filtered deals (grouped by stage)
+  const pipeline = {};
+  for (const d of allDeals) {
+    const stage = (d.stage || d.stage_name || "Unknown").trim();
+    if (stage === "closed_won" || stage === "closed_lost") continue;
+    const normalized = {
+      ...d,
+      title: d.company || d.org_name || d.title,
+      org_name: d.company || d.org_name,
+      value: d.value_usd || d.value || 0,
+      stage_name: stage,
+      person_name: d.contact_name || d.person_name,
+      add_time: d.created_at || d.add_time,
+      update_time: d.updated_at || d.update_time || d.last_touch,
+      last_activity_date: d.last_activity || d.last_touch || d.last_activity_date,
+    };
+    (pipeline[stage] ??= []).push(normalized);
   }
   const calendarEvents = ops.calendarEvents || [];
 
@@ -229,10 +226,8 @@ export function SalesDashboard({ ops, onRefresh }) {
             </div>
           </div>
 
-          {Object.keys(supaPipeline).length > 0 ? (
-            <PipelineBoard pipeline={supaPipeline} onOpenDeal={setCrmDealOpen} />
-          ) : hasCRM ? (
-            <PipelineBoard pipeline={crm.pipeline} onOpenDeal={setCrmDealOpen} />
+          {Object.keys(pipeline).length > 0 ? (
+            <PipelineBoard pipeline={pipeline} onOpenDeal={setCrmDealOpen} />
           ) : (
             <div className="text-xs text-jarvis-muted text-center py-8">Connect Pipedrive to see pipeline.</div>
           )}
