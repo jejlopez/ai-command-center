@@ -165,8 +165,12 @@ export async function crmRoutes(app: FastifyInstance) {
     if (!deal) return reply.code(404).send({ error: "Deal not found" });
     const id = deal.id;
 
-    const pdId = deal.pipedrive_id;
-    const contactDomain = deal.contact_email?.split("@")[1] || "";
+    const contactEmail = (deal.contact_email || "").toLowerCase().trim();
+    const contactName = (deal.contact_name || "").toLowerCase().trim();
+    const contactDomain = contactEmail.includes("@") ? contactEmail.split("@")[1] : "";
+    // Skip generic domains for domain matching
+    const genericDomains = ["gmail.com", "yahoo.com", "hotmail.com", "outlook.com", "icloud.com", "aol.com"];
+    const useContactDomain = contactDomain && !genericDomains.includes(contactDomain);
 
     // Activities from Pipedrive sync
     const activities = db.prepare(
@@ -178,18 +182,54 @@ export async function crmRoutes(app: FastifyInstance) {
       "SELECT * FROM crm_notes WHERE deal_id = ? ORDER BY added_at DESC LIMIT 30"
     ).all(id) as any[];
 
-    // Emails matched by contact domain
-    const emails = contactDomain && contactDomain !== "NOMATCH"
-      ? db.prepare(
-          "SELECT * FROM email_triage WHERE from_addr LIKE ? ORDER BY created_at DESC LIMIT 20"
-        ).all(`%${contactDomain}%`) as any[]
-      : [];
+    // Emails from Gmail — match by contact email, contact domain, or contact name
+    let emails: any[] = [];
+    if (contactEmail) {
+      // Match exact email in from_addr (they emailed us)
+      const fromContact = db.prepare(
+        "SELECT * FROM email_triage WHERE LOWER(from_addr) LIKE ? ORDER BY created_at DESC LIMIT 30"
+      ).all(`%${contactEmail}%`) as any[];
+      emails.push(...fromContact);
+    }
+    if (useContactDomain && emails.length < 10) {
+      // Match company domain (other people at same company)
+      const fromDomain = db.prepare(
+        "SELECT * FROM email_triage WHERE LOWER(from_addr) LIKE ? AND id NOT IN (SELECT id FROM email_triage WHERE LOWER(from_addr) LIKE ?) ORDER BY created_at DESC LIMIT 20"
+      ).all(`%${contactDomain}%`, `%${contactEmail}%`) as any[];
+      emails.push(...fromDomain);
+    }
 
-    // Drafts sent to this contact
-    const drafts = deal.contact_email
+    // If triage has few matches and we have a contact email, search Gmail directly
+    if (emails.length < 5 && contactEmail) {
+      try {
+        const { listMessages } = await import("../lib/providers/gmail_actions.js");
+        const gmailResults = await listMessages(20, `from:${contactEmail} OR to:${contactEmail}`);
+        for (const gm of gmailResults) {
+          // Skip if already in triage matches (dedup by subject+date)
+          const isDupe = emails.some(e =>
+            e.subject === gm.subject && e.from_addr?.includes(gm.from?.split("<")[0]?.trim() || "NOMATCH")
+          );
+          if (!isDupe) {
+            emails.push({
+              id: `gmail-${gm.id}`,
+              message_id: gm.id,
+              thread_id: gm.threadId,
+              from_addr: gm.from,
+              subject: gm.subject,
+              snippet: gm.snippet,
+              category: "fyi",
+              created_at: gm.date,
+            });
+          }
+        }
+      } catch {}
+    }
+
+    // Drafts we sent to this contact
+    const drafts = contactEmail
       ? db.prepare(
-          "SELECT * FROM email_drafts WHERE to_addr LIKE ? ORDER BY created_at DESC LIMIT 10"
-        ).all(`%${deal.contact_email}%`) as any[]
+          "SELECT * FROM email_drafts WHERE LOWER(to_addr) LIKE ? ORDER BY created_at DESC LIMIT 10"
+        ).all(`%${contactEmail}%`) as any[]
       : [];
 
     // Normalize everything into timeline events
