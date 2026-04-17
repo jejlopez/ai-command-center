@@ -46,9 +46,9 @@ export default function Work() {
     salesCtx, tradingCtx, buildCtx, badges,
   } = useOpsSupa();
 
-  // Prefer Supabase deals (synced from Pipedrive with proper stages/contacts).
-  // Fall back to CRM (jarvisd) only if Supabase has nothing.
-  const mergedDeals = deals.length > 0 ? deals : crm.deals;
+  // Prefer jarvisd deals (synced every 30min with full pipeline).
+  // Fall back to Supabase if jarvisd has nothing.
+  const mergedDeals = crm.deals?.length > 0 ? crm.deals : deals;
 
   const ops = {
     deals: mergedDeals, followUps, proposals, comms, docs,
