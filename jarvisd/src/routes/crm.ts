@@ -144,9 +144,18 @@ export async function crmRoutes(app: FastifyInstance) {
 
   // Deal activity timeline — all history for one deal
   app.get<{ Params: { id: string } }>("/crm/deals/:id/timeline", async (req, reply) => {
-    const id = (req.params as any).id;
-    const deal = getDeal(id);
+    const rawId = (req.params as any).id;
+    let deal = getDeal(rawId);
+    // If UUID or numeric, try pd-{id} format
+    if (!deal && /^\d+$/.test(rawId)) {
+      deal = getDeal(`pd-${rawId}`);
+    }
+    if (!deal) {
+      // Try looking up by pipedrive_id
+      deal = db.prepare("SELECT * FROM crm_deals WHERE pipedrive_id = ?").get(parseInt(rawId) || 0) as any;
+    }
     if (!deal) return reply.code(404).send({ error: "Deal not found" });
+    const id = deal.id;
 
     const pdId = deal.pipedrive_id;
     const contactDomain = deal.contact_email?.split("@")[1] || "";

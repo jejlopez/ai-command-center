@@ -60,8 +60,12 @@ export function DealRoomPanel({ deal: initialDeal, onClose }) {
   const [loading, setLoading] = useState(true);
   const [selectedEmail, setSelectedEmail] = useState(null);
 
-  // Map deal to a Supabase deal_id — may be a Pipedrive ID
+  // Map deal to IDs for both Supabase and jarvisd
   const dealId = deal?.supabase_id ?? deal?.id;
+  // jarvisd uses "pd-{pipedrive_id}" format for timeline queries
+  const jarvisDealId = deal?.pipedrive_id
+    ? `pd-${deal.pipedrive_id}`
+    : (dealId?.startsWith?.("pd-") ? dealId : null);
 
   // Health scores
   const { score: health, whale, quality, breakdown } = dealHealth(deal ?? {});
@@ -188,7 +192,7 @@ export function DealRoomPanel({ deal: initialDeal, onClose }) {
           {loading ? (
             <div className="flex items-center justify-center py-8"><Loader2 size={20} className="animate-spin text-jarvis-primary" /></div>
           ) : tab === "timeline" ? (
-            <DealActivityTimeline dealId={dealId} onEmailClick={setSelectedEmail} />
+            <DealActivityTimeline dealId={jarvisDealId || dealId} onEmailClick={setSelectedEmail} />
           ) : tab === "proposal" ? (
             <div className="space-y-3">
               {/* Pricing breakdown from CRM */}

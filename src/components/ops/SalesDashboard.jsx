@@ -164,7 +164,7 @@ export function SalesDashboard({ ops, onRefresh }) {
           </div>
 
           {Object.keys(supaPipeline).length > 0 ? (
-            <PipelineBoard pipeline={supaPipeline} onOpenDeal={setOpenDeal} />
+            <PipelineBoard pipeline={supaPipeline} onOpenDeal={setCrmDealOpen} />
           ) : hasCRM ? (
             <PipelineBoard pipeline={crm.pipeline} onOpenDeal={setCrmDealOpen} />
           ) : (
