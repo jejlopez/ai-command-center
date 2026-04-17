@@ -9,7 +9,9 @@ import { callOllama } from "../lib/providers/ollama.js";
 import { callClaudeCli } from "../lib/providers/claude_cli.js";
 import { callWithWebSearch } from "../lib/providers/web_search.js";
 import { JARVIS_SYSTEM_PROMPT } from "../lib/jarvis_system_prompt.js";
-import { gatherContext } from "../lib/context_gatherer.js";
+import { gatherContext, detectSkillIntent } from "../lib/context_gatherer.js";
+import { runSkill } from "../lib/workflow.js";
+import { registry } from "../lib/skills.js";
 import { parseActions, stripActionBlocks, executeActions } from "../lib/action_executor.js";
 import { assertBudgetAvailable, recordCost, spentTodayUsd, dailyBudgetUsd } from "../lib/cost.js";
 import { audit } from "../lib/audit.js";
@@ -73,8 +75,24 @@ export async function askRoutes(app: FastifyInstance): Promise<void> {
     // Gather live data relevant to the user's question
     const liveContext = await gatherContext(prompt);
 
-    // Inject JARVIS system prompt + live data
-    const systemPrompt = JARVIS_SYSTEM_PROMPT + liveContext + (context ? `\n\n${context}` : "");
+    // Check if user wants to run a specific skill
+    let skillContext = "";
+    const skillIntent = detectSkillIntent(prompt);
+    if (skillIntent && registry.get(skillIntent.skill)) {
+      try {
+        const skillResult = await runSkill(skillIntent.skill, {
+          inputs: skillIntent.args,
+          triggeredBy: "manual",
+        });
+        if (skillResult) {
+          const resultStr = typeof skillResult === "string" ? skillResult : JSON.stringify(skillResult, null, 2);
+          skillContext = `\n\n--- SKILL RESULT (${skillIntent.skill}) ---\n${resultStr.slice(0, 2000)}\nUse this data to answer the user naturally. Do not dump raw JSON.`;
+        }
+      } catch {}
+    }
+
+    // Inject JARVIS system prompt + live data + skill result
+    const systemPrompt = JARVIS_SYSTEM_PROMPT + liveContext + skillContext + (context ? `\n\n${context}` : "");
 
     // --- Shield Protocol: tag prompt for PII/secrets, escalate privacy ---
     const tag = tagText(prompt + (systemPrompt ?? ""));
