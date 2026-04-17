@@ -117,9 +117,18 @@ export function SalesDashboard({ ops, onRefresh }) {
   const [crmDealOpen, setCrmDealOpen] = useState(null);
   const [openDeal, setOpenDeal] = useState(null);
   const [compareOpen, setCompareOpen] = useState(false);
+  const [pipelineFilter, setPipelineFilter] = useState("New pipeline");
 
   const hasCRM = crm?.connected && (crm.deals?.length > 0 || Object.keys(crm.pipeline || {}).length > 0);
-  const allDeals = deals.length > 0 ? deals : (hasCRM ? crm.deals : []);
+  const rawDeals = deals.length > 0 ? deals : (hasCRM ? crm.deals : []);
+
+  // Get unique pipeline names for filter dropdown
+  const pipelineNames = [...new Set(rawDeals.map(d => (d.pipeline || d.pipe || "Unknown").trim()))].sort();
+
+  // Filter deals by selected pipeline
+  const allDeals = pipelineFilter === "all"
+    ? rawDeals
+    : rawDeals.filter(d => (d.pipeline || d.pipe || "").trim() === pipelineFilter);
 
   // Build pipeline from Supabase deals (grouped by stage), normalizing field names
   const supaPipeline = {};
@@ -153,7 +162,19 @@ export function SalesDashboard({ ops, onRefresh }) {
         {/* COLUMN 1: Pipeline */}
         <div className="border-r border-jarvis-border/50 p-4 overflow-y-auto" style={{ scrollbarWidth: "thin" }}>
           <div className="flex items-center justify-between mb-3">
-            <span className="text-sm font-display font-semibold text-jarvis-ink">Pipeline</span>
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-display font-semibold text-jarvis-ink">Pipeline</span>
+              <select
+                value={pipelineFilter}
+                onChange={e => setPipelineFilter(e.target.value)}
+                className="text-[10px] bg-white/5 border border-jarvis-border rounded px-2 py-0.5 text-jarvis-body outline-none focus:border-jarvis-primary/40"
+              >
+                {pipelineNames.map(p => (
+                  <option key={p} value={p}>{p} ({rawDeals.filter(d => (d.pipeline || d.pipe || "").trim() === p).length})</option>
+                ))}
+                <option value="all">All pipelines ({rawDeals.length})</option>
+              </select>
+            </div>
             <button
               onClick={() => setCompareOpen(true)}
               className="text-[10px] text-jarvis-muted hover:text-jarvis-ink transition"
