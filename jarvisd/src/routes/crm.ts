@@ -103,6 +103,14 @@ export async function crmRoutes(app: FastifyInstance) {
       const [deals, leads, activities, notes] = await Promise.all([
         syncDeals(), syncLeads(), syncActivities(), syncNotes(),
       ]);
+      // Log to sync_log
+      try {
+        db.prepare(`INSERT INTO sync_log(synced_at, deals_synced, deals_total, leads_synced, activities_synced, notes_synced)
+          VALUES (datetime('now'), ?, ?, ?, ?, ?)`).run(
+          (deals as any).synced ?? 0, (deals as any).total ?? 0,
+          (leads as any).synced ?? 0, (activities as any).synced ?? 0, (notes as any).synced ?? 0
+        );
+      } catch {}
       return { ok: true, deals, leads, activities, notes };
     } catch (err: any) {
       return reply.code(500).send({ error: err.message });

@@ -203,6 +203,7 @@ export const jarvis = {
   crmPipeline:     ()                  => get("/crm/pipeline"),
   crmStats:        ()                  => get("/crm/stats"),
   crmDeals:        (pipeline, status)  => get(`/crm/deals?pipeline=${encodeURIComponent(pipeline ?? "New pipeline")}&status=${status ?? "open"}`),
+  crmSyncStatus:   ()                  => get("/crm/sync/status"),
   crmDeal:         (id)                => get(`/crm/deals/${encodeURIComponent(id)}`),
   crmDealTimeline: (id)                => get(`/crm/deals/${encodeURIComponent(id)}/timeline`),
   crmUpdateDeal:   (id, data)          => post(`/crm/deals/${encodeURIComponent(id)}`, data),

@@ -1,8 +1,9 @@
 // SalesDashboard — 3-column layout: Pipeline | Proposals+Email | Calendar+Actions.
 // All existing functionality preserved, reorganized for visibility.
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { jarvis } from "../../lib/jarvis.js";
 import { stagger, fadeIn } from "../../lib/motion.js";
 import { PipelineBoard } from "../sales/PipelineBoard.jsx";
 import { DealRoomPanel } from "../sales/DealRoomPanel.jsx";
@@ -119,6 +120,19 @@ export function SalesDashboard({ ops, onRefresh }) {
   const [compareOpen, setCompareOpen] = useState(false);
   const [pipelineFilter, setPipelineFilter] = useState("New pipeline");
   const [statusFilter, setStatusFilter] = useState("open");
+  const [syncLabel, setSyncLabel] = useState("");
+
+  // Poll sync status every 60s
+  useEffect(() => {
+    const check = () => {
+      jarvis.crmSyncStatus?.().then(s => {
+        setSyncLabel(s?.agoLabel || "");
+      }).catch(() => {});
+    };
+    check();
+    const interval = setInterval(check, 60000);
+    return () => clearInterval(interval);
+  }, []);
 
   const hasCRM = crm?.connected && (crm.deals?.length > 0 || Object.keys(crm.pipeline || {}).length > 0);
   const rawDeals = deals.length > 0 ? deals : (hasCRM ? crm.deals : []);
@@ -201,13 +215,18 @@ export function SalesDashboard({ ops, onRefresh }) {
                 <option value="all">All statuses</option>
               </select>
             </div>
-            <button
-              onClick={() => setCompareOpen(true)}
-              className="text-[10px] text-jarvis-muted hover:text-jarvis-ink transition"
-              title="Compare deals"
-            >
-              Compare
-            </button>
+            <div className="flex items-center gap-3">
+              {syncLabel && (
+                <span className="text-[9px] text-jarvis-muted tabular-nums">Synced {syncLabel}</span>
+              )}
+              <button
+                onClick={() => setCompareOpen(true)}
+                className="text-[10px] text-jarvis-muted hover:text-jarvis-ink transition"
+                title="Compare deals"
+              >
+                Compare
+              </button>
+            </div>
           </div>
 
           {Object.keys(supaPipeline).length > 0 ? (

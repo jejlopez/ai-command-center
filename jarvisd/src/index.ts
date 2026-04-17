@@ -200,12 +200,83 @@ async function main() {
     app.log.info("Claude CLI not found — using API keys only");
   }
 
+  // ── Pipedrive auto-sync setup (register routes BEFORE listen) ──
+  const { syncDeals, syncLeads, syncActivities, syncNotes, isPipedriveConnected } = await import("./lib/providers/pipedrive.js");
+  const { db: syncDb } = await import("./db/db.js");
+
+  syncDb.exec(`CREATE TABLE IF NOT EXISTS sync_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    synced_at TEXT NOT NULL,
+    deals_synced INTEGER DEFAULT 0,
+    deals_total INTEGER DEFAULT 0,
+    leads_synced INTEGER DEFAULT 0,
+    activities_synced INTEGER DEFAULT 0,
+    notes_synced INTEGER DEFAULT 0,
+    error TEXT
+  )`);
+
+  app.get("/crm/sync/status", async () => {
+    const last = syncDb.prepare("SELECT * FROM sync_log ORDER BY id DESC LIMIT 1").get() as any;
+    if (!last) return { lastSync: null, message: "No sync yet" };
+    const agoMs = Date.now() - new Date(last.synced_at + "Z").getTime();
+    const agoMin = Math.round(agoMs / 60000);
+    return {
+      lastSync: last.synced_at,
+      agoMinutes: agoMin,
+      agoLabel: agoMin < 1 ? "just now" : agoMin < 60 ? `${agoMin}m ago` : `${Math.round(agoMin / 60)}h ago`,
+      deals: last.deals_synced,
+      dealsTotal: last.deals_total,
+      leads: last.leads_synced,
+      activities: last.activities_synced,
+      notes: last.notes_synced,
+      error: last.error,
+    };
+  });
+
   const port = Number(process.env.JARVIS_PORT ?? 8787);
   await app.listen({ host: "127.0.0.1", port });
   app.log.info(`jarvisd v${VERSION} listening on http://127.0.0.1:${port}`);
   app.log.info(`jarvis home: ${JARVIS_HOME}`);
 
   startScheduler();
+
+  // ── Auto-sync runner (runs AFTER server starts) ──
+  async function runPipedriveSync() {
+    if (!isPipedriveConnected()) return;
+    const start = Date.now();
+    try {
+      const [d, l, a, n] = await Promise.all([
+        syncDeals().catch((e: any) => ({ synced: 0, total: 0, error: e.message })),
+        syncLeads().catch((e: any) => ({ synced: 0, error: e.message })),
+        syncActivities().catch((e: any) => ({ synced: 0, error: e.message })),
+        syncNotes().catch((e: any) => ({ synced: 0, error: e.message })),
+      ]);
+      const elapsed = ((Date.now() - start) / 1000).toFixed(1);
+      const err = [d, l, a, n].map((r: any) => r.error).filter(Boolean).join("; ") || null;
+      syncDb.prepare(`INSERT INTO sync_log(synced_at, deals_synced, deals_total, leads_synced, activities_synced, notes_synced, error)
+        VALUES (datetime('now'), ?, ?, ?, ?, ?, ?)`).run(
+        (d as any).synced ?? 0, (d as any).total ?? 0, (l as any).synced ?? 0, (a as any).synced ?? 0, (n as any).synced ?? 0, err
+      );
+      app.log.info(`[pipedrive-sync] ${(d as any).synced ?? 0} deals, ${(l as any).synced ?? 0} leads, ${(a as any).synced ?? 0} activities, ${(n as any).synced ?? 0} notes in ${elapsed}s`);
+    } catch (err: any) {
+      app.log.warn(`[pipedrive-sync] failed: ${err.message}`);
+      syncDb.prepare(`INSERT INTO sync_log(synced_at, error) VALUES (datetime('now'), ?)`).run(err.message);
+    }
+  }
+
+  // Startup sync (delayed 5s to let vault unlock)
+  setTimeout(() => runPipedriveSync(), 5000);
+
+  // Cron: every 30 minutes 8am-7pm weekdays
+  setInterval(() => {
+    const now = new Date();
+    const hour = now.getHours();
+    const day = now.getDay();
+    const minute = now.getMinutes();
+    if (day >= 1 && day <= 5 && hour >= 8 && hour <= 19 && (minute === 0 || minute === 30)) {
+      runPipedriveSync();
+    }
+  }, 60_000);
 }
 
 main().catch((err) => {
