@@ -7,7 +7,7 @@ import { supabase } from "../../lib/supabase.js";
 import { jarvis } from "../../lib/jarvis.js";
 import {
   X, Mail, User, Clock, Link2, Building, Send, Pencil,
-  Loader2, Sparkles, Check, AlertTriangle, ThumbsDown,
+  Loader2, Sparkles, Check, AlertTriangle, ThumbsDown, ListTodo,
 } from "lucide-react";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -125,6 +125,11 @@ export function EmailDetailModal({ triageEmail, onClose }) {
   const [denyReason, setDenyReason] = useState("");
   const [denied, setDenied] = useState(false);
 
+  // Task suggestion state
+  const [suggestedTask, setSuggestedTask] = useState(null);
+  const [taskCreated, setTaskCreated] = useState(false);
+  const [creatingTask, setCreatingTask] = useState(false);
+
   const threadEndRef = useRef(null);
   const threadId = triageEmail?.thread_id || null;
   const messageId = triageEmail?.message_id || null;
@@ -211,7 +216,44 @@ export function EmailDetailModal({ triageEmail, onClose }) {
     return () => { cancelled = true; };
   }, [loadingThread, threadMessages.length]);
 
-  // ── 4. Look up linked deal/lead by sender email ────────────────────────────
+  // ── 4. Detect actionable task from email content ────────────────────────────
+
+  useEffect(() => {
+    if (loadingThread || threadMessages.length === 0) return;
+    const lastMsg = threadMessages[threadMessages.length - 1];
+    const body = (lastMsg?.body || triageEmail.snippet || "").replace(/<[^>]*>/g, "").toLowerCase();
+    const subject = (lastMsg?.subject || triageEmail.subject || "").toLowerCase();
+    const senderName = parseSender(triageEmail.from_addr).name;
+
+    // Detect actionable patterns
+    let task = null;
+
+    if (/schedule|book|set up|arrange/.test(body) && /call|meeting|demo|visit|tour/.test(body)) {
+      task = `Schedule a ${/demo/.test(body) ? "demo" : /visit|tour/.test(body) ? "site visit" : "call"} with ${senderName}`;
+    } else if (/quote|pricing|proposal|rate/.test(body) && /send|provide|share|need/.test(body)) {
+      task = `Send pricing/proposal to ${senderName}`;
+    } else if (/update|status|where.*stand|progress/.test(body)) {
+      task = `Send status update to ${senderName}`;
+    } else if (/invoice|payment|outstanding|overdue|balance/.test(body)) {
+      task = `Follow up on invoice/payment with ${senderName}`;
+    } else if (/contract|agreement|sign|paperwork/.test(body)) {
+      task = `Prepare/send contract for ${senderName}`;
+    } else if (/info|information|details|specs|questions/.test(body) && /send|need|provide|share/.test(body)) {
+      task = `Send requested information to ${senderName}`;
+    } else if (/follow.?up|check.?in|circle.?back|touch.?base/.test(body)) {
+      task = `Follow up with ${senderName} — re: ${triageEmail.subject || "email"}`;
+    } else if (/interested|looking for|need help|warehousing|fulfillment|3pl/.test(body)) {
+      task = `Respond to ${senderName}'s inquiry about 3PL services`;
+    } else if (/urgent|asap|immediately|right away/.test(body)) {
+      task = `URGENT: Respond to ${senderName} — ${subject.slice(0, 40)}`;
+    }
+
+    if (task) {
+      setSuggestedTask(task);
+    }
+  }, [loadingThread, threadMessages.length]);
+
+  // ── 5. Look up linked deal/lead by sender email ────────────────────────────
 
   useEffect(() => {
     if (!supabase || !triageEmail?.from_addr) return;
@@ -247,6 +289,38 @@ export function EmailDetailModal({ triageEmail, onClose }) {
       if (deals?.length) setLinkedDeal(deals[0]);
     })();
   }, [triageEmail?.from_addr]);
+
+  // ── Create task from email ──────────────────────────────────────────────────
+
+  const createTaskFromEmail = async () => {
+    if (!suggestedTask || !supabase) return;
+    setCreatingTask(true);
+    try {
+      const tomorrow = new Date();
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      tomorrow.setHours(9, 0, 0, 0);
+
+      await supabase.from("activities").insert({
+        deal_id: linkedDeal?.id || null,
+        lead_id: linkedLead?.id || null,
+        contact_id: null,
+        type: "task",
+        subject: suggestedTask,
+        body: `Auto-created from email: "${triageEmail.subject}" from ${triageEmail.from_addr}`,
+        metadata: {
+          source: "email",
+          message_id: triageEmail.message_id,
+          thread_id: triageEmail.thread_id,
+          from: triageEmail.from_addr,
+        },
+        source: "jarvis",
+        occurred_at: tomorrow.toISOString(),
+      });
+
+      setTaskCreated(true);
+    } catch {}
+    setCreatingTask(false);
+  };
 
   // ── Actions ────────────────────────────────────────────────────────────────
 
@@ -431,6 +505,37 @@ export function EmailDetailModal({ triageEmail, onClose }) {
             </>
           )}
         </div>
+
+        {/* ── Task suggestion ──────────────────────────────────────────── */}
+        {suggestedTask && !taskCreated && (
+          <div className="shrink-0 border-t border-jarvis-primary/20 bg-jarvis-primary/[0.03] px-5 py-2.5 flex items-center gap-3">
+            <ListTodo size={13} className="text-jarvis-primary shrink-0" />
+            <div className="flex-1 min-w-0">
+              <span className="text-[9px] text-jarvis-primary font-semibold uppercase tracking-wider">Jarvis suggests</span>
+              <div className="text-[10px] text-jarvis-ink mt-0.5">{suggestedTask}</div>
+            </div>
+            <button
+              onClick={createTaskFromEmail}
+              disabled={creatingTask}
+              className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-jarvis-primary/15 text-jarvis-primary text-[9px] font-semibold hover:bg-jarvis-primary/25 transition shrink-0 disabled:opacity-40"
+            >
+              {creatingTask ? <Loader2 size={9} className="animate-spin" /> : <ListTodo size={9} />}
+              Create Task
+            </button>
+            <button
+              onClick={() => setSuggestedTask(null)}
+              className="text-[9px] text-jarvis-muted hover:text-jarvis-ink transition shrink-0"
+            >
+              Dismiss
+            </button>
+          </div>
+        )}
+        {taskCreated && (
+          <div className="shrink-0 border-t border-green-800/20 bg-green-900/5 px-5 py-2 flex items-center gap-2">
+            <Check size={12} className="text-green-400" />
+            <span className="text-[10px] text-green-400 font-medium">Task created — due tomorrow 9am</span>
+          </div>
+        )}
 
         {/* ── Reply section ───────────────────────────────────────────── */}
         <div className="shrink-0 border-t border-jarvis-border px-5 py-3">
