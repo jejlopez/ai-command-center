@@ -11,6 +11,7 @@ export function UnifiedGoogleCard({ status, onLinked }) {
  const [open, setOpen] = useState(false);
  const [clientId, setClientId] = useState("");
  const [clientSecret, setClientSecret] = useState("");
+ const [credsInVault, setCredsInVault] = useState(false);
  const [busy, setBusy] = useState(false);
  const [polling, setPolling] = useState(false);
  const [err, setErr] = useState(null);
@@ -21,6 +22,13 @@ export function UnifiedGoogleCard({ status, onLinked }) {
  status?.gmail?.linked && status?.gcal?.linked && status?.drive?.linked;
  const anyLinked =
  status?.gmail?.linked || status?.gcal?.linked || status?.drive?.linked;
+
+ // Check if creds already exist in vault
+ useEffect(() => {
+   jarvis.googleUnifiedStatus?.().then(s => {
+     if (s?.credsSet) setCredsInVault(true);
+   }).catch(() => {});
+ }, []);
 
  useEffect(() => () => {
  if (pollTimer.current) clearInterval(pollTimer.current);
@@ -62,6 +70,20 @@ export function UnifiedGoogleCard({ status, onLinked }) {
  client_secret: clientSecret.trim(),
  });
  window.open(authUrl, "_blank", "noreferrer,noopener");
+ startPolling();
+ } catch (e) {
+ setErr(String(e.message ?? e));
+ } finally {
+ setBusy(false);
+ }
+ };
+
+ // Quick re-auth using creds already in vault
+ const handleQuickAuth = async () => {
+ setBusy(true);
+ setErr(null);
+ try {
+ window.open("http://127.0.0.1:8787/connectors/google/unified/start", "_blank", "noreferrer,noopener");
  startPolling();
  } catch (e) {
  setErr(String(e.message ?? e));
@@ -129,6 +151,32 @@ export function UnifiedGoogleCard({ status, onLinked }) {
  >
  Unlink all Google services
  </button>
+ ) : credsInVault && !open ? (
+ /* Creds already in vault — one-click re-auth */
+ <div className="relative space-y-2">
+ <button
+ onClick={handleQuickAuth}
+ disabled={busy || polling}
+ className="w-full py-2.5 rounded-xl bg-jarvis-primary/15 text-jarvis-primary hover:bg-jarvis-primary/25 text-[13px] font-semibold transition flex items-center justify-center gap-2 disabled:opacity-50"
+ >
+ {busy || polling ? <Loader2 size={13} className="animate-spin" /> : (
+ <svg width="14" height="14" viewBox="0 0 48 48" aria-hidden="true">
+ <path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3c-1.6 4.5-5.9 8-11.3 8a12 12 0 1 1 7.9-21l5.7-5.7A20 20 0 1 0 44 24c0-1.2-.1-2.4-.4-3.5z"/>
+ <path fill="#FF3D00" d="m6.3 14.7 6.6 4.8C14.7 16 19 13 24 13a12 12 0 0 1 7.9 3L38 10A20 20 0 0 0 6.3 14.7z"/>
+ <path fill="#4CAF50" d="M24 44a20 20 0 0 0 13.4-5.2l-6.2-5.2A12 12 0 0 1 12.7 28l-6.5 5A20 20 0 0 0 24 44z"/>
+ <path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.3-2.3 4.3-4.2 5.6l6.2 5.2C41 34.5 44 29.7 44 24c0-1.2-.1-2.4-.4-3.5z"/>
+ </svg>
+ )}
+ {polling ? "Waiting for Google sign-in…" : busy ? "Opening…" : "Sign in with Google"}
+ </button>
+ <button
+ onClick={() => { setCredsInVault(false); setOpen(true); }}
+ className="w-full text-[10px] text-jarvis-muted hover:text-jarvis-body"
+ >
+ Enter different credentials
+ </button>
+ {err && <div className="text-[11px] text-jarvis-red">{err}</div>}
+ </div>
  ) : !open ? (
  <button
  onClick={() => setOpen(true)}
