@@ -4,8 +4,10 @@
 import type { FastifyInstance } from "fastify";
 import { db } from "../db/db.js";
 import { checkAction, validateApproval, listPendingApprovals } from "../lib/approval_gateway.js";
-import { createDraft, updateDraft, sendDraft, getMessage, getThread, markAsRead, gmailConnectionStatus } from "../lib/providers/gmail_actions.js";
+import { createDraft, updateDraft, sendDraft, getMessage, getThread, markAsRead, gmailConnectionStatus, listMessages } from "../lib/providers/gmail_actions.js";
 import { audit } from "../lib/audit.js";
+import { getDeals } from "../lib/providers/pipedrive.js";
+import { resetRunLimits } from "../lib/limits.js";
 
 export async function emailRoutes(app: FastifyInstance) {
   // --- Connection status (for frontend status dot) ---
@@ -238,5 +240,116 @@ export async function emailRoutes(app: FastifyInstance) {
   app.delete<{ Params: { email: string } }>("/email/protected/:email", async (req) => {
     db.prepare("DELETE FROM protected_senders WHERE email = ?").run((req.params as any).email.toLowerCase());
     return { ok: true };
+  });
+
+  // --- Email backfill — search Gmail for all deal contacts, cache in email_triage ---
+
+  // Progress tracking for long-running backfill
+  let backfillProgress: any = null;
+
+  app.get("/email/backfill/status", async () => {
+    return backfillProgress ?? { running: false };
+  });
+
+  app.post("/email/backfill", async (req, reply) => {
+    if (backfillProgress?.running) {
+      return { error: "Backfill already running", progress: backfillProgress };
+    }
+
+    const pipeline = (req.body as any)?.pipeline ?? undefined;
+    const deals = getDeals(pipeline, "open");
+    const dealsWithEmail = deals.filter((d: any) => d.contact_email?.includes("@"));
+
+    backfillProgress = {
+      running: true,
+      startedAt: new Date().toISOString(),
+      totalDeals: dealsWithEmail.length,
+      processed: 0,
+      totalEmails: 0,
+      errors: 0,
+      dealResults: [] as any[],
+    };
+
+    // Run in background — return immediately
+    reply.send({ ok: true, message: `Backfill started for ${dealsWithEmail.length} deals`, checkProgress: "GET /email/backfill/status" });
+
+    // Background processing
+    (async () => {
+      const upsert = db.prepare(`
+        INSERT INTO email_triage(id, message_id, thread_id, from_addr, subject, snippet, category, confidence, auto_action, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, 'fyi', 0.5, 'none', ?)
+        ON CONFLICT(message_id) DO UPDATE SET
+          subject=excluded.subject, snippet=excluded.snippet
+      `);
+
+      for (let i = 0; i < dealsWithEmail.length; i++) {
+        const deal = dealsWithEmail[i];
+        const contactEmail = deal.contact_email.toLowerCase().trim();
+        backfillProgress.processed = i + 1;
+
+        try {
+          // Reset internal rate limiter every 40 deals to allow continued scanning
+          if (i > 0 && i % 40 === 0) {
+            resetRunLimits("gmail");
+            await new Promise(r => setTimeout(r, 5000)); // 5s pause at batch boundary
+          }
+
+          // Rate limit: wait 1.5s between deals to avoid Gmail API throttling
+          if (i > 0) await new Promise(r => setTimeout(r, 1500));
+
+          const messages = await listMessages(20, `from:${contactEmail} OR to:${contactEmail}`);
+
+          let linked = 0;
+          for (const msg of messages) {
+            try {
+              upsert.run(
+                `backfill-${msg.id}`,
+                msg.id,
+                msg.threadId,
+                msg.from,
+                msg.subject,
+                msg.snippet,
+                msg.date,
+              );
+              linked++;
+            } catch {}
+          }
+
+          backfillProgress.totalEmails += linked;
+          backfillProgress.dealResults.push({
+            company: deal.org_name || deal.title,
+            contact: contactEmail,
+            emails: linked,
+          });
+
+        } catch (err: any) {
+          backfillProgress.errors++;
+          backfillProgress.dealResults.push({
+            company: deal.org_name || deal.title,
+            contact: contactEmail,
+            emails: 0,
+            error: err.message?.slice(0, 80),
+          });
+
+          // If rate limited, wait 30s then continue
+          if (err.message?.includes("429") || err.message?.includes("rate")) {
+            await new Promise(r => setTimeout(r, 30000));
+          }
+        }
+      }
+
+      backfillProgress.running = false;
+      backfillProgress.completedAt = new Date().toISOString();
+
+      audit({
+        actor: "jarvis",
+        action: "email.backfill.completed",
+        metadata: {
+          deals: backfillProgress.totalDeals,
+          emails: backfillProgress.totalEmails,
+          errors: backfillProgress.errors,
+        },
+      });
+    })();
   });
 }

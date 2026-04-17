@@ -277,6 +277,18 @@ async function main() {
       runPipedriveSync();
     }
   }, 60_000);
+
+  // Email backfill: every 6 hours, trigger POST /email/backfill
+  setInterval(async () => {
+    try {
+      await fetch("http://127.0.0.1:8787/email/backfill", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      app.log.info("[email-backfill] triggered (6h interval)");
+    } catch {}
+  }, 6 * 60 * 60 * 1000); // 6 hours
 }
 
 main().catch((err) => {
