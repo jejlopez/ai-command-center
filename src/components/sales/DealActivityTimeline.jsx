@@ -1,73 +1,61 @@
-// DealActivityTimeline — chronological feed merging activities, communications,
-// tracking_events, and email_style for a deal. Email entries are clickable.
+// DealActivityTimeline — chronological feed from jarvisd /crm/deals/:id/timeline.
+// Shows activities, notes, emails, drafts, research. Email entries are clickable.
 
 import { useState, useEffect } from "react";
-import { supabase } from "../../lib/supabase.js";
+import { jarvis } from "../../lib/jarvis.js";
 import {
   Mail, Phone, StickyNote, Calendar, ArrowRightLeft,
-  Sparkles, Eye, MousePointerClick, Loader2, RefreshCw,
-  Send, FileText, ChevronDown, ChevronRight,
+  Sparkles, Eye, Loader2, RefreshCw,
+  Send, FileText, ChevronRight, Search,
 } from "lucide-react";
 
-// ── Icon + color per event type ────────────────────────────────────────────
-
 const TYPE_CONFIG = {
-  // activities.type values
-  email:          { icon: Mail,              color: "text-blue-400",    bg: "bg-blue-900/25",  border: "border-blue-800/30",  label: "Email" },
-  call:           { icon: Phone,             color: "text-green-400",   bg: "bg-green-900/25", border: "border-green-800/30", label: "Call" },
-  meeting:        { icon: Calendar,          color: "text-purple-400",  bg: "bg-purple-900/25",border: "border-purple-800/30",label: "Meeting" },
-  note:           { icon: StickyNote,        color: "text-amber-400",   bg: "bg-amber-900/25", border: "border-amber-800/30", label: "Note" },
-  jarvis_action:  { icon: Sparkles,          color: "text-jarvis-primary", bg: "bg-jarvis-primary/10", border: "border-jarvis-primary/20", label: "Jarvis" },
-  stage_change:   { icon: ArrowRightLeft,    color: "text-jarvis-primary", bg: "bg-jarvis-primary/10", border: "border-jarvis-primary/20", label: "Stage" },
-  proposal:       { icon: FileText,          color: "text-jarvis-purple",  bg: "bg-purple-900/25",border: "border-purple-800/30",label: "Proposal" },
-  // tracking_events.event_type values
-  email_open:     { icon: Eye,              color: "text-cyan-400",    bg: "bg-cyan-900/25",  border: "border-cyan-800/30",  label: "Opened" },
-  link_click:     { icon: MousePointerClick, color: "text-cyan-400",    bg: "bg-cyan-900/25",  border: "border-cyan-800/30",  label: "Click" },
-  proposal_view:  { icon: Eye,              color: "text-purple-400",  bg: "bg-purple-900/25",border: "border-purple-800/30",label: "Proposal View" },
-  // email_style (AI draft edits)
-  style_learned:  { icon: Sparkles,          color: "text-amber-400",   bg: "bg-amber-900/25", border: "border-amber-800/30", label: "Style Learned" },
-  // fallback
-  unknown:        { icon: StickyNote,        color: "text-jarvis-muted",bg: "bg-white/5",      border: "border-white/10",     label: "Activity" },
+  call:           { icon: Phone,          color: "text-green-400",      bg: "bg-green-900/25",  border: "border-green-800/30",  label: "Call" },
+  meeting:        { icon: Calendar,       color: "text-purple-400",     bg: "bg-purple-900/25", border: "border-purple-800/30", label: "Meeting" },
+  email:          { icon: Mail,           color: "text-blue-400",       bg: "bg-blue-900/25",   border: "border-blue-800/30",   label: "Email" },
+  email_received: { icon: Mail,           color: "text-blue-400",       bg: "bg-blue-900/25",   border: "border-blue-800/30",   label: "Received" },
+  email_sent:     { icon: Send,           color: "text-jarvis-primary", bg: "bg-jarvis-primary/10", border: "border-jarvis-primary/20", label: "Sent" },
+  email_draft:    { icon: FileText,       color: "text-amber-400",      bg: "bg-amber-900/25",  border: "border-amber-800/30",  label: "Draft" },
+  note:           { icon: StickyNote,     color: "text-amber-400",      bg: "bg-amber-900/25",  border: "border-amber-800/30",  label: "Note" },
+  task:           { icon: Calendar,       color: "text-purple-400",     bg: "bg-purple-900/25", border: "border-purple-800/30", label: "Task" },
+  research:       { icon: Search,         color: "text-jarvis-primary", bg: "bg-jarvis-primary/10", border: "border-jarvis-primary/20", label: "Research" },
+  stage_change:   { icon: ArrowRightLeft, color: "text-jarvis-primary", bg: "bg-jarvis-primary/10", border: "border-jarvis-primary/20", label: "Stage" },
+  activity:       { icon: Sparkles,       color: "text-jarvis-muted",   bg: "bg-white/5",       border: "border-white/10",      label: "Activity" },
 };
 
 function getConfig(type) {
-  return TYPE_CONFIG[type] || TYPE_CONFIG.unknown;
+  return TYPE_CONFIG[type] || TYPE_CONFIG.activity;
 }
-
-// ── Date formatting ────────────────────────────────────────────────────────
 
 function formatTimestamp(ts) {
   if (!ts) return "";
   const d = new Date(ts);
+  if (isNaN(d.getTime())) return ts;
   const now = new Date();
   const diffMs = now - d;
-  const diffMins = Math.floor(diffMs / 60000);
-  const diffHrs = Math.floor(diffMs / 3600000);
   const diffDays = Math.floor(diffMs / 86400000);
 
-  if (diffMins < 1) return "just now";
-  if (diffMins < 60) return `${diffMins}m ago`;
-  if (diffHrs < 24) return `${diffHrs}h ago`;
+  if (diffDays === 0) {
+    const diffHrs = Math.floor(diffMs / 3600000);
+    if (diffHrs < 1) return `${Math.floor(diffMs / 60000)}m ago`;
+    return `${diffHrs}h ago`;
+  }
+  if (diffDays === 1) return "Yesterday";
   if (diffDays < 7) return `${diffDays}d ago`;
-
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
 function formatDateHeader(ts) {
   if (!ts) return "";
   const d = new Date(ts);
+  if (isNaN(d.getTime())) return "";
   const now = new Date();
-  const isToday = d.toDateString() === now.toDateString();
+  if (d.toDateString() === now.toDateString()) return "Today";
   const yesterday = new Date(now);
   yesterday.setDate(yesterday.getDate() - 1);
-  const isYesterday = d.toDateString() === yesterday.toDateString();
-
-  if (isToday) return "Today";
-  if (isYesterday) return "Yesterday";
+  if (d.toDateString() === yesterday.toDateString()) return "Yesterday";
   return d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
 }
-
-// ── Main component ─────────────────────────────────────────────────────────
 
 export function DealActivityTimeline({ dealId, onEmailClick }) {
   const [events, setEvents] = useState([]);
@@ -75,169 +63,16 @@ export function DealActivityTimeline({ dealId, onEmailClick }) {
   const [expandedId, setExpandedId] = useState(null);
 
   const refresh = async () => {
-    if (!supabase || !dealId) { setLoading(false); return; }
+    if (!dealId) { setLoading(false); return; }
     setLoading(true);
 
-    const [activitiesRes, commsRes, trackingRes, styleRes, auditRes] = await Promise.all([
-      supabase
-        .from("activities")
-        .select("*")
-        .eq("deal_id", dealId)
-        .order("occurred_at", { ascending: false })
-        .limit(100),
-      supabase
-        .from("communications")
-        .select("*")
-        .eq("deal_id", dealId)
-        .order("occurred_at", { ascending: false })
-        .limit(100),
-      supabase
-        .from("tracking_events")
-        .select("*")
-        .eq("deal_id", dealId)
-        .order("occurred_at", { ascending: false })
-        .limit(50),
-      supabase
-        .from("email_style")
-        .select("*")
-        .eq("deal_id", dealId)
-        .order("created_at", { ascending: false })
-        .limit(20),
-      supabase
-        .from("audit_log")
-        .select("*")
-        .eq("entity_id", dealId)
-        .order("created_at", { ascending: false })
-        .limit(50),
-    ]);
-
-    // Normalize into a common shape
-    const normalized = [];
-
-    for (const a of activitiesRes.data ?? []) {
-      normalized.push({
-        id: a.id,
-        kind: "activity",
-        type: a.type,
-        subject: a.subject,
-        body: a.body,
-        source: a.source,
-        metadata: a.metadata,
-        ts: a.occurred_at,
-        messageId: a.metadata?.message_id || null,
-      });
+    try {
+      const data = await jarvis.crmDealTimeline(dealId);
+      setEvents(data?.timeline || []);
+    } catch {
+      setEvents([]);
     }
 
-    for (const c of commsRes.data ?? []) {
-      normalized.push({
-        id: c.id,
-        kind: "communication",
-        type: c.type,
-        subject: c.subject,
-        body: c.body,
-        source: null,
-        metadata: null,
-        ts: c.occurred_at,
-        messageId: null,
-      });
-    }
-
-    for (const t of trackingRes.data ?? []) {
-      normalized.push({
-        id: t.id,
-        kind: "tracking",
-        type: t.event_type,
-        subject: t.event_type === "email_open"
-          ? "Email opened"
-          : t.event_type === "link_click"
-          ? `Link clicked${t.metadata?.url ? `: ${t.metadata.url}` : ""}`
-          : t.event_type === "proposal_view"
-          ? "Proposal viewed"
-          : t.event_type,
-        body: null,
-        source: t.source,
-        metadata: t.metadata,
-        ts: t.occurred_at,
-        messageId: t.metadata?.message_id || null,
-      });
-    }
-
-    for (const s of styleRes.data ?? []) {
-      normalized.push({
-        id: s.id,
-        kind: "style",
-        type: "style_learned",
-        subject: `Email style learned (${s.context || "reply"})`,
-        body: null,
-        source: "jarvis",
-        metadata: { context: s.context },
-        ts: s.created_at,
-        messageId: null,
-      });
-    }
-
-    for (const a of auditRes.data ?? []) {
-      // Map audit actions to readable labels
-      const actionLabel =
-        a.action === "approval_decided" ? `Approval ${a.after_state?.status || "decided"}` :
-        a.action === "deal.stage_changed" ? `Stage → ${a.after_state?.stage || a.metadata?.to || ""}` :
-        a.action === "deal.won" ? "Deal won" :
-        a.action === "deal.lost" ? `Deal lost${a.metadata?.reason ? `: ${a.metadata.reason}` : ""}` :
-        a.action.replace(/[._]/g, " ");
-
-      // Skip audit entries that duplicate activities (approval_decided is already logged as activity)
-      if (a.action === "approval_decided") continue;
-
-      normalized.push({
-        id: a.id,
-        kind: "audit",
-        type: a.action.includes("stage") ? "stage_change" : a.action.includes("proposal") ? "proposal" : "note",
-        subject: actionLabel,
-        body: a.reason || null,
-        source: a.actor,
-        metadata: { ...a.metadata, before: a.before_state, after: a.after_state },
-        ts: a.created_at,
-        messageId: null,
-      });
-    }
-
-    // Deduplicate: if an activity and communication share the same subject + close timestamp, keep the activity
-    const deduped = [];
-    const commKeys = new Set();
-
-    for (const ev of normalized) {
-      if (ev.kind === "communication") {
-        commKeys.add(`${ev.type}:${ev.subject}:${new Date(ev.ts).toISOString().slice(0, 16)}`);
-      }
-    }
-
-    for (const ev of normalized) {
-      if (ev.kind === "activity") {
-        const key = `${ev.type}:${ev.subject}:${new Date(ev.ts).toISOString().slice(0, 16)}`;
-        if (commKeys.has(key)) {
-          commKeys.delete(key); // keep the activity, skip the matching comm
-        }
-      }
-      deduped.push(ev);
-    }
-
-    // Remove duped comms
-    const finalEvents = deduped.filter(ev => {
-      if (ev.kind === "communication") {
-        const key = `${ev.type}:${ev.subject}:${new Date(ev.ts).toISOString().slice(0, 16)}`;
-        // If we already deleted this key from commKeys above, it was a dupe — skip it
-        return commKeys.has(key) || !normalized.some(
-          a => a.kind === "activity" && a.type === ev.type && a.subject === ev.subject &&
-          Math.abs(new Date(a.ts) - new Date(ev.ts)) < 60000
-        );
-      }
-      return true;
-    });
-
-    // Sort chronologically (newest first)
-    finalEvents.sort((a, b) => new Date(b.ts) - new Date(a.ts));
-
-    setEvents(finalEvents);
     setLoading(false);
   };
 
@@ -248,7 +83,7 @@ export function DealActivityTimeline({ dealId, onEmailClick }) {
   let currentDate = null;
   for (const ev of events) {
     const dateStr = formatDateHeader(ev.ts);
-    if (dateStr !== currentDate) {
+    if (dateStr && dateStr !== currentDate) {
       currentDate = dateStr;
       grouped.push({ type: "header", label: dateStr, key: `h-${dateStr}` });
     }
@@ -265,15 +100,17 @@ export function DealActivityTimeline({ dealId, onEmailClick }) {
 
   return (
     <div className="space-y-0">
-      {/* Header */}
       <div className="flex items-center justify-between mb-3">
         <span className="label">Activity Timeline</span>
-        <button
-          onClick={refresh}
-          className="p-1 rounded hover:bg-white/5 transition text-jarvis-muted hover:text-jarvis-ink"
-        >
-          <RefreshCw size={10} />
-        </button>
+        <div className="flex items-center gap-2">
+          <span className="text-[9px] text-jarvis-muted tabular-nums">{events.length} events</span>
+          <button
+            onClick={refresh}
+            className="p-1 rounded hover:bg-white/5 transition text-jarvis-muted hover:text-jarvis-ink"
+          >
+            <RefreshCw size={10} />
+          </button>
+        </div>
       </div>
 
       {events.length === 0 ? (
@@ -282,7 +119,6 @@ export function DealActivityTimeline({ dealId, onEmailClick }) {
         </div>
       ) : (
         <div className="relative">
-          {/* Vertical timeline line */}
           <div className="absolute left-[13px] top-0 bottom-0 w-px bg-jarvis-border/50" />
 
           {grouped.map((item) => {
@@ -302,41 +138,36 @@ export function DealActivityTimeline({ dealId, onEmailClick }) {
             const ev = item.event;
             const cfg = getConfig(ev.type);
             const Icon = cfg.icon;
-            const isEmail = ev.type === "email" && ev.kind !== "style";
-            const isClickable = isEmail && ev.messageId && onEmailClick;
+            const isEmail = (ev.type === "email_received" || ev.type === "email") && ev.messageId && onEmailClick;
             const isExpanded = expandedId === ev.id;
+            const hasBody = ev.body && ev.body.length > 0;
 
             return (
               <div key={item.key} className="relative flex gap-3 group">
-                {/* Icon node */}
                 <div className="relative z-10 w-[27px] shrink-0 flex justify-center pt-2.5">
                   <div className={`w-[22px] h-[22px] rounded-full flex items-center justify-center ${cfg.bg} border ${cfg.border}`}>
                     <Icon size={10} className={cfg.color} />
                   </div>
                 </div>
 
-                {/* Content */}
                 <div
-                  className={`flex-1 min-w-0 py-2 pr-1 ${
-                    isClickable ? "cursor-pointer" : ""
-                  }`}
+                  className={`flex-1 min-w-0 py-2 pr-1 ${isEmail ? "cursor-pointer" : hasBody ? "cursor-pointer" : ""}`}
                   onClick={() => {
-                    if (isClickable) {
+                    if (isEmail) {
                       onEmailClick({
                         message_id: ev.messageId,
-                        from_addr: ev.metadata?.from || ev.source || "",
+                        thread_id: ev.threadId,
+                        from_addr: ev.from || "",
                         subject: ev.subject,
                         snippet: (ev.body || "").slice(0, 120),
-                        category: "fyi",
-                        thread_id: ev.metadata?.thread_id || null,
+                        category: ev.category || "fyi",
                         created_at: ev.ts,
                       });
-                    } else if (ev.body) {
+                    } else if (hasBody) {
                       setExpandedId(isExpanded ? null : ev.id);
                     }
                   }}
                 >
-                  {/* Top row: type chip + timestamp */}
                   <div className="flex items-center gap-2 mb-0.5">
                     <span className={`text-[8px] px-1.5 py-0.5 rounded-full font-medium ${cfg.color} ${cfg.bg} border ${cfg.border}`}>
                       {cfg.label}
@@ -346,42 +177,34 @@ export function DealActivityTimeline({ dealId, onEmailClick }) {
                         AI
                       </span>
                     )}
+                    {ev.done === 1 && (
+                      <span className="text-[7px] px-1.5 py-0.5 rounded-full bg-green-900/20 text-green-400 border border-green-800/30 font-medium">
+                        Done
+                      </span>
+                    )}
                     <span className="text-[8px] text-jarvis-muted tabular-nums ml-auto shrink-0">
                       {formatTimestamp(ev.ts)}
                     </span>
                   </div>
 
-                  {/* Subject */}
                   <div className={`text-[10px] font-medium truncate ${
-                    isClickable
-                      ? "text-blue-400 group-hover:text-blue-300 transition"
-                      : "text-jarvis-ink"
+                    isEmail ? "text-blue-400 group-hover:text-blue-300 transition" : "text-jarvis-ink"
                   }`}>
+                    {ev.from && <span className="text-jarvis-muted font-normal">{ev.from.split("<")[0].trim().slice(0, 25)} — </span>}
                     {ev.subject || "(no subject)"}
-                    {isClickable && (
-                      <Mail size={9} className="inline ml-1.5 opacity-0 group-hover:opacity-100 transition" />
-                    )}
+                    {isEmail && <Mail size={9} className="inline ml-1.5 opacity-0 group-hover:opacity-100 transition" />}
                   </div>
 
-                  {/* Preview / expanded body */}
-                  {ev.body && !isExpanded && !isClickable && (
+                  {hasBody && !isExpanded && !isEmail && (
                     <div className="flex items-center gap-1 mt-0.5">
                       <ChevronRight size={8} className="text-jarvis-muted shrink-0" />
-                      <span className="text-[9px] text-jarvis-muted truncate">
-                        {ev.body.slice(0, 80)}
-                      </span>
-                    </div>
-                  )}
-                  {ev.body && isExpanded && (
-                    <div className="mt-1.5 text-[9px] text-jarvis-body leading-relaxed whitespace-pre-wrap rounded-lg bg-white/[0.02] border border-jarvis-border/30 p-2">
-                      {ev.body}
+                      <span className="text-[9px] text-jarvis-muted truncate">{ev.body.replace(/<[^>]*>/g, "").slice(0, 80)}</span>
                     </div>
                   )}
 
-                  {/* Tracking metadata */}
-                  {ev.kind === "tracking" && ev.metadata?.url && (
-                    <div className="text-[8px] text-jarvis-muted mt-0.5 truncate">
-                      {ev.metadata.url}
+                  {hasBody && isExpanded && (
+                    <div className="mt-1.5 text-[9px] text-jarvis-body leading-relaxed whitespace-pre-wrap rounded-lg bg-white/[0.02] border border-jarvis-border/30 p-2 max-h-[200px] overflow-y-auto">
+                      {ev.body.replace(/<[^>]*>/g, "")}
                     </div>
                   )}
                 </div>

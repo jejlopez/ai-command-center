@@ -170,6 +170,78 @@ export async function syncLeads(): Promise<{ synced: number }> {
 }
 
 // ---------------------------------------------------------------------------
+// Sync activities
+// ---------------------------------------------------------------------------
+
+export async function syncActivities(): Promise<{ synced: number }> {
+  // Fetch both done and undone activities
+  const [undoneResult, doneResult] = await Promise.all([
+    pipedriveApi("activities", { limit: "100", done: "0" }),
+    pipedriveApi("activities", { limit: "100", done: "1" }),
+  ]);
+  const activities = [...(undoneResult.data ?? []), ...(doneResult.data ?? [])];
+  let synced = 0;
+
+  const upsert = db.prepare(`
+    INSERT INTO crm_activities(id, pipedrive_id, deal_id, type, subject, done, due_date, synced_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
+    ON CONFLICT(id) DO UPDATE SET
+      done=excluded.done, subject=excluded.subject, synced_at=datetime('now')
+  `);
+
+  for (const a of activities) {
+    const dealId = a.deal_id ? `pd-${a.deal_id}` : null;
+    upsert.run(
+      `pda-${a.id}`,
+      a.id,
+      dealId,
+      a.type ?? "activity",
+      a.subject ?? "",
+      a.done ? 1 : 0,
+      a.due_date ?? "",
+    );
+    synced++;
+  }
+
+  audit({ actor: "pipedrive", action: "pipedrive.sync.activities", metadata: { synced } });
+  return { synced };
+}
+
+// ---------------------------------------------------------------------------
+// Sync notes
+// ---------------------------------------------------------------------------
+
+export async function syncNotes(): Promise<{ synced: number }> {
+  const result = await pipedriveApi("notes", { limit: "200" });
+  const notes = result.data ?? [];
+  let synced = 0;
+
+  const upsert = db.prepare(`
+    INSERT INTO crm_notes(id, pipedrive_id, deal_id, content, added_at, synced_at)
+    VALUES (?, ?, ?, ?, ?, datetime('now'))
+    ON CONFLICT(id) DO UPDATE SET
+      content=excluded.content, synced_at=datetime('now')
+  `);
+
+  for (const n of notes) {
+    const dealId = n.deal_id ? `pd-${n.deal_id}` : null;
+    const content = (n.content ?? "").replace(/<[^>]*>/g, "").trim();
+    if (!content) continue;
+    upsert.run(
+      `pdn-${n.id}`,
+      n.id,
+      dealId,
+      content,
+      n.add_time ?? "",
+    );
+    synced++;
+  }
+
+  audit({ actor: "pipedrive", action: "pipedrive.sync.notes", metadata: { synced } });
+  return { synced };
+}
+
+// ---------------------------------------------------------------------------
 // Query local CRM data
 // ---------------------------------------------------------------------------
 

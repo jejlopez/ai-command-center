@@ -2,7 +2,7 @@
 
 import type { FastifyInstance } from "fastify";
 import {
-  syncDeals, syncLeads, getDeals, getDeal, getLeads,
+  syncDeals, syncLeads, syncActivities, syncNotes, getDeals, getDeal, getLeads,
   getDealsByStage, getPipelineStats, isPipedriveConnected
 } from "../lib/providers/pipedrive.js";
 import { db } from "../db/db.js";
@@ -100,8 +100,10 @@ export async function crmRoutes(app: FastifyInstance) {
       return reply.code(400).send({ error: "Pipedrive not connected" });
     }
     try {
-      const [deals, leads] = await Promise.all([syncDeals(), syncLeads()]);
-      return { ok: true, deals, leads };
+      const [deals, leads, activities, notes] = await Promise.all([
+        syncDeals(), syncLeads(), syncActivities(), syncNotes(),
+      ]);
+      return { ok: true, deals, leads, activities, notes };
     } catch (err: any) {
       return reply.code(500).send({ error: err.message });
     }
@@ -138,6 +140,115 @@ export async function crmRoutes(app: FastifyInstance) {
     ).all(deal.contact_email ?? "", deal.org_name ?? "");
 
     return { ...deal, emails, drafts, proposals };
+  });
+
+  // Deal activity timeline — all history for one deal
+  app.get<{ Params: { id: string } }>("/crm/deals/:id/timeline", async (req, reply) => {
+    const id = (req.params as any).id;
+    const deal = getDeal(id);
+    if (!deal) return reply.code(404).send({ error: "Deal not found" });
+
+    const pdId = deal.pipedrive_id;
+    const contactDomain = deal.contact_email?.split("@")[1] || "";
+
+    // Activities from Pipedrive sync
+    const activities = db.prepare(
+      "SELECT * FROM crm_activities WHERE deal_id = ? ORDER BY due_date DESC, synced_at DESC LIMIT 50"
+    ).all(id) as any[];
+
+    // Notes from Pipedrive sync
+    const notes = db.prepare(
+      "SELECT * FROM crm_notes WHERE deal_id = ? ORDER BY added_at DESC LIMIT 30"
+    ).all(id) as any[];
+
+    // Emails matched by contact domain
+    const emails = contactDomain && contactDomain !== "NOMATCH"
+      ? db.prepare(
+          "SELECT * FROM email_triage WHERE from_addr LIKE ? ORDER BY created_at DESC LIMIT 20"
+        ).all(`%${contactDomain}%`) as any[]
+      : [];
+
+    // Drafts sent to this contact
+    const drafts = deal.contact_email
+      ? db.prepare(
+          "SELECT * FROM email_drafts WHERE to_addr LIKE ? ORDER BY created_at DESC LIMIT 10"
+        ).all(`%${deal.contact_email}%`) as any[]
+      : [];
+
+    // Normalize everything into timeline events
+    const timeline: any[] = [];
+
+    for (const a of activities) {
+      timeline.push({
+        id: a.id,
+        type: a.type || "activity",
+        subject: a.subject || a.type || "Activity",
+        body: null,
+        source: "pipedrive",
+        ts: a.due_date || a.synced_at,
+        done: a.done,
+      });
+    }
+
+    for (const n of notes) {
+      const content = (n.content || "").replace(/<[^>]*>/g, "").trim();
+      timeline.push({
+        id: n.id,
+        type: "note",
+        subject: content.slice(0, 80) + (content.length > 80 ? "…" : ""),
+        body: content,
+        source: "pipedrive",
+        ts: n.added_at || n.synced_at,
+      });
+    }
+
+    for (const e of emails) {
+      timeline.push({
+        id: e.id,
+        type: "email_received",
+        subject: e.subject || "(no subject)",
+        body: e.snippet,
+        source: "gmail",
+        ts: e.created_at,
+        from: e.from_addr,
+        messageId: e.message_id,
+        threadId: e.thread_id,
+        category: e.category,
+      });
+    }
+
+    for (const d of drafts) {
+      timeline.push({
+        id: d.id,
+        type: d.status === "sent" ? "email_sent" : "email_draft",
+        subject: d.subject || "(no subject)",
+        body: (d.body_edited || d.body_original || "").slice(0, 200),
+        source: "jarvis",
+        ts: d.sent_at || d.created_at,
+        status: d.status,
+      });
+    }
+
+    // Add notes_summary as a research entry if present
+    if (deal.notes_summary) {
+      timeline.push({
+        id: `notes-${id}`,
+        type: "research",
+        subject: "Prospect Research",
+        body: deal.notes_summary,
+        source: "jarvis",
+        ts: deal.synced_at || deal.updated_at,
+      });
+    }
+
+    // Sort newest first
+    timeline.sort((a, b) => {
+      const ta = new Date(a.ts || 0).getTime();
+      const tb = new Date(b.ts || 0).getTime();
+      return tb - ta;
+    });
+
+    return { deal_id: id, company: deal.org_name || deal.title, count: timeline.length, timeline };
   });
 
   // Update deal fields (engagement, notes, operating model)
