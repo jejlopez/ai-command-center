@@ -276,10 +276,10 @@ export async function emailRoutes(app: FastifyInstance) {
     // Background processing
     (async () => {
       const upsert = db.prepare(`
-        INSERT INTO email_triage(id, message_id, thread_id, from_addr, subject, snippet, category, confidence, auto_action, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, 'fyi', 0.5, 'none', ?)
+        INSERT INTO email_triage(id, message_id, thread_id, from_addr, subject, snippet, category, confidence, auto_action, created_at, linked_email)
+        VALUES (?, ?, ?, ?, ?, ?, 'fyi', 0.5, 'none', ?, ?)
         ON CONFLICT(message_id) DO UPDATE SET
-          subject=excluded.subject, snippet=excluded.snippet
+          subject=excluded.subject, snippet=excluded.snippet, linked_email=COALESCE(excluded.linked_email, linked_email)
       `);
 
       for (let i = 0; i < dealsWithEmail.length; i++) {
@@ -310,6 +310,7 @@ export async function emailRoutes(app: FastifyInstance) {
                 msg.subject,
                 msg.snippet,
                 msg.date,
+                contactEmail,
               );
               linked++;
             } catch {}

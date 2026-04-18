@@ -182,21 +182,33 @@ export async function crmRoutes(app: FastifyInstance) {
       "SELECT * FROM crm_notes WHERE deal_id = ? ORDER BY added_at DESC LIMIT 30"
     ).all(id) as any[];
 
-    // Emails from Gmail — match by contact email, contact domain, or contact name
+    // Emails from Gmail — match by linked_email (backfill), from_addr, or domain
     let emails: any[] = [];
+
     if (contactEmail) {
-      // Match exact email in from_addr (they emailed us)
-      const fromContact = db.prepare(
-        "SELECT * FROM email_triage WHERE LOWER(from_addr) LIKE ? ORDER BY created_at DESC LIMIT 30"
-      ).all(`%${contactEmail}%`) as any[];
-      emails.push(...fromContact);
+      // Primary: backfilled emails linked to this contact (includes sent AND received)
+      const linkedEmails = db.prepare(
+        "SELECT * FROM email_triage WHERE LOWER(linked_email) = ? ORDER BY created_at DESC LIMIT 30"
+      ).all(contactEmail) as any[];
+      emails.push(...linkedEmails);
+
+      // Secondary: emails from this contact in from_addr (catches non-backfilled)
+      if (emails.length < 20) {
+        const fromContact = db.prepare(
+          "SELECT * FROM email_triage WHERE LOWER(from_addr) LIKE ? AND id NOT IN (SELECT value FROM json_each(?)) ORDER BY created_at DESC LIMIT 20"
+        ).all(`%${contactEmail}%`, JSON.stringify(emails.map(e => e.id))) as any[];
+        emails.push(...fromContact);
+      }
     }
-    if (useContactDomain && emails.length < 10) {
-      // Match company domain (other people at same company)
+    if (useContactDomain && emails.length < 15) {
+      // Tertiary: emails from company domain
+      const existingIds = new Set(emails.map(e => e.id));
       const fromDomain = db.prepare(
-        "SELECT * FROM email_triage WHERE LOWER(from_addr) LIKE ? AND id NOT IN (SELECT id FROM email_triage WHERE LOWER(from_addr) LIKE ?) ORDER BY created_at DESC LIMIT 20"
-      ).all(`%${contactDomain}%`, `%${contactEmail}%`) as any[];
-      emails.push(...fromDomain);
+        "SELECT * FROM email_triage WHERE LOWER(from_addr) LIKE ? ORDER BY created_at DESC LIMIT 20"
+      ).all(`%${contactDomain}%`) as any[];
+      for (const e of fromDomain) {
+        if (!existingIds.has(e.id)) emails.push(e);
+      }
     }
 
     // If triage has few matches and we have a contact email, search Gmail directly
