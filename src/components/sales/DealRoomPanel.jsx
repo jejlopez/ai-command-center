@@ -57,6 +57,7 @@ export function DealRoomPanel({ deal: initialDeal, onClose }) {
   const [showProposalGen, setShowProposalGen] = useState(false);
   const [drafting, setDrafting] = useState(false);
   const [emailDraft, setEmailDraft] = useState(null);
+  const [dealEmails, setDealEmails] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedEmail, setSelectedEmail] = useState(null);
 
@@ -109,6 +110,18 @@ export function DealRoomPanel({ deal: initialDeal, onClose }) {
       jarvis.crmDeal?.(initialDeal.id)?.then(d => { if (d) setDeal(prev => ({ ...prev, ...d })); }).catch(() => {});
     }
   }, [initialDeal?.id]);
+
+  // Fetch emails from jarvisd timeline (same source as Timeline tab)
+  useEffect(() => {
+    const timelineId = jarvisDealId || dealId;
+    if (!timelineId) return;
+    jarvis.crmDealTimeline?.(timelineId)
+      .then(data => {
+        const emails = (data?.timeline || []).filter(ev => ev.type?.includes("email"));
+        setDealEmails(emails);
+      })
+      .catch(() => {});
+  }, [jarvisDealId, dealId]);
 
   const draftEmail = async () => {
     setDrafting(true);
@@ -179,7 +192,7 @@ export function DealRoomPanel({ deal: initialDeal, onClose }) {
         <div className="flex gap-1 px-4 py-2 border-b border-jarvis-border overflow-x-auto">
           <Tab label="Timeline" icon={Clock} active={tab === "timeline"} onClick={() => setTab("timeline")} count={0} />
           <Tab label="Proposal" icon={FileText} active={tab === "proposal"} onClick={() => setTab("proposal")} count={proposals.length} />
-          <Tab label="Emails" icon={Mail} active={tab === "emails"} onClick={() => setTab("emails")} count={comms.filter(c => c.type === "email").length} />
+          <Tab label="Emails" icon={Mail} active={tab === "emails"} onClick={() => setTab("emails")} count={dealEmails.length} />
           <Tab label="Notes" icon={StickyNote} active={tab === "notes"} onClick={() => setTab("notes")} count={comms.filter(c => c.type !== "email").length} />
           <Tab label="Discovery" icon={Eye} active={tab === "discovery"} onClick={() => setTab("discovery")} count={0} />
           <Tab label="Objections" icon={Sparkles} active={tab === "objections"} onClick={() => setTab("objections")} count={0} />
@@ -372,30 +385,37 @@ export function DealRoomPanel({ deal: initialDeal, onClose }) {
             </div>
           ) : tab === "emails" ? (
             <div className="space-y-2">
-              {comms.filter(c => c.type === "email").length === 0 ? (
-                <div className="text-[11px] text-jarvis-muted">No email history. Emails sync 3x/day from Gmail.</div>
-              ) : comms.filter(c => c.type === "email").map(c => (
-                <div key={c.id} className="surface p-2.5 text-[10px]">
-                  {c.subject && <div className="text-jarvis-ink font-medium truncate">{c.subject}</div>}
-                  <div className="text-jarvis-body mt-1 text-[9px] leading-relaxed">{(c.body ?? "").slice(0, 200)}</div>
-                  <div className="text-[8px] text-jarvis-muted mt-1">{fmtDate(c.occurred_at)}</div>
-                </div>
+              {dealEmails.length === 0 ? (
+                <div className="text-[11px] text-jarvis-muted">No email history found for this contact.</div>
+              ) : dealEmails.map(e => (
+                <button
+                  key={e.id}
+                  onClick={() => e.messageId && setSelectedEmail({
+                    message_id: e.messageId,
+                    thread_id: e.threadId,
+                    from_addr: e.from || "",
+                    subject: e.subject,
+                    snippet: (e.body || "").slice(0, 120),
+                    category: e.category || "fyi",
+                    created_at: e.ts,
+                  })}
+                  className="w-full text-left surface p-2.5 text-[10px] hover:bg-white/[0.03] transition cursor-pointer"
+                >
+                  <div className="flex items-center gap-2 mb-0.5">
+                    <span className={`text-[8px] px-1.5 py-0.5 rounded-full font-medium ${
+                      e.type === "email_sent" || e.type === "email_draft"
+                        ? "text-jarvis-primary bg-jarvis-primary/10"
+                        : "text-blue-400 bg-blue-900/25"
+                    }`}>
+                      {e.type === "email_sent" ? "Sent" : e.type === "email_draft" ? "Draft" : "Received"}
+                    </span>
+                    <span className="text-[8px] text-jarvis-muted ml-auto">{fmtDate(e.ts)}</span>
+                  </div>
+                  {e.from && <div className="text-[9px] text-jarvis-muted truncate">{e.from.split("<")[0].trim()}</div>}
+                  <div className="text-jarvis-ink font-medium truncate">{e.subject || "(no subject)"}</div>
+                  {e.body && <div className="text-jarvis-body mt-0.5 text-[9px] truncate">{e.body.replace(/<[^>]*>/g, "").slice(0, 120)}</div>}
+                </button>
               ))}
-              {/* Non-email comms */}
-              {comms.filter(c => c.type !== "email").length > 0 && (
-                <>
-                  <div className="label mt-3">Other Communications</div>
-                  {comms.filter(c => c.type !== "email").map(c => (
-                    <div key={c.id} className="surface p-2.5 text-[10px]">
-                      <div className="flex items-center gap-2">
-                        <span className="chip text-[8px] bg-jarvis-ghost text-jarvis-body">{c.type}</span>
-                        <span className="text-[8px] text-jarvis-muted">{fmtDate(c.occurred_at)}</span>
-                      </div>
-                      <div className="text-jarvis-body mt-1 text-[9px]">{(c.body ?? "").slice(0, 200)}</div>
-                    </div>
-                  ))}
-                </>
-              )}
             </div>
           ) : tab === "notes" ? (
             <div className="space-y-2">
