@@ -78,7 +78,7 @@ export default function Work() {
       )}
 
       {/* Main content */}
-      <div className="flex-1 overflow-hidden">
+      <div className={`flex-1 ${salesTab === "today" ? "overflow-y-auto" : "overflow-hidden"}`}>
         {loading ? (
           <div className="flex items-center justify-center h-full">
             <div className="text-xs text-jarvis-muted animate-pulse">Loading…</div>
