@@ -18,10 +18,11 @@ const EmailDetailModal= lazy(() => import("../components/sales/EmailDetailModal.
 const TradingDashboard= lazy(() => import("../components/ops/TradingDashboard.jsx").then(m => ({ default: m.TradingDashboard })));
 const BuildDashboard  = lazy(() => import("../components/ops/BuildDashboard.jsx").then(m => ({ default: m.BuildDashboard })));
 const ApprovalQueue   = lazy(() => import("../components/sales/ApprovalQueue.jsx").then(m => ({ default: m.ApprovalQueue })));
+const TodaysFocus     = lazy(() => import("../components/sales/TodaysFocus.jsx").then(m => ({ default: m.TodaysFocus })));
 
 export default function Work() {
   const [mode, setMode] = useState("sales");
-  const [salesTab, setSalesTab] = useState("deals");
+  const [salesTab, setSalesTab] = useState("today");
   const [selectedEmail, setSelectedEmail] = useState(null);
   const [inboxCount, setInboxCount] = useState(0);
   const crm = useCRM();
@@ -75,15 +76,6 @@ export default function Work() {
         />
       )}
 
-      {/* Sales Command Briefing */}
-      {mode === "sales" && (
-        <SalesCommandBriefing
-          deals={mergedDeals}
-          followUps={followUps}
-          calendarEvents={calendarEvents}
-        />
-      )}
-
       {/* Main content */}
       <div className="flex-1 overflow-hidden">
         {loading ? (
@@ -92,6 +84,9 @@ export default function Work() {
           </div>
         ) : (
           <Suspense fallback={<div className="flex items-center justify-center h-full"><div className="text-xs text-jarvis-muted animate-pulse">Loading…</div></div>}>
+            {mode === "sales" && salesTab === "today" && (
+              <TodaysFocus ops={ops} crm={crm} onOpenDeal={() => {}} />
+            )}
             {mode === "sales" && salesTab === "leads" && (
               <LeadsTab crm={crm} />
             )}

@@ -46,14 +46,14 @@ export function StatsBar({ deals = [], proposals = [], followUps = [], leads = [
 
       <div className="flex gap-1.5 items-center">
         <button
-          onClick={() => onTabChange("leads")}
+          onClick={() => onTabChange("today")}
           className={`text-[11px] px-3.5 py-1.5 rounded-lg transition font-medium ${
-            activeTab === "leads"
+            activeTab === "today"
               ? "bg-jarvis-primary/15 text-jarvis-primary"
               : "text-jarvis-muted hover:text-jarvis-ink"
           }`}
         >
-          Leads
+          Today's Focus
         </button>
         <button
           onClick={() => onTabChange("deals")}
@@ -64,6 +64,16 @@ export function StatsBar({ deals = [], proposals = [], followUps = [], leads = [
           }`}
         >
           Deals
+        </button>
+        <button
+          onClick={() => onTabChange("leads")}
+          className={`text-[11px] px-3.5 py-1.5 rounded-lg transition font-medium ${
+            activeTab === "leads"
+              ? "bg-jarvis-primary/15 text-jarvis-primary"
+              : "text-jarvis-muted hover:text-jarvis-ink"
+          }`}
+        >
+          Leads
         </button>
         <button
           onClick={() => onTabChange("inbox")}
