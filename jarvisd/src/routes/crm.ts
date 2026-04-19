@@ -120,6 +120,186 @@ export async function crmRoutes(app: FastifyInstance) {
   // Pipeline view (deals grouped by stage)
   app.get("/crm/pipeline", async () => getDealsByStage());
 
+  // ── Action feed — real unified feed from all data sources ──────────────────
+
+  app.get("/crm/action-feed", async () => {
+    const LEAD_STAGES = ["new lead", "new leads", "pipedrive leads", "gather info"];
+    const allDeals = getDeals(undefined, "open");
+    const activeDeals = allDeals.filter((d: any) =>
+      (d.pipeline || "").trim() === "New pipeline" &&
+      !LEAD_STAGES.some(ls => (d.stage || "").toLowerCase().includes(ls))
+    );
+
+    const now = Date.now();
+    const dayMs = 86400000;
+    const items: any[] = [];
+
+    // 1. EMAILS — from email_triage, non-Samuel, needing attention
+    const emails = db.prepare(`
+      SELECT * FROM email_triage
+      WHERE LOWER(from_addr) NOT LIKE '%3plcenter%'
+        AND LOWER(from_addr) NOT LIKE '%samuel%'
+        AND category IN ('urgent','action_needed','fyi','personal')
+      ORDER BY
+        CASE category WHEN 'urgent' THEN 1 WHEN 'action_needed' THEN 2 WHEN 'personal' THEN 3 ELSE 4 END,
+        created_at DESC
+      LIMIT 20
+    `).all() as any[];
+
+    for (const e of emails) {
+      // Try to link to a deal by sender domain or linked_email
+      const senderDomain = (e.from_addr || "").includes("@") ? e.from_addr.split("@").pop()?.split(">")[0]?.toLowerCase() : "";
+      const linkedDeal = e.linked_email
+        ? activeDeals.find((d: any) => d.contact_email?.toLowerCase() === e.linked_email?.toLowerCase())
+        : activeDeals.find((d: any) => d.contact_email?.toLowerCase()?.includes(senderDomain) && senderDomain.length > 5);
+
+      const senderName = (e.from_addr || "").split("<")[0].replace(/"/g, "").trim() || e.from_addr;
+      const urgency = e.category === "urgent" ? 9 : e.category === "action_needed" ? 7 : 3;
+
+      items.push({
+        id: `email-${e.id}`,
+        type: "email",
+        title: senderName,
+        kind: e.category === "urgent" ? "Urgent" : e.category === "action_needed" ? "Needs Response" : "FYI",
+        kindTone: e.category === "urgent" ? "danger" : e.category === "action_needed" ? "warn" : "",
+        action: `${e.subject || "(no subject)"}`,
+        value: linkedDeal ? (linkedDeal.value || 0) : 0,
+        valueFmt: linkedDeal?.value ? `$${(linkedDeal.value >= 1000 ? (linkedDeal.value / 1000).toFixed(0) + "K" : linkedDeal.value)}` : null,
+        why: linkedDeal ? `Linked to ${linkedDeal.org_name || linkedDeal.title} (${linkedDeal.stage})` : "Inbox email requiring attention",
+        tags: [
+          { label: e.category, tone: e.category === "urgent" ? "danger" : e.category === "action_needed" ? "warn" : "" },
+        ],
+        buttons: [
+          { label: "See email", icon: "mail", primary: true },
+          ...(linkedDeal ? [{ label: "Open deal", icon: "target" }] : []),
+        ],
+        urgent: e.category === "urgent",
+        score: urgency * 100 + (linkedDeal?.value || 0) / 1000,
+        source: "email_triage",
+        sourceId: e.message_id,
+        threadId: e.thread_id,
+        deal: linkedDeal,
+        email: e,
+      });
+    }
+
+    // 2. DEAL FOLLOW-UPS — deals silent >5 days
+    for (const d of activeDeals) {
+      const la = d.last_activity || d.updated_at;
+      if (!la) continue;
+      const daysSilent = Math.floor((now - new Date(la).getTime()) / dayMs);
+      if (daysSilent < 5) continue;
+
+      const value = d.value || 0;
+      const stage = (d.stage || "").toLowerCase();
+      const contact = d.contact_name || "";
+      const company = d.org_name || d.title || "Unknown";
+
+      let kind = "Follow Up";
+      let kindTone = "";
+      let action = "";
+      let why = "";
+      let type = "call";
+      let urgent = false;
+      const tags: any[] = [];
+
+      if (daysSilent > 14 && value > 0) {
+        kind = "Churn Risk";
+        kindTone = "danger";
+        action = `Re-engage ${contact || company} — ${daysSilent} days silent, ${value > 0 ? "$" + (value >= 1000 ? (value/1000).toFixed(0) + "K" : value) + " at risk" : ""}`;
+        why = `${daysSilent} days without contact. Deals this silent close at ~23%. Personal call recovers ~40%.`;
+        urgent = true;
+        tags.push({ label: "Churn Risk", tone: "danger" });
+      } else if (stage.includes("proposal") || stage.includes("follow up")) {
+        type = "email";
+        kind = "Proposal Follow-up";
+        kindTone = "warn";
+        action = `Follow up with ${contact || company} on proposal — ${daysSilent} days pending`;
+        why = `Proposals stale after 7+ days need a nudge. Push for decision or address concerns.`;
+        tags.push({ label: "Proposal pending" });
+      } else if (stage.includes("negotiat")) {
+        type = "deal";
+        kind = "Advance Deal";
+        kindTone = "info";
+        action = `Push ${company} negotiations forward — ${daysSilent} days since last touch`;
+        why = `In negotiations. Momentum matters — contracts stall 3.5× after 48h of silence.`;
+        tags.push({ label: "Closing" });
+      } else {
+        type = "email";
+        kind = `${daysSilent}d Silent`;
+        action = `Check in with ${contact || company} — routine follow-up`;
+        why = `${daysSilent} days since last contact. Keep the deal moving forward.`;
+      }
+
+      if (value > 200000) tags.push({ label: "Whale", tone: "whale" });
+
+      const buttons = [];
+      if (d.contact_email) buttons.push({ label: "Draft email", icon: "mail", primary: true });
+      if (d.contact_phone) buttons.push({ label: "Call now", icon: "phone", primary: !d.contact_email });
+      buttons.push({ label: "Open deal", icon: "target" });
+
+      items.push({
+        id: `deal-${d.id}`,
+        type,
+        title: `${company}${contact ? " — " + contact : ""}`,
+        kind,
+        kindTone,
+        action,
+        value,
+        valueFmt: value > 0 ? "$" + (value >= 1000000 ? (value/1000000).toFixed(1)+"M" : value >= 1000 ? (value/1000).toFixed(0)+"K" : value) : null,
+        valueTone: urgent ? "danger" : null,
+        why,
+        lastTouch: `${daysSilent}d ago`,
+        respondWithin: urgent ? { label: "today", tone: "warn" } : null,
+        tags,
+        buttons,
+        urgent,
+        score: (urgent ? 1000 : 0) + value / 100 + daysSilent * 10,
+        source: "deal",
+        deal: d,
+      });
+    }
+
+    // 3. PENDING APPROVALS — drafts waiting for review
+    const pendingApprovals = approvals.pending();
+    for (const a of pendingApprovals.slice(0, 5)) {
+      let payload: any = {};
+      try { payload = typeof a.payload === "string" ? JSON.parse(a.payload) : (a.payload || {}); } catch {}
+
+      items.push({
+        id: `approval-${a.id}`,
+        type: "task",
+        title: a.title || "Approval needed",
+        kind: "Review",
+        kindTone: "warn",
+        action: a.reason || "Jarvis needs your approval",
+        value: payload.estimated_value || 0,
+        valueFmt: payload.estimated_value ? "$" + (payload.estimated_value >= 1000 ? (payload.estimated_value/1000).toFixed(0)+"K" : payload.estimated_value) : null,
+        why: `Queued by ${a.skill || "Jarvis"}. Waiting for your review.`,
+        tags: [{ label: "Approval", tone: "warn" }],
+        buttons: [{ label: "Review", icon: "eye", primary: true }],
+        urgent: false,
+        score: 50 + (payload.estimated_value || 0) / 1000,
+        source: "approval",
+        approvalId: a.id,
+      });
+    }
+
+    // Sort by score descending, assign ranks
+    items.sort((a, b) => b.score - a.score);
+    items.forEach((item, i) => { item.rank = i + 1; });
+
+    // Count by type
+    const counts = { all: items.length, call: 0, email: 0, task: 0, deal: 0 };
+    for (const it of items) {
+      if (counts[it.type as keyof typeof counts] !== undefined) {
+        (counts as any)[it.type]++;
+      }
+    }
+
+    return { items: items.slice(0, 20), counts, total: items.length };
+  });
+
   // Pipeline stats
   app.get("/crm/stats", async () => getPipelineStats());
 

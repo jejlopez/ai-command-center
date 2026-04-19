@@ -419,11 +419,25 @@ function buildFeedItems(deals) {
 function ActionFeed({ deals, onAction, onSwitchTab }) {
   const [filter, setFilter] = useState("all");
   const [done, setDone] = useState(new Set());
+  const [feedItems, setFeedItems] = useState([]);
+  const [feedCounts, setFeedCounts] = useState({ all: 0, call: 0, email: 0, task: 0, deal: 0 });
+  const [showCompleted, setShowCompleted] = useState(false);
 
-  const feedItems = buildFeedItems(deals);
+  // Fetch real action feed from jarvisd
+  useEffect(() => {
+    jarvis.crmActionFeed?.().then(data => {
+      if (data?.items) {
+        setFeedItems(data.items);
+        setFeedCounts(data.counts || { all: data.items.length });
+      }
+    }).catch(() => {
+      // Fallback to client-side generation if API unavailable
+      setFeedItems(buildFeedItems(deals));
+    });
+  }, [deals.length]);
+
   const activeItems = feedItems.filter(i => !done.has(i.id));
   const doneItems = feedItems.filter(i => done.has(i.id));
-  const [showCompleted, setShowCompleted] = useState(false);
 
   const counts = FILTERS.reduce((a, f) => ({
     ...a,
@@ -715,8 +729,29 @@ export function CommandCenter({ ops, crm, onSwitchTab }) {
         setSelectedDeal(deal);
         break;
       case "email":
-        // Open email modal for this deal's contact
-        if (deal?.contact_email) {
+        // Open email modal — use real email data if available from feed item
+        const emailData = item?.email;
+        if (emailData?.message_id) {
+          setSelectedEmail({
+            message_id: emailData.message_id,
+            from_addr: emailData.from_addr,
+            subject: emailData.subject,
+            snippet: emailData.snippet,
+            category: emailData.category || "fyi",
+            thread_id: emailData.thread_id || item?.threadId,
+            created_at: emailData.created_at,
+          });
+        } else if (item?.sourceId) {
+          setSelectedEmail({
+            message_id: item.sourceId,
+            from_addr: item.title || "",
+            subject: item.action || "",
+            snippet: "",
+            category: "fyi",
+            thread_id: item.threadId,
+            created_at: new Date().toISOString(),
+          });
+        } else if (deal?.contact_email) {
           setSelectedEmail({
             message_id: null,
             from_addr: deal.contact_email,

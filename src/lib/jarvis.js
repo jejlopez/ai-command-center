@@ -204,6 +204,7 @@ export const jarvis = {
   crmStats:        ()                  => get("/crm/stats"),
   crmDeals:        (pipeline, status)  => get(`/crm/deals?${pipeline ? `pipeline=${encodeURIComponent(pipeline)}&` : ""}status=${status ?? "open"}`),
   crmSyncStatus:   ()                  => get("/crm/sync/status"),
+  crmActionFeed:   ()                  => get("/crm/action-feed"),
 
   // Learning system
   learningDashboard: ()                => get("/learning/dashboard"),
