@@ -569,16 +569,32 @@ function ActionFeed({ deals, onAction, onSwitchTab }) {
       </div>
       <div className="feed-progress"><div className="feed-progress__fill" style={{ width: `${pct}%` }} /></div>
 
-      {/* TIER 1: Live Stream */}
+      {/* TIER 1: Live & Unreplied */}
       {(tiers.live?.items?.length > 0) && (
         <>
           <div style={{ display: "flex", alignItems: "center", gap: 8, margin: "16px 0 8px", padding: "0 2px" }}>
             <div style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--danger)", animation: "pulse-primary 2.8s ease-in-out infinite" }} />
-            <span style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--danger)" }}>Live Stream</span>
-            <span style={{ fontSize: 11, color: "var(--rf-ink-4, var(--text-muted))" }}>{tiers.live.count} items</span>
+            <span style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--danger)" }}>Unreplied Emails</span>
+            <span style={{ fontSize: 11, color: "var(--rf-ink-4, var(--text-muted))" }}>{tiers.live.count} emails this week</span>
           </div>
           <div className="feed">
-            {tiers.live.items.filter(i => !done.has(i.id)).map(it => <FeedItem key={it.id} item={it} onDone={toggleDone} onAction={onAction} isDone={false} />)}
+            {tiers.live.items.filter(i => !done.has(i.id)).map(it => {
+              // Add age badge to the item
+              const ageStyle = it.ageStatus === "stale"
+                ? { background: "rgba(239,68,68,0.1)", color: "#f87171", borderColor: "rgba(239,68,68,0.28)" }
+                : it.ageStatus === "aging"
+                ? { background: "rgba(245,158,11,0.1)", color: "#fbbf24", borderColor: "rgba(245,158,11,0.28)" }
+                : { background: "rgba(6,182,212,0.1)", color: "#67e8f9", borderColor: "rgba(6,182,212,0.28)" };
+              const ageLabel = it.ageStatus === "stale" ? "STALE" : it.ageStatus === "aging" ? "AGING" : "FRESH";
+              const augmented = {
+                ...it,
+                tags: [
+                  { label: `${ageLabel} · ${it.agoLabel || ""}`, tone: it.ageStatus === "stale" ? "danger" : it.ageStatus === "aging" ? "warn" : "" },
+                  ...(it.tags || []),
+                ],
+              };
+              return <FeedItem key={it.id} item={augmented} onDone={toggleDone} onAction={onAction} isDone={false} />;
+            })}
           </div>
         </>
       )}

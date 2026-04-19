@@ -135,19 +135,26 @@ export async function crmRoutes(app: FastifyInstance) {
     const items: any[] = [];
 
     // 1. EMAILS — pull ALL non-Samuel emails, classify into sections
-    const allEmails = db.prepare(`
+    // Note: date filter done in code since backfilled emails use RFC 2822 dates
+    const allEmailsRaw = db.prepare(`
       SELECT * FROM email_triage
       WHERE LOWER(from_addr) NOT LIKE '%3plcenter%'
         AND LOWER(from_addr) NOT LIKE '%samuel%'
         AND action_taken = 0
-        AND created_at >= datetime('now', '-7 days')
-      ORDER BY created_at DESC
-      LIMIT 100
+      ORDER BY rowid DESC
+      LIMIT 200
     `).all() as any[];
 
+    // Filter to last 7 days in code (handles both ISO and RFC 2822 dates)
+    const sevenDaysAgoMs = now - (7 * dayMs);
+    const allEmails = allEmailsRaw.filter((e: any) => {
+      const t = new Date(e.created_at).getTime();
+      return !isNaN(t) && t > sevenDaysAgoMs;
+    });
+
     // System/automated sender patterns
-    const SYSTEM_SENDERS = /noreply|no-reply|notifications?@|mailer-daemon|scheduler|info@pipedrive|linkedin|google\.com|beehiiv|helpdesk|support@|billing@|team@|hello@.*\.io|updates@|olimp|donotreply/i;
-    const SYSTEM_SUBJECTS = /unsubscribe|order number|your receipt|payment confirmation|password reset|verify your|welcome to|getting started|weekly digest|daily summary|newsletter/i;
+    const SYSTEM_SENDERS = /noreply|no-reply|notifications?@|mailer-daemon|scheduler|info@pipedrive|linkedin|google\.com|beehiiv|helpdesk|support@|billing@|team@.*(?:apollo|hubspot|salesforce|slack|outreach|calendly|intercom|drift|mailchimp|sendgrid)|hello@.*\.io|updates@|olimp|donotreply|apollo\s*team/i;
+    const SYSTEM_SUBJECTS = /unsubscribe|order number|your receipt|payment confirmation|password reset|verify your|welcome to|getting started|weekly digest|daily summary|newsletter|ref:\s*po#|trans:\s*\d/i;
     // Quick reply: ONLY when the subject itself IS the acknowledgment (not containing business topics)
     const QUICK_REPLY_PATTERN = /^(re:\s*)?(thanks?|thank you|confirmed?|accepted|approved|sounds good|works for me|see you|looking forward|noted|got it|perfect|great|ok|will do)\s*$/i;
 
@@ -186,12 +193,10 @@ export async function crmRoutes(app: FastifyInstance) {
         return (ce && from.includes(ce)) || (senderDomain && contactDomain && senderDomain === contactDomain && !["gmail.com","yahoo.com","hotmail.com","outlook.com"].includes(senderDomain));
       });
 
-      // Only promote to section 1 if explicitly urgent/action_needed by the triage classifier
-      // FYI emails never go to section 1 regardless of keywords or deal links
-      if (isUrgent) {
-        emails.push(e);
-        continue;
-      }
+      // All non-system, non-quick-reply emails go to the main feed
+      // The tier split will put recent ones in Tier 1 (unreplied)
+      emails.push(e);
+      continue;
 
       // Section 3: FYI (everything else)
       fyiEmails.push(e);
@@ -342,27 +347,38 @@ export async function crmRoutes(app: FastifyInstance) {
 
     // ── Split into 4 intelligence tiers ──
 
-    // Tier 1: LIVE STREAM — emails arrived in last 4 hours + urgent email items
-    const fourHoursAgo = now - (4 * 60 * 60 * 1000);
+    // Helper: parse email date (handles both ISO and RFC 2822)
+    function parseEmailDate(dateStr: string): number {
+      if (!dateStr) return 0;
+      // Try ISO first
+      const iso = new Date(dateStr).getTime();
+      if (!isNaN(iso)) return iso;
+      // Try RFC 2822 (e.g. "Wed, 8 Apr 2026 15:38:20 -0400")
+      try { return new Date(dateStr).getTime(); } catch { return 0; }
+    }
+
+    const sevenDaysAgo = now - (7 * dayMs);
     const tier1: any[] = [];
     const tier2: any[] = [];
     const tier3: any[] = [];
 
+    // First: add ALL unreplied email items to Tier 1 (within 7 days)
     for (const it of items) {
-      // Check if this is a live email (arrived recently)
-      const emailTime = it.email?.created_at ? new Date(it.email.created_at).getTime() : 0;
-      const isLiveEmail = it.source === "email_triage" && emailTime > fourHoursAgo;
-      const isUrgentEmail = it.source === "email_triage" && it.urgent;
+      if (it.source === "email_triage") {
+        const emailTime = parseEmailDate(it.email?.created_at);
+        if (emailTime > sevenDaysAgo || it.urgent) {
+          const agoMs = now - emailTime;
+          const agoDays = Math.floor(agoMs / dayMs);
+          it.agoLabel = agoDays === 0 ? `${Math.round(agoMs / 3600000)}h ago` : agoDays === 1 ? "1 day ago" : `${agoDays} days ago`;
+          it.ageStatus = agoDays <= 1 ? "fresh" : agoDays <= 3 ? "aging" : "stale";
+          it.tier = 1;
+          tier1.push(it);
+          continue;
+        }
+      }
 
-      if (isLiveEmail || isUrgentEmail) {
-        // Calculate how recent
-        const agoMs = now - emailTime;
-        const agoMin = Math.round(agoMs / 60000);
-        it.agoLabel = agoMin < 60 ? `${agoMin} min ago` : agoMin < 1440 ? `${Math.round(agoMin / 60)}h ago` : `${Math.round(agoMin / 1440)}d ago`;
-        it.tier = 1;
-        tier1.push(it);
-      } else if (it.urgent || (it.source === "deal" && it.kind?.includes("Churn"))) {
-        // Tier 2: expiring/urgent deal items
+      // Tier 2: churn risk + urgent deals
+      if (it.urgent || (it.source === "deal" && it.kind?.includes("Churn"))) {
         it.tier = 2;
         tier2.push(it);
       } else {
@@ -371,6 +387,15 @@ export async function crmRoutes(app: FastifyInstance) {
         tier3.push(it);
       }
     }
+
+    // Sort Tier 1: oldest unreplied first (clear the backlog)
+    tier1.sort((a, b) => {
+      const ageA = parseEmailDate(a.email?.created_at);
+      const ageB = parseEmailDate(b.email?.created_at);
+      // Oldest first, then by deal value
+      if (ageA !== ageB) return ageA - ageB;
+      return (b.value || 0) - (a.value || 0);
+    });
 
     // Sort each tier by score
     tier1.sort((a, b) => b.score - a.score);
@@ -417,17 +442,23 @@ export async function crmRoutes(app: FastifyInstance) {
 
     let narration = `Right now (${nowTime}): `;
     if (tier1.length > 0) {
-      narration += `${tier1.length} live item${tier1.length > 1 ? "s" : ""} need attention. `;
-      const topLive = tier1[0];
-      narration += `${topLive.title.split(" — ")[0]} ${topLive.agoLabel || "recently"} — ${topLive.action?.slice(0, 60)}. `;
+      const stale = tier1.filter(i => i.ageStatus === "stale").length;
+      const aging = tier1.filter(i => i.ageStatus === "aging").length;
+      const fresh = tier1.filter(i => i.ageStatus === "fresh").length;
+      narration += `${tier1.length} unreplied email${tier1.length > 1 ? "s" : ""} from this week`;
+      if (stale > 0) narration += ` including ${stale} stale (4+ days)`;
+      else if (aging > 0) narration += ` including ${aging} aging (2-3 days)`;
+      narration += ". ";
+      const oldest = tier1[0];
+      if (oldest) narration += `Oldest: ${oldest.title?.split(" — ")[0] || "unknown"} (${oldest.agoLabel || "recently"}) — "${oldest.action?.slice(0, 50)}." `;
     } else {
-      narration += `No live items right now. `;
+      narration += `Inbox clear — no unreplied emails this week. `;
     }
     if (tier2.length > 0) {
       narration += `${tier2.length} urgent deal${tier2.length > 1 ? "s" : ""} need action today. `;
     }
     if (tier3.length > 0) {
-      narration += `${tier3.length} strategic moves to consider.`;
+      narration += `${tier3.length} strategic deal moves to consider.`;
     }
 
     const totalAll = tier1.length + tier2.length + tier3.length + tier4fyi.length + tier4quick.length + tier4system.length;
