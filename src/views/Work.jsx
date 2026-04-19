@@ -18,7 +18,7 @@ const EmailDetailModal= lazy(() => import("../components/sales/EmailDetailModal.
 const TradingDashboard= lazy(() => import("../components/ops/TradingDashboard.jsx").then(m => ({ default: m.TradingDashboard })));
 const BuildDashboard  = lazy(() => import("../components/ops/BuildDashboard.jsx").then(m => ({ default: m.BuildDashboard })));
 const ApprovalQueue   = lazy(() => import("../components/sales/ApprovalQueue.jsx").then(m => ({ default: m.ApprovalQueue })));
-const TodaysFocus     = lazy(() => import("../components/sales/TodaysFocus.jsx").then(m => ({ default: m.TodaysFocus })));
+const CommandCenter   = lazy(() => import("../components/sales/CommandCenter.jsx").then(m => ({ default: m.CommandCenter })));
 
 export default function Work() {
   const [mode, setMode] = useState("sales");
@@ -85,7 +85,7 @@ export default function Work() {
         ) : (
           <Suspense fallback={<div className="flex items-center justify-center h-full"><div className="text-xs text-jarvis-muted animate-pulse">Loading…</div></div>}>
             {mode === "sales" && salesTab === "today" && (
-              <TodaysFocus ops={ops} crm={crm} onOpenDeal={() => {}} />
+              <CommandCenter ops={ops} crm={crm} onSwitchTab={setSalesTab} />
             )}
             {mode === "sales" && salesTab === "leads" && (
               <LeadsTab crm={crm} />

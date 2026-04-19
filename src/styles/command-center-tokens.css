@@ -1,0 +1,231 @@
+/* ==========================================================================
+   Jarvis OS — Colors & Typography
+   Dark-only command-center theme for 3PL Center LLC's sales operating system.
+   Source: user brand spec + codebase reference (github.com/jejlopez/ai-command-center).
+   ========================================================================== */
+
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap");
+
+:root {
+  color-scheme: dark;
+
+  /* ---- Surfaces ------------------------------------------------------- */
+  --bg-base:           #0a0f1a;   /* canvas — deepest */
+  --bg-surface:        #0f1724;   /* cards, rails, panels */
+  --bg-raised:         #111b2c;   /* hover / modal / input */
+  --bg-input:          #0b1321;   /* form fields */
+  --bg-sunken:         #070b13;   /* inset wells */
+
+  /* Ambient glows (used sparingly on dashboards) */
+  --glow-cyan:     radial-gradient(ellipse at 30% 0%, rgba(6,182,212,0.06) 0%, transparent 55%);
+  --glow-violet:   radial-gradient(ellipse at 75% 100%, rgba(139,92,246,0.04) 0%, transparent 55%);
+
+  /* ---- Borders & dividers -------------------------------------------- */
+  --border-subtle:     #172033;
+  --border-default:    #1e293b;
+  --border-strong:     #2a3a55;
+  --border-focus:      rgba(6,182,212,0.55);
+
+  /* ---- Text ----------------------------------------------------------- */
+  --text-primary:      #e2e8f0;   /* body text, values */
+  --text-secondary:    #94a3b8;   /* labels, helper */
+  --text-muted:        #64748b;   /* meta, timestamps */
+  --text-disabled:     #3f4b61;
+  --text-inverse:      #0a0f1a;   /* for on-accent fills */
+
+  /* ---- Brand accent (cyan) ------------------------------------------- */
+  --accent:            #06b6d4;   /* primary */
+  --accent-hover:      #22d3ee;
+  --accent-press:      #0891b2;
+  --accent-muted:      rgba(6,182,212,0.12);
+  --accent-ring:       rgba(6,182,212,0.35);
+  --accent-glow:       0 0 18px rgba(6,182,212,0.28);
+
+  /* ---- Semantic state colors ---------------------------------------- */
+  --success:           #10b981;
+  --success-muted:     rgba(16,185,129,0.12);
+  --warning:           #f59e0b;
+  --warning-muted:     rgba(245,158,11,0.12);
+  --danger:            #ef4444;
+  --danger-muted:      rgba(239,68,68,0.12);
+  --info:              #3b82f6;
+  --info-muted:        rgba(59,130,246,0.12);
+  --violet:            #8b5cf6;   /* reserved: research / AI reasoning */
+  --violet-muted:      rgba(139,92,246,0.12);
+
+  /* ---- Pipeline / data-viz palette (signal, not decoration) --------- */
+  --stage-prospect:    #3b82f6;
+  --stage-qualified:   #06b6d4;
+  --stage-proposal:    #8b5cf6;
+  --stage-negotiation: #f59e0b;
+  --stage-closing:     #10b981;
+  --stage-lost:        #64748b;
+
+  /* ---- Radius -------------------------------------------------------- */
+  --radius-xs:  4px;
+  --radius-sm:  6px;
+  --radius-md:  8px;
+  --radius-lg:  12px;   /* default card */
+  --radius-xl:  14px;   /* primary surface */
+  --radius-2xl: 18px;
+  --radius-pill: 999px;
+
+  /* ---- Spacing scale (4px base) ------------------------------------- */
+  --space-0:  0;
+  --space-1:  4px;
+  --space-2:  8px;
+  --space-3:  12px;
+  --space-4:  16px;
+  --space-5:  20px;
+  --space-6:  24px;
+  --space-8:  32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+
+  /* ---- Shadow & elevation ------------------------------------------- */
+  --shadow-sm:   0 1px 2px rgba(0,0,0,0.35);
+  --shadow-md:   0 2px 8px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.04);
+  --shadow-lg:   0 8px 24px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.05);
+  --shadow-pop:  0 20px 60px rgba(0,0,0,0.6), 0 0 0 1px var(--border-default);
+  --shadow-focus: 0 0 0 3px var(--accent-ring);
+  --shadow-glow-cyan:   0 0 0 1px rgba(6,182,212,0.25), 0 0 24px rgba(6,182,212,0.15);
+  --shadow-glow-danger: 0 0 0 1px rgba(239,68,68,0.30), 0 0 20px rgba(239,68,68,0.18);
+
+  /* ---- Motion -------------------------------------------------------- */
+  --ease-out:   cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in-out:cubic-bezier(0.65, 0, 0.35, 1);
+  --dur-fast:   120ms;
+  --dur-base:   200ms;
+  --dur-slow:   400ms;
+
+  /* ---- Typography — families ---------------------------------------- */
+  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Consolas, monospace;
+  --font-display: var(--font-sans); /* display is Inter @ 600–700, tighter tracking */
+
+  /* ---- Typography — base type tokens -------------------------------- */
+  --fs-11: 11px;   /* micro / meta / kbd */
+  --fs-12: 12px;   /* label, chip */
+  --fs-13: 13px;   /* secondary body */
+  --fs-14: 14px;   /* body */
+  --fs-16: 16px;   /* emphasized body */
+  --fs-18: 18px;   /* section / panel title */
+  --fs-20: 20px;   /* h3 */
+  --fs-22: 22px;   /* h2 */
+  --fs-28: 28px;   /* h1 / hero metric */
+
+  --lh-tight:  1.15;
+  --lh-snug:   1.3;
+  --lh-normal: 1.5;
+  --lh-relaxed:1.65;
+
+  --tracking-tight:  -0.01em;
+  --tracking-normal: 0;
+  --tracking-wide:   0.04em;
+  --tracking-widest: 0.16em;  /* uppercase labels */
+
+  --fw-regular:  400;
+  --fw-medium:   500;
+  --fw-semibold: 600;
+  --fw-bold:     700;
+}
+
+/* ---- Base reset ------------------------------------------------------- */
+html, body {
+  background: var(--bg-base);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: var(--fs-14);
+  line-height: var(--lh-normal);
+  font-feature-settings: "cv11", "ss01", "tnum";
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ---- Semantic type recipes ------------------------------------------- */
+.h1, h1.jv {
+  font-family: var(--font-display);
+  font-size: var(--fs-28);
+  font-weight: var(--fw-semibold);
+  line-height: var(--lh-tight);
+  letter-spacing: var(--tracking-tight);
+  color: var(--text-primary);
+}
+.h2, h2.jv {
+  font-size: var(--fs-22);
+  font-weight: var(--fw-semibold);
+  line-height: var(--lh-tight);
+  letter-spacing: var(--tracking-tight);
+  color: var(--text-primary);
+}
+.h3, h3.jv {
+  font-size: var(--fs-18);
+  font-weight: var(--fw-semibold);
+  line-height: var(--lh-snug);
+  color: var(--text-primary);
+}
+.body, p.jv {
+  font-size: var(--fs-14);
+  line-height: var(--lh-normal);
+  color: var(--text-primary);
+}
+.body-sm {
+  font-size: var(--fs-13);
+  line-height: var(--lh-normal);
+  color: var(--text-secondary);
+}
+.label {
+  font-size: var(--fs-11);
+  font-weight: var(--fw-semibold);
+  letter-spacing: var(--tracking-widest);
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.meta {
+  font-size: var(--fs-11);
+  color: var(--text-muted);
+}
+.metric {
+  font-family: var(--font-sans);
+  font-size: var(--fs-28);
+  font-weight: var(--fw-semibold);
+  letter-spacing: var(--tracking-tight);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+}
+.mono, code.jv {
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+  color: var(--text-secondary);
+}
+.kbd {
+  font-family: var(--font-mono);
+  font-size: var(--fs-11);
+  padding: 1px 6px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xs);
+  color: var(--text-secondary);
+  background: var(--bg-raised);
+}
+
+/* ---- Surface recipes ------------------------------------------------- */
+.surface {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-md);
+}
+.surface-raised {
+  background: var(--bg-raised);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-lg);
+}
+.glass {
+  background: rgba(15, 23, 36, 0.65);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xl);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
