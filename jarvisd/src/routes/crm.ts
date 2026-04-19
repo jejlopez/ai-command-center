@@ -134,16 +134,31 @@ export async function crmRoutes(app: FastifyInstance) {
     const dayMs = 86400000;
     const items: any[] = [];
 
-    // 1. EMAILS — from email_triage, non-Samuel, needing attention
+    // 1. EMAILS — ONLY urgent and action_needed from triage (not FYI)
+    // FYI = informational, already triaged. Only show emails that truly need a response.
     const emails = db.prepare(`
       SELECT * FROM email_triage
       WHERE LOWER(from_addr) NOT LIKE '%3plcenter%'
         AND LOWER(from_addr) NOT LIKE '%samuel%'
-        AND category IN ('urgent','action_needed','fyi','personal')
+        AND LOWER(from_addr) NOT LIKE '%noreply%'
+        AND LOWER(from_addr) NOT LIKE '%no-reply%'
+        AND LOWER(from_addr) NOT LIKE '%notifications%'
+        AND LOWER(from_addr) NOT LIKE '%mailer-daemon%'
+        AND LOWER(from_addr) NOT LIKE '%scheduler%'
+        AND LOWER(from_addr) NOT LIKE '%info@pipedrive%'
+        AND LOWER(from_addr) NOT LIKE '%linkedin%'
+        AND LOWER(from_addr) NOT LIKE '%google.com%'
+        AND LOWER(from_addr) NOT LIKE '%beehiiv%'
+        AND LOWER(from_addr) NOT LIKE '%olimp%'
+        AND LOWER(subject) NOT LIKE '%order number%'
+        AND LOWER(subject) NOT LIKE '%unsubscribe%'
+        AND category IN ('urgent', 'action_needed')
+        AND action_taken = 0
+        AND created_at >= datetime('now', '-5 days')
       ORDER BY
-        CASE category WHEN 'urgent' THEN 1 WHEN 'action_needed' THEN 2 WHEN 'personal' THEN 3 ELSE 4 END,
+        CASE category WHEN 'urgent' THEN 1 WHEN 'action_needed' THEN 2 END,
         created_at DESC
-      LIMIT 20
+      LIMIT 10
     `).all() as any[];
 
     for (const e of emails) {
@@ -183,15 +198,19 @@ export async function crmRoutes(app: FastifyInstance) {
       });
     }
 
-    // 2. DEAL FOLLOW-UPS — deals silent >5 days
+    // 2. DEAL FOLLOW-UPS — deals that genuinely need attention
+    // Only include deals that are actually stale (>5d) or high-value with any gap
     for (const d of activeDeals) {
       const la = d.last_activity || d.updated_at;
       if (!la) continue;
       const daysSilent = Math.floor((now - new Date(la).getTime()) / dayMs);
-      if (daysSilent < 5) continue;
-
+      // Skip deals touched recently (unless high-value negotiation)
       const value = d.value || 0;
       const stage = (d.stage || "").toLowerCase();
+      const isNegotiating = stage.includes("negotiat");
+      if (daysSilent < 3) continue; // touched in last 3 days = not actionable
+      if (daysSilent < 5 && !isNegotiating && value < 100000) continue; // small deals need 5+ days
+
       const contact = d.contact_name || "";
       const company = d.org_name || d.title || "Unknown";
 
@@ -298,6 +317,24 @@ export async function crmRoutes(app: FastifyInstance) {
     }
 
     return { items: items.slice(0, 20), counts, total: items.length };
+  });
+
+  // Mark an action feed item as handled
+  app.post("/crm/action-feed/handled", async (req) => {
+    const { itemId, source, sourceId, action } = req.body as any;
+    if (!itemId) return { error: "itemId required" };
+
+    // If it's an email, mark action_taken in triage
+    if (source === "email_triage" && sourceId) {
+      db.prepare("UPDATE email_triage SET action_taken = 1 WHERE message_id = ?").run(sourceId);
+    }
+
+    // Log to learning system
+    db.prepare(`INSERT INTO jarvis_learning(id, type, data, created_at) VALUES (?, 'action_handled', ?, datetime('now'))`)
+      .run(crypto.randomUUID(), JSON.stringify({ itemId, source, sourceId, action: action || "handled" }));
+
+    audit({ actor: "user", action: "feed.item.handled", subject: itemId, metadata: { source, action } });
+    return { ok: true };
   });
 
   // Pipeline stats

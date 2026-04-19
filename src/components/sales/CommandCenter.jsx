@@ -453,11 +453,19 @@ function ActionFeed({ deals, onAction, onSwitchTab }) {
   const handled = doneItems.length;
   const pct = totalItems > 0 ? Math.round((handled / totalItems) * 100) : 0;
 
-  const toggleDone = (id) => setDone(prev => {
-    const n = new Set(prev);
-    if (n.has(id)) n.delete(id); else n.add(id);
-    return n;
-  });
+  const toggleDone = (id) => {
+    // Find the item to get its source info
+    const item = feedItems.find(i => i.id === id);
+    if (item && !done.has(id)) {
+      // Persist to backend so it doesn't reappear
+      jarvis.crmActionHandled?.(id, item.source, item.sourceId, "handled").catch(() => {});
+    }
+    setDone(prev => {
+      const n = new Set(prev);
+      if (n.has(id)) n.delete(id); else n.add(id);
+      return n;
+    });
+  };
 
   return (
     <section>
