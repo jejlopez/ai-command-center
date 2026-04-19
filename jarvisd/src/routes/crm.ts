@@ -120,7 +120,7 @@ export async function crmRoutes(app: FastifyInstance) {
   // Pipeline view (deals grouped by stage)
   app.get("/crm/pipeline", async () => getDealsByStage());
 
-  // ── Action feed — real unified feed from all data sources ──────────────────
+  // ── Intelligence feed — 4-tier real-time feed ──────────────────────────────
 
   app.get("/crm/action-feed", async () => {
     const LEAD_STAGES = ["new lead", "new leads", "pipedrive leads", "gather info"];
@@ -340,62 +340,124 @@ export async function crmRoutes(app: FastifyInstance) {
       });
     }
 
-    // Sort by score descending, assign ranks
-    items.sort((a, b) => b.score - a.score);
-    items.forEach((item, i) => { item.rank = i + 1; });
+    // ── Split into 4 intelligence tiers ──
 
-    // Count by type
-    const counts = { all: items.length, call: 0, email: 0, task: 0, deal: 0 };
+    // Tier 1: LIVE STREAM — emails arrived in last 4 hours + urgent email items
+    const fourHoursAgo = now - (4 * 60 * 60 * 1000);
+    const tier1: any[] = [];
+    const tier2: any[] = [];
+    const tier3: any[] = [];
+
     for (const it of items) {
-      if (counts[it.type as keyof typeof counts] !== undefined) {
-        (counts as any)[it.type]++;
+      // Check if this is a live email (arrived recently)
+      const emailTime = it.email?.created_at ? new Date(it.email.created_at).getTime() : 0;
+      const isLiveEmail = it.source === "email_triage" && emailTime > fourHoursAgo;
+      const isUrgentEmail = it.source === "email_triage" && it.urgent;
+
+      if (isLiveEmail || isUrgentEmail) {
+        // Calculate how recent
+        const agoMs = now - emailTime;
+        const agoMin = Math.round(agoMs / 60000);
+        it.agoLabel = agoMin < 60 ? `${agoMin} min ago` : agoMin < 1440 ? `${Math.round(agoMin / 60)}h ago` : `${Math.round(agoMin / 1440)}d ago`;
+        it.tier = 1;
+        tier1.push(it);
+      } else if (it.urgent || (it.source === "deal" && it.kind?.includes("Churn"))) {
+        // Tier 2: expiring/urgent deal items
+        it.tier = 2;
+        tier2.push(it);
+      } else {
+        // Tier 3: deal intelligence
+        it.tier = 3;
+        tier3.push(it);
       }
     }
 
-    // Build section 2: quick replies
-    const quickReplyItems = quickReplies.map((e: any, i: number) => {
+    // Sort each tier by score
+    tier1.sort((a, b) => b.score - a.score);
+    tier2.sort((a, b) => b.score - a.score);
+    tier3.sort((a, b) => b.score - a.score);
+
+    // Assign ranks within each tier
+    let rank = 0;
+    for (const t of [tier1, tier2, tier3]) {
+      for (const it of t) { it.rank = ++rank; }
+    }
+
+    // Tier 4: Background — FYI + quick replies + system + low-priority deals
+    const tier4fyi = fyiEmails.map((e: any) => {
       const senderName = (e.from_addr || "").split("<")[0].replace(/"/g, "").trim();
       return {
-        id: `quick-${e.id}`, type: "email", section: "quick_reply",
+        id: `fyi-${e.id}`, type: "email", section: "fyi", tier: 4,
+        title: senderName, action: e.subject || "(no subject)",
+        email: e, sourceId: e.message_id, threadId: e.thread_id,
+      };
+    });
+    const tier4quick = quickReplies.map((e: any) => {
+      const senderName = (e.from_addr || "").split("<")[0].replace(/"/g, "").trim();
+      return {
+        id: `quick-${e.id}`, type: "email", section: "quick_reply", tier: 4,
         title: senderName, action: e.subject || "(no subject)",
         email: e, sourceId: e.message_id, threadId: e.thread_id,
         buttons: [{ label: "Quick thanks", icon: "send", primary: true }, { label: "Skip" }],
       };
     });
-
-    // Build section 3: FYI
-    const fyiItems = fyiEmails.map((e: any) => {
+    const tier4system = systemEmails.map((e: any) => {
       const senderName = (e.from_addr || "").split("<")[0].replace(/"/g, "").trim();
       return {
-        id: `fyi-${e.id}`, type: "email", section: "fyi",
-        title: senderName, action: e.subject || "(no subject)",
-        email: e, sourceId: e.message_id, threadId: e.thread_id,
-      };
-    });
-
-    // Build section 4: system
-    const systemItems = systemEmails.map((e: any) => {
-      const senderName = (e.from_addr || "").split("<")[0].replace(/"/g, "").trim();
-      return {
-        id: `sys-${e.id}`, type: "email", section: "system",
+        id: `sys-${e.id}`, type: "email", section: "system", tier: 4,
         title: senderName, action: e.subject || "(no subject)",
         email: e, sourceId: e.message_id,
       };
     });
 
-    const totalAll = items.length + quickReplyItems.length + fyiItems.length + systemItems.length;
+    // Build narration
+    const h = new Date().getHours();
+    const timeLabel = h < 12 ? "morning" : h < 17 ? "afternoon" : "evening";
+    const nowTime = new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+
+    let narration = `Right now (${nowTime}): `;
+    if (tier1.length > 0) {
+      narration += `${tier1.length} live item${tier1.length > 1 ? "s" : ""} need attention. `;
+      const topLive = tier1[0];
+      narration += `${topLive.title.split(" — ")[0]} ${topLive.agoLabel || "recently"} — ${topLive.action?.slice(0, 60)}. `;
+    } else {
+      narration += `No live items right now. `;
+    }
+    if (tier2.length > 0) {
+      narration += `${tier2.length} urgent deal${tier2.length > 1 ? "s" : ""} need action today. `;
+    }
+    if (tier3.length > 0) {
+      narration += `${tier3.length} strategic moves to consider.`;
+    }
+
+    const totalAll = tier1.length + tier2.length + tier3.length + tier4fyi.length + tier4quick.length + tier4system.length;
 
     return {
-      items: items.slice(0, 20),
-      counts,
-      total: items.length,
-      sections: {
-        needs_action: { count: items.length, label: "Needs Action" },
-        quick_reply: { count: quickReplyItems.length, label: "Quick Replies", items: quickReplyItems },
-        fyi: { count: fyiItems.length, label: "FYI — Inbox Scan", items: fyiItems },
-        system: { count: systemItems.length, label: "System & Automated", items: systemItems },
+      narration,
+      updatedAt: new Date().toISOString(),
+      tiers: {
+        live: { label: "Live Stream", count: tier1.length, items: tier1.slice(0, 10) },
+        expiring: { label: "Urgent Today", count: tier2.length, items: tier2.slice(0, 10) },
+        intelligence: { label: "Deal Intelligence", count: tier3.length, items: tier3.slice(0, 15) },
+        background: {
+          label: "Background",
+          count: tier4fyi.length + tier4quick.length + tier4system.length,
+          fyi: { count: tier4fyi.length, items: tier4fyi },
+          quickReply: { count: tier4quick.length, items: tier4quick },
+          system: { count: tier4system.length, items: tier4system },
+        },
       },
+      // Backward compat — keep items/counts for existing frontend
+      items: [...tier1, ...tier2, ...tier3].slice(0, 20),
+      counts: { all: tier1.length + tier2.length + tier3.length, call: 0, email: 0, task: 0, deal: 0 },
+      total: tier1.length + tier2.length + tier3.length,
       totalAll,
+      sections: {
+        needs_action: { count: tier1.length + tier2.length + tier3.length, label: "Needs Action" },
+        quick_reply: { count: tier4quick.length, label: "Quick Replies", items: tier4quick },
+        fyi: { count: tier4fyi.length, label: "FYI — Inbox Scan", items: tier4fyi },
+        system: { count: tier4system.length, label: "System & Automated", items: tier4system },
+      },
     };
   });
 

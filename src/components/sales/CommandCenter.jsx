@@ -481,15 +481,21 @@ function ActionFeed({ deals, onAction, onSwitchTab }) {
   const [filter, setFilter] = useState("all");
   const [done, setDone] = useState(new Set());
   const [feedItems, setFeedItems] = useState([]);
+  const [tiers, setTiers] = useState({});
+  const [narration, setNarration] = useState("");
+  const [updatedAt, setUpdatedAt] = useState("");
   const [sections, setSections] = useState({});
   const [totalAll, setTotalAll] = useState(0);
   const [showCompleted, setShowCompleted] = useState(false);
 
   // Fetch real action feed from jarvisd
-  useEffect(() => {
+  const fetchFeed = useCallback(() => {
     jarvis.crmActionFeed?.().then(data => {
       if (data?.items) {
         setFeedItems(data.items);
+        setTiers(data.tiers || {});
+        setNarration(data.narration || "");
+        setUpdatedAt(data.updatedAt || "");
         setSections(data.sections || {});
         setTotalAll(data.totalAll || data.items.length);
       }
@@ -497,6 +503,14 @@ function ActionFeed({ deals, onAction, onSwitchTab }) {
       setFeedItems(buildFeedItems(deals));
     });
   }, [deals.length]);
+
+  useEffect(() => { fetchFeed(); }, [fetchFeed]);
+
+  // Auto-refresh every 2 minutes
+  useEffect(() => {
+    const interval = setInterval(fetchFeed, 120000);
+    return () => clearInterval(interval);
+  }, [fetchFeed]);
 
   const activeItems = feedItems.filter(i => !done.has(i.id));
   const doneItems = feedItems.filter(i => done.has(i.id));
@@ -531,34 +545,80 @@ function ActionFeed({ deals, onAction, onSwitchTab }) {
 
   return (
     <section>
+      {/* Narration */}
+      {narration && (
+        <div style={{ padding: "12px 16px", background: "var(--bg-sunken)", borderRadius: 10, border: "1px solid var(--rf-hairline, var(--border-subtle))", marginBottom: 16 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
+            <SvgIcon name="sparkles" size={11} style={{ color: "var(--accent)" }} />
+            <span style={{ fontSize: 10, fontWeight: 600, letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--rf-ink-3, var(--text-muted))" }}>Jarvis</span>
+            <span style={{ fontSize: 10, color: "var(--rf-ink-4, var(--text-muted))", marginLeft: "auto", fontFamily: "var(--font-mono, monospace)" }}>
+              {updatedAt ? `Updated ${new Date(updatedAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}` : ""}
+            </span>
+          </div>
+          <p style={{ fontSize: 13.5, lineHeight: 1.6, color: "var(--rf-ink-2, var(--text-primary))", margin: 0, letterSpacing: "-0.003em" }}>{narration}</p>
+        </div>
+      )}
+
       <div className="feed-head">
-        <h2 className="feed-head__title"><SvgIcon name="target" size={11} />Today's Actions</h2>
-        <span className="feed-head__sub">{totalAll} items across {1 + (sections.quick_reply?.count ? 1 : 0) + (sections.fyi?.count ? 1 : 0) + (sections.system?.count ? 1 : 0)} sections</span>
+        <h2 className="feed-head__title"><SvgIcon name="target" size={11} />Intelligence Feed</h2>
         <div className="feed-head__counter">
-          <span>{activeItems.length} action items</span>
+          <span>{activeItems.length} items</span>
           <span style={{ color: "var(--border-strong)" }}>·</span>
           <span className="done">{handled} handled</span>
         </div>
       </div>
       <div className="feed-progress"><div className="feed-progress__fill" style={{ width: `${pct}%` }} /></div>
-      <div className="feed-filters">
-        {FILTERS.map(f => (
-          <button key={f.id} className={`feed-filter ${filter === f.id ? "is-active" : ""}`} onClick={() => setFilter(f.id)}>
-            {f.label}
-            <span className="feed-filter__count">{counts[f.id]}</span>
-          </button>
-        ))}
-      </div>
-      <div className="feed">
-        {visible.map(it => <FeedItem key={it.id} item={it} onDone={toggleDone} onAction={onAction} isDone={false} />)}
-        {visible.length === 0 && (
-          <div className="empty">
-            <SvgIcon name="check" size={24} style={{ color: "var(--success)" }} />
-            <div className="empty__title">All caught up</div>
-            <div className="empty__sub">Jarvis will surface the next item when something changes.</div>
+
+      {/* TIER 1: Live Stream */}
+      {(tiers.live?.items?.length > 0) && (
+        <>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, margin: "16px 0 8px", padding: "0 2px" }}>
+            <div style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--danger)", animation: "pulse-primary 2.8s ease-in-out infinite" }} />
+            <span style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--danger)" }}>Live Stream</span>
+            <span style={{ fontSize: 11, color: "var(--rf-ink-4, var(--text-muted))" }}>{tiers.live.count} items</span>
           </div>
-        )}
-      </div>
+          <div className="feed">
+            {tiers.live.items.filter(i => !done.has(i.id)).map(it => <FeedItem key={it.id} item={it} onDone={toggleDone} onAction={onAction} isDone={false} />)}
+          </div>
+        </>
+      )}
+
+      {/* TIER 2: Urgent Today */}
+      {(tiers.expiring?.items?.length > 0) && (
+        <>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, margin: "20px 0 8px", padding: "0 2px" }}>
+            <SvgIcon name="zap" size={11} style={{ color: "var(--warning)" }} />
+            <span style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--warning)" }}>Urgent Today</span>
+            <span style={{ fontSize: 11, color: "var(--rf-ink-4, var(--text-muted))" }}>{tiers.expiring.count} items</span>
+          </div>
+          <div className="feed">
+            {tiers.expiring.items.filter(i => !done.has(i.id)).map(it => <FeedItem key={it.id} item={it} onDone={toggleDone} onAction={onAction} isDone={false} />)}
+          </div>
+        </>
+      )}
+
+      {/* TIER 3: Deal Intelligence */}
+      {(tiers.intelligence?.items?.length > 0) && (
+        <>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, margin: "20px 0 8px", padding: "0 2px" }}>
+            <SvgIcon name="brain" size={11} style={{ color: "var(--accent)" }} />
+            <span style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--accent)" }}>Deal Intelligence</span>
+            <span style={{ fontSize: 11, color: "var(--rf-ink-4, var(--text-muted))" }}>{tiers.intelligence.count} items</span>
+          </div>
+          <div className="feed">
+            {tiers.intelligence.items.filter(i => !done.has(i.id)).map(it => <FeedItem key={it.id} item={it} onDone={toggleDone} onAction={onAction} isDone={false} />)}
+          </div>
+        </>
+      )}
+
+      {/* Empty state if all tiers empty */}
+      {activeItems.length === 0 && (
+        <div className="empty">
+          <SvgIcon name="check" size={24} style={{ color: "var(--success)" }} />
+          <div className="empty__title">All caught up</div>
+          <div className="empty__sub">Jarvis will surface the next item when something changes.</div>
+        </div>
+      )}
       {doneItems.length > 0 && (
         <>
           <button className={`completed-head ${showCompleted ? "is-open" : ""}`} onClick={() => setShowCompleted(s => !s)}>
