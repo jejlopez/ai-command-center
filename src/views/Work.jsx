@@ -63,16 +63,17 @@ export default function Work() {
       {/* Mode bar — Work page modes */}
       <ModeBar mode={mode} setMode={setMode} badges={badges} />
 
-      {/* Sales sub-header: StatsBar with Sales/Playbook toggle */}
+      {/* Sales sub-header: tabs only (stats hidden on Today's Focus — KPI bar replaces them) */}
       {mode === "sales" && (
         <StatsBar
-          deals={mergedDeals}
-          proposals={proposals}
-          followUps={followUps}
-          leads={supaLeads}
+          deals={salesTab === "today" ? [] : mergedDeals}
+          proposals={salesTab === "today" ? [] : proposals}
+          followUps={salesTab === "today" ? [] : followUps}
+          leads={salesTab === "today" ? [] : supaLeads}
           activeTab={salesTab}
           onTabChange={setSalesTab}
           inboxCount={inboxCount}
+          hideStats={salesTab === "today"}
         />
       )}
 

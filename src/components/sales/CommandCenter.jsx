@@ -107,15 +107,21 @@ function Halo({ size = 32 }) {
 
 function MorningBrief({ deals, brief }) {
   const totalValue = deals.reduce((s, d) => s + (d.value || 0), 0);
-  const hotCount = deals.filter(d => daysSince(d.last_activity || d.updated_at) < 2).length;
-  const coldCount = deals.filter(d => daysSince(d.last_activity || d.updated_at) > 14).length;
-  const coldValue = deals.filter(d => daysSince(d.last_activity || d.updated_at) > 14).reduce((s, d) => s + (d.value || 0), 0);
+  const hotDeals = deals.filter(d => daysSince(d.last_activity || d.updated_at) <= 7);
+  const coldDeals = deals.filter(d => daysSince(d.last_activity || d.updated_at) > 14);
+  const coldValue = coldDeals.reduce((s, d) => s + (d.value || 0), 0);
 
   const topDeal = deals.reduce((best, d) => (d.value || 0) > (best?.value || 0) ? d : best, deals[0]);
-  const riskDeal = deals.filter(d => daysSince(d.last_activity) > 14 && (d.value || 0) > 50000).sort((a, b) => (b.value || 0) - (a.value || 0))[0];
+  const riskDeal = coldDeals.filter(d => (d.value || 0) > 0).sort((a, b) => (b.value || 0) - (a.value || 0))[0];
+  const mostActive = hotDeals.sort((a, b) => daysSince(a.last_activity) - daysSince(b.last_activity))[0];
+
+  // Deals in negotiations (closest to closing)
+  const negotiating = deals.filter(d => (d.stage || "").toLowerCase().includes("negotiat"));
+  const negotiatingValue = negotiating.reduce((s, d) => s + (d.value || 0), 0);
 
   const g = greeting();
   const briefText = brief?.todayBriefing;
+  const signalCount = hotDeals.length + coldDeals.length;
 
   return (
     <section className="brief">
@@ -123,7 +129,7 @@ function MorningBrief({ deals, brief }) {
         <div className="brief__halo"><Halo size={34} /></div>
         <div>
           <div className="brief__label"><SvgIcon name="zap" size={11} /> Jarvis Morning Intelligence</div>
-          <div className="brief__meta">Generated just now · {deals.length} deals scanned · {hotCount + coldCount} signals detected</div>
+          <div className="brief__meta">Generated just now · {deals.length} deals scanned · {signalCount} signals detected</div>
         </div>
         <div className="brief__actions">
           <button className="btn btn--ghost btn--sm"><SvgIcon name="refresh" size={11} />Regenerate</button>
@@ -134,19 +140,26 @@ function MorningBrief({ deals, brief }) {
       ) : (
         <>
           <p className="brief__body">
-            {g}. Your pipeline is at <span className="money">{fmtUsd(totalValue)}</span> across {deals.length} active deals.
-            {topDeal && <> <a className="entity">{topDeal.org_name || topDeal.title}</a> is your biggest opportunity at <span className="money">{fmtUsd(topDeal.value)}</span>.</>}
+            {g}. Your pipeline sits at <span className="money">{fmtUsd(totalValue)}</span> across {deals.length} active deals
+            {negotiating.length > 0 && <>, with <span className="money">{fmtUsd(negotiatingValue)}</span> in active negotiations</>}.
+            {mostActive && <> <a className="entity">{mostActive.org_name || mostActive.title}</a> is showing the strongest activity — last touched {timeSinceLabel(mostActive.last_activity)}.</>}
+            {topDeal && topDeal !== mostActive && <> <a className="entity">{topDeal.org_name || topDeal.title}</a> remains the biggest opportunity at <span className="money">{fmtUsd(topDeal.value)}</span>.</>}
           </p>
-          {riskDeal && (
-            <p className="brief__body">
-              Watch <a className="entity">{riskDeal.org_name || riskDeal.title}</a> — <span className="risk">going cold</span> with {daysSince(riskDeal.last_activity)} days of silence and <span className="money">{fmtUsd(riskDeal.value)}</span> at stake.
-              {coldCount > 1 && <> {coldCount} deals total showing churn risk, <span className="money">{fmtUsd(coldValue)}</span> exposed.</>}
-            </p>
-          )}
+          <p className="brief__body">
+            {riskDeal ? (
+              <>The day needs you here first: <a className="entity">{riskDeal.org_name || riskDeal.title}</a> has been silent {daysSince(riskDeal.last_activity)} days — <span className="risk">churn risk is rising</span> with <span className="money">{fmtUsd(riskDeal.value)}</span> at stake.
+              {coldDeals.length > 1 && <> {coldDeals.length} deals total going cold, <span className="money">{fmtUsd(coldValue)}</span> exposed.</>}
+              </>
+            ) : (
+              <>No urgent fires today. Focus on advancing your {negotiating.length > 0 ? `${negotiating.length} negotiations` : "pipeline"} — estimated impact if you close one this week: <span className="money">{fmtUsd(negotiating[0]?.value || topDeal?.value || 0)}</span>.</>
+            )}
+          </p>
         </>
       )}
       <div className="brief__foot">
         <span className="sparkle"><SvgIcon name="sparkles" size={11} style={{ color: "var(--accent)" }} /> Signal sources: inbox, CRM events, engagement tracking</span>
+        <span className="sep">·</span>
+        <span>Next re-rank in 58 min</span>
         <span className="sep">·</span>
         <span><span className="sync-dot" />All systems synced</span>
       </div>
@@ -175,10 +188,13 @@ function KPI({ label, value, unit, delta, deltaTone, variant, spark, sparkColor 
 
 function KPIBar({ deals }) {
   const totalValue = deals.reduce((s, d) => s + (d.value || 0), 0);
-  const hotDeals = deals.filter(d => daysSince(d.last_activity || d.updated_at) < 2);
+  // Hot = active in last 7 days (48h too narrow for weekly activity patterns)
+  const hotDeals = deals.filter(d => daysSince(d.last_activity || d.updated_at) <= 7);
+  // Cold = no activity in 14+ days
   const coldDeals = deals.filter(d => daysSince(d.last_activity || d.updated_at) > 14);
   const atRiskValue = coldDeals.reduce((s, d) => s + (d.value || 0), 0);
-  const overdue = deals.filter(d => (d.days_in_stage || 0) > 14);
+  // Overdue = no activity in 7+ days (since days_in_stage isn't populated from Pipedrive)
+  const overdue = deals.filter(d => daysSince(d.last_activity || d.updated_at) > 7);
   const closingStages = ["negotiations started", "signing"];
   const closingValue = deals.filter(d => closingStages.some(s => (d.stage || "").toLowerCase().includes(s))).reduce((s, d) => s + (d.value || 0), 0);
 
@@ -186,9 +202,9 @@ function KPIBar({ deals }) {
     <div className="kpis">
       <KPI label="Pipeline Value" value={fmtUsd(totalValue)} delta={`${deals.length} deals`} deltaTone="up" spark={[3, 4, 5, 4, 6, 7, 8, 9]} sparkColor="var(--success)" />
       <KPI label="Active Deals" value={deals.length} unit={`across ${new Set(deals.map(d => d.stage)).size} stages`} delta="open" deltaTone="up" />
-      <KPI label="Hot Deals" value={hotDeals.length} delta="last 48h" deltaTone="up" spark={[3, 4, 5, 4, 6, 6, 7, hotDeals.length]} />
-      <KPI label="At Risk" value={coldDeals.length} unit={`· ${fmtUsd(atRiskValue)}`} variant="danger" delta="exposed" deltaTone="down" spark={[1, 1, 2, 2, 2, 3, 3, coldDeals.length]} sparkColor="var(--danger)" />
-      <KPI label="Follow-ups Due" value={overdue.length} unit={`· ${overdue.length} overdue`} variant="warn" delta={`${overdue.length} overdue`} deltaTone="warn" spark={[6, 7, 8, 10, 11, 11, 12, overdue.length]} sparkColor="var(--warning)" />
+      <KPI label="Hot Deals" value={hotDeals.length} delta="active this week" deltaTone={hotDeals.length > 5 ? "up" : "down"} spark={[3, 4, 5, 4, 6, 6, 7, hotDeals.length]} />
+      <KPI label="At Risk" value={coldDeals.length} unit={`· ${fmtUsd(atRiskValue)}`} variant="danger" delta={`${fmtUsd(atRiskValue)} exposed`} deltaTone="down" spark={[1, 1, 2, 2, 2, 3, 3, coldDeals.length]} sparkColor="var(--danger)" />
+      <KPI label="Needs Attention" value={overdue.length} unit="deals" variant={overdue.length > 10 ? "warn" : ""} delta={`silent >7 days`} deltaTone="warn" spark={[6, 7, 8, 10, 11, 11, 12, overdue.length]} sparkColor="var(--warning)" />
       <KPI label="Closing this mo." value={fmtUsd(closingValue)} delta="in negotiations" deltaTone="up" spark={[50, 80, 110, 150, 180, 220, 250, closingValue / 1000]} sparkColor="var(--success)" />
     </div>
   );
@@ -531,15 +547,15 @@ function PipelineHealth({ deals }) {
 
 function HotDeals({ deals }) {
   const hot = deals
-    .filter(d => daysSince(d.last_activity || d.updated_at) < 3)
-    .sort((a, b) => (b.value || 0) - (a.value || 0))
+    .filter(d => daysSince(d.last_activity || d.updated_at) <= 7)
+    .sort((a, b) => daysSince(a.last_activity || a.updated_at) - daysSince(b.last_activity || b.updated_at))
     .slice(0, 5);
 
   return (
     <section className="panel">
       <div className="panel__head">
         <h3 className="panel__title">Hot Deals</h3>
-        <span className="panel__sub">Last 48h · {hot.length} active</span>
+        <span className="panel__sub">This week · {hot.length} active</span>
       </div>
       <div>
         {hot.map((d, i) => (
@@ -548,14 +564,14 @@ function HotDeals({ deals }) {
               <div className="hot__body">
                 <div className="hot__name">
                   {d.org_name || d.title}
-                  {daysSince(d.last_activity || d.updated_at) < 1 && <span className="hot__fire">●</span>}
+                  {daysSince(d.last_activity || d.updated_at) <= 3 && <span className="hot__fire">●</span>}
                 </div>
                 <div className="hot__sub">{d.contact_name || d.stage} · {timeSinceLabel(d.last_activity || d.updated_at)}</div>
               </div>
             </div>
             <div className="hot__right">
               <div className="hot__value">{fmtUsd(d.value)}</div>
-              <div className={`hot__status-dot hot__status-dot--${daysSince(d.last_activity) < 1 ? "hot" : "active"}`} />
+              <div className={`hot__status-dot hot__status-dot--${daysSince(d.last_activity) <= 3 ? "hot" : "active"}`} />
             </div>
           </div>
         ))}
@@ -569,7 +585,7 @@ function HotDeals({ deals }) {
 
 function Insights({ deals }) {
   const coldDeals = deals.filter(d => daysSince(d.last_activity || d.updated_at) > 14);
-  const hotDeals = deals.filter(d => daysSince(d.last_activity || d.updated_at) < 2);
+  const hotDeals = deals.filter(d => daysSince(d.last_activity || d.updated_at) <= 7);
   const coldValue = coldDeals.reduce((s, d) => s + (d.value || 0), 0);
 
   return (
