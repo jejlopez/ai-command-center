@@ -416,11 +416,73 @@ function buildFeedItems(deals) {
   return items;
 }
 
+// ── Collapsible Section ──────────────────────────────────────────────────────
+
+function FeedSection({ title, emoji, count, defaultOpen = false, bulkLabel, onBulk, children }) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div style={{ marginTop: open ? 0 : 8 }}>
+      <button
+        className={`completed-head ${open ? "is-open" : ""}`}
+        onClick={() => setOpen(o => !o)}
+        style={{ marginTop: 6, marginBottom: open ? 8 : 0 }}
+      >
+        <span style={{ fontSize: 13 }}>{emoji}</span>
+        <span>{title}</span>
+        <span className="completed-head__count">{count} items</span>
+        {bulkLabel && !open && (
+          <span className="btn btn--sm btn--ghost" style={{ marginLeft: "auto", marginRight: 8 }}
+            onClick={(e) => { e.stopPropagation(); onBulk?.(); }}>
+            {bulkLabel}
+          </span>
+        )}
+        <SvgIcon name="chev_r" size={11} className="completed-head__chev" />
+      </button>
+      {open && (
+        <div style={{ marginBottom: 12 }}>
+          {bulkLabel && (
+            <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8 }}>
+              <button className="btn btn--sm btn--primary" onClick={onBulk}>{bulkLabel}</button>
+            </div>
+          )}
+          {children}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Compact email row for sections 2-4 ───────────────────────────────────────
+
+function CompactEmailRow({ item, onAction }) {
+  return (
+    <div className="fitem fitem--mini" style={{ gridTemplateColumns: "22px 1fr auto", opacity: 1, cursor: "pointer" }}
+      onClick={() => onAction?.("email", item)}>
+      <div className="fitem__type fitem__type--email" style={{ width: 22, height: 22 }}>
+        <SvgIcon name="mail" size={11} />
+      </div>
+      <div>
+        <div className="fitem__title" style={{ fontSize: 12.5, fontWeight: 500 }}>{item.title}</div>
+        <div className="fitem__kind" style={{ fontSize: 10.5 }}>{item.action}</div>
+      </div>
+      <div style={{ display: "flex", gap: 4 }}>
+        {(item.buttons || []).map((b, i) => (
+          <button key={i} className={`btn btn--sm ${b.primary ? "btn--primary" : "btn--ghost"}`}
+            onClick={(e) => { e.stopPropagation(); onAction?.(b.label.toLowerCase().includes("thanks") || b.label.toLowerCase().includes("confirm") ? "quick_reply" : "email", item); }}>
+            {b.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function ActionFeed({ deals, onAction, onSwitchTab }) {
   const [filter, setFilter] = useState("all");
   const [done, setDone] = useState(new Set());
   const [feedItems, setFeedItems] = useState([]);
-  const [feedCounts, setFeedCounts] = useState({ all: 0, call: 0, email: 0, task: 0, deal: 0 });
+  const [sections, setSections] = useState({});
+  const [totalAll, setTotalAll] = useState(0);
   const [showCompleted, setShowCompleted] = useState(false);
 
   // Fetch real action feed from jarvisd
@@ -428,10 +490,10 @@ function ActionFeed({ deals, onAction, onSwitchTab }) {
     jarvis.crmActionFeed?.().then(data => {
       if (data?.items) {
         setFeedItems(data.items);
-        setFeedCounts(data.counts || { all: data.items.length });
+        setSections(data.sections || {});
+        setTotalAll(data.totalAll || data.items.length);
       }
     }).catch(() => {
-      // Fallback to client-side generation if API unavailable
       setFeedItems(buildFeedItems(deals));
     });
   }, [deals.length]);
@@ -471,9 +533,9 @@ function ActionFeed({ deals, onAction, onSwitchTab }) {
     <section>
       <div className="feed-head">
         <h2 className="feed-head__title"><SvgIcon name="target" size={11} />Today's Actions</h2>
-        <span className="feed-head__sub">Everything that needs you today — ranked by Jarvis</span>
+        <span className="feed-head__sub">{totalAll} items across {1 + (sections.quick_reply?.count ? 1 : 0) + (sections.fyi?.count ? 1 : 0) + (sections.system?.count ? 1 : 0)} sections</span>
         <div className="feed-head__counter">
-          <span>{activeItems.length} items</span>
+          <span>{activeItems.length} action items</span>
           <span style={{ color: "var(--border-strong)" }}>·</span>
           <span className="done">{handled} handled</span>
         </div>
@@ -522,6 +584,45 @@ function ActionFeed({ deals, onAction, onSwitchTab }) {
             </div>
           )}
         </>
+      )}
+
+      {/* Section 2: Quick Replies */}
+      {sections.quick_reply?.count > 0 && (
+        <FeedSection title="Quick Replies" emoji="✉️" count={sections.quick_reply.count}
+          bulkLabel="Send all quick thanks"
+          onBulk={() => { /* batch quick reply */ }}>
+          <div className="feed" style={{ gap: 2 }}>
+            {(sections.quick_reply.items || []).map(it => (
+              <CompactEmailRow key={it.id} item={it} onAction={onAction} />
+            ))}
+          </div>
+        </FeedSection>
+      )}
+
+      {/* Section 3: FYI — Inbox Scan */}
+      {sections.fyi?.count > 0 && (
+        <FeedSection title="FYI — Inbox Scan" emoji="📖" count={sections.fyi.count}
+          bulkLabel="Mark all as read"
+          onBulk={() => { /* batch mark read */ }}>
+          <div className="feed" style={{ gap: 2 }}>
+            {(sections.fyi.items || []).map(it => (
+              <CompactEmailRow key={it.id} item={it} onAction={onAction} />
+            ))}
+          </div>
+        </FeedSection>
+      )}
+
+      {/* Section 4: System & Automated */}
+      {sections.system?.count > 0 && (
+        <FeedSection title="System & Automated" emoji="🔔" count={sections.system.count}
+          bulkLabel="Archive all"
+          onBulk={() => { /* batch archive */ }}>
+          <div className="feed" style={{ gap: 2 }}>
+            {(sections.system.items || []).map(it => (
+              <CompactEmailRow key={it.id} item={it} onAction={onAction} />
+            ))}
+          </div>
+        </FeedSection>
       )}
     </section>
   );

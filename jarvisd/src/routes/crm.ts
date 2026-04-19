@@ -134,32 +134,68 @@ export async function crmRoutes(app: FastifyInstance) {
     const dayMs = 86400000;
     const items: any[] = [];
 
-    // 1. EMAILS — ONLY urgent and action_needed from triage (not FYI)
-    // FYI = informational, already triaged. Only show emails that truly need a response.
-    const emails = db.prepare(`
+    // 1. EMAILS — pull ALL non-Samuel emails, classify into sections
+    const allEmails = db.prepare(`
       SELECT * FROM email_triage
       WHERE LOWER(from_addr) NOT LIKE '%3plcenter%'
         AND LOWER(from_addr) NOT LIKE '%samuel%'
-        AND LOWER(from_addr) NOT LIKE '%noreply%'
-        AND LOWER(from_addr) NOT LIKE '%no-reply%'
-        AND LOWER(from_addr) NOT LIKE '%notifications%'
-        AND LOWER(from_addr) NOT LIKE '%mailer-daemon%'
-        AND LOWER(from_addr) NOT LIKE '%scheduler%'
-        AND LOWER(from_addr) NOT LIKE '%info@pipedrive%'
-        AND LOWER(from_addr) NOT LIKE '%linkedin%'
-        AND LOWER(from_addr) NOT LIKE '%google.com%'
-        AND LOWER(from_addr) NOT LIKE '%beehiiv%'
-        AND LOWER(from_addr) NOT LIKE '%olimp%'
-        AND LOWER(subject) NOT LIKE '%order number%'
-        AND LOWER(subject) NOT LIKE '%unsubscribe%'
-        AND category IN ('urgent', 'action_needed')
         AND action_taken = 0
-        AND created_at >= datetime('now', '-5 days')
-      ORDER BY
-        CASE category WHEN 'urgent' THEN 1 WHEN 'action_needed' THEN 2 END,
-        created_at DESC
-      LIMIT 10
+        AND created_at >= datetime('now', '-7 days')
+      ORDER BY created_at DESC
+      LIMIT 100
     `).all() as any[];
+
+    // System/automated sender patterns
+    const SYSTEM_SENDERS = /noreply|no-reply|notifications?@|mailer-daemon|scheduler|info@pipedrive|linkedin|google\.com|beehiiv|helpdesk|support@|billing@|team@|hello@.*\.io|updates@|olimp|donotreply/i;
+    const SYSTEM_SUBJECTS = /unsubscribe|order number|your receipt|payment confirmation|password reset|verify your|welcome to|getting started|weekly digest|daily summary|newsletter/i;
+    // Quick reply: ONLY when the subject itself IS the acknowledgment (not containing business topics)
+    const QUICK_REPLY_PATTERN = /^(re:\s*)?(thanks?|thank you|confirmed?|accepted|approved|sounds good|works for me|see you|looking forward|noted|got it|perfect|great|ok|will do)\s*$/i;
+
+    // Classify each email into a section
+    const emails: any[] = [];   // section 1: needs action
+    const quickReplies: any[] = []; // section 2
+    const fyiEmails: any[] = []; // section 3
+    const systemEmails: any[] = []; // section 4
+
+    for (const e of allEmails) {
+      const from = (e.from_addr || "").toLowerCase();
+      const subj = (e.subject || "").toLowerCase();
+      const snippet = (e.snippet || "").toLowerCase();
+
+      // Section 4: System/automated
+      if (SYSTEM_SENDERS.test(from) || SYSTEM_SUBJECTS.test(subj)) {
+        systemEmails.push(e);
+        continue;
+      }
+
+      // Section 2: Quick replies — only when the entire subject is an acknowledgment
+      if (QUICK_REPLY_PATTERN.test(subj.trim())) {
+        quickReplies.push(e);
+        continue;
+      }
+
+      // Section 1: Needs action — classified as urgent/action, has business keywords, or linked to a deal
+      const isUrgent = e.category === "urgent" || e.category === "action_needed";
+      const hasActionKeywords = /contract|proposal|pricing|price|quote|urgent|problem|issue|refund|cancel|question|deadline|asap|schedule|meeting|call|invoice|payment|warehousing|fulfillment|3pl|shipment/i.test(subj + " " + snippet);
+      const linkedToDeal = activeDeals.some((d: any) => {
+        const ce = (d.contact_email || "").toLowerCase();
+        if (!ce) return false;
+        // Match by full email or by sender domain (for company matches)
+        const senderDomain = from.includes("@") ? from.split("@").pop()?.split(">")[0] : "";
+        const contactDomain = ce.split("@")[1] || "";
+        return (ce && from.includes(ce)) || (senderDomain && contactDomain && senderDomain === contactDomain && !["gmail.com","yahoo.com","hotmail.com","outlook.com"].includes(senderDomain));
+      });
+
+      // Only promote to section 1 if explicitly urgent/action_needed by the triage classifier
+      // FYI emails never go to section 1 regardless of keywords or deal links
+      if (isUrgent) {
+        emails.push(e);
+        continue;
+      }
+
+      // Section 3: FYI (everything else)
+      fyiEmails.push(e);
+    }
 
     for (const e of emails) {
       // Try to link to a deal by sender domain or linked_email
@@ -316,7 +352,51 @@ export async function crmRoutes(app: FastifyInstance) {
       }
     }
 
-    return { items: items.slice(0, 20), counts, total: items.length };
+    // Build section 2: quick replies
+    const quickReplyItems = quickReplies.map((e: any, i: number) => {
+      const senderName = (e.from_addr || "").split("<")[0].replace(/"/g, "").trim();
+      return {
+        id: `quick-${e.id}`, type: "email", section: "quick_reply",
+        title: senderName, action: e.subject || "(no subject)",
+        email: e, sourceId: e.message_id, threadId: e.thread_id,
+        buttons: [{ label: "Quick thanks", icon: "send", primary: true }, { label: "Skip" }],
+      };
+    });
+
+    // Build section 3: FYI
+    const fyiItems = fyiEmails.map((e: any) => {
+      const senderName = (e.from_addr || "").split("<")[0].replace(/"/g, "").trim();
+      return {
+        id: `fyi-${e.id}`, type: "email", section: "fyi",
+        title: senderName, action: e.subject || "(no subject)",
+        email: e, sourceId: e.message_id, threadId: e.thread_id,
+      };
+    });
+
+    // Build section 4: system
+    const systemItems = systemEmails.map((e: any) => {
+      const senderName = (e.from_addr || "").split("<")[0].replace(/"/g, "").trim();
+      return {
+        id: `sys-${e.id}`, type: "email", section: "system",
+        title: senderName, action: e.subject || "(no subject)",
+        email: e, sourceId: e.message_id,
+      };
+    });
+
+    const totalAll = items.length + quickReplyItems.length + fyiItems.length + systemItems.length;
+
+    return {
+      items: items.slice(0, 20),
+      counts,
+      total: items.length,
+      sections: {
+        needs_action: { count: items.length, label: "Needs Action" },
+        quick_reply: { count: quickReplyItems.length, label: "Quick Replies", items: quickReplyItems },
+        fyi: { count: fyiItems.length, label: "FYI — Inbox Scan", items: fyiItems },
+        system: { count: systemItems.length, label: "System & Automated", items: systemItems },
+      },
+      totalAll,
+    };
   });
 
   // Mark an action feed item as handled
