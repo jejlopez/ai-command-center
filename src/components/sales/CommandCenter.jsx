@@ -2,10 +2,14 @@
 // Editorial morning brief, KPI bar, unified action feed, pipeline health, hot deals, insights.
 // Imports dedicated CSS (command-center.css + tokens).
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, lazy, Suspense } from "react";
+import { AnimatePresence } from "framer-motion";
 import { jarvis } from "../../lib/jarvis.js";
 import "../../styles/command-center-tokens.css";
 import "../../styles/command-center.css";
+
+const DealRoomPanel = lazy(() => import("./DealRoomPanel.jsx").then(m => ({ default: m.DealRoomPanel })));
+const EmailDetailModal = lazy(() => import("./EmailDetailModal.jsx").then(m => ({ default: m.EmailDetailModal })));
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -105,7 +109,8 @@ function Halo({ size = 32 }) {
 
 // ── Morning Brief ────────────────────────────────────────────────────────────
 
-function MorningBrief({ deals, brief }) {
+function MorningBrief({ deals, brief, onOpenDeal }) {
+  const findDeal = (name) => deals.find(d => (d.org_name || d.title || "").toLowerCase().includes(name.toLowerCase()));
   const totalValue = deals.reduce((s, d) => s + (d.value || 0), 0);
   const hotDeals = deals.filter(d => daysSince(d.last_activity || d.updated_at) <= 7);
   const coldDeals = deals.filter(d => daysSince(d.last_activity || d.updated_at) > 14);
@@ -142,12 +147,12 @@ function MorningBrief({ deals, brief }) {
           <p className="brief__body">
             {g}. Your pipeline sits at <span className="money">{fmtUsd(totalValue)}</span> across {deals.length} active deals
             {negotiating.length > 0 && <>, with <span className="money">{fmtUsd(negotiatingValue)}</span> in active negotiations</>}.
-            {mostActive && <> <a className="entity">{mostActive.org_name || mostActive.title}</a> is showing the strongest activity — last touched {timeSinceLabel(mostActive.last_activity)}.</>}
-            {topDeal && topDeal !== mostActive && <> <a className="entity">{topDeal.org_name || topDeal.title}</a> remains the biggest opportunity at <span className="money">{fmtUsd(topDeal.value)}</span>.</>}
+            {mostActive && <> <a className="entity" style={{cursor:"pointer"}} onClick={()=>onOpenDeal?.(mostActive)}>{mostActive.org_name || mostActive.title}</a> is showing the strongest activity — last touched {timeSinceLabel(mostActive.last_activity)}.</>}
+            {topDeal && topDeal !== mostActive && <> <a className="entity" style={{cursor:"pointer"}} onClick={()=>onOpenDeal?.(topDeal)}>{topDeal.org_name || topDeal.title}</a> remains the biggest opportunity at <span className="money">{fmtUsd(topDeal.value)}</span>.</>}
           </p>
           <p className="brief__body">
             {riskDeal ? (
-              <>The day needs you here first: <a className="entity">{riskDeal.org_name || riskDeal.title}</a> has been silent {daysSince(riskDeal.last_activity)} days — <span className="risk">churn risk is rising</span> with <span className="money">{fmtUsd(riskDeal.value)}</span> at stake.
+              <>The day needs you here first: <a className="entity" style={{cursor:"pointer"}} onClick={()=>onOpenDeal?.(riskDeal)}>{riskDeal.org_name || riskDeal.title}</a> has been silent {daysSince(riskDeal.last_activity)} days — <span className="risk">churn risk is rising</span> with <span className="money">{fmtUsd(riskDeal.value)}</span> at stake.
               {coldDeals.length > 1 && <> {coldDeals.length} deals total going cold, <span className="money">{fmtUsd(coldValue)}</span> exposed.</>}
               </>
             ) : (
@@ -169,9 +174,9 @@ function MorningBrief({ deals, brief }) {
 
 // ── KPI Card ─────────────────────────────────────────────────────────────────
 
-function KPI({ label, value, unit, delta, deltaTone, variant, spark, sparkColor }) {
+function KPI({ label, value, unit, delta, deltaTone, variant, spark, sparkColor, onClick }) {
   return (
-    <div className={`kpi ${variant ? `kpi--${variant}` : ""}`}>
+    <div className={`kpi ${variant ? `kpi--${variant}` : ""}`} onClick={onClick} style={onClick ? {cursor:"pointer"} : {}}>
       <div className="kpi__label">
         <span>{label}</span>
         {spark && <span className="kpi__spark"><Sparkline points={spark} color={sparkColor} /></span>}
@@ -186,7 +191,7 @@ function KPI({ label, value, unit, delta, deltaTone, variant, spark, sparkColor 
   );
 }
 
-function KPIBar({ deals }) {
+function KPIBar({ deals, onSwitchTab }) {
   const totalValue = deals.reduce((s, d) => s + (d.value || 0), 0);
   // Hot = active in last 7 days (48h too narrow for weekly activity patterns)
   const hotDeals = deals.filter(d => daysSince(d.last_activity || d.updated_at) <= 7);
@@ -200,7 +205,7 @@ function KPIBar({ deals }) {
 
   return (
     <div className="kpis">
-      <KPI label="Pipeline Value" value={fmtUsd(totalValue)} delta={`${deals.length} deals`} deltaTone="up" spark={[3, 4, 5, 4, 6, 7, 8, 9]} sparkColor="var(--success)" />
+      <KPI label="Pipeline Value" value={fmtUsd(totalValue)} delta={`${deals.length} deals`} deltaTone="up" spark={[3, 4, 5, 4, 6, 7, 8, 9]} sparkColor="var(--success)" onClick={()=>onSwitchTab?.("deals")} />
       <KPI label="Active Deals" value={deals.length} unit={`across ${new Set(deals.map(d => d.stage)).size} stages`} delta="open" deltaTone="up" />
       <KPI label="Hot Deals" value={hotDeals.length} delta="active this week" deltaTone={hotDeals.length > 5 ? "up" : "down"} spark={[3, 4, 5, 4, 6, 6, 7, hotDeals.length]} />
       <KPI label="At Risk" value={coldDeals.length} unit={`· ${fmtUsd(atRiskValue)}`} variant="danger" delta={`${fmtUsd(atRiskValue)} exposed`} deltaTone="down" spark={[1, 1, 2, 2, 2, 3, 3, coldDeals.length]} sparkColor="var(--danger)" />
@@ -219,8 +224,25 @@ const TYPE_ICONS = {
   deal: "target",
 };
 
-function FeedItem({ item, onDone, isDone }) {
+function FeedItem({ item, onDone, onAction, isDone }) {
   const [whyOpen, setWhyOpen] = useState(false);
+
+  const handleBtn = (btn, e) => {
+    e.stopPropagation();
+    const l = btn.label.toLowerCase();
+    if (l.includes("call")) onAction?.("call", item);
+    else if (l.includes("see email") || l.includes("see amend")) onAction?.("email", item);
+    else if (l.includes("review draft") || l.includes("review nudge")) onAction?.("draft", item);
+    else if (l.includes("draft email")) onAction?.("compose", item);
+    else if (l.includes("send calendar") || l.includes("reschedule")) onAction?.("calendar", item);
+    else if (l.includes("prep brief") || l.includes("start prep")) onAction?.("brief", item);
+    else if (l.includes("send rate")) onAction?.("compose", item);
+    else if (l.includes("open doc")) onAction?.("open_deal", item);
+    else if (l.includes("update now") || l.includes("confirm") || l.includes("quick thanks")) onAction?.("quick_reply", item);
+    else if (l.includes("mark done") || l.includes("skip") || l.includes("not yet")) onDone?.(item.id);
+    else onAction?.("open_deal", item);
+  };
+
   return (
     <article className={`fitem ${item.urgent ? "is-urgent" : ""} ${item.pulse ? "is-urgent-pulse" : ""} ${isDone ? "is-done" : ""}`}>
       <div className={`fitem__type fitem__type--${item.type}`}>
@@ -230,7 +252,7 @@ function FeedItem({ item, onDone, isDone }) {
       <div className="fitem__body">
         <div className="fitem__line1">
           <div className="fitem__line1-left">
-            <span className="fitem__title">{item.title}</span>
+            <span className="fitem__title" style={{cursor:"pointer"}} onClick={(e)=>{e.stopPropagation();onAction?.("open_deal",item);}}>{item.title}</span>
             <span className="fitem__sep">·</span>
             <span className={`fitem__kind ${item.kindTone ? `fitem__kind--${item.kindTone}` : ""}`}>{item.kind}</span>
           </div>
@@ -260,7 +282,8 @@ function FeedItem({ item, onDone, isDone }) {
         </button>
         <div className="fitem__actions">
           {(item.buttons || []).map((b, i) => (
-            <button key={i} className={`btn btn--sm ${b.primary ? (item.urgent ? "btn--danger" : "btn--primary") : "btn--ghost"}`}>
+            <button key={i} className={`btn btn--sm ${b.primary ? (item.urgent ? "btn--danger" : "btn--primary") : "btn--ghost"}`}
+              onClick={(e) => handleBtn(b, e)}>
               {b.icon && <SvgIcon name={b.icon} size={11} />}{b.label}
             </button>
           ))}
@@ -393,7 +416,7 @@ function buildFeedItems(deals) {
   return items;
 }
 
-function ActionFeed({ deals, onOpenDeal, onSwitchTab }) {
+function ActionFeed({ deals, onAction, onSwitchTab }) {
   const [filter, setFilter] = useState("all");
   const [done, setDone] = useState(new Set());
 
@@ -443,7 +466,7 @@ function ActionFeed({ deals, onOpenDeal, onSwitchTab }) {
         ))}
       </div>
       <div className="feed">
-        {visible.map(it => <FeedItem key={it.id} item={it} onDone={toggleDone} isDone={false} />)}
+        {visible.map(it => <FeedItem key={it.id} item={it} onDone={toggleDone} onAction={onAction} isDone={false} />)}
         {visible.length === 0 && (
           <div className="empty">
             <SvgIcon name="check" size={24} style={{ color: "var(--success)" }} />
@@ -654,6 +677,8 @@ function ActionBar({ dealCount, onSwitchTab }) {
 
 export function CommandCenter({ ops, crm, onSwitchTab }) {
   const [brief, setBrief] = useState(null);
+  const [selectedDeal, setSelectedDeal] = useState(null);
+  const [selectedEmail, setSelectedEmail] = useState(null);
 
   const rawDeals = crm?.deals?.length > 0 ? crm.deals : (ops?.deals || []);
 
@@ -669,12 +694,84 @@ export function CommandCenter({ ops, crm, onSwitchTab }) {
     jarvis.brief?.().then(b => setBrief(b)).catch(() => {});
   }, []);
 
+  // Central action handler for all buttons
+  const handleAction = useCallback((action, item) => {
+    const deal = item?.deal || item;
+    switch (action) {
+      case "open_deal":
+        setSelectedDeal(deal);
+        break;
+      case "call":
+        // Log call attempt, open deal panel to timeline
+        if (deal?.contact_phone) {
+          window.open(`tel:${deal.contact_phone}`, "_self");
+        }
+        // Log the call activity
+        jarvis.learningLog?.("deal_judgment", {
+          action: "call_initiated",
+          company: deal?.org_name || deal?.title,
+          contact: deal?.contact_name,
+        }, deal?.id).catch(() => {});
+        setSelectedDeal(deal);
+        break;
+      case "email":
+        // Open email modal for this deal's contact
+        if (deal?.contact_email) {
+          setSelectedEmail({
+            message_id: null,
+            from_addr: deal.contact_email,
+            subject: "",
+            snippet: "",
+            category: "fyi",
+            thread_id: null,
+            created_at: new Date().toISOString(),
+          });
+        } else {
+          setSelectedDeal(deal);
+        }
+        break;
+      case "draft":
+      case "compose":
+        // Open email compose via the draft skill
+        if (deal?.contact_email) {
+          jarvis.emailAiDraft?.(deal.id, "follow_up", {
+            originalFrom: deal.contact_email,
+            originalSubject: deal.org_name || deal.title,
+          }).catch(() => {});
+        }
+        setSelectedDeal(deal);
+        break;
+      case "calendar":
+        // Open Google Calendar with pre-filled invite
+        const calTitle = encodeURIComponent(`Meeting with ${deal?.contact_name || deal?.org_name || "Contact"}`);
+        const calDetails = encodeURIComponent(`Re: ${deal?.org_name || deal?.title}`);
+        window.open(`https://calendar.google.com/calendar/u/0/r/eventedit?text=${calTitle}&details=${calDetails}`, "_blank");
+        break;
+      case "brief":
+        // Open deal with timeline tab (shows all context)
+        setSelectedDeal(deal);
+        break;
+      case "quick_reply":
+        // Quick action — mark as handled
+        jarvis.learningLog?.("deal_judgment", {
+          action: "quick_reply",
+          company: deal?.org_name || deal?.title,
+        }, deal?.id).catch(() => {});
+        break;
+      case "stage_update":
+        setSelectedDeal(deal);
+        break;
+      default:
+        setSelectedDeal(deal);
+    }
+  }, []);
+
   return (
     <main className="main">
-      <MorningBrief deals={deals} brief={brief} />
-      <KPIBar deals={deals} />
+      <MorningBrief deals={deals} brief={brief} onOpenDeal={setSelectedDeal} />
+      <KPIBar deals={deals} onSwitchTab={onSwitchTab} />
       <div className="grid">
-        <ActionFeed deals={deals} onSwitchTab={onSwitchTab} />
+        <ActionFeed deals={deals} onAction={handleAction} onSwitchTab={onSwitchTab} />
         <div className="rail">
           <PipelineHealth deals={deals} />
           <HotDeals deals={deals} />
@@ -682,6 +779,22 @@ export function CommandCenter({ ops, crm, onSwitchTab }) {
         </div>
       </div>
       <ActionBar dealCount={deals.length} onSwitchTab={onSwitchTab} />
+
+      {/* Deal detail panel */}
+      <Suspense fallback={null}>
+        <AnimatePresence>
+          {selectedDeal && (
+            <DealRoomPanel deal={selectedDeal} onClose={() => setSelectedDeal(null)} />
+          )}
+        </AnimatePresence>
+      </Suspense>
+
+      {/* Email detail modal */}
+      {selectedEmail && (
+        <Suspense fallback={null}>
+          <EmailDetailModal triageEmail={selectedEmail} onClose={() => setSelectedEmail(null)} />
+        </Suspense>
+      )}
     </main>
   );
 }
