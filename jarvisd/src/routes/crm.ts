@@ -169,7 +169,7 @@ export async function crmRoutes(app: FastifyInstance) {
     } catch {} // Gmail might be rate limited — fail silently
 
     // System/automated sender patterns
-    const SYSTEM_SENDERS = /noreply|no-reply|notifications?@|mailer-daemon|scheduler|info@pipedrive|linkedin|google\.com|beehiiv|helpdesk|support@|billing@|team@.*(?:apollo|hubspot|salesforce|slack|outreach|calendly|intercom|drift|mailchimp|sendgrid)|hello@.*\.io|updates@|olimp|donotreply|apollo\s*team/i;
+    const SYSTEM_SENDERS = /noreply|no-reply|notifications?@|mailer-daemon|scheduler|pipedrive|linkedin|google\.com|beehiiv|helpdesk|support@|billing@|alerts@|team@.*(?:apollo|hubspot|salesforce|slack|outreach|calendly|intercom|drift|mailchimp|sendgrid)|hello@.*\.io|updates@|olimp|donotreply|apollo\s*team|info@notifications/i;
     const SYSTEM_SUBJECTS = /unsubscribe|order number|your receipt|payment confirmation|password reset|verify your|welcome to|getting started|weekly digest|daily summary|newsletter|ref:\s*po#|trans:\s*\d/i;
     // Quick reply: ONLY when the subject itself IS the acknowledgment (not containing business topics)
     const QUICK_REPLY_PATTERN = /^(re:\s*)?(thanks?|thank you|confirmed?|accepted|approved|sounds good|works for me|see you|looking forward|noted|got it|perfect|great|ok|will do)\s*$/i;
@@ -216,15 +216,30 @@ export async function crmRoutes(app: FastifyInstance) {
       });
 
       // All non-system, non-quick-reply emails go to the main feed
-      // The tier split will put recent ones in Tier 1 (unreplied)
       emails.push(e);
       continue;
-
-      // Section 3: FYI (everything else)
-      fyiEmails.push(e);
     }
 
+    // ── DEDUPLICATE by thread_id — keep only the most recent message per thread ──
+    const threadMap = new Map<string, any>();
     for (const e of emails) {
+      const tid = e.thread_id || e.message_id || e.id;
+      const existing = threadMap.get(tid);
+      if (!existing) {
+        threadMap.set(tid, e);
+      } else {
+        // Keep the more recent one
+        const existingTime = new Date(existing.created_at).getTime() || 0;
+        const newTime = new Date(e.created_at).getTime() || 0;
+        if (newTime > existingTime) threadMap.set(tid, e);
+      }
+    }
+    const dedupedEmails = Array.from(threadMap.values());
+
+    // Everything not in main feed goes to FYI
+    // (currently all go to main, FYI populated from the section split later)
+
+    for (const e of dedupedEmails) {
       // Try to link to a deal by sender domain or linked_email
       const senderDomain = (e.from_addr || "").includes("@") ? e.from_addr.split("@").pop()?.split(">")[0]?.toLowerCase() : "";
       const linkedDeal = e.linked_email
