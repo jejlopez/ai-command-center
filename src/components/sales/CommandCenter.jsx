@@ -506,9 +506,9 @@ function ActionFeed({ deals, onAction, onSwitchTab }) {
 
   useEffect(() => { fetchFeed(); }, [fetchFeed]);
 
-  // Auto-refresh every 2 minutes
+  // Auto-refresh every 60 seconds
   useEffect(() => {
-    const interval = setInterval(fetchFeed, 120000);
+    const interval = setInterval(fetchFeed, 60000);
     return () => clearInterval(interval);
   }, [fetchFeed]);
 
@@ -551,9 +551,12 @@ function ActionFeed({ deals, onAction, onSwitchTab }) {
           <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
             <SvgIcon name="sparkles" size={11} style={{ color: "var(--accent)" }} />
             <span style={{ fontSize: 10, fontWeight: 600, letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--rf-ink-3, var(--text-muted))" }}>Jarvis</span>
-            <span style={{ fontSize: 10, color: "var(--rf-ink-4, var(--text-muted))", marginLeft: "auto", fontFamily: "var(--font-mono, monospace)" }}>
-              {updatedAt ? `Updated ${new Date(updatedAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}` : ""}
-            </span>
+            <button onClick={fetchFeed} style={{ marginLeft: "auto", cursor: "pointer", background: "none", border: "none", padding: 0, display: "flex", alignItems: "center", gap: 4 }}>
+              <div style={{ width: 5, height: 5, borderRadius: "50%", background: "var(--success)", animation: "pulse-primary 2.8s ease-in-out infinite" }} />
+              <span style={{ fontSize: 10, color: "var(--rf-ink-4, var(--text-muted))", fontFamily: "var(--font-mono, monospace)" }}>
+                {updatedAt ? `${new Date(updatedAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })} · refreshes every 60s` : "loading..."}
+              </span>
+            </button>
           </div>
           <p style={{ fontSize: 13.5, lineHeight: 1.6, color: "var(--rf-ink-2, var(--text-primary))", margin: 0, letterSpacing: "-0.003em" }}>{narration}</p>
         </div>

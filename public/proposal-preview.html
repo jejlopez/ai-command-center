@@ -1,0 +1,633 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>3PL Center — Proposal for Roof-Tech US</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Inter', -apple-system, sans-serif;
+    color: #1a1a2e;
+    background: #f8f9fa;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .page {
+    max-width: 850px;
+    margin: 0 auto;
+    background: #fff;
+    box-shadow: 0 4px 40px rgba(0,0,0,0.08);
+  }
+
+  /* ── Header ─────────────────────────────────────────── */
+  .header {
+    background: linear-gradient(135deg, #0a1628 0%, #0f2440 100%);
+    color: #fff;
+    padding: 48px 56px 40px;
+    position: relative;
+    overflow: hidden;
+  }
+  .header::after {
+    content: '';
+    position: absolute;
+    top: -60px; right: -60px;
+    width: 300px; height: 300px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(6,182,212,0.12) 0%, transparent 70%);
+  }
+  .header__top {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 36px;
+    position: relative;
+    z-index: 1;
+  }
+  .logo {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .logo__icon {
+    width: 44px; height: 44px;
+    background: rgba(6,182,212,0.15);
+    border: 2px solid rgba(6,182,212,0.4);
+    border-radius: 12px;
+    display: grid;
+    place-items: center;
+  }
+  .logo__icon svg {
+    width: 22px; height: 22px;
+  }
+  .logo__text {
+    font-size: 20px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+  }
+  .logo__sub {
+    font-size: 11px;
+    color: rgba(255,255,255,0.5);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    margin-top: 2px;
+  }
+  .header__meta {
+    text-align: right;
+    font-size: 12px;
+    color: rgba(255,255,255,0.6);
+    line-height: 1.8;
+  }
+  .header__meta strong {
+    color: rgba(255,255,255,0.9);
+  }
+  .header__title {
+    position: relative;
+    z-index: 1;
+  }
+  .header__label {
+    font-size: 11px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: #06b6d4;
+    font-weight: 600;
+    margin-bottom: 8px;
+  }
+  .header__h1 {
+    font-size: 32px;
+    font-weight: 300;
+    letter-spacing: -0.02em;
+    line-height: 1.2;
+    margin-bottom: 6px;
+  }
+  .header__h1 strong {
+    font-weight: 600;
+  }
+  .header__for {
+    font-size: 15px;
+    color: rgba(255,255,255,0.7);
+  }
+  .header__for strong {
+    color: #fff;
+    font-weight: 500;
+  }
+
+  /* ── Section ────────────────────────────────────────── */
+  .section {
+    padding: 36px 56px;
+    border-bottom: 1px solid #eef0f4;
+  }
+  .section:last-child { border-bottom: none; }
+  .section__label {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: #06b6d4;
+    margin-bottom: 6px;
+  }
+  .section__title {
+    font-size: 20px;
+    font-weight: 600;
+    color: #1a1a2e;
+    letter-spacing: -0.01em;
+    margin-bottom: 16px;
+  }
+  .section p {
+    font-size: 14px;
+    color: #4a5568;
+    line-height: 1.7;
+    margin-bottom: 12px;
+  }
+
+  /* ── Stats row ──────────────────────────────────────── */
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1px;
+    background: #eef0f4;
+    border-radius: 12px;
+    overflow: hidden;
+    margin: 24px 0;
+  }
+  .stat {
+    background: #fff;
+    padding: 20px 16px;
+    text-align: center;
+  }
+  .stat__value {
+    font-size: 24px;
+    font-weight: 600;
+    color: #1a1a2e;
+    letter-spacing: -0.02em;
+  }
+  .stat__value--accent { color: #06b6d4; }
+  .stat__label {
+    font-size: 10px;
+    color: #94a3b8;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    margin-top: 4px;
+    font-weight: 500;
+  }
+
+  /* ── Service cards ──────────────────────────────────── */
+  .services {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin: 20px 0;
+  }
+  .svc {
+    padding: 20px;
+    border: 1px solid #eef0f4;
+    border-radius: 10px;
+    transition: border-color 200ms;
+  }
+  .svc:hover { border-color: #06b6d4; }
+  .svc__icon {
+    width: 32px; height: 32px;
+    background: rgba(6,182,212,0.08);
+    border-radius: 8px;
+    display: grid;
+    place-items: center;
+    margin-bottom: 12px;
+    color: #06b6d4;
+    font-size: 16px;
+  }
+  .svc__title {
+    font-size: 14px;
+    font-weight: 600;
+    color: #1a1a2e;
+    margin-bottom: 4px;
+  }
+  .svc__desc {
+    font-size: 12px;
+    color: #64748b;
+    line-height: 1.5;
+  }
+
+  /* ── Pricing table ──────────────────────────────────── */
+  .pricing {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 20px 0;
+    font-size: 13px;
+  }
+  .pricing th {
+    text-align: left;
+    padding: 10px 16px;
+    background: #f1f5f9;
+    font-weight: 600;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #64748b;
+    border-bottom: 2px solid #e2e8f0;
+  }
+  .pricing th:last-child { text-align: right; }
+  .pricing td {
+    padding: 12px 16px;
+    border-bottom: 1px solid #f1f5f9;
+    color: #334155;
+  }
+  .pricing td:last-child {
+    text-align: right;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    color: #1a1a2e;
+  }
+  .pricing tr:hover td { background: #fafbfc; }
+  .pricing .total td {
+    font-weight: 700;
+    font-size: 15px;
+    border-top: 2px solid #1a1a2e;
+    border-bottom: none;
+    padding-top: 14px;
+    color: #1a1a2e;
+  }
+  .pricing .total td:last-child { color: #06b6d4; }
+  .pricing .subtotal td {
+    font-weight: 600;
+    border-top: 1px solid #e2e8f0;
+    color: #1a1a2e;
+  }
+
+  /* ── SLA grid ───────────────────────────────────────── */
+  .sla-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin: 20px 0;
+  }
+  .sla {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 16px;
+    background: #f8fafc;
+    border-radius: 8px;
+    border-left: 3px solid #06b6d4;
+  }
+  .sla__value {
+    font-size: 20px;
+    font-weight: 700;
+    color: #1a1a2e;
+    line-height: 1;
+  }
+  .sla__label {
+    font-size: 12px;
+    color: #64748b;
+    line-height: 1.4;
+  }
+
+  /* ── Next steps ─────────────────────────────────────── */
+  .steps {
+    display: flex;
+    gap: 16px;
+    margin: 24px 0;
+  }
+  .step {
+    flex: 1;
+    padding: 20px;
+    border: 1px solid #eef0f4;
+    border-radius: 10px;
+    text-align: center;
+  }
+  .step__num {
+    width: 28px; height: 28px;
+    background: #06b6d4;
+    color: #fff;
+    border-radius: 50%;
+    display: inline-grid;
+    place-items: center;
+    font-size: 13px;
+    font-weight: 700;
+    margin-bottom: 10px;
+  }
+  .step__title {
+    font-size: 13px;
+    font-weight: 600;
+    color: #1a1a2e;
+    margin-bottom: 4px;
+  }
+  .step__desc {
+    font-size: 11px;
+    color: #94a3b8;
+  }
+
+  /* ── Signature ──────────────────────────────────────── */
+  .sig-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 40px;
+    margin: 30px 0;
+  }
+  .sig {
+    border-top: 2px solid #1a1a2e;
+    padding-top: 12px;
+  }
+  .sig__label {
+    font-size: 10px;
+    color: #94a3b8;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    margin-bottom: 30px;
+  }
+  .sig__line {
+    border-bottom: 1px solid #cbd5e1;
+    margin-bottom: 6px;
+    height: 30px;
+  }
+  .sig__name {
+    font-size: 13px;
+    font-weight: 600;
+    color: #1a1a2e;
+  }
+  .sig__role {
+    font-size: 11px;
+    color: #94a3b8;
+  }
+
+  /* ── Footer ─────────────────────────────────────────── */
+  .footer {
+    background: #0a1628;
+    color: rgba(255,255,255,0.6);
+    padding: 32px 56px;
+    font-size: 11px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .footer a { color: #06b6d4; text-decoration: none; }
+
+  @media print {
+    body { background: #fff; }
+    .page { box-shadow: none; }
+    .section { break-inside: avoid; }
+  }
+</style>
+</head>
+<body>
+
+<div class="page">
+  <!-- HEADER -->
+  <div class="header">
+    <div class="header__top">
+      <div class="logo">
+        <div class="logo__icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="#06b6d4" stroke-width="2" stroke-linecap="round">
+            <path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/>
+            <polyline points="9 22 9 12 15 12 15 22"/>
+          </svg>
+        </div>
+        <div>
+          <div class="logo__text">3PL Center</div>
+          <div class="logo__sub">Warehousing · Fulfillment · Shipping</div>
+        </div>
+      </div>
+      <div class="header__meta">
+        <div><strong>Proposal #3PLC-2026-0472</strong></div>
+        <div>April 20, 2026</div>
+        <div>Valid for 30 days</div>
+      </div>
+    </div>
+    <div class="header__title">
+      <div class="header__label">Service Proposal</div>
+      <h1 class="header__h1">3PL <strong>Fulfillment Partnership</strong></h1>
+      <div class="header__for">Prepared for <strong>Mariko Horike</strong> — Roof-Tech US</div>
+    </div>
+  </div>
+
+  <!-- EXECUTIVE SUMMARY -->
+  <div class="section">
+    <div class="section__label">Executive Summary</div>
+    <h2 class="section__title">Your Dedicated Fulfillment Partner</h2>
+    <p>
+      3PL Center LLC is pleased to present this warehousing and fulfillment proposal for Roof-Tech US. With facilities in New Jersey and California, we provide bi-coastal coverage for your distribution needs — ensuring 2-day ground delivery to 95% of the US population.
+    </p>
+    <p>
+      Based on our analysis of your requirements — 250 pallets across 24 SKUs with approximately 25 pallets in/out per month — we've designed a solution that optimizes your storage costs while maintaining the flexibility to scale as your business grows.
+    </p>
+
+    <div class="stats">
+      <div class="stat">
+        <div class="stat__value stat--accent">250</div>
+        <div class="stat__label">Pallets Storage</div>
+      </div>
+      <div class="stat">
+        <div class="stat__value">24</div>
+        <div class="stat__label">Active SKUs</div>
+      </div>
+      <div class="stat">
+        <div class="stat__value">2</div>
+        <div class="stat__label">Locations</div>
+      </div>
+      <div class="stat">
+        <div class="stat__value stat--accent">99.8%</div>
+        <div class="stat__label">Order Accuracy</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SCOPE OF SERVICES -->
+  <div class="section">
+    <div class="section__label">Scope of Services</div>
+    <h2 class="section__title">What We Handle</h2>
+    <div class="services">
+      <div class="svc">
+        <div class="svc__icon">📦</div>
+        <div class="svc__title">Pallet Storage</div>
+        <div class="svc__desc">Climate-controlled warehouse space. 250 pallet positions across 24 SKUs with dedicated racking.</div>
+      </div>
+      <div class="svc">
+        <div class="svc__icon">📋</div>
+        <div class="svc__title">Receiving & Putaway</div>
+        <div class="svc__desc">Inbound container/pallet receiving with inspection, barcode verification, and system check-in.</div>
+      </div>
+      <div class="svc">
+        <div class="svc__icon">🚚</div>
+        <div class="svc__title">Outbound Shipping</div>
+        <div class="svc__desc">Pallet-out fulfillment with BOL generation, carrier scheduling, and delivery confirmation.</div>
+      </div>
+      <div class="svc">
+        <div class="svc__icon">📊</div>
+        <div class="svc__title">Inventory Management</div>
+        <div class="svc__desc">Real-time WMS access, cycle counts, lot tracking, and monthly reporting.</div>
+      </div>
+      <div class="svc">
+        <div class="svc__icon">↩️</div>
+        <div class="svc__title">Returns Processing</div>
+        <div class="svc__desc">Quality inspection, restocking, and disposition management for returned goods.</div>
+      </div>
+      <div class="svc">
+        <div class="svc__icon">📞</div>
+        <div class="svc__title">Dedicated Support</div>
+        <div class="svc__desc">Named account manager, same-day email response, and quarterly business reviews.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- PRICING -->
+  <div class="section">
+    <div class="section__label">Pricing</div>
+    <h2 class="section__title">Monthly Cost Breakdown</h2>
+    <p>All rates based on projected monthly volumes. Volume discounts apply at tier thresholds shown below.</p>
+
+    <table class="pricing">
+      <thead>
+        <tr>
+          <th>Service</th>
+          <th>Description</th>
+          <th>Rate</th>
+          <th>Monthly Est.</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Pallet Storage</td>
+          <td>250 pallets × mixed-size tiers</td>
+          <td>$17.50 – $25.00/pallet</td>
+          <td>$5,265.00</td>
+        </tr>
+        <tr>
+          <td>Receiving</td>
+          <td>25 pallets/month inbound</td>
+          <td>$14.00/pallet</td>
+          <td>$350.00</td>
+        </tr>
+        <tr>
+          <td>Outbound</td>
+          <td>25 pallets/month outbound</td>
+          <td>$14.00/pallet</td>
+          <td>$350.00</td>
+        </tr>
+        <tr>
+          <td>BOL Processing</td>
+          <td>25 bills of lading/month</td>
+          <td>$4.50/BOL</td>
+          <td>$112.50</td>
+        </tr>
+        <tr>
+          <td>Admin Fee</td>
+          <td>Account management & reporting</td>
+          <td>Flat monthly</td>
+          <td>$199.00</td>
+        </tr>
+        <tr class="subtotal">
+          <td colspan="3">Monthly Subtotal</td>
+          <td>$6,276.50</td>
+        </tr>
+        <tr class="total">
+          <td colspan="3">Estimated Annual Value</td>
+          <td>$75,318.00</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <p style="font-size: 12px; color: #94a3b8; margin-top: 16px;">
+      * Storage rates based on PandaDoc tier schedule. Actual rates depend on pallet dimensions and weight class.<br>
+      * Volume discounts: 5% at 300+ pallets, 10% at 500+ pallets, custom pricing at 1,000+ pallets.<br>
+      * Setup fee: One-time $1,500 for system integration and initial receiving.
+    </p>
+  </div>
+
+  <!-- SLA / TERMS -->
+  <div class="section">
+    <div class="section__label">Service Level Agreement</div>
+    <h2 class="section__title">Our Guarantees</h2>
+
+    <div class="sla-grid">
+      <div class="sla">
+        <div class="sla__value">99.8%</div>
+        <div class="sla__label">Order accuracy<br>rate guarantee</div>
+      </div>
+      <div class="sla">
+        <div class="sla__value">2 PM</div>
+        <div class="sla__label">Same-day shipping<br>cutoff (EST)</div>
+      </div>
+      <div class="sla">
+        <div class="sla__value">99.5%</div>
+        <div class="sla__label">Inventory accuracy<br>cycle count</div>
+      </div>
+      <div class="sla">
+        <div class="sla__value">4 hrs</div>
+        <div class="sla__label">Customer service<br>response time</div>
+      </div>
+      <div class="sla">
+        <div class="sla__value">Weekly</div>
+        <div class="sla__label">Inventory &<br>activity reports</div>
+      </div>
+      <div class="sla">
+        <div class="sla__value">Quarterly</div>
+        <div class="sla__label">Business review<br>meetings</div>
+      </div>
+    </div>
+
+    <p style="font-size: 12px; color: #94a3b8;">
+      Contract term: 12 months with 30-day termination notice after initial term. Net-30 payment terms. Monthly invoicing on the 1st.
+    </p>
+  </div>
+
+  <!-- NEXT STEPS -->
+  <div class="section">
+    <div class="section__label">Next Steps</div>
+    <h2 class="section__title">Getting Started</h2>
+
+    <div class="steps">
+      <div class="step">
+        <div class="step__num">1</div>
+        <div class="step__title">Review & Sign</div>
+        <div class="step__desc">Review this proposal and sign below to confirm</div>
+      </div>
+      <div class="step">
+        <div class="step__num">2</div>
+        <div class="step__title">Onboarding</div>
+        <div class="step__desc">WMS setup, receiving schedule, and system integration</div>
+      </div>
+      <div class="step">
+        <div class="step__num">3</div>
+        <div class="step__title">Go Live</div>
+        <div class="step__desc">First inbound received and operations begin</div>
+      </div>
+    </div>
+
+    <p>Target go-live: <strong>4-6 weeks</strong> from signature. We'll assign a dedicated onboarding manager to ensure a smooth transition.</p>
+
+    <div class="sig-grid">
+      <div class="sig">
+        <div class="sig__label">3PL Center LLC</div>
+        <div class="sig__line"></div>
+        <div class="sig__name">Samuel Eddi</div>
+        <div class="sig__role">VP of Sales</div>
+      </div>
+      <div class="sig">
+        <div class="sig__label">Roof-Tech US</div>
+        <div class="sig__line"></div>
+        <div class="sig__name">Mariko Horike</div>
+        <div class="sig__role">Authorized Signatory</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- FOOTER -->
+  <div class="footer">
+    <div>
+      <strong style="color: #fff;">3PL Center LLC</strong><br>
+      New Jersey · California<br>
+      <a href="mailto:samuele@3plcenter.com">samuele@3plcenter.com</a> · (201) 555-0180
+    </div>
+    <div style="text-align: right;">
+      Proposal #3PLC-2026-0472<br>
+      Confidential<br>
+      © 2026 3PL Center LLC
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

@@ -125,10 +125,15 @@ export async function crmRoutes(app: FastifyInstance) {
   app.get("/crm/action-feed", async () => {
     const LEAD_STAGES = ["new lead", "new leads", "pipedrive leads", "gather info"];
     const allDeals = getDeals(undefined, "open");
-    const activeDeals = allDeals.filter((d: any) =>
-      (d.pipeline || "").trim() === "New pipeline" &&
-      !LEAD_STAGES.some(ls => (d.stage || "").toLowerCase().includes(ls))
-    );
+    const activeDeals = allDeals.filter((d: any) => {
+      const name = (d.org_name || d.title || "").trim();
+      const pipeline = (d.pipeline || "").trim();
+      // Filter: New pipeline only, no lead stages, no URL names, must have contact
+      return pipeline === "New pipeline" &&
+        !LEAD_STAGES.some(ls => (d.stage || "").toLowerCase().includes(ls)) &&
+        !name.startsWith("http://") && !name.startsWith("https://") &&
+        (d.contact_name || d.contact_email);
+    });
 
     const now = Date.now();
     const dayMs = 86400000;
@@ -152,6 +157,17 @@ export async function crmRoutes(app: FastifyInstance) {
       return !isNaN(t) && t > sevenDaysAgoMs;
     });
 
+    // Check Gmail for replied/archived status on recent emails (batch, max 10)
+    // This prevents showing emails Samuel already handled in Gmail
+    let repliedThreadIds = new Set<string>();
+    try {
+      const { listMessages: gmailList } = await import("../lib/providers/gmail_actions.js");
+      const sentRecent = await gmailList(20, "in:sent newer_than:7d");
+      for (const msg of sentRecent) {
+        if (msg.threadId) repliedThreadIds.add(msg.threadId);
+      }
+    } catch {} // Gmail might be rate limited — fail silently
+
     // System/automated sender patterns
     const SYSTEM_SENDERS = /noreply|no-reply|notifications?@|mailer-daemon|scheduler|info@pipedrive|linkedin|google\.com|beehiiv|helpdesk|support@|billing@|team@.*(?:apollo|hubspot|salesforce|slack|outreach|calendly|intercom|drift|mailchimp|sendgrid)|hello@.*\.io|updates@|olimp|donotreply|apollo\s*team/i;
     const SYSTEM_SUBJECTS = /unsubscribe|order number|your receipt|payment confirmation|password reset|verify your|welcome to|getting started|weekly digest|daily summary|newsletter|ref:\s*po#|trans:\s*\d/i;
@@ -159,6 +175,7 @@ export async function crmRoutes(app: FastifyInstance) {
     const QUICK_REPLY_PATTERN = /^(re:\s*)?(thanks?|thank you|confirmed?|accepted|approved|sounds good|works for me|see you|looking forward|noted|got it|perfect|great|ok|will do)\s*$/i;
 
     // Classify each email into a section
+    // Skip emails where Samuel already replied to the thread
     const emails: any[] = [];   // section 1: needs action
     const quickReplies: any[] = []; // section 2
     const fyiEmails: any[] = []; // section 3
@@ -168,6 +185,11 @@ export async function crmRoutes(app: FastifyInstance) {
       const from = (e.from_addr || "").toLowerCase();
       const subj = (e.subject || "").toLowerCase();
       const snippet = (e.snippet || "").toLowerCase();
+
+      // Skip emails Samuel already replied to in Gmail
+      if (e.thread_id && repliedThreadIds.has(e.thread_id)) {
+        continue;
+      }
 
       // Section 4: System/automated
       if (SYSTEM_SENDERS.test(from) || SYSTEM_SUBJECTS.test(subj)) {
