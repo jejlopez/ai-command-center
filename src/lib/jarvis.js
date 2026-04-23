@@ -45,6 +45,66 @@ const get  = (p)    => request("GET", p);
 const post = (p, b) => request("POST", p, b);
 const del  = (p)    => request("DELETE", p);
 
+/**
+ * Server-Sent Events consumer for POST /ask/stream.
+ * Yields parsed event objects from the agentic loop:
+ *   { type: "iteration_start", iteration, model }
+ *   { type: "text_delta", text }
+ *   { type: "tool_use_start", id, name, input, iteration }
+ *   { type: "tool_use_result", id, name, content, isError, queued?, approvalId? }
+ *   { type: "iteration_end", iteration, stopReason, tokensIn, tokensOut, costUsd }
+ *   { type: "done", text, stopReason, iterations, totalCostUsd, pendingApprovals }
+ *   { type: "result", ...AgenticRunResult }
+ *   { type: "error", message }
+ *
+ * Throws on non-2xx HTTP response. Caller should wrap in try/catch.
+ */
+async function* askStream(prompt, opts = {}) {
+  const res = await fetch(`${BASE}/ask/stream`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ prompt, ...opts }),
+  });
+  if (!res.ok) {
+    let detail = "";
+    try { detail = (await res.json())?.error ?? ""; } catch {}
+    throw new Error(`/ask/stream → ${res.status}${detail ? ` (${detail})` : ""}`);
+  }
+  if (!res.body) throw new Error("/ask/stream: no response body");
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      // SSE events are separated by a blank line ("\n\n")
+      let sep;
+      while ((sep = buffer.indexOf("\n\n")) !== -1) {
+        const block = buffer.slice(0, sep);
+        buffer = buffer.slice(sep + 2);
+        // Skip SSE comments (lines starting with ":")
+        if (!block || block.startsWith(":")) continue;
+        const dataLines = block
+          .split("\n")
+          .filter(l => l.startsWith("data: "))
+          .map(l => l.slice(6));
+        if (!dataLines.length) continue;
+        const raw = dataLines.join("\n");
+        try {
+          yield JSON.parse(raw);
+        } catch {
+          // malformed event — ignore
+        }
+      }
+    }
+  } finally {
+    try { reader.releaseLock(); } catch {}
+  }
+}
+
 export const jarvis = {
   // Core
   health:          () => get("/health"),
@@ -55,6 +115,7 @@ export const jarvis = {
   decideApproval:  (id, decision, reason) =>
     post(`/approvals/${id}/decide`, { decision, reason }),
   ask: (prompt, opts = {}) => post("/ask", { prompt, ...opts }),
+  askStream: (prompt, opts = {}) => askStream(prompt, opts),
 
   // Vault
   vaultUnlock:     () => post("/vault/unlock"),

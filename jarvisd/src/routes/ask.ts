@@ -18,6 +18,8 @@ import { audit } from "../lib/audit.js";
 import { tagText, sensitivityToPrivacy } from "../lib/tagger.js";
 import { policyEngine } from "../lib/policy.js";
 import { sanitizeForContext } from "../lib/sanitize.js";
+import { runAgenticTurn } from "../lib/agentic.js";
+import { vault as vaultLib } from "../lib/vault.js";
 
 const AskBody = z.object({
   prompt: z.string().min(1),
@@ -191,6 +193,130 @@ export async function askRoutes(app: FastifyInstance): Promise<void> {
       audit({ actor: "system", action: "ask.fail", subject: runId, reason: err.message });
       reply.code(500);
       return { error: err.message };
+    }
+  });
+
+  // --- POST /ask/stream ---------------------------------------------------
+  // Agentic SSE endpoint. Drives the tool-use loop from lib/agentic.ts and
+  // emits iteration/text/tool events as Server-Sent Events for the UI to
+  // render incrementally. Feature-flagged via JARVIS_AGENTIC_LOOP — when
+  // unset/"1" it's on; "0" disables and returns 501.
+  app.post("/ask/stream", async (req, reply) => {
+    const flag = process.env.JARVIS_AGENTIC_LOOP;
+    if (flag === "0" || flag === "false") {
+      reply.code(501);
+      return { error: "agentic loop disabled — use POST /ask" };
+    }
+
+    const parsed = AskBody.safeParse(req.body);
+    if (!parsed.success) {
+      reply.code(400);
+      return { error: parsed.error.message };
+    }
+
+    try {
+      assertBudgetAvailable();
+    } catch (err: any) {
+      reply.code(402);
+      return { error: err.message };
+    }
+
+    if (vaultLib.isLocked()) {
+      reply.code(423);
+      return { error: "vault locked — needed for Anthropic API key" };
+    }
+
+    const { prompt: rawPrompt, context: rawContext } = parsed.data;
+    const { clean: prompt, stripped } = sanitizeForContext(rawPrompt);
+    const context = rawContext ? sanitizeForContext(rawContext).clean : undefined;
+    if (stripped.length > 0) {
+      audit({
+        actor: "user",
+        action: "prompt_injection.filtered",
+        metadata: { stripped, originalLength: rawPrompt.length, route: "ask_stream" },
+      });
+    }
+
+    const liveContext = await gatherContext(prompt);
+    const systemPrompt =
+      JARVIS_SYSTEM_PROMPT + liveContext + (context ? `\n\n${context}` : "");
+
+    const runId = randomUUID();
+    audit({ actor: "user", action: "ask_stream", subject: runId, metadata: { promptLen: prompt.length } });
+
+    // SSE headers — bypass Fastify's JSON serializer by using reply.raw.
+    reply.raw.writeHead(200, {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache, no-transform",
+      Connection: "keep-alive",
+      "X-Accel-Buffering": "no",
+    });
+    // Tell Fastify we've taken over the reply.
+    reply.hijack();
+
+    const writeEvent = (payload: unknown) => {
+      try {
+        reply.raw.write(`data: ${JSON.stringify(payload)}\n\n`);
+      } catch {
+        /* connection closed — nothing to do */
+      }
+    };
+
+    // Keep-alive heartbeat (SSE comment) every 15s so intermediary proxies
+    // don't drop the connection on long tool runs.
+    const heartbeat = setInterval(() => {
+      try {
+        reply.raw.write(`: hb\n\n`);
+      } catch {
+        clearInterval(heartbeat);
+      }
+    }, 15_000);
+
+    // Client disconnect → abort the agentic loop so we stop burning tokens.
+    // The signal propagates through runAgenticTurn → messages.stream, which
+    // tears down the HTTP connection to Anthropic mid-stream.
+    //
+    // After reply.hijack(), Fastify releases the response; the 'close' event
+    // can surface on either the raw request or the raw response, so we bind
+    // to both and guard with a one-shot flag.
+    let clientGone = false;
+    const abortCtrl = new AbortController();
+    const onClientGone = (src: string) => {
+      if (clientGone) return;
+      clientGone = true;
+      abortCtrl.abort();
+      clearInterval(heartbeat);
+      audit({ actor: "user", action: "ask_stream.client_gone", subject: runId, metadata: { source: src } });
+    };
+    req.raw.on("close", () => onClientGone("req.raw"));
+    reply.raw.on("close", () => onClientGone("reply.raw"));
+
+    try {
+      const result = await runAgenticTurn({
+        runId,
+        userPrompt: prompt,
+        system: systemPrompt,
+        signal: abortCtrl.signal,
+        onEvent: (evt) => {
+          if (!clientGone) writeEvent(evt);
+        },
+      });
+      if (!clientGone) {
+        writeEvent({ type: "result", ...result });
+      }
+    } catch (err: any) {
+      // Abort errors are already swallowed inside runAgenticTurn — this catch
+      // is for real failures (auth, network, provider errors).
+      if (!clientGone) {
+        writeEvent({ type: "error", message: err?.message ?? String(err) });
+      }
+    } finally {
+      clearInterval(heartbeat);
+      try {
+        reply.raw.end();
+      } catch {
+        /* ignore */
+      }
     }
   });
 }

@@ -1,12 +1,38 @@
 import { useState, useRef, useEffect } from "react";
-import { Send, Loader2, Zap, Mic, MicOff, Volume2, VolumeX } from "lucide-react";
+import { Send, Loader2, Zap, Mic, MicOff, Volume2, VolumeX, ShieldAlert } from "lucide-react";
 import { jarvis } from "../../lib/jarvis.js";
 import { parseIntent, classifyWithOllama, isConversational } from "../../lib/intentParser.js";
 import { speak, stopSpeaking } from "../../lib/tts.js";
 import { startListening, stopListening, isListening } from "../../lib/voiceInput.js";
+import { useJarvisSocket } from "../../hooks/useJarvisSocket.js";
 
 function Message({ msg }) {
+  // System messages (approval decision callbacks, etc.) render centered and subdued.
+  if (msg.role === "system") {
+    return (
+      <div className="flex justify-center my-2">
+        <div
+          className={`text-[10px] px-2.5 py-1 rounded-full font-medium uppercase tracking-wider ${
+            msg.kind === "approved"
+              ? "bg-jarvis-green/10 text-jarvis-green"
+              : msg.kind === "denied"
+              ? "bg-white/5 text-jarvis-muted"
+              : "bg-white/5 text-jarvis-muted"
+          }`}
+        >
+          {msg.text}
+        </div>
+      </div>
+    );
+  }
+
   const isUser = msg.role === "user";
+  const tools = Array.isArray(msg.tools) ? msg.tools : [];
+  // Any tool still in `queued` state means the user has work to do in the rail.
+  // Surface that explicitly so the disconnect between "I drafted X" and "X is not done
+  // until you approve" feels deliberate, not broken.
+  const pendingCount = tools.filter((t) => t.state === "queued").length;
+
   return (
     <div className={`flex ${isUser ? "justify-end" : "justify-start"} mb-3`}>
       <div className={`max-w-[85%] px-4 py-3 rounded-2xl text-sm leading-relaxed ${
@@ -23,7 +49,45 @@ function Message({ msg }) {
             )}
           </div>
         )}
-        <div className="whitespace-pre-wrap">{msg.text}</div>
+        {tools.length > 0 && (
+          <div className="mb-1.5 flex flex-wrap gap-1">
+            {tools.map((t, i) => (
+              <span
+                key={i}
+                className={`text-[10px] px-1.5 py-0.5 rounded-md font-mono ${
+                  t.state === "error"
+                    ? "bg-red-500/10 text-red-400"
+                    : t.state === "queued"
+                    ? "bg-amber-500/10 text-amber-400"
+                    : t.state === "done"
+                    ? "bg-jarvis-primary/15 text-jarvis-primary"
+                    : "bg-jarvis-muted/10 text-jarvis-muted"
+                }`}
+              >
+                {t.state === "queued" ? "⏸ " : t.state === "error" ? "✗ " : "🔧 "}
+                {t.name}
+              </span>
+            ))}
+          </div>
+        )}
+        <div className="whitespace-pre-wrap">
+          {msg.text}
+          {msg.streaming && <span className="inline-block w-[2px] h-[1em] bg-jarvis-primary ml-0.5 align-middle animate-pulse" />}
+        </div>
+        {pendingCount > 0 && (
+          <div className="mt-2 flex items-start gap-1.5 rounded-lg bg-jarvis-amber/10 border border-jarvis-amber/30 px-2.5 py-2">
+            <ShieldAlert size={12} className="text-jarvis-amber mt-[1px] shrink-0" />
+            <div className="text-[11px] text-jarvis-amber leading-snug">
+              <span className="font-semibold">
+                {pendingCount === 1 ? "1 action awaiting your approval" : `${pendingCount} actions awaiting your approval`}
+              </span>
+              <span className="text-jarvis-body">
+                {" "}
+                — check the right rail. After approving, ask me to continue.
+              </span>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -75,9 +139,125 @@ export function JarvisChat({ onDisplayUpdate }) {
     if (!ttsEnabled) stopSpeaking();
   }, [ttsEnabled]);
 
+  // When an approval gets decided in the right rail (or anywhere else), find the
+  // assistant message that enqueued it and:
+  //  - flip its tool chip from ⏸ queued → ✓ done (approved) or ✗ error (denied)
+  //  - drop a small system-style message into the chat so the user knows they
+  //    can continue the conversation. This is the v1 "disconnect feels
+  //    intentional" bridge; full inline resume is Phase 1b.
+  useJarvisSocket("approval.decided", (wsMsg) => {
+    const approvalId = wsMsg?.payload?.id;
+    const decision = wsMsg?.payload?.decision;
+    if (!approvalId) return;
+
+    let toolName = null;
+    setMessages((prev) => {
+      let touched = false;
+      const next = prev.map((m) => {
+        if (!Array.isArray(m.tools)) return m;
+        const tools = m.tools.map((t) => {
+          if (t.approvalId === approvalId) {
+            touched = true;
+            toolName = t.name;
+            return { ...t, state: decision === "approve" ? "done" : "error" };
+          }
+          return t;
+        });
+        return touched ? { ...m, tools } : m;
+      });
+      if (!touched) return prev;
+
+      // Append a system notice in the same render so chat history stays consistent.
+      const text =
+        decision === "approve"
+          ? `✓ ${toolName ?? "action"} approved — ready for the next step`
+          : `✗ ${toolName ?? "action"} denied`;
+      return [
+        ...next,
+        {
+          id: `sys-${approvalId}`,
+          role: "system",
+          kind: decision === "approve" ? "approved" : "denied",
+          text,
+        },
+      ];
+    });
+  });
+
   const addAssistantMessage = (text, tier) => {
     setMessages(prev => [...prev, { role: "assistant", text, tier }]);
     if (ttsEnabled) speak(text);
+  };
+
+  /**
+   * Call the agentic streaming endpoint and update a placeholder message
+   * incrementally as events arrive. Falls back to the non-streaming /ask
+   * route on 501 (feature flag off) or network/stream errors.
+   * Returns the final assistant text.
+   */
+  const streamAssistantResponse = async (text, opts = {}, tier = 3) => {
+    const msgId = `stream-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    setMessages(prev => [...prev, { id: msgId, role: "assistant", text: "", tier, streaming: true, tools: [] }]);
+
+    const updateMsg = (patch) => {
+      setMessages(prev => prev.map(m => m.id === msgId ? { ...m, ...patch } : m));
+    };
+    const patchTool = (id, patch) => {
+      setMessages(prev => prev.map(m => {
+        if (m.id !== msgId) return m;
+        const tools = (m.tools || []).map(t => t.id === id ? { ...t, ...patch } : t);
+        return { ...m, tools };
+      }));
+    };
+    const addTool = (id, name) => {
+      setMessages(prev => prev.map(m => {
+        if (m.id !== msgId) return m;
+        const tools = [...(m.tools || []), { id, name, state: "running" }];
+        return { ...m, tools };
+      }));
+    };
+
+    let fullText = "";
+    try {
+      for await (const evt of jarvis.askStream(text, opts)) {
+        if (evt.type === "text_delta") {
+          fullText += evt.text;
+          updateMsg({ text: fullText });
+        } else if (evt.type === "tool_use_start") {
+          addTool(evt.id, evt.name);
+        } else if (evt.type === "tool_use_result") {
+          patchTool(evt.id, {
+            state: evt.isError ? "error" : evt.queued ? "queued" : "done",
+            approvalId: evt.approvalId,
+          });
+        } else if (evt.type === "error") {
+          throw new Error(evt.message);
+        } else if (evt.type === "done" || evt.type === "result") {
+          if (evt.text && !fullText) fullText = evt.text;
+        }
+      }
+    } catch (err) {
+      // Fallback: feature flag off (501) or transient stream failure
+      const msg = String(err?.message ?? err);
+      if (msg.includes("501")) {
+        try {
+          const result = await jarvis.ask(text, opts);
+          fullText = result.text ?? "";
+          updateMsg({ text: fullText, streaming: false });
+          if (ttsEnabled) speak(fullText);
+          return fullText;
+        } catch (fallbackErr) {
+          updateMsg({ text: `Error: ${fallbackErr.message}`, streaming: false, tier: 0 });
+          throw fallbackErr;
+        }
+      }
+      updateMsg({ text: fullText || `Error: ${msg}`, streaming: false, tier: fullText ? tier : 0 });
+      throw err;
+    }
+
+    updateMsg({ streaming: false });
+    if (ttsEnabled && fullText) speak(fullText);
+    return fullText;
   };
 
   const send = async (textOverride) => {
@@ -91,17 +271,6 @@ export function JarvisChat({ onDisplayUpdate }) {
     try {
       // Step 1: Is this a QUESTION or CONVERSATION? → Send to AI directly
       if (isConversational(text)) {
-        let responseText;
-        let tier = 3;
-
-        try {
-          const result = await jarvis.ask(text, { kind: "chat" });
-          responseText = result.text;
-        } catch (e) {
-          responseText = `I couldn't process that right now. Make sure jarvisd is running and a model provider is available.\n\nError: ${e.message}`;
-          tier = 0;
-        }
-
         // Also check if the question relates to data we can display
         const parsed = parseIntent(text);
         if (parsed?.widgets?.length > 0) {
@@ -111,7 +280,11 @@ export function JarvisChat({ onDisplayUpdate }) {
           onDisplayUpdate({ widgets: widgetObjects });
         }
 
-        addAssistantMessage(responseText, tier);
+        try {
+          await streamAssistantResponse(text, { kind: "chat" }, 3);
+        } catch {
+          // streamAssistantResponse already rendered an error message in-place
+        }
       } else {
         // Step 2: Not a question — it's a DISPLAY COMMAND → Pattern match first
         let parsed = parseIntent(text);
@@ -119,16 +292,11 @@ export function JarvisChat({ onDisplayUpdate }) {
 
         if (!parsed) {
           // No pattern match — send to AI as conversation
-          let responseText;
           try {
-            const result = await jarvis.ask(text, { kind: "chat" });
-            responseText = result.text;
-            tier = 3;
-          } catch (e) {
-            responseText = `I couldn't process that. Error: ${e.message}`;
-            tier = 0;
+            await streamAssistantResponse(text, { kind: "chat" }, 3);
+          } catch {
+            // already rendered inline
           }
-          addAssistantMessage(responseText, tier);
         } else {
           // Pattern matched — update display + generate response
           if (parsed.widgets?.length > 0) {

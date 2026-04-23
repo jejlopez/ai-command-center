@@ -144,6 +144,95 @@ end iso
   }
 }
 
+/**
+ * Return events in a window that starts `startDaysFromToday` days from midnight
+ * today and covers `spanDays` full days. The range is inclusive of the start
+ * day and exclusive of the day after the last.
+ *
+ * Examples (relative to local midnight):
+ *   (0, 1)  → today
+ *   (1, 1)  → tomorrow
+ *   (0, 7)  → today + next 6 days
+ *   (7, 7)  → the 7 days starting a week from today
+ */
+export async function getEventsInRange(
+  startDaysFromToday: number,
+  spanDays: number
+): Promise<AppleCalendarEvent[]> {
+  if (!isMac) return [];
+  if (!Number.isFinite(startDaysFromToday) || !Number.isFinite(spanDays) || spanDays <= 0) return [];
+  const startOffsetSec = Math.round(startDaysFromToday) * 86400;
+  const spanSec = Math.round(spanDays) * 86400;
+  const script = `
+set baseDate to current date
+set hours of baseDate to 0
+set minutes of baseDate to 0
+set seconds of baseDate to 0
+set startAt to baseDate + ${startOffsetSec}
+set endAt to startAt + ${spanSec} - 1
+set output to ""
+tell application "Calendar"
+  set cals to every calendar
+  repeat with c in cals
+    try
+      set cname to name of c
+      set rng to (every event of c whose start date is greater than or equal to startAt and start date is less than or equal to endAt)
+      repeat with e in rng
+        try
+          set eid to (uid of e) as string
+          set etitle to (summary of e) as string
+          set sdate to start date of e
+          set edate to end date of e
+          set eloc to ""
+          try
+            set eloc to (location of e) as string
+          end try
+          set output to output & eid & "|" & etitle & "|" & cname & "|" & (my iso(sdate)) & "|" & (my iso(edate)) & "|" & eloc & linefeed
+        end try
+      end repeat
+    end try
+  end repeat
+end tell
+return output
+on iso(d)
+  set y to year of d as string
+  set m to (month of d as integer) as string
+  if (count of m) is 1 then set m to "0" & m
+  set dd to day of d as string
+  if (count of dd) is 1 then set dd to "0" & dd
+  set hh to (hours of d) as string
+  if (count of hh) is 1 then set hh to "0" & hh
+  set mm to (minutes of d) as string
+  if (count of mm) is 1 then set mm to "0" & mm
+  set ss to (seconds of d) as string
+  if (count of ss) is 1 then set ss to "0" & ss
+  return y & "-" & m & "-" & dd & "T" & hh & ":" & mm & ":" & ss
+end iso
+  `;
+  try {
+    const raw = await runOsa(script, 30000);
+    if (!raw) return [];
+    return raw
+      .split(/\r?\n/)
+      .filter((line) => line.trim().length > 0)
+      .map((line) => {
+        const [id, title, calendar, start, end, location] = line.split("|");
+        return {
+          id,
+          title: title ?? "(no title)",
+          calendar,
+          start,
+          end,
+          location: location || undefined,
+          allDay: false,
+        } as AppleCalendarEvent;
+      });
+  } catch (err: any) {
+    audit({ actor: "system", action: "apple_calendar.range.fail", reason: err.message });
+    return [];
+  }
+}
+
 export async function calendarStatus(): Promise<{ available: boolean; error?: string }> {
   if (!isMac) return { available: false, error: "not macOS" };
   try {

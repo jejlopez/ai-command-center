@@ -9,6 +9,12 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { db } from "../db/db.js";
 import { spentTodayUsd, dailyBudgetUsd } from "../lib/cost.js";
+import {
+  toolLeaderboard,
+  agenticTotalsSince,
+  avgCostPerSkillRun,
+  startOfTodayIso,
+} from "../lib/tool_stats.js";
 import type {
   CostEventRow,
   CostSummary,
@@ -142,5 +148,55 @@ export async function costRoutes(app: FastifyInstance): Promise<void> {
     }));
 
     return { today, last7Days, topModels };
+  });
+
+  // GET /cost/tools — per-tool leaderboard (calls, errors, cost, duration).
+  // Query params:
+  //   since=ISO    window start (default: last 30d)
+  //   scope=today  shortcut for since = start of today
+  app.get("/cost/tools", async (req) => {
+    const q = req.query as Record<string, string> | undefined;
+    let since: string | undefined;
+    if (q?.scope === "today") since = startOfTodayIso();
+    else if (q?.since) since = q.since;
+    const rows = toolLeaderboard({ sinceIso: since });
+    return {
+      since: since ?? "last 30d",
+      tools: rows.map((r) => ({ ...r, totalCostUsd: Number(r.totalCostUsd.toFixed(6)) })),
+    };
+  });
+
+  // GET /cost/agentic — roll-up of agentic-loop activity.
+  // Query params:
+  //   since=ISO    default: start of today
+  //   skill=NAME   optional: also include avg cost per run for this skill
+  app.get("/cost/agentic", async (req) => {
+    const q = req.query as Record<string, string> | undefined;
+    const since = q?.since ?? startOfTodayIso();
+    const totals = agenticTotalsSince(since);
+    const base = {
+      since,
+      turns: totals.turns,
+      toolCalls: totals.toolCalls,
+      erroredToolCalls: totals.erroredToolCalls,
+      queuedToolCalls: totals.queuedToolCalls,
+      totalCostUsd: Number(totals.totalCostUsd.toFixed(6)),
+      avgCostPerTurnUsd: Number(totals.avgCostPerTurnUsd.toFixed(6)),
+      tokensIn: totals.tokensIn,
+      tokensOut: totals.tokensOut,
+    };
+    if (q?.skill) {
+      const skillStats = avgCostPerSkillRun(q.skill, since);
+      return {
+        ...base,
+        skill: {
+          name: skillStats.skill,
+          runs: skillStats.runs,
+          totalCostUsd: Number(skillStats.totalCostUsd.toFixed(6)),
+          avgCostUsd: Number(skillStats.avgCostUsd.toFixed(6)),
+        },
+      };
+    }
+    return base;
   });
 }

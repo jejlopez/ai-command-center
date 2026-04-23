@@ -78,7 +78,19 @@ function runMigrationsSync(): void {
     if (row) continue;
 
     const sql = readFileSync(join(MIGRATIONS_DIR, file), "utf8");
-    db.exec(sql);
+    try {
+      db.exec(sql);
+    } catch (err: any) {
+      // ALTER TABLE ADD COLUMN is naturally idempotent in effect — if the
+      // column already exists, the migration's intent is already satisfied.
+      // Tolerate this specific error so repair migrations (e.g. 017) are
+      // safe to re-run on DBs whose schema drifted away from schema_version.
+      if (/duplicate column name/i.test(err?.message ?? "")) {
+        console.warn(`[db] migration ${file}: column already present, treating as applied`);
+      } else {
+        throw err;
+      }
+    }
     // Some migrations self-register in schema_version; ensure the row exists either way.
     db.prepare(
       "INSERT OR IGNORE INTO schema_version(version, applied_at) VALUES (?, ?)"

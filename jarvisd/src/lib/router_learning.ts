@@ -15,7 +15,7 @@ const MODEL_TIERS: string[][] = [
   ["jarvis:latest"],
   ["claude-haiku-4-5-20251001"],
   ["claude-sonnet-4-6", "gemini-2.5-pro"],
-  ["claude-opus-4-6", "gpt-5"],
+  ["claude-opus-4-7", "gpt-5"],
 ];
 
 function tierOf(model: string): number {

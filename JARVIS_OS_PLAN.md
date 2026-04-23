@@ -590,3 +590,86 @@ If you want the biggest single improvement from current state: **M1 step 1 — t
 
 *Check items off above as you land them. Update this file, not a separate TODO list.*
 
+---
+
+## Phase 1 — SHIPPED (2026-04-23)
+
+Agentic tool-use loop shipped. End-to-end verification passed with two bugs fixed during verification (#3 schema repair, #4 abort-on-disconnect). One design-level finding deferred to Phase 2 (#2 hallucination when `liveContext` injection masks tool-need).
+
+**What shipped in Phase 1:**
+- Tool registry with 9 Zod-validated tools (search_memory, remember, search_emails, search_deals, get_calendar, draft_email, create_proposal, run_skill, web_search)
+- Manual agentic loop in `lib/agentic.ts` (stream + tool_use + tool_result, max 10 iters, adaptive thinking, abort via signal)
+- SSE `POST /ask/stream` endpoint + frontend streaming consumer
+- Approval gate v1 (tool → enqueue → banner + WS-driven system message on decide)
+- Opus 4.6 → 4.7 bump + pricing fix (stale $15/$75 → correct $5/$25)
+- Per-tool cost attribution: `tool_calls` table + `GET /cost/tools` + `GET /cost/agentic`
+- 9 agentic unit tests covering loop termination, tool dispatch, max-iter cap, pause_turn, approval gate, thinking config, abort, and per-tool stats
+- Migration 017 repairing `memory_nodes.sensitivity` column drift
+- Runner tolerates `duplicate column name` errors so repair migrations are idempotent
+
+**What's explicitly NOT in Phase 1 (scope held):**
+- Conversation history persistence (stateless `/ask/stream`)
+- Inline approval resume (Phase 1b, est. +1d)
+- Claude CLI / Ollama tool-use parity (still on legacy regex parser for those paths)
+- Computer Use, MCP, mobile companion, launchd auto-start
+
+**Phase 1 cost accounting:** Task #8 end-to-end verification consumed $0.44 of a $2 budget across 8 scenarios (scenario 9 deferred — no Phase 1-ready packaged build).
+
+---
+
+## Phase 1 Backlog (infrastructure gaps — opened 2026-04-22)
+
+Running list of debt items caught during Phase 1 system audit + agentic loop work. Don't let this grow — address before moving past Phase 2.
+
+### Pre-existing test failures (21, surfaced 2026-04-22)
+
+All present on HEAD `ceabe0e` before any Phase 1 work. Baseline fresh checkout = 42 failures; after Phase 1 additions = 21 (delta is state-sensitivity, not regressions). None of the 21 failures touch Phase 1 code paths.
+
+Failing test names (from `npm test` in `jarvisd/`):
+
+- `POST /connectors/gcal/creds stores creds and authUrl has calendar.readonly scope`
+- `after running skills, /cost/events is non-empty and /cost/summary.today.spentUsd is a number`
+- `Feedback + Learning Loops`
+- `Gate Protocol: Rate Limiting`
+- `GET /providers lists 5 providers with linked=false on fresh state`
+- `Red Team: Policy Bypass`
+- `GET /skills on fresh daemon returns array with at least 3 starter skills`
+- `GET /skills/daily_recap returns a valid SkillManifest`
+- `POST /skills/daily_recap/run returns a SkillRun with terminal status`
+- `GET /runs?limit=5 includes the just-run skill`
+- `GET /skills/daily_recap/runs is scoped to daily_recap and includes the run`
+- `GET /runs/:id returns the run with the matching id`
+- `GET /workflows returns an array with at least 3 cron trigger entries`
+- `Episodic snapshot: after a skill run, /episodic?kind=skill_run includes a new entry`
+- `GET /skills returns at least 7 skills including the 4 batch-2 skills`
+- `GET /skills/meeting_prep returns a valid manifest with a 'topic' input`
+- `POST /skills/doc_summarize/run with short text returns a SkillRun`
+- `POST /skills/meeting_prep/run with topic returns a SkillRun`
+- `POST /skills/weekly_review/run returns skipped=true or a completed run (day-dependent)`
+- `Trust Protocol: Audit integrity after security operations` (concurrent-run flake)
+
+**Owner:** TBD. **Target:** resolve before Phase 2 kicks off.
+
+### Phase 1 verification gaps (surfaced during Task #8, 2026-04-23)
+
+- **Packaged desktop build is stale.** `src-tauri/target/release/bundle/macos/JARVIS OS.app` dates from 2026-04-12, predating all of Phase 1 (agentic loop, SSE route, tool registry, approval gate v1, Opus 4.7 bump). `desktop/` has no electron-builder / forge config — packaging target TBD. Task #8 scenario 9 skipped per plan. **Phase 2:** pick a packaging stack (Electron-Forge or finish Tauri), rebuild, re-verify end-to-end on the packaged binary.
+
+- **Bug #2 (deferred to Phase 2): hallucination when `liveContext` competes with tools.** Surfaced in Task #8 scenario 2 — asked "how many open deals?" and Claude confidently returned "597" (truth: 108) without calling `search_deals`. Root cause: `/ask/stream` injects `gatherContext(prompt)` into the system prompt, which gives Claude partial data. Rather than call the tool for ground truth, Claude confabulates around the partial context. **Remediation candidates (pick one in Phase 2):**
+  1. Drop `liveContext` injection from `/ask/stream` entirely — tools become the sole data path
+  2. Keep `liveContext` but strip numeric claims from it; require Claude to tool for specific counts/values
+  3. Strengthen system prompt: "For any specific count, value, or factual claim about the user's data, you MUST call a tool. Do NOT answer numeric questions from context alone."
+  Recommended: option 3 first (lowest risk), measure with `/cost/tools` leaderboard whether tool-call rate rises; fall back to option 1 if Claude still hallucinates.
+
+- **`/providers/anthropic/test` endpoint uses retired model** `claude-3-5-haiku-latest`. Fixed inline during Task #8 (→ `claude-haiku-4-5`). Worth a broader grep for any other retired-model strings.
+
+- **Anthropic API provider path was previously untested.** Pre-Phase 1, all `/ask` traffic went through `claude-cli` (subscription). Phase 1 is the first code path that directly hits the Anthropic API. This is how a placeholder key (`sk-ant-fake-...test`) went undetected for weeks. **Phase 2:** `/providers/:id/test` should run at daemon start and surface broken keys in the UI status strip.
+
+### Phase 1 deferrals (address later in Phase 1 or in follow-up)
+
+- **`@anthropic-ai/sdk` 0.88 → latest**: needed to upgrade `web_search_20250305` → `web_search_20260209` + `web_fetch_20260209` (dynamic filtering). TODO lives in `jarvisd/src/lib/tools/index.ts`.
+- **Conversation history persistence** — each `/ask` is still stateless. Phase 2 blocker.
+- **Inline approval resume** — Phase 1 v1 gates draft_email / create_proposal but the "user approves → same turn resumes" UX is Phase 1b (est. +1d).
+- **Claude CLI + Ollama tool-use parity** — Phase 1 agentic loop is Anthropic API only. CLI + local fallback still use the legacy `[action]` regex parser.
+- **Finer per-tool cost attribution** — Task #7 will split model call cost from tool-invoked sub-call cost more granularly. v1 attribution ("skill=agentic" vs "skill=agent:<tool>") in place.
+- **Pre-existing `src/routes/voice.ts:22` TS2578** — unrelated unused `@ts-expect-error` directive from commit `c83eace`. Noise in every typecheck.
+

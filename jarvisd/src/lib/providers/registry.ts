@@ -23,7 +23,9 @@ async function testAnthropic(): Promise<ProviderTestResult> {
       return { ok: false, latencyMs: 0, error: "no key set" };
     }
     const client = new Anthropic({ apiKey: key });
-    const model = "claude-3-5-haiku-latest";
+    // Use the cheapest current model for a ping. claude-3-5-haiku-latest was
+    // retired 2026-02-19; Haiku 4.5 is the drop-in replacement.
+    const model = "claude-haiku-4-5";
     const msg = await client.messages.create({
       model,
       max_tokens: 1,

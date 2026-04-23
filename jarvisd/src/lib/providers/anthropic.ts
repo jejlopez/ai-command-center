@@ -16,6 +16,10 @@ export interface ProviderCallOutput {
 
 let client: Anthropic | null = null;
 
+export function getAnthropicClient(): Anthropic {
+  return getClient();
+}
+
 function getClient(): Anthropic {
   if (client) return client;
   if (vault.isLocked()) {
