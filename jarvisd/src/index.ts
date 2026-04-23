@@ -19,6 +19,8 @@ import { episodicRoutes } from "./routes/episodic.js";
 import { skillsRoutes } from "./routes/skills.js";
 import { costRoutes } from "./routes/cost.js";
 import { feedbackRoutes } from "./routes/feedback.js";
+import { conversationRoutes } from "./routes/conversations.js";
+import { conversations } from "./lib/conversations.js";
 import { registry } from "./lib/skills.js";
 import { startScheduler, initEventBus } from "./lib/workflow.js";
 // ── Core skills (kept) ──
@@ -111,6 +113,7 @@ async function main() {
   await briefRoutes(app);
   await vaultRoutes(app);
   await askRoutes(app);
+  await conversationRoutes(app);
   await memoryRoutes(app);
   await approvalsRoutes(app);
   await connectorRoutes(app);
@@ -291,6 +294,28 @@ async function main() {
       app.log.info("[email-backfill] triggered (6h interval)");
     } catch {}
   }, 6 * 60 * 60 * 1000); // 6 hours
+
+  // Conversation retention: prune messages older than 90 days, once/day at 7 AM.
+  // Also runs opportunistically on startup if we're past 7 AM already, so a
+  // daemon that boots mid-day still cleans. The `alreadyRanToday` flag keeps
+  // the same day from firing twice.
+  const RETENTION_DAYS = 90;
+  let lastPruneDay = -1;
+  const pruneIfDue = () => {
+    const now = new Date();
+    const dayKey = now.getFullYear() * 10000 + (now.getMonth() + 1) * 100 + now.getDate();
+    if (dayKey === lastPruneDay) return;
+    if (now.getHours() < 7) return; // wait until 7 AM
+    try {
+      const deleted = conversations.pruneOlderThan(RETENTION_DAYS);
+      if (deleted > 0) app.log.info(`[conversation-retention] pruned ${deleted} messages older than ${RETENTION_DAYS}d`);
+      lastPruneDay = dayKey;
+    } catch (err: any) {
+      app.log.warn(`[conversation-retention] prune failed: ${err?.message}`);
+    }
+  };
+  setTimeout(pruneIfDue, 30_000); // run ~30s after startup
+  setInterval(pruneIfDue, 60 * 60 * 1000); // check hourly; no-op outside 7am window
 }
 
 main().catch((err) => {
