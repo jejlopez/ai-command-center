@@ -168,6 +168,74 @@ test("delete removes conversation and cascades to messages", () => {
   assert.equal(conversations.listAll(id).length, 0);
 });
 
+// --- Phase 2 Day 5 — long-conversation truncation (approved caps) ---------
+
+test("Day 5: 45-turn session → loadRecent returns last 40 chronological", () => {
+  const id = newSessionId();
+  conversations.getOrCreate(id);
+  // 45 turns = 45 user + 45 assistant = 90 messages, to hit the turn cap
+  for (let i = 0; i < 45; i++) {
+    conversations.append({ conversationId: id, role: "user", content: `u${i}` });
+    conversations.append({ conversationId: id, role: "assistant", content: `a${i}` });
+  }
+  const windowed = conversations.loadRecent(id, { maxTurns: 40, maxTokens: 12_000 });
+  // Exactly 40 returned
+  assert.equal(windowed.length, 40, `expected 40, got ${windowed.length}`);
+  // Head is user (user-first-head guard)
+  assert.equal(windowed[0].role, "user", "first message must be a user turn");
+  // Tail is the most recent message (newest)
+  assert.equal(windowed[windowed.length - 1].content, "a44", "last msg must be the newest assistant turn");
+  // OLDEST dropped: u0..u24 and a0..a24 should be gone from this window
+  const contents = windowed.map((m) => m.content);
+  assert.ok(!contents.includes("u0"), "u0 (oldest) should be dropped");
+  assert.ok(!contents.includes("a0"), "a0 (oldest) should be dropped");
+  // Recent user context preserved: u38 must be in the window
+  assert.ok(contents.includes("u38"), "u38 (recent) must be preserved");
+  assert.ok(contents.includes("a38"), "a38 (recent) must be preserved");
+});
+
+test("Day 5: token-cap truncation drops OLDEST messages (not newest)", () => {
+  const id = newSessionId();
+  conversations.getOrCreate(id);
+  // 50 messages, each ~3500 chars (~1000 tokens). With maxTokens=6000 only
+  // the last ~6 messages should fit.
+  const bigChunk = "x".repeat(3500);
+  for (let i = 0; i < 25; i++) {
+    conversations.append({ conversationId: id, role: "user", content: `U${i}_${bigChunk}` });
+    conversations.append({ conversationId: id, role: "assistant", content: `A${i}_${bigChunk}` });
+  }
+  const windowed = conversations.loadRecent(id, { maxTurns: 100, maxTokens: 6_000 });
+  // Newest msg is A24 — must be present
+  const contents = windowed.map((m) => m.content);
+  assert.ok(contents.some((c) => String(c).startsWith("A24")), "newest assistant (A24) must be preserved");
+  assert.ok(contents.some((c) => String(c).startsWith("U24")), "newest user (U24) must be preserved");
+  // Oldest U0 must be gone
+  assert.ok(!contents.some((c) => String(c).startsWith("U0_")), "oldest U0 must be dropped");
+  // Head is user
+  assert.equal(windowed[0].role, "user");
+  // Rough token budget respected
+  const totalChars = windowed.reduce((s, m) => s + String(m.content).length, 0);
+  assert.ok(totalChars / 3.5 <= 6_000, `token estimate ~${Math.round(totalChars / 3.5)} should be ≤ 6000`);
+});
+
+test("Day 5: user-first-head guard holds when truncation lands on assistant", () => {
+  const id = newSessionId();
+  conversations.getOrCreate(id);
+  // Intentionally create a shape where dropping oldest leaves assistant at head
+  for (let i = 0; i < 10; i++) {
+    conversations.append({ conversationId: id, role: "user", content: `u${i}` });
+    conversations.append({ conversationId: id, role: "assistant", content: `a${i}` });
+  }
+  // With maxTurns=5, last 5 = [u8 a8 u9 a9 ...] actually wait — 10 user + 10 asst interleaved,
+  // slicing last 5 gives e.g. [a7 u8 a8 u9 a9]. Head would be a7 (assistant) → user-first-head
+  // should drop it, leaving [u8 a8 u9 a9] = 4 msgs.
+  const windowed = conversations.loadRecent(id, { maxTurns: 5, maxTokens: 100_000 });
+  assert.equal(windowed[0].role, "user", "head must be user even after truncation shift");
+  assert.ok(windowed.length <= 5, "should not exceed maxTurns");
+  // Claude would get a valid history: starts user
+  assert.ok(windowed.length >= 2, "should still have content after head-trim");
+});
+
 // --- 10. pruneOlderThan deletes expired messages ---
 
 test("pruneOlderThan deletes messages older than cutoff, keeps recent", () => {

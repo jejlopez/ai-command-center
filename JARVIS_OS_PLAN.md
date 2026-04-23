@@ -592,6 +592,45 @@ If you want the biggest single improvement from current state: **M1 step 1 — t
 
 ---
 
+## Phase 2 — SHIPPED (2026-04-23)
+
+Conversation history, prompt caching, Bug #2 fix — three pillars, five days, one commit per day. Real-API verification at the end of every day.
+
+**What shipped in Phase 2:**
+- **Conversation history**: `conversations` + `messages` tables, 90-day retention cron, idle-break (2h), 40-turn / 12k-token load window with user-first-head guard and oldest-first truncation.
+- **Agentic loop integration**: `conversationId` threaded through `runAgenticTurn`; user message persisted before the loop, assistant content + tool_result user turn persisted per iteration — the tool_use ↔ tool_result chain round-trips across turns without dangling blocks.
+- **Prompt caching**: explicit `cache_control` on the system block (NOT top-level auto-placement, which caches the wrong thing); tools + skill menu sorted alphabetically for cache-prefix stability; cache-aware cost math.
+- **Bug #2 fix**: `liveContext` injection dropped from `/ask/stream`. The model now calls `search_deals` for ground truth instead of confabulating counts from a stuffed system prompt.
+- **Session model**: `X-Session-Id` header, client-generated UUID in localStorage, auto-minted + echoed by the daemon on first request.
+- **Route surface**: `GET /conversations`, `GET /conversations/:id/messages`, `POST /conversations/:id/clear`, `DELETE /conversations/:id`.
+- **Frontend**: `jarvis.askStream` injects `X-Session-Id`; `JarvisChat` hydrates from server on mount (`GET /conversations/:id/messages`); "New Thread" button rotates the UUID; tool chips reload with `state=done` when hydrating a past conversation.
+- **Retention**: nightly cron (7 AM, hourly checks) prunes messages older than 90 days. Conversation rows survive the prune so empty sessions are still resumable.
+- **Bug fixes during verification**: (a) duplicate abort listeners — `req.raw.on("close")` fires on POST-body-received and was aborting every request; fixed by binding to `reply.raw` only. (b) cost calculation ignored cache tokens; new `estimateCostWithCacheUsd()` with read=0.1× and write=1.25× multipliers. (c) top-level `cache_control` placed the marker on the last message (per-turn variable) — moved to explicit placement on the system block.
+
+**Measured results:**
+- 31 unit tests (`npm run test:phase2`) covering persistence, truncation (both turn + token caps), tool_use chain round-trip, idle break, cache placement, determinism, mid-stream abort, retention prune.
+- Real-API 4-turn session verified: Turn 1 writes 5000-token cache; Turns 2+ read cache → **cost drops 87%** on the repeat calls (~$0.003 vs $0.017 uncached).
+- Bug #2 live check: "how many open deals?" now invokes `search_deals` and cites real numbers instead of the prior 597-deal hallucination.
+- Real-UX 6-step scenario (3-turn convo → simulated browser reopen → Turn 4 references Turn 2) — Claude correctly recalled "durian" across the reopen.
+
+**Phase 2 cost accounting:** Day-level totals — Day 1 $0.00, Day 2 $0.033, Day 3 $0.017, Day 4 $0.038, Day 5 $0.028 → **~$0.12 total** against a $0.50 projected budget.
+
+**Explicit non-goals held:**
+- Multi-thread UI (still one thread per session; New Thread rotates UUID)
+- Conversation → memory-node summarization (Phase 3 candidate)
+- Cross-session search / search within a thread
+- Mobile client
+- Computer Use
+- Cross-tab real-time WS sync (deferred — observed in Day 5 scenario #4 that 2 tabs with same SID cross-pollinate priorMessages; acceptable for solo use)
+- Full message-level caching (second breakpoint); only stable prefix caches in v1
+
+**Observed behaviors worth noting for Phase 3:**
+- **Cross-tab cross-pollination** (Day 5 scenario #4): two browser tabs with the same session id, fired concurrently, will interleave in each other's `priorMessages` because the server persists on `/ask/stream` entry. In a 2-tab test, Tab A saw Tab B's user message when assembling its context and answered both. Not corruption — just the natural consequence of a single session being written from two tabs. WS-driven cross-tab sync or per-tab session IDs would eliminate it.
+- **Cache minimum**: current prefix is ~5000 tokens, above the 4096-token Opus/Haiku minimum. If Phase 3 trims the tool set (e.g. ship with fewer than 9 tools), watch that prefix stays > 4096 or caching silently goes dormant.
+- **liveContext still lives on legacy `/ask`**: the non-agentic path uses Claude CLI (subscription) and has no tools, so context injection is still useful there. Only `/ask/stream` dropped it.
+
+---
+
 ## Phase 1 — SHIPPED (2026-04-23)
 
 Agentic tool-use loop shipped. End-to-end verification passed with two bugs fixed during verification (#3 schema repair, #4 abort-on-disconnect). One design-level finding deferred to Phase 2 (#2 hallucination when `liveContext` injection masks tool-need).

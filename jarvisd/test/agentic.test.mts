@@ -573,6 +573,71 @@ test("Day 2: no conversationId = stateless back-compat (no DB writes)", async ()
   assert.equal(sidBefore, sidAfter, "no-conversationId path must not touch the DB");
 });
 
+// --- Phase 2 Day 5 — abort DURING streaming (distinct from boundary abort) ---
+
+test("Day 5: abort during text streaming → stopReason=aborted, only user persisted", async () => {
+  // Different code path from "abort at boundary" (test 6b). Here abort fires
+  // AFTER iteration starts + stream begins emitting text but BEFORE
+  // finalMessage() resolves. The SDK-side signal must cause the stream
+  // catch block to be entered with an AbortError, not the pre-iteration
+  // opts.signal.aborted check.
+  const sid = newSessionId();
+
+  let callCount = 0;
+  const abortAware = {
+    messages: {
+      stream(_params: any, opts: any) {
+        callCount++;
+        const textHandlers: Array<(d: string) => void> = [];
+        return {
+          on(event: string, cb: any) {
+            if (event === "text") textHandlers.push(cb);
+          },
+          async finalMessage() {
+            // Emit a text delta so the consumer can fire abort via onEvent
+            textHandlers.forEach((h) => h("streaming"));
+            // Yield to the event loop so the abort call lands
+            await new Promise((resolve) => setTimeout(resolve, 5));
+            if (opts?.signal?.aborted) {
+              const err: any = new Error("Request was aborted");
+              err.name = "AbortError";
+              throw err;
+            }
+            return {
+              content: [{ type: "text", text: "should not reach" }],
+              stop_reason: "end_turn",
+              usage: { input_tokens: 100, output_tokens: 50 },
+            };
+          },
+        };
+      },
+    },
+  };
+
+  const ctrl = new AbortController();
+  let firedAbort = false;
+  const result = await runAgenticTurn({
+    client: abortAware as any,
+    userPrompt: "streaming test",
+    conversationId: sid,
+    signal: ctrl.signal,
+    onEvent: (evt) => {
+      if (evt.type === "text_delta" && !firedAbort) {
+        firedAbort = true;
+        ctrl.abort();
+      }
+    },
+  });
+
+  assert.equal(result.stopReason, "aborted", "mid-stream abort must mark stopReason=aborted");
+  assert.equal(callCount, 1, "exactly one stream call — abort prevents retries");
+  // User persisted, no assistant — the stream never completed so we have no
+  // content block to save. Clean state: no dangling assistant turn.
+  const stored = conversations.listAll(sid);
+  assert.equal(stored.length, 1, "only user persisted on mid-stream abort");
+  assert.equal(stored[0].role, "user");
+});
+
 // --- 7. Per-tool cost attribution writes to tool_calls ----------------------
 
 test("tool calls are attributed to tool_calls table + aggregates", async () => {
