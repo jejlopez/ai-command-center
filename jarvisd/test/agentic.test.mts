@@ -22,6 +22,7 @@ const assert = (await import("node:assert/strict")).default;
 const { runAgenticTurn } = await import("../src/lib/agentic.js");
 const { approvals } = await import("../src/lib/approvals.js");
 const { toolLeaderboard, agenticTotalsSince, startOfTodayIso } = await import("../src/lib/tool_stats.js");
+const { conversations, newSessionId } = await import("../src/lib/conversations.js");
 const { db } = await import("../src/db/db.js");
 
 after(() => {
@@ -354,6 +355,187 @@ test("abort signal stops the loop at the next iteration boundary", async () => {
   assert.equal(result.iterations, 1, "should have completed iter 1 only");
   assert.ok(events.includes("aborted"), "should emit aborted event");
   assert.ok(!events.includes("done"), "should NOT emit done when aborted");
+});
+
+// --- Phase 2 Day 2: conversation persistence + multi-turn history ---------
+
+test("Day 2: conversationId persists user + assistant turns", async () => {
+  const sid = newSessionId();
+  const { fake } = makeFakeClient([
+    {
+      content: [{ type: "text", text: "hello back" }],
+      stop_reason: "end_turn",
+    },
+  ]);
+
+  await runAgenticTurn({
+    client: fake,
+    userPrompt: "say hi",
+    conversationId: sid,
+  });
+
+  const all = conversations.listAll(sid);
+  assert.equal(all.length, 2, "should persist user + assistant");
+  assert.equal(all[0].role, "user");
+  assert.equal(all[0].content, "say hi");
+  assert.equal(all[1].role, "assistant");
+  const aBlocks = all[1].content as any[];
+  assert.ok(Array.isArray(aBlocks) && aBlocks[0].type === "text");
+  assert.equal(aBlocks[0].text, "hello back");
+});
+
+test("Day 2: tool_use + tool_result both persist (the critical chain)", async () => {
+  // Turn 1: user asks → assistant calls search_memory → tool_result → assistant final
+  const sid = newSessionId();
+  const { fake } = makeFakeClient([
+    {
+      content: [
+        { type: "tool_use", id: "toolu_t1", name: "search_memory", input: { query: "Alex" } },
+      ],
+      stop_reason: "tool_use",
+    },
+    {
+      content: [{ type: "text", text: "Found Alex." }],
+      stop_reason: "end_turn",
+    },
+  ]);
+
+  await runAgenticTurn({
+    client: fake,
+    userPrompt: "what do you know about Alex?",
+    conversationId: sid,
+  });
+
+  const all = conversations.listAll(sid);
+  // Expect 4 rows: user(Q), assistant(tool_use), user(tool_result), assistant(final)
+  assert.equal(all.length, 4, `expected 4 rows (user+asst+tool_result+asst), got ${all.length}`);
+
+  // Row 2: assistant with tool_use
+  const asstTool = all[1].content as any[];
+  assert.ok(Array.isArray(asstTool));
+  const toolUseBlock = asstTool.find((b: any) => b.type === "tool_use");
+  assert.ok(toolUseBlock, "assistant turn should contain tool_use block");
+  assert.equal(toolUseBlock.id, "toolu_t1");
+
+  // Row 3: user with tool_result matching the tool_use id
+  assert.equal(all[2].role, "user");
+  const toolResultBlocks = all[2].content as any[];
+  assert.ok(Array.isArray(toolResultBlocks));
+  const tr = toolResultBlocks.find((b: any) => b.type === "tool_result");
+  assert.ok(tr, "user turn should contain tool_result block");
+  assert.equal(tr.tool_use_id, "toolu_t1", "tool_result.tool_use_id must match assistant tool_use.id");
+});
+
+test("Day 2: multi-turn round-trip — Turn 2 loads Turn 1 history with intact tool chain", async () => {
+  const sid = newSessionId();
+
+  // Turn 1: tool-use flow
+  const turn1 = makeFakeClient([
+    {
+      content: [
+        { type: "tool_use", id: "toolu_r1", name: "search_memory", input: { query: "Q" } },
+      ],
+      stop_reason: "tool_use",
+    },
+    {
+      content: [{ type: "text", text: "answer from turn 1" }],
+      stop_reason: "end_turn",
+    },
+  ]);
+  await runAgenticTurn({ client: turn1.fake, userPrompt: "turn 1 question", conversationId: sid });
+
+  // Turn 2: capture what gets sent as messages — prior turns should round-trip verbatim.
+  const turn2 = makeFakeClient([
+    {
+      content: [{ type: "text", text: "answer from turn 2" }],
+      stop_reason: "end_turn",
+    },
+  ]);
+  await runAgenticTurn({ client: turn2.fake, userPrompt: "refer to what we just discussed", conversationId: sid });
+
+  // Inspect what Turn 2 sent to Claude: priorMessages + turn 2 user
+  const turn2Params = turn2.calls[0].messages as any[];
+  // Expected ordering: [T1 user, T1 asst(tool_use), T1 user(tool_result), T1 asst(final), T2 user]
+  assert.equal(turn2Params.length, 5, `expected 5 messages in Turn 2 request, got ${turn2Params.length}`);
+  assert.equal(turn2Params[0].role, "user");
+  assert.equal(turn2Params[1].role, "assistant");
+  assert.equal(turn2Params[2].role, "user");
+  assert.equal(turn2Params[3].role, "assistant");
+  assert.equal(turn2Params[4].role, "user");
+  assert.equal(turn2Params[4].content, "refer to what we just discussed");
+
+  // The dangling-tool_use bug: assistant's tool_use id must match the
+  // following user turn's tool_result.tool_use_id. If persistence drops
+  // tool_result, Anthropic would 400 on Turn 2.
+  const asstBlocks = turn2Params[1].content as any[];
+  const userBlocks = turn2Params[2].content as any[];
+  const asstToolUse = asstBlocks.find((b: any) => b.type === "tool_use");
+  const userToolResult = userBlocks.find((b: any) => b.type === "tool_result");
+  assert.ok(asstToolUse && userToolResult, "both tool_use and tool_result must be present");
+  assert.equal(userToolResult.tool_use_id, asstToolUse.id, "tool_use ↔ tool_result ids must match");
+});
+
+test("Day 2: aborted turn persists user message but NOT assistant content", async () => {
+  const sid = newSessionId();
+  const { fake } = makeFakeClient([
+    {
+      content: [{ type: "text", text: "streaming..." }],
+      stop_reason: "end_turn",
+    },
+  ]);
+  const ctrl = new AbortController();
+  // Abort BEFORE the first iteration even starts — the loop checks signal at
+  // the top so we guarantee no assistant persistence.
+  ctrl.abort();
+
+  const res = await runAgenticTurn({
+    client: fake,
+    userPrompt: "will be aborted",
+    conversationId: sid,
+    signal: ctrl.signal,
+  });
+
+  assert.equal(res.stopReason, "aborted");
+  const all = conversations.listAll(sid);
+  assert.equal(all.length, 1, "only user message should persist on abort");
+  assert.equal(all[0].role, "user");
+  assert.equal(all[0].content, "will be aborted");
+});
+
+test("Day 2: Turn 2 after idle break sees no prior messages (fresh context)", async () => {
+  const sid = newSessionId();
+  const { fake: f1 } = makeFakeClient([
+    { content: [{ type: "text", text: "t1 reply" }], stop_reason: "end_turn" },
+  ]);
+  await runAgenticTurn({ client: f1, userPrompt: "t1", conversationId: sid });
+
+  // Backdate both T1 messages to 3 hours ago (past 2h idle break)
+  db.prepare(
+    `UPDATE messages SET ts = ? WHERE conversation_id = ?`
+  ).run(new Date(Date.now() - 3 * 3600_000).toISOString(), sid);
+
+  const turn2 = makeFakeClient([
+    { content: [{ type: "text", text: "t2 reply" }], stop_reason: "end_turn" },
+  ]);
+  await runAgenticTurn({ client: turn2.fake, userPrompt: "t2 after idle", conversationId: sid });
+
+  // Turn 2 should send only the new user message (prior window empty due to idle)
+  const t2Msgs = turn2.calls[0].messages as any[];
+  assert.equal(t2Msgs.length, 1, "idle break should drop prior turns");
+  assert.equal(t2Msgs[0].content, "t2 after idle");
+
+  // But all 4 messages still exist in the DB (persistence unaffected by load-window)
+  assert.equal(conversations.listAll(sid).length, 4, "DB persists everything regardless of load window");
+});
+
+test("Day 2: no conversationId = stateless back-compat (no DB writes)", async () => {
+  const sidBefore = conversations.list(1000).length;
+  const { fake } = makeFakeClient([
+    { content: [{ type: "text", text: "ok" }], stop_reason: "end_turn" },
+  ]);
+  await runAgenticTurn({ client: fake, userPrompt: "no session" });
+  const sidAfter = conversations.list(1000).length;
+  assert.equal(sidBefore, sidAfter, "no-conversationId path must not touch the DB");
 });
 
 // --- 7. Per-tool cost attribution writes to tool_calls ----------------------

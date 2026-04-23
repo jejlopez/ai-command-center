@@ -20,6 +20,7 @@ import { policyEngine } from "../lib/policy.js";
 import { sanitizeForContext } from "../lib/sanitize.js";
 import { runAgenticTurn } from "../lib/agentic.js";
 import { vault as vaultLib } from "../lib/vault.js";
+import { conversations, newSessionId } from "../lib/conversations.js";
 
 const AskBody = z.object({
   prompt: z.string().min(1),
@@ -241,15 +242,38 @@ export async function askRoutes(app: FastifyInstance): Promise<void> {
     const systemPrompt =
       JARVIS_SYSTEM_PROMPT + liveContext + (context ? `\n\n${context}` : "");
 
+    // Resolve / mint the session id. Client sends X-Session-Id; if missing
+    // (first-ever load) we auto-generate and echo it back so the client can
+    // persist it locally.
+    const headerSid = (req.headers["x-session-id"] ?? req.headers["X-Session-Id"]) as
+      | string
+      | undefined;
+    let sessionId: string;
+    try {
+      sessionId =
+        headerSid && /^[A-Za-z0-9_-]{8,128}$/.test(headerSid) ? headerSid : newSessionId();
+      conversations.getOrCreate(sessionId);
+    } catch {
+      sessionId = newSessionId();
+      conversations.getOrCreate(sessionId);
+    }
+
     const runId = randomUUID();
-    audit({ actor: "user", action: "ask_stream", subject: runId, metadata: { promptLen: prompt.length } });
+    audit({
+      actor: "user",
+      action: "ask_stream",
+      subject: runId,
+      metadata: { promptLen: prompt.length, sessionId },
+    });
 
     // SSE headers — bypass Fastify's JSON serializer by using reply.raw.
+    // Echo the resolved session id so first-time clients learn theirs.
     reply.raw.writeHead(200, {
       "Content-Type": "text/event-stream",
       "Cache-Control": "no-cache, no-transform",
       Connection: "keep-alive",
       "X-Accel-Buffering": "no",
+      "X-Session-Id": sessionId,
     });
     // Tell Fastify we've taken over the reply.
     reply.hijack();
@@ -297,6 +321,7 @@ export async function askRoutes(app: FastifyInstance): Promise<void> {
         userPrompt: prompt,
         system: systemPrompt,
         signal: abortCtrl.signal,
+        conversationId: sessionId,
         onEvent: (evt) => {
           if (!clientGone) writeEvent(evt);
         },

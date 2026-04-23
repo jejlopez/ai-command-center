@@ -15,6 +15,7 @@ import { recordCost, assertBudgetAvailable } from "./cost.js";
 import { recordRouting } from "./router_learning.js";
 import { estimateCostUsd, route } from "./router.js";
 import { recordToolCall } from "./tool_stats.js";
+import { conversations, type MessageRow } from "./conversations.js";
 
 const DEFAULT_MAX_ITERATIONS = 10;
 const DEFAULT_MAX_TOKENS_PER_CALL = 16_000;
@@ -28,7 +29,18 @@ export interface AgenticRunOptions {
   model?: string;
   maxIterations?: number;
   maxTokensPerCall?: number;
-  /** Prior assistant/user turns (e.g. from a resumed conversation). */
+  /**
+   * Session/conversation id to persist this turn under. When set:
+   *   - User message is persisted before the loop starts
+   *   - Each iteration's assistant content (inc. tool_use blocks) persisted
+   *   - Each iteration's tool_result user message persisted
+   *   - Prior history is auto-loaded (truncated per conversations.loadRecent)
+   *
+   * If both `conversationId` and `priorMessages` are provided, priorMessages
+   * wins (explicit caller override, used by tests).
+   */
+  conversationId?: string;
+  /** Prior assistant/user turns. Overrides DB load when set. */
   priorMessages?: MessageParam[];
   /** Streaming callback. Text deltas fire-and-forget; iteration boundaries awaited. */
   onEvent?: (evt: AgenticEvent) => void | Promise<void>;
@@ -98,6 +110,15 @@ function supportsAdaptiveThinking(model: string): boolean {
   return model.startsWith("claude-opus-4-") || model === "claude-sonnet-4-6";
 }
 
+function rowToParam(row: MessageRow): MessageParam {
+  // MessageRow content is either ContentBlockParam[] (assistant + tool_result
+  // turns) or plain string (simple user text). MessageParam accepts both.
+  return {
+    role: row.role,
+    content: row.content as Anthropic.MessageParam["content"],
+  };
+}
+
 function extractText(content: readonly Anthropic.ContentBlock[]): string {
   return content
     .filter((b): b is Anthropic.TextBlock => b.type === "text")
@@ -133,8 +154,38 @@ export async function runAgenticTurn(opts: AgenticRunOptions): Promise<AgenticRu
   const client = opts.client ?? getAnthropicClient();
   const tools = buildAnthropicToolList();
 
+  // Resolve prior messages: explicit override > DB load > empty.
+  let priorMessages: MessageParam[];
+  if (opts.priorMessages) {
+    priorMessages = opts.priorMessages;
+  } else if (opts.conversationId) {
+    conversations.getOrCreate(opts.conversationId);
+    priorMessages = conversations
+      .loadRecent(opts.conversationId)
+      .map(rowToParam);
+  } else {
+    priorMessages = [];
+  }
+
+  // Persist the user turn BEFORE the loop so it survives aborts/crashes.
+  // The assistant turn + any tool_result turns get persisted as the loop
+  // produces them, so Turn N+1 can re-load the complete tool_use ↔ tool_result
+  // chain without seeing dangling tool_use blocks.
+  if (opts.conversationId) {
+    try {
+      conversations.append({
+        conversationId: opts.conversationId,
+        role: "user",
+        content: opts.userPrompt,
+        runId,
+      });
+    } catch (err: any) {
+      audit({ actor: "agentic", action: "agentic.persist.user.fail", subject: runId, reason: err?.message });
+    }
+  }
+
   const messages: MessageParam[] = [
-    ...(opts.priorMessages ?? []),
+    ...priorMessages,
     { role: "user", content: opts.userPrompt },
   ];
 
@@ -267,6 +318,24 @@ export async function runAgenticTurn(opts: AgenticRunOptions): Promise<AgenticRu
     // the next turn's tool_result references to resolve.
     messages.push({ role: "assistant", content: finalMessage.content });
     finalText = extractText(finalMessage.content);
+
+    // Persist this iteration's assistant turn. Store the full ContentBlock[]
+    // so any tool_use blocks round-trip to Turn N+1 paired with their
+    // tool_result counterparts (written below after tool dispatch).
+    if (opts.conversationId) {
+      try {
+        conversations.append({
+          conversationId: opts.conversationId,
+          role: "assistant",
+          content: finalMessage.content as unknown as Anthropic.ContentBlockParam[],
+          runId,
+          tokensIn,
+          tokensOut,
+        });
+      } catch (err: any) {
+        audit({ actor: "agentic", action: "agentic.persist.assistant.fail", subject: runId, reason: err?.message });
+      }
+    }
 
     // Terminal stop reasons — stop the loop.
     if (
@@ -453,6 +522,23 @@ export async function runAgenticTurn(opts: AgenticRunOptions): Promise<AgenticRu
       }
 
       messages.push({ role: "user", content: toolResultBlocks });
+
+      // Persist the tool_result user turn so Turn N+1's history loads a
+      // complete tool_use ↔ tool_result chain. Without this, re-sending
+      // priorMessages on Turn N+1 would include an assistant tool_use with
+      // no matching tool_result → Anthropic returns 400.
+      if (opts.conversationId) {
+        try {
+          conversations.append({
+            conversationId: opts.conversationId,
+            role: "user",
+            content: toolResultBlocks,
+            runId,
+          });
+        } catch (err: any) {
+          audit({ actor: "agentic", action: "agentic.persist.tool_result.fail", subject: runId, reason: err?.message });
+        }
+      }
       continue;
     }
 
