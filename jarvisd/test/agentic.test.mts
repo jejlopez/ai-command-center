@@ -528,6 +528,41 @@ test("Day 2: Turn 2 after idle break sees no prior messages (fresh context)", as
   assert.equal(conversations.listAll(sid).length, 4, "DB persists everything regardless of load window");
 });
 
+// --- Phase 2 Day 3: prompt caching + sort determinism ---------------------
+
+test("Day 3: cache_control ephemeral is placed on the system block", async () => {
+  const { fake, calls } = makeFakeClient([
+    { content: [{ type: "text", text: "ok" }], stop_reason: "end_turn" },
+  ]);
+  await runAgenticTurn({
+    client: fake,
+    userPrompt: "hi",
+    system: "You are Jarvis.",
+  });
+  assert.equal(calls.length, 1);
+  // System must be an array of text blocks with cache_control on the last block
+  assert.ok(Array.isArray(calls[0].system), "system must be a block array");
+  const sys = calls[0].system as any[];
+  assert.equal(sys[sys.length - 1].type, "text");
+  assert.deepEqual(
+    sys[sys.length - 1].cache_control,
+    { type: "ephemeral" },
+    "cache_control on system block = tools+system prefix is cached"
+  );
+});
+
+test("Day 3: tool list is alphabetically sorted (cache-prefix stability)", async () => {
+  // buildAnthropicToolList is the list Claude sees — order matters for cache.
+  const { buildAnthropicToolList } = await import("../src/lib/tools/index.js");
+  const list = buildAnthropicToolList();
+  const names = list.map((t: any) => t.name);
+  const sorted = [...names].sort((a, b) => a.localeCompare(b));
+  assert.deepEqual(names, sorted, "tool list must be alphabetically sorted");
+  // Sanity: each call returns an identically-ordered list
+  const second = buildAnthropicToolList().map((t: any) => t.name);
+  assert.deepEqual(names, second, "tool list order must be deterministic across calls");
+});
+
 test("Day 2: no conversationId = stateless back-compat (no DB writes)", async () => {
   const sidBefore = conversations.list(1000).length;
   const { fake } = makeFakeClient([

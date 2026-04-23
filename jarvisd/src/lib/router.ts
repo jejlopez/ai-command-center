@@ -105,3 +105,24 @@ export function estimateCostUsd(model: string, tokensIn: number, tokensOut: numb
   if (!p) return 0;
   return (tokensIn * p.in + tokensOut * p.out) / 1_000_000;
 }
+
+/**
+ * Cost that includes prompt-cache token accounting (Phase 2 Day 3).
+ * Per Anthropic pricing:
+ *   - tokensIn      → charged at `p.in` (uncached remainder)
+ *   - cacheReadIn   → charged at 0.1 × p.in  (90% discount)
+ *   - cacheCreateIn → charged at 1.25 × p.in (25% write premium, 5-min TTL)
+ *   - tokensOut     → charged at `p.out`
+ */
+export function estimateCostWithCacheUsd(
+  model: string,
+  tokensIn: number,
+  tokensOut: number,
+  cacheReadIn = 0,
+  cacheCreateIn = 0
+): number {
+  const p = PRICING[model];
+  if (!p) return 0;
+  const input = tokensIn * p.in + cacheReadIn * p.in * 0.1 + cacheCreateIn * p.in * 1.25;
+  return (input + tokensOut * p.out) / 1_000_000;
+}

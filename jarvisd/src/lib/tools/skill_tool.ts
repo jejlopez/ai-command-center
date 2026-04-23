@@ -12,7 +12,14 @@ function allowedSkillNames(): string[] {
 }
 
 function skillMenu(): string {
-  const items = registry.list().filter((m) => !RESERVED.has(m.name));
+  // Sort alphabetically — registry.list() preserves insertion order, which
+  // is deterministic within a daemon lifetime but drifts if skills get
+  // registered in a different order on restart. Sorting keeps the prompt
+  // cache stable across restarts.
+  const items = registry
+    .list()
+    .filter((m) => !RESERVED.has(m.name))
+    .sort((a, b) => a.name.localeCompare(b.name));
   if (!items.length) return "(no skills registered yet)";
   return items.map((m) => `- ${m.name}: ${m.description}`).join("\n");
 }

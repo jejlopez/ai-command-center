@@ -238,9 +238,13 @@ export async function askRoutes(app: FastifyInstance): Promise<void> {
       });
     }
 
-    const liveContext = await gatherContext(prompt);
+    // Bug #2 fix (Phase 2 Day 3): agentic path no longer injects liveContext.
+    // The legacy /ask path still uses it (no tools, no memory there). Here
+    // the model has 9 tools + conversation history — it should pull ground
+    // truth rather than confabulate around a partial stuffed context. A
+    // static system prompt also lets cache_control hit the whole prefix.
     const systemPrompt =
-      JARVIS_SYSTEM_PROMPT + liveContext + (context ? `\n\n${context}` : "");
+      JARVIS_SYSTEM_PROMPT + (context ? `\n\n${context}` : "");
 
     // Resolve / mint the session id. Client sends X-Session-Id; if missing
     // (first-ever load) we auto-generate and echo it back so the client can
@@ -300,20 +304,20 @@ export async function askRoutes(app: FastifyInstance): Promise<void> {
     // The signal propagates through runAgenticTurn → messages.stream, which
     // tears down the HTTP connection to Anthropic mid-stream.
     //
-    // After reply.hijack(), Fastify releases the response; the 'close' event
-    // can surface on either the raw request or the raw response, so we bind
-    // to both and guard with a one-shot flag.
+    // IMPORTANT: only listen on reply.raw ("close" on the ServerResponse).
+    // req.raw.on("close") fires the moment Node finishes reading the POST
+    // body — a false positive that instantly aborts every request. Phase 1
+    // scenario 7 verification showed reply.raw is the one that fires on
+    // actual client disconnect, so that's sufficient.
     let clientGone = false;
     const abortCtrl = new AbortController();
-    const onClientGone = (src: string) => {
+    reply.raw.on("close", () => {
       if (clientGone) return;
       clientGone = true;
       abortCtrl.abort();
       clearInterval(heartbeat);
-      audit({ actor: "user", action: "ask_stream.client_gone", subject: runId, metadata: { source: src } });
-    };
-    req.raw.on("close", () => onClientGone("req.raw"));
-    reply.raw.on("close", () => onClientGone("reply.raw"));
+      audit({ actor: "user", action: "ask_stream.client_gone", subject: runId, metadata: { source: "reply.raw" } });
+    });
 
     try {
       const result = await runAgenticTurn({

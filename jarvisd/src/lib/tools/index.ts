@@ -21,6 +21,10 @@ export const ANTHROPIC_NATIVE_TOOLS = [
 /**
  * Build the client-executed tool list. Called per agentic loop so run_skill's
  * description reflects the currently registered skills.
+ *
+ * Tools are returned sorted by name so the cache prefix stays byte-identical
+ * across daemon restarts — any reordering here silently invalidates every
+ * client's prompt cache.
  */
 export function buildCustomTools(): ToolDef[] {
   return [
@@ -32,7 +36,7 @@ export function buildCustomTools(): ToolDef[] {
     getCalendar,
     createProposal,
     buildRunSkillTool(),
-  ];
+  ].sort((a, b) => a.name.localeCompare(b.name));
 }
 
 /** Look up a custom tool by name (for dispatching a tool_use block). */
@@ -49,10 +53,14 @@ export function toAnthropicTool(def: ToolDef) {
   };
 }
 
-/** Full tool list for `messages.create({ tools })` / `.stream({ tools })`. */
+/** Full tool list for `messages.create({ tools })` / `.stream({ tools })`.
+ *  Final list is sorted by name — anything non-deterministic here breaks
+ *  prompt caching (tools render first in the prefix). */
 export function buildAnthropicToolList() {
   const custom = buildCustomTools().map(toAnthropicTool);
-  return [...custom, ...ANTHROPIC_NATIVE_TOOLS];
+  return [...custom, ...ANTHROPIC_NATIVE_TOOLS].sort((a, b) =>
+    a.name.localeCompare(b.name)
+  );
 }
 
 export type { ToolDef, ToolResult, ToolContext } from "./types.js";

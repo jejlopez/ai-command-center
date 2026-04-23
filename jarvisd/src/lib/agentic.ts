@@ -13,7 +13,7 @@ import { buildAnthropicToolList, findCustomTool } from "./tools/index.js";
 import { audit } from "./audit.js";
 import { recordCost, assertBudgetAvailable } from "./cost.js";
 import { recordRouting } from "./router_learning.js";
-import { estimateCostUsd, route } from "./router.js";
+import { estimateCostWithCacheUsd, route } from "./router.js";
 import { recordToolCall } from "./tool_stats.js";
 import { conversations, type MessageRow } from "./conversations.js";
 
@@ -74,6 +74,10 @@ export type AgenticEvent =
       tokensIn: number;
       tokensOut: number;
       costUsd: number;
+      /** Tokens served from the prompt cache this iteration. */
+      cacheReadTokens?: number;
+      /** Tokens written into the cache this iteration. */
+      cacheCreationTokens?: number;
     }
   | {
       type: "done";
@@ -233,7 +237,21 @@ export async function runAgenticTurn(opts: AgenticRunOptions): Promise<AgenticRu
       tools,
       messages,
     };
-    if (opts.system) streamParams.system = opts.system;
+    // Prompt caching (Phase 2 Day 3): place cache_control ON the system block
+    // (rendered in the prefix BEFORE messages). Top-level auto-placement
+    // lands on the last cacheable block — which for a multi-turn request is
+    // a message, producing a fresh cache write every turn with no reads.
+    // Explicit placement on `system` as a text block caches tools+system as
+    // the stable prefix, so Turn 2+ in the same session get cache_read > 0.
+    if (opts.system) {
+      streamParams.system = [
+        {
+          type: "text",
+          text: opts.system,
+          cache_control: { type: "ephemeral" },
+        } as any,
+      ];
+    }
     if (supportsAdaptiveThinking(model)) {
       // Adaptive thinking is the only supported thinking mode on Opus 4.7 and
       // the recommended mode on Sonnet 4.6 / Opus 4.6. We don't set `display`
@@ -243,6 +261,19 @@ export async function runAgenticTurn(opts: AgenticRunOptions): Promise<AgenticRu
     }
 
     let finalMessage: Anthropic.Message;
+    // DIAG: dump the cache-prefix (tools + system) to /tmp for byte-compare.
+    // Remove once caching is proven stable.
+    if (process.env.JARVIS_CACHE_DIAG === "1") {
+      const prefix = JSON.stringify({
+        tools: streamParams.tools,
+        system: streamParams.system,
+      });
+      const { writeFileSync } = await import("node:fs");
+      const path = `/tmp/jarvis-cache-prefix-${runId.slice(0, 8)}-i${iter}.json`;
+      try {
+        writeFileSync(path, prefix);
+      } catch {}
+    }
     try {
       // Pass the abort signal via RequestOptions so the SDK tears down the
       // HTTP connection when abort fires mid-stream.
@@ -276,7 +307,18 @@ export async function runAgenticTurn(opts: AgenticRunOptions): Promise<AgenticRu
     const durationMs = Date.now() - callStart;
     const tokensIn = finalMessage.usage.input_tokens ?? 0;
     const tokensOut = finalMessage.usage.output_tokens ?? 0;
-    const costUsd = estimateCostUsd(model, tokensIn, tokensOut);
+    // Anthropic returns cache_read/cache_creation on usage when caching hits.
+    // input_tokens is the uncached remainder — the full prompt size is
+    // (tokensIn + cacheRead + cacheCreate).
+    const cacheReadTokens = (finalMessage.usage as any).cache_read_input_tokens ?? 0;
+    const cacheCreationTokens = (finalMessage.usage as any).cache_creation_input_tokens ?? 0;
+    const costUsd = estimateCostWithCacheUsd(
+      model,
+      tokensIn,
+      tokensOut,
+      cacheReadTokens,
+      cacheCreationTokens
+    );
     totalTokensIn += tokensIn;
     totalTokensOut += tokensOut;
     totalCostUsd += costUsd;
@@ -312,6 +354,8 @@ export async function runAgenticTurn(opts: AgenticRunOptions): Promise<AgenticRu
       tokensIn,
       tokensOut,
       costUsd,
+      cacheReadTokens,
+      cacheCreationTokens,
     });
 
     // Preserve the full assistant content — tool_use blocks must survive for
