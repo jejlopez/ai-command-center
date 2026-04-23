@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { Send, Loader2, Zap, Mic, MicOff, Volume2, VolumeX, ShieldAlert } from "lucide-react";
+import { Send, Loader2, Zap, Mic, MicOff, Volume2, VolumeX, ShieldAlert, MessageSquarePlus } from "lucide-react";
 import { jarvis } from "../../lib/jarvis.js";
 import { parseIntent, classifyWithOllama, isConversational } from "../../lib/intentParser.js";
 import { speak, stopSpeaking } from "../../lib/tts.js";
@@ -95,8 +95,13 @@ function Message({ msg }) {
 
 const STORAGE_KEY = "jarvis-chat-history";
 const MAX_HISTORY = 100;
+const GREETING = {
+  role: "assistant",
+  text: "Good morning. I'm online and monitoring your systems. What would you like to see?",
+  tier: 0,
+};
 
-function loadHistory() {
+function loadLocalHistory() {
   try {
     const saved = localStorage.getItem(STORAGE_KEY);
     if (saved) {
@@ -104,7 +109,7 @@ function loadHistory() {
       if (Array.isArray(parsed) && parsed.length > 0) return parsed;
     }
   } catch {}
-  return [{ role: "assistant", text: "Good morning. I'm online and monitoring your systems. What would you like to see?", tier: 0 }];
+  return [GREETING];
 }
 
 function saveHistory(messages) {
@@ -113,18 +118,80 @@ function saveHistory(messages) {
   } catch {}
 }
 
+/**
+ * Convert a server Message row into the UI's message shape.
+ * - Plain user text → user bubble
+ * - User tool_result blocks → filtered out (internal plumbing; UI doesn't show)
+ * - Assistant blocks → text + tool chips extracted
+ */
+function serverMsgToUi(msg) {
+  const { role, content } = msg;
+  if (role === "user") {
+    if (typeof content === "string") return { role: "user", text: content };
+    if (Array.isArray(content) && content.some(b => b?.type === "tool_result")) return null;
+    if (Array.isArray(content)) {
+      const text = content.filter(b => b?.type === "text").map(b => b.text).join("");
+      return text ? { role: "user", text } : null;
+    }
+    return null;
+  }
+  // assistant
+  const blocks = Array.isArray(content) ? content : [{ type: "text", text: String(content ?? "") }];
+  const text = blocks.filter(b => b?.type === "text").map(b => b.text).join("");
+  const tools = blocks
+    .filter(b => b?.type === "tool_use")
+    .map(b => ({ id: b.id, name: b.name, state: "done" }));
+  return { role: "assistant", text, tier: 3, ...(tools.length ? { tools } : {}) };
+}
+
 export function JarvisChat({ onDisplayUpdate }) {
-  const [messages, setMessages] = useState(loadHistory);
+  // Initial state = localStorage cache (fast paint). Server history is
+  // fetched in a useEffect right after mount and supersedes it if the
+  // conversation exists server-side.
+  const [messages, setMessages] = useState(loadLocalHistory);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [recording, setRecording] = useState(false);
+  const [historyLoaded, setHistoryLoaded] = useState(false);
   const [ttsEnabled, setTtsEnabled] = useState(
     () => localStorage.getItem('jarvis-tts') !== 'false'
   );
   const bottomRef = useRef(null);
   const inputRef = useRef(null);
 
-  // Persist on every message change
+  // Hydrate from server on mount. Server is the source of truth; localStorage
+  // is just a fast-paint cache. If the server has messages, replace. If the
+  // conversation doesn't exist server-side yet (404), keep the local cache —
+  // the first /ask/stream call will create it.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await jarvis.loadHistory();
+        if (cancelled) return;
+        const serverUi = (res?.messages ?? [])
+          .map(serverMsgToUi)
+          .filter(Boolean);
+        if (serverUi.length > 0) {
+          setMessages(serverUi);
+        }
+      } catch (e) {
+        // 404 → no conversation yet on server. Happens on a freshly rotated
+        // session id. Keep whatever localStorage gave us as display fallback.
+        const msg = String(e?.message ?? "");
+        if (!msg.includes("404")) {
+          console.warn("[jarvis-chat] history load failed:", msg);
+        }
+      } finally {
+        if (!cancelled) setHistoryLoaded(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Persist on every message change (local cache for fast reloads)
   useEffect(() => {
     saveHistory(messages);
   }, [messages]);
@@ -348,12 +415,33 @@ export function JarvisChat({ onDisplayUpdate }) {
     setTtsEnabled(prev => !prev);
   };
 
+  const handleNewThread = () => {
+    // Rotate the session UUID in localStorage. Next /ask/stream call starts
+    // a fresh conversation server-side. UI resets to the default greeting.
+    // Previous thread is still on the server (reachable via /conversations).
+    jarvis.newThread();
+    setMessages([GREETING]);
+    setInput("");
+    stopSpeaking();
+    inputRef.current?.focus();
+  };
+
   return (
     <div className="h-full flex flex-col">
       <div className="flex items-center gap-2 px-4 py-3 border-b border-jarvis-border">
         <Zap size={14} className="text-jarvis-primary" />
         <span className="label">JARVIS</span>
         <span className="text-[9px] text-jarvis-muted">· Online</span>
+        <div className="ml-auto">
+          <button
+            onClick={handleNewThread}
+            title="Start a new conversation thread"
+            className="flex items-center gap-1 px-2 py-1 rounded-md text-[10px] text-jarvis-muted hover:text-jarvis-primary hover:bg-jarvis-primary/10 transition"
+          >
+            <MessageSquarePlus size={12} />
+            <span>New Thread</span>
+          </button>
+        </div>
       </div>
 
       <div className="flex-1 overflow-y-auto px-4 py-4">

@@ -8,10 +8,55 @@ const UNLOCK_RETRY_SKIP = new Set([
   "/health",
 ]);
 
+// ── Session ID (Phase 2 Day 4) ──────────────────────────────────────────────
+//
+// X-Session-Id identifies the ongoing conversation. Generated once per browser,
+// persisted in localStorage, rotated on "New Thread". The daemon also accepts
+// missing X-Session-Id (auto-generates one) but the client always sends the
+// stored value when available so tab refreshes keep the same conversation.
+
+const SESSION_STORAGE_KEY = "jarvis-session-id";
+const SESSION_ID_REGEX = /^[A-Za-z0-9_-]{8,128}$/;
+
+function safeGetItem(key) {
+  try { return localStorage.getItem(key); } catch { return null; }
+}
+function safeSetItem(key, val) {
+  try { localStorage.setItem(key, val); } catch {}
+}
+
+function genSessionId() {
+  try {
+    if (typeof crypto !== "undefined" && crypto.randomUUID) return crypto.randomUUID();
+  } catch {}
+  // Fallback for odd environments (no crypto): timestamp + random enough to dedupe
+  return `sid-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+export function getOrCreateSessionId() {
+  let sid = safeGetItem(SESSION_STORAGE_KEY);
+  if (!sid || !SESSION_ID_REGEX.test(sid)) {
+    sid = genSessionId();
+    safeSetItem(SESSION_STORAGE_KEY, sid);
+  }
+  return sid;
+}
+
+export function rotateSessionId() {
+  const sid = genSessionId();
+  safeSetItem(SESSION_STORAGE_KEY, sid);
+  return sid;
+}
+
 async function rawFetch(method, path, body) {
+  const headers = {};
+  if (body) headers["content-type"] = "application/json";
+  // Inject X-Session-Id on every request. Skip for vault/health where it's
+  // pointless (daemon ignores it on those paths).
+  headers["X-Session-Id"] = getOrCreateSessionId();
   return fetch(`${BASE}${path}`, {
     method,
-    headers: body ? { "content-type": "application/json" } : undefined,
+    headers,
     body: body ? JSON.stringify(body) : undefined,
   });
 }
@@ -62,7 +107,10 @@ const del  = (p)    => request("DELETE", p);
 async function* askStream(prompt, opts = {}) {
   const res = await fetch(`${BASE}/ask/stream`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: {
+      "content-type": "application/json",
+      "X-Session-Id": getOrCreateSessionId(),
+    },
     body: JSON.stringify({ prompt, ...opts }),
   });
   if (!res.ok) {
@@ -116,6 +164,13 @@ export const jarvis = {
     post(`/approvals/${id}/decide`, { decision, reason }),
   ask: (prompt, opts = {}) => post("/ask", { prompt, ...opts }),
   askStream: (prompt, opts = {}) => askStream(prompt, opts),
+
+  // Conversation history (Phase 2)
+  sessionId:       ()  => getOrCreateSessionId(),
+  newThread:       ()  => rotateSessionId(),
+  loadHistory:     ()  => get(`/conversations/${encodeURIComponent(getOrCreateSessionId())}/messages`),
+  clearHistory:    ()  => post(`/conversations/${encodeURIComponent(getOrCreateSessionId())}/clear`),
+  listConversations: () => get("/conversations"),
 
   // Vault
   vaultUnlock:     () => post("/vault/unlock"),
